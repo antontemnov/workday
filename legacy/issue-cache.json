@@ -1,0 +1,55 @@
+{
+  "ATL-6466": {
+    "issueId": "244504",
+    "summary": "[S2] Implement Fees Tab"
+  },
+  "ATL-6172": {
+    "issueId": "241587",
+    "summary": "[S1] Integrate shared Attachments tab"
+  },
+  "ATL-6870": {
+    "issueId": "252068",
+    "summary": "Fix approval dialog busy indicator"
+  },
+  "ATL-6811": {
+    "issueId": "250844",
+    "summary": "Add hierarchical Busy indicating"
+  },
+  "ATL-6571": {
+    "issueId": "245800",
+    "summary": "Move Lienholder control to shared transaction area"
+  },
+  "ATL-6810": {
+    "issueId": "250842",
+    "summary": "Transaction Header. Incorrect CustomerCredit showing, Transaction Status  sometimes has no display value"
+  },
+  "ATL-6697": {
+    "issueId": "247203",
+    "summary": "Endorsement changes doesn't impact to showed Policy Version on TransactionView page"
+  },
+  "ATL-6859": {
+    "issueId": "251880",
+    "summary": "Payment splitting incorrect working on imbalance transactions"
+  },
+  "ATL-6173": {
+    "issueId": "241588",
+    "summary": "[S1] Integrate shared Reminders tab"
+  },
+  "ATL-6756": {
+    "issueId": "248335",
+    "summary": "Additional Products Shared Component Implementation"
+  },
+  "ATL-6860": {
+    "issueId": "251946",
+    "summary": "Change waive fee attribute to simple boolean Permission"
+  },
+  "ATL-6502": {
+    "issueId": "244743",
+    "summary": "Policy: Fix Incorrect Coverage Behavior"
+  },
+  "ATL-6370": {
+    "issueId": "243063",
+    "summary": "Restore missing alert on Lead Office change on HTML"
+  },
+  "__accountId__": "628b3d62ab963e006fe70652"
+}
