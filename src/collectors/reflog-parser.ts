@@ -26,12 +26,13 @@ export class ReflogParser {
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       const match = line.match(
-        /HEAD@\{(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) [+-]\d{4}\}\s+(.*)/
+        /HEAD@\{(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{4})\}\s+(.*)/
       );
       if (!match) continue;
 
-      const ts = Date.parse(`${match[1]}T${match[2]}`);
-      const action = match[3];
+      // Include timezone offset for correct absolute timestamp
+      const ts = Date.parse(`${match[1]}T${match[2]}${match[3]}`);
+      const action = match[4];
 
       let type: ReflogEntry['type'];
       if (action.startsWith('commit')) {
