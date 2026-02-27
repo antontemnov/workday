@@ -7,7 +7,7 @@ import type {
   ReflogEntry,
   RepoTracker,
 } from '../core/types.js';
-import { REPO_STATE } from '../core/types.js';
+import { RepoState } from '../core/types.js';
 import { extractTask } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
@@ -33,7 +33,7 @@ export class GitTracker {
   public constructor(config: AppConfig, secrets: Secrets) {
     this.config = config;
     this.developer = secrets.Developer;
-    this.gitClient = new GitClient();
+    this.gitClient = new GitClient(config.session.reflogCount);
     this.reflogParser = new ReflogParser(config.taskPattern);
     this.snapshotParser = new SnapshotParser();
   }
@@ -115,7 +115,7 @@ export class GitTracker {
     let state = this.repoStates.get(repoPath);
     if (!state) {
       state = {
-        state: REPO_STATE.IDLE,
+        state: RepoState.Idle,
         currentBranch: null,
         currentTask: null,
         activeSessionId: null,
@@ -152,30 +152,30 @@ export class GitTracker {
 
     // Check if branch changed to a non-developer branch
     if (task === null) {
-      if (state.state !== REPO_STATE.IDLE) {
-        state.state = REPO_STATE.IDLE;
+      if (state.state !== RepoState.Idle) {
+        state.state = RepoState.Idle;
         state.activeSessionId = null;
       }
       return;
     }
 
     switch (state.state) {
-      case REPO_STATE.IDLE:
+      case RepoState.Idle:
         // Any signal on own branch → open PENDING
         if (hasCheckout || hasCommit || delta.hasDynamics) {
-          state.state = REPO_STATE.PENDING;
+          state.state = RepoState.Pending;
         }
         break;
 
-      case REPO_STATE.PENDING:
+      case RepoState.Pending:
         // Dynamics or commit → promote to ACTIVE
         if (delta.hasDynamics || hasCommit) {
-          state.state = REPO_STATE.ACTIVE;
+          state.state = RepoState.Active;
         }
         break;
 
-      case REPO_STATE.ACTIVE:
-        // Stay active — session manager will handle endedAt updates
+      case RepoState.Active:
+        // Stay active — session manager will handle lastSeenAt updates
         break;
     }
   }

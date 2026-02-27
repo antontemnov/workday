@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
-import type { AppConfig, DailyLog, Session, PollResult, ReflogEntry, ClosedBy } from './types.js';
-import { SESSION_STATE, CLOSED_BY, SIGNAL_TYPE } from './types.js';
+import { SessionState, ClosedBy, SignalType, PauseSource } from './types.js';
+import type { AppConfig, DailyLog, Session, PollResult, ReflogEntry, Pause } from './types.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -37,9 +37,14 @@ export class SessionTracker {
   private readonly config: AppConfig;
 
   public constructor(config: AppConfig, initialLog?: DailyLog) {
-    const today = computeWorkingDate(Date.now(), config.dayBoundaryHour);
+    const today = computeWorkingDate(Date.now(), config.dayBoundaryHour, config.timezone);
     this.config = config;
     this.dailyLog = initialLog ?? createEmptyLog(today, config);
+
+    // Normalize old sessions that lack pauses field
+    for (const session of this.dailyLog.sessions) {
+      if (!session.pauses) session.pauses = [];
+    }
   }
 
   public getDailyLog(): DailyLog {
@@ -53,12 +58,17 @@ export class SessionTracker {
    * 1. Credit reflog evidence to current open session (before any close)
    * 2. Log signals (dynamics, commits, checkouts)
    * 3. Handle session lifecycle (close/open/switch)
-   * 4. Update session tick (endedAt, evidence, promote PENDING→ACTIVE)
+   * 4. Update session tick (lastSeenAt, evidence, promote PENDING→ACTIVE)
    */
   public processPollResult(result: PollResult): void {
     const now = new Date().toISOString();
     const repoName = basename(result.repoPath);
     let openSession = this.findOpenSession(repoName);
+
+    // Full freeze: skip everything if session is paused
+    if (openSession && this.isSessionPaused(openSession)) {
+      return;
+    }
 
     // 1. Credit reflog evidence to current open session before potential close
     if (openSession && result.newReflogEntries.length > 0) {
@@ -72,14 +82,14 @@ export class SessionTracker {
     if (result.task === null) {
       // Not on developer's branch → close if open
       if (openSession) {
-        this.closeSession(openSession, CLOSED_BY.CHECKOUT_OTHER_TASK, now);
+        this.closeSession(openSession, ClosedBy.CheckoutOtherTask, now);
       }
       return;
     }
 
     if (openSession && openSession.task !== result.task) {
       // Task changed → close old, will open new below
-      this.closeSession(openSession, CLOSED_BY.CHECKOUT_OTHER_TASK, now);
+      this.closeSession(openSession, ClosedBy.CheckoutOtherTask, now);
       openSession = null;
     }
 
@@ -89,6 +99,22 @@ export class SessionTracker {
 
     // 4. Update session with current tick data
     this.updateSessionTick(openSession, result, now);
+  }
+
+  /**
+   * Close orphaned sessions from a previous daemon crash.
+   * Preserves saved lastSeenAt (last known poll time, at most ~30s before crash).
+   */
+  public closeCrashedSessions(): number {
+    let count = 0;
+    for (const session of this.dailyLog.sessions) {
+      if (!session.closedBy) {
+        this.closeOpenPause(session, session.lastSeenAt);
+        session.closedBy = ClosedBy.DaemonCrash;
+        count++;
+      }
+    }
+    return count;
   }
 
   /** Close all open sessions with given reason */
@@ -106,10 +132,10 @@ export class SessionTracker {
    * Caller should flush the returned log to disk.
    */
   public handleDayBoundary(): DailyLog {
-    this.closeAllSessions(CLOSED_BY.DAY_BOUNDARY);
+    this.closeAllSessions(ClosedBy.DayBoundary);
     const completedLog = this.dailyLog;
 
-    const newDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour);
+    const newDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour, this.config.timezone);
     this.dailyLog = createEmptyLog(newDate, this.config);
 
     return completedLog;
@@ -130,6 +156,43 @@ export class SessionTracker {
     return this.dailyLog.sessions.filter(s => !s.closedBy);
   }
 
+  // ─── Pause / Resume ──────────────────────────────────────────────────
+
+  /** Pause all open sessions */
+  public pauseAllSessions(): void {
+    const now = new Date().toISOString();
+    for (const session of this.dailyLog.sessions) {
+      if (!session.closedBy && !this.isSessionPaused(session)) {
+        session.pauses.push({ from: now, to: null, source: PauseSource.Manual });
+      }
+    }
+  }
+
+  /** Pause a specific repo's open session. Returns true if a session was paused. */
+  public pauseRepoSession(repoName: string): boolean {
+    const session = this.findOpenSession(repoName);
+    if (!session || this.isSessionPaused(session)) return false;
+
+    const now = new Date().toISOString();
+    session.pauses.push({ from: now, to: null, source: PauseSource.Manual });
+    return true;
+  }
+
+  /** Resume all paused sessions */
+  public resumeAllSessions(): void {
+    const now = new Date().toISOString();
+    for (const session of this.dailyLog.sessions) {
+      if (!session.closedBy) {
+        this.closeOpenPause(session, now);
+      }
+    }
+  }
+
+  /** Check if a session is currently paused */
+  public isSessionPaused(session: Session): boolean {
+    return session.pauses.some(p => p.to === null);
+  }
+
   // ─── Private: session lifecycle ────────────────────────────────────────
 
   private findOpenSession(repo: string): Session | null {
@@ -144,11 +207,12 @@ export class SessionTracker {
       repo,
       task,
       branch,
-      state: SESSION_STATE.PENDING,
+      state: SessionState.Pending,
       startedAt: now,
-      endedAt: now,
+      lastSeenAt: now,
       closedBy: null,
       evidence: createEmptyEvidence(),
+      pauses: [],
     };
     this.dailyLog.sessions.push(session);
     return session;
@@ -156,22 +220,33 @@ export class SessionTracker {
 
   private closeSession(session: Session, reason: ClosedBy, now: string): void {
     if (session.closedBy) return; // already closed
+
+    // Close any open pause before closing the session
+    this.closeOpenPause(session, now);
+
     session.closedBy = reason;
-    session.endedAt = now;
+    session.lastSeenAt = now;
     // state stays as 'pending' or 'active' — preserved for reporting
+  }
+
+  private closeOpenPause(session: Session, now: string): void {
+    const openPause = session.pauses.find(p => p.to === null);
+    if (openPause) {
+      openPause.to = now;
+    }
   }
 
   // ─── Private: tick update ──────────────────────────────────────────────
 
   private updateSessionTick(session: Session, result: PollResult, now: string): void {
-    session.endedAt = now;
+    session.lastSeenAt = now;
     session.evidence.totalSnapshots++;
 
     // Promote PENDING → ACTIVE on dynamics or commit
-    if (session.state === SESSION_STATE.PENDING) {
+    if (session.state === SessionState.Pending) {
       const hasCommit = result.newReflogEntries.some(e => e.type === 'commit');
       if (result.delta.hasDynamics || hasCommit) {
-        session.state = SESSION_STATE.ACTIVE;
+        session.state = SessionState.Active;
       }
     }
 
@@ -196,34 +271,35 @@ export class SessionTracker {
 
   private logSignals(repoName: string, result: PollResult): void {
     const now = Date.now();
+    const dedup = this.config.session.signalDeduplicationSeconds;
 
     if (result.delta.hasDynamics) {
       addSignal(this.dailyLog, {
         ts: now,
-        type: SIGNAL_TYPE.DIFF_DYNAMICS,
+        type: SignalType.DiffDynamics,
         repo: repoName,
         delta: {
           added: result.delta.addedDelta,
           removed: result.delta.removedDelta,
         },
-      });
+      }, dedup);
     }
 
     for (const entry of result.newReflogEntries) {
       if (entry.type === 'commit') {
         addSignal(this.dailyLog, {
           ts: entry.ts,
-          type: SIGNAL_TYPE.COMMIT,
+          type: SignalType.Commit,
           repo: repoName,
           task: result.task,
-        });
+        }, dedup);
       } else if (entry.type === 'checkout') {
         addSignal(this.dailyLog, {
           ts: entry.ts,
-          type: SIGNAL_TYPE.CHECKOUT,
+          type: SignalType.Checkout,
           repo: repoName,
           task: result.task,
-        });
+        }, dedup);
       }
     }
   }

@@ -2,11 +2,9 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import type { RawGitOutput } from '../core/types.js';
+import { GIT_BATCH_SEPARATOR, GIT_MAX_BUFFER_BYTES } from '../core/constants.js';
 
 const execAsync = promisify(exec);
-
-const SEPARATOR = '---WORKDAY-SEP---';
-const MAX_BUFFER = 10 * 1024 * 1024;
 
 /**
  * Low-level git command executor.
@@ -31,16 +29,16 @@ export class GitClient {
 
     const cmd = [
       `git -C "${repoPath}" rev-parse --abbrev-ref HEAD`,
-      `echo ${SEPARATOR}`,
+      `echo ${GIT_BATCH_SEPARATOR}`,
       `git -C "${repoPath}" diff --numstat`,
-      `echo ${SEPARATOR}`,
+      `echo ${GIT_BATCH_SEPARATOR}`,
       `git -C "${repoPath}" status --porcelain`,
-      `echo ${SEPARATOR}`,
+      `echo ${GIT_BATCH_SEPARATOR}`,
       `git -C "${repoPath}" reflog -${this.reflogCount} --date=iso --format="%gd %gs"`,
     ].join(' && ');
 
     try {
-      const { stdout } = await execAsync(cmd, { maxBuffer: MAX_BUFFER });
+      const { stdout } = await execAsync(cmd, { maxBuffer: GIT_MAX_BUFFER_BYTES });
       return GitClient.parseSections(stdout);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -57,7 +55,7 @@ export class GitClient {
   private static parseSections(raw: string): RawGitOutput {
     const normalized = raw.replace(/\r\n/g, '\n');
     // Windows echo may add trailing space: "---WORKDAY-SEP--- \n"
-    const sections = normalized.split(new RegExp(SEPARATOR + '\\s*\\n'));
+    const sections = normalized.split(new RegExp(GIT_BATCH_SEPARATOR + '\\s*\\n'));
 
     return {
       branch: (sections[0] ?? '').trim(),

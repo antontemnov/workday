@@ -5,18 +5,23 @@ import { loadConfig, loadSecrets, getDataDir, computeWorkingDate } from './core/
 import { readDailyLog, writeDailyLog } from './core/daily-log.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
+import { HttpServer } from './http-server.js';
+import type { HttpServerDeps } from './http-server.js';
 import type { AppConfig, Secrets } from './core/types.js';
-import { CLOSED_BY } from './core/types.js';
+import { ClosedBy } from './core/types.js';
+import { PID_FILE_NAME } from './core/constants.js';
 
 export class Daemon {
   private config!: AppConfig;
   private secrets!: Secrets;
   private gitTracker!: GitTracker;
   private sessionTracker!: SessionTracker;
+  private httpServer: HttpServer | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private dayBoundaryTimer: ReturnType<typeof setInterval> | null = null;
   private currentDate: string = '';
   private running: boolean = false;
+  private startedAt: number = 0;
 
   public async start(): Promise<void> {
     this.config = loadConfig();
@@ -24,46 +29,69 @@ export class Daemon {
 
     this.ensureSingleInstance();
 
-    this.currentDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour);
+    this.currentDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour, this.config.timezone);
     this.gitTracker = new GitTracker(this.config, this.secrets);
 
-    // Crash recovery: resume from today's log if it exists
+    // Crash recovery: close orphaned sessions from previous days
+    this.recoverOrphanedLogs();
+
+    // Load today's log and close any orphaned sessions
     const existingLog = readDailyLog(this.currentDate) ?? undefined;
     this.sessionTracker = new SessionTracker(this.config, existingLog);
+
+    const crashedCount = this.sessionTracker.closeCrashedSessions();
+    if (crashedCount > 0) {
+      this.sessionTracker.flush();
+      console.log(`  Crash recovery: closed ${crashedCount} orphaned session(s) from ${this.currentDate}`);
+    }
 
     this.writePidFile();
     this.registerShutdownHandlers();
 
+    // HTTP API server
+    this.startedAt = Date.now();
+    const deps: HttpServerDeps = {
+      sessionTracker: this.sessionTracker,
+      stopCallback: () => this.stopAndExit(),
+      getStartedAt: () => this.startedAt,
+      getCurrentDate: () => this.currentDate,
+    };
+    this.httpServer = new HttpServer(this.config.apiPort, deps);
+    await this.httpServer.start();
+
     this.running = true;
     const pollMs = this.config.session.diffPollSeconds * 1000;
     this.pollTimer = setInterval(() => void this.pollTick(), pollMs);
-    this.dayBoundaryTimer = setInterval(() => this.checkDayBoundary(), 60_000);
+    const boundaryMs = this.config.session.dayBoundaryCheckSeconds * 1000;
+    this.dayBoundaryTimer = setInterval(() => this.checkDayBoundary(), boundaryMs);
 
     console.log(`Daemon started (PID ${process.pid})`);
+    console.log(`  API: http://127.0.0.1:${this.config.apiPort}`);
+    console.log(`  Timezone: ${this.config.timezone}`);
     console.log(`  Repos: ${this.config.repos.map(r => r.split('/').pop()).join(', ')}`);
     console.log(`  Poll: ${this.config.session.diffPollSeconds}s`);
+    console.log(`  Day boundary: ${this.config.dayBoundaryHour}:00`);
     console.log(`  Date: ${this.currentDate}`);
-
-    if (existingLog) {
-      const openCount = existingLog.sessions.filter(s => !s.closedBy).length;
-      if (openCount > 0) {
-        console.log(`  Resumed ${openCount} open session(s)`);
-      }
-    }
   }
 
   public async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
 
+    if (this.httpServer) await this.httpServer.stop();
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.dayBoundaryTimer) clearInterval(this.dayBoundaryTimer);
 
-    this.sessionTracker.closeAllSessions(CLOSED_BY.DAEMON_STOP);
+    this.sessionTracker.closeAllSessions(ClosedBy.DaemonStop);
     this.sessionTracker.flush();
     this.removePidFile();
 
     console.log('Daemon stopped.');
+  }
+
+  private async stopAndExit(): Promise<void> {
+    await this.stop();
+    process.exit(0);
   }
 
   // ─── Poll loop ─────────────────────────────────────────────────────────
@@ -83,10 +111,38 @@ export class Daemon {
     }
   }
 
+  // ─── Crash recovery ────────────────────────────────────────────────────
+
+  /** Scan recent daily logs for orphaned sessions (cross-day crash) */
+  private recoverOrphanedLogs(): void {
+    const lookbackDays = 7;
+
+    for (let i = 1; i <= lookbackDays; i++) {
+      const d = new Date(this.currentDate + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() - i);
+      const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+
+      const log = readDailyLog(dateStr);
+      if (!log) continue;
+
+      const openSessions = log.sessions.filter(s => !s.closedBy);
+      if (openSessions.length === 0) continue;
+
+      for (const session of openSessions) {
+        const openPause = session.pauses?.find(p => p.to === null);
+        if (openPause) openPause.to = session.lastSeenAt;
+        session.closedBy = ClosedBy.DaemonCrash;
+      }
+
+      writeDailyLog(log);
+      console.log(`  Crash recovery: closed ${openSessions.length} orphaned session(s) from ${dateStr}`);
+    }
+  }
+
   // ─── Day boundary ─────────────────────────────────────────────────────
 
   private checkDayBoundary(): void {
-    const newDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour);
+    const newDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour, this.config.timezone);
     if (newDate === this.currentDate) return;
 
     const oldLog = this.sessionTracker.handleDayBoundary();
@@ -100,7 +156,7 @@ export class Daemon {
   // ─── PID file ──────────────────────────────────────────────────────────
 
   private getPidFilePath(): string {
-    return join(getDataDir(), 'workday.pid');
+    return join(getDataDir(), PID_FILE_NAME);
   }
 
   private ensureSingleInstance(): void {
@@ -154,6 +210,15 @@ export class Daemon {
 
     process.on('SIGINT', () => void shutdown());
     process.on('SIGTERM', () => void shutdown());
+
+    // Last-resort synchronous cleanup (OS shutdown, uncaught exit)
+    // closeAllSessions + flush are synchronous (writeFileSync)
+    process.on('exit', () => {
+      if (!this.running) return;
+      this.sessionTracker.closeAllSessions(ClosedBy.DaemonStop);
+      this.sessionTracker.flush();
+      this.removePidFile();
+    });
   }
 }
 
