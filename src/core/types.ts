@@ -38,6 +38,8 @@ export interface Secrets {
 
 export enum PauseSource {
   Manual = 'manual',
+  IdleTimeout = 'idle_timeout',
+  Superseded = 'superseded',
   TeamsAway = 'teams_away', // Phase 3
 }
 
@@ -226,7 +228,12 @@ export interface SessionSummary {
   readonly startedAt: string;
   readonly lastSeenAt: string;
   readonly paused: boolean;
+  readonly pauseSource: string | null;
   readonly effectiveDurationMs: number;
+  readonly score: number;
+  readonly normalizedScore: number;
+  readonly isLeader: boolean;
+  readonly autoPauseDisabled: boolean;
 }
 
 export interface TodayResponse {
@@ -255,4 +262,36 @@ export interface ResumeResponse {
 
 export interface StopResponse {
   readonly message: string;
+}
+
+export interface AutoPauseResponse {
+  readonly repo: string | null;
+  readonly autoPauseDisabled: boolean;
+}
+
+// ─── Activity Evaluator ─────────────────────────────────────────────────
+
+export interface ActivitySignals {
+  readonly hasDynamics: boolean;
+  readonly hasCommit: boolean;
+  readonly deltaMagnitude: number; // |addedDelta| + |removedDelta|
+}
+
+export interface TickInput {
+  readonly sessionId: string;
+  readonly signals: ActivitySignals;
+  readonly autoPauseDisabled: boolean;
+}
+
+export interface EvaluatorResult {
+  readonly scores: Map<string, SessionScore>;
+  readonly leaderId: string | null;
+}
+
+export interface SessionScore {
+  readonly score: number;
+  readonly maxScore: number;
+  readonly normalizedScore: number; // score / maxScore (0..1)
+  readonly ema: number;
+  readonly isIdleTimeout: boolean; // score == 0
 }

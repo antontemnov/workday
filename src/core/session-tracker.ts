@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, SignalType, PauseSource } from './types.js';
-import type { AppConfig, DailyLog, Session, PollResult, ReflogEntry, Pause } from './types.js';
+import type { AppConfig, DailyLog, Session, PollResult, ReflogEntry, TickInput, EvaluatorResult, ActivitySignals } from './types.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -35,6 +35,9 @@ import { computeWorkingDate } from './config.js';
 export class SessionTracker {
   private dailyLog: DailyLog;
   private readonly config: AppConfig;
+  private readonly autoPauseDisabledSessions: Set<string> = new Set();
+  private lastEvaluatorResult: EvaluatorResult | null = null;
+  public onSessionClosed: ((sessionId: string) => void) | null = null;
 
   public constructor(config: AppConfig, initialLog?: DailyLog) {
     const today = computeWorkingDate(Date.now(), config.dayBoundaryHour, config.timezone);
@@ -65,9 +68,21 @@ export class SessionTracker {
     const repoName = basename(result.repoPath);
     let openSession = this.findOpenSession(repoName);
 
-    // Full freeze: skip everything if session is paused
+    // Pause handling
     if (openSession && this.isSessionPaused(openSession)) {
-      return;
+      const pauseSource = this.getOpenPauseSource(openSession);
+      const hasActivity = result.delta.hasDynamics || result.newReflogEntries.some(e => e.type === 'commit');
+
+      if (pauseSource === PauseSource.Manual) {
+        if (hasActivity) {
+          // Auto-resume: developer forgot to resume, close pause and continue
+          this.closeOpenPause(openSession, now);
+        } else {
+          // Manual pause, no activity — full freeze
+          return;
+        }
+      }
+      // Auto-pauses (IdleTimeout/Superseded) — fall through, normal processing
     }
 
     // 1. Credit reflog evidence to current open session before potential close
@@ -138,6 +153,9 @@ export class SessionTracker {
     const newDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour, this.config.timezone);
     this.dailyLog = createEmptyLog(newDate, this.config);
 
+    this.autoPauseDisabledSessions.clear();
+    this.lastEvaluatorResult = null;
+
     return completedLog;
   }
 
@@ -154,6 +172,106 @@ export class SessionTracker {
   /** Get summary of open sessions (for status display) */
   public getOpenSessions(): readonly Session[] {
     return this.dailyLog.sessions.filter(s => !s.closedBy);
+  }
+
+  // ─── Evaluator integration ────────────────────────────────────────────
+
+  /** Build TickInput[] for all open sessions (except manually paused) */
+  public buildTickInputs(pollResults: readonly PollResult[]): readonly TickInput[] {
+    const resultMap = new Map<string, PollResult>();
+    for (const r of pollResults) {
+      resultMap.set(basename(r.repoPath), r);
+    }
+
+    const ticks: TickInput[] = [];
+    for (const session of this.dailyLog.sessions) {
+      if (session.closedBy) continue;
+
+      // Manually paused sessions are frozen — don't send to evaluator
+      if (this.isSessionPaused(session) && this.getOpenPauseSource(session) === PauseSource.Manual) {
+        continue;
+      }
+
+      const poll = resultMap.get(session.repo);
+      const signals: ActivitySignals = poll
+        ? {
+            hasDynamics: poll.delta.hasDynamics,
+            hasCommit: poll.newReflogEntries.some(e => e.type === 'commit'),
+            deltaMagnitude: Math.abs(poll.delta.addedDelta) + Math.abs(poll.delta.removedDelta),
+          }
+        : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
+
+      ticks.push({
+        sessionId: session.id,
+        signals,
+        autoPauseDisabled: this.autoPauseDisabledSessions.has(session.id),
+      });
+    }
+
+    return ticks;
+  }
+
+  /** Apply evaluator results: auto-pause, auto-resume, Pending→Active promotion */
+  public applyEvaluatorResult(result: EvaluatorResult): void {
+    this.lastEvaluatorResult = result;
+    const now = new Date().toISOString();
+
+    for (const session of this.dailyLog.sessions) {
+      if (session.closedBy) continue;
+
+      const sessionScore = result.scores.get(session.id);
+      if (!sessionScore) continue; // manually paused, not in evaluator
+
+      const isLeader = result.leaderId === session.id;
+
+      if (session.state === SessionState.Active) {
+        if (isLeader) {
+          // Leader — close any auto-pause
+          this.closeAutoPause(session, now);
+        } else if (sessionScore.isIdleTimeout) {
+          // score == 0 → IdleTimeout (unless autopause disabled)
+          if (!this.autoPauseDisabledSessions.has(session.id)) {
+            this.applyAutoPause(session, PauseSource.IdleTimeout, now);
+          }
+        } else {
+          // score > 0 but not leader → Superseded
+          this.applyAutoPause(session, PauseSource.Superseded, now);
+        }
+      } else if (session.state === SessionState.Pending) {
+        // Pending → Active: score > 0 AND is leader
+        if (sessionScore.score > 0 && isLeader) {
+          session.state = SessionState.Active;
+          session.startedAt = now;
+        }
+      }
+    }
+  }
+
+  public getLastEvaluatorResult(): EvaluatorResult | null {
+    return this.lastEvaluatorResult;
+  }
+
+  // ─── Autopause management ────────────────────────────────────────────
+
+  /** Toggle autopause for a specific repo or all repos. Returns affected repo names. */
+  public setAutoPauseDisabled(disabled: boolean, repoName?: string): string[] {
+    const affected: string[] = [];
+    for (const session of this.dailyLog.sessions) {
+      if (session.closedBy) continue;
+      if (repoName && session.repo !== repoName) continue;
+
+      if (disabled) {
+        this.autoPauseDisabledSessions.add(session.id);
+      } else {
+        this.autoPauseDisabledSessions.delete(session.id);
+      }
+      affected.push(session.repo);
+    }
+    return affected;
+  }
+
+  public isAutoPauseDisabled(sessionId: string): boolean {
+    return this.autoPauseDisabledSessions.has(sessionId);
   }
 
   // ─── Pause / Resume ──────────────────────────────────────────────────
@@ -227,6 +345,9 @@ export class SessionTracker {
     session.closedBy = reason;
     session.lastSeenAt = now;
     // state stays as 'pending' or 'active' — preserved for reporting
+
+    this.autoPauseDisabledSessions.delete(session.id);
+    this.onSessionClosed?.(session.id);
   }
 
   private closeOpenPause(session: Session, now: string): void {
@@ -236,19 +357,35 @@ export class SessionTracker {
     }
   }
 
+  private getOpenPauseSource(session: Session): PauseSource | null {
+    const openPause = session.pauses.find(p => p.to === null);
+    return openPause?.source ?? null;
+  }
+
+  /** Apply auto-pause if not already paused with the same source */
+  private applyAutoPause(session: Session, source: PauseSource, now: string): void {
+    const currentSource = this.getOpenPauseSource(session);
+    if (currentSource === source) return; // already paused with same source
+    if (currentSource !== null) {
+      // Close existing auto-pause before applying new one
+      this.closeOpenPause(session, now);
+    }
+    session.pauses.push({ from: now, to: null, source });
+  }
+
+  /** Close auto-pause (IdleTimeout or Superseded) if present */
+  private closeAutoPause(session: Session, now: string): void {
+    const openPause = session.pauses.find(p => p.to === null);
+    if (openPause && (openPause.source === PauseSource.IdleTimeout || openPause.source === PauseSource.Superseded)) {
+      openPause.to = now;
+    }
+  }
+
   // ─── Private: tick update ──────────────────────────────────────────────
 
   private updateSessionTick(session: Session, result: PollResult, now: string): void {
     session.lastSeenAt = now;
     session.evidence.totalSnapshots++;
-
-    // Promote PENDING → ACTIVE on dynamics or commit
-    if (session.state === SessionState.Pending) {
-      const hasCommit = result.newReflogEntries.some(e => e.type === 'commit');
-      if (result.delta.hasDynamics || hasCommit) {
-        session.state = SessionState.Active;
-      }
-    }
 
     // Count dynamics heartbeat
     if (result.delta.hasDynamics) {

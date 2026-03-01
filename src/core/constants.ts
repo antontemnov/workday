@@ -15,3 +15,13 @@ export const DEFAULT_API_PORT = 9213;
 // ─── Git internals ──────────────────────────────────────────────────────
 export const GIT_BATCH_SEPARATOR = '---WORKDAY-SEP---';
 export const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+
+// ─── Activity Evaluator algorithm constants ─────────────────────────────
+export const MIN_TIMEOUT_MINUTES = 15;
+export const MAX_TIMEOUT_MINUTES = 45;
+export const EMA_WINDOW_MINUTES = 10;
+export const ACTIVITY_RATIO = 0.5;
+export const MAGNITUDE_SCALE = 7;
+export const MAGNITUDE_BONUS_MAX = 0.5;
+export const COMMIT_BONUS_SECONDS = 150;
+export const BASE_DECAY = 1;

@@ -11,6 +11,7 @@ import type {
   PauseResponse,
   ResumeResponse,
   StopResponse,
+  AutoPauseResponse,
   Session,
 } from './core/types.js';
 
@@ -76,6 +77,10 @@ export class HttpServer {
       }
       if (method === 'POST' && path === '/api/resume') {
         return this.sendJson(res, 200, this.handleResume());
+      }
+      if (method === 'POST' && path === '/api/autopause') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleAutoPause(body));
       }
       if (method === 'POST' && path === '/api/stop') {
         const response: ApiResponse<StopResponse> = { ok: true, data: { message: 'Daemon stopping...' } };
@@ -158,6 +163,25 @@ export class HttpServer {
     return { ok: true, data: { paused } };
   }
 
+  private handleAutoPause(body: Record<string, unknown>): ApiResponse<AutoPauseResponse> {
+    const tracker = this.deps.sessionTracker;
+    // { enabled: boolean, repo?: string } — enabled=true means autopause ON (not disabled)
+    const enabled = body.enabled !== false;
+    const repo = typeof body.repo === 'string' ? body.repo : undefined;
+    const disabled = !enabled;
+
+    const affected = tracker.setAutoPauseDisabled(disabled, repo);
+    tracker.flush();
+
+    return {
+      ok: true,
+      data: {
+        repo: repo ?? null,
+        autoPauseDisabled: disabled,
+      },
+    };
+  }
+
   private handleResume(): ApiResponse<ResumeResponse> {
     const tracker = this.deps.sessionTracker;
     const before = tracker.getOpenSessions().filter(s => tracker.isSessionPaused(s));
@@ -170,6 +194,10 @@ export class HttpServer {
   // ─── Helpers ──────────────────────────────────────────────────────
 
   private toSessionSummary(session: Session, tracker: SessionTracker): SessionSummary {
+    const evalResult = tracker.getLastEvaluatorResult();
+    const sessionScore = evalResult?.scores.get(session.id);
+    const openPause = session.pauses.find(p => p.to === null);
+
     return {
       id: session.id,
       repo: session.repo,
@@ -179,7 +207,12 @@ export class HttpServer {
       startedAt: session.startedAt,
       lastSeenAt: session.lastSeenAt,
       paused: tracker.isSessionPaused(session),
+      pauseSource: openPause?.source ?? null,
       effectiveDurationMs: computeEffectiveDuration(session),
+      score: sessionScore?.score ?? 0,
+      normalizedScore: sessionScore?.normalizedScore ?? 0,
+      isLeader: evalResult?.leaderId === session.id,
+      autoPauseDisabled: tracker.isAutoPauseDisabled(session.id),
     };
   }
 

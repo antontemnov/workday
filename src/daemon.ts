@@ -5,6 +5,7 @@ import { loadConfig, loadSecrets, getDataDir, computeWorkingDate } from './core/
 import { readDailyLog, writeDailyLog } from './core/daily-log.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
+import { ActivityEvaluator } from './core/activity-evaluator.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import type { AppConfig, Secrets } from './core/types.js';
@@ -16,6 +17,7 @@ export class Daemon {
   private secrets!: Secrets;
   private gitTracker!: GitTracker;
   private sessionTracker!: SessionTracker;
+  private activityEvaluator!: ActivityEvaluator;
   private httpServer: HttpServer | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private dayBoundaryTimer: ReturnType<typeof setInterval> | null = null;
@@ -44,6 +46,10 @@ export class Daemon {
       this.sessionTracker.flush();
       console.log(`  Crash recovery: closed ${crashedCount} orphaned session(s) from ${this.currentDate}`);
     }
+
+    // Activity evaluator
+    this.activityEvaluator = new ActivityEvaluator(this.config.session.diffPollSeconds);
+    this.sessionTracker.onSessionClosed = (sessionId) => this.activityEvaluator.removeSession(sessionId);
 
     this.writePidFile();
     this.registerShutdownHandlers();
@@ -84,6 +90,7 @@ export class Daemon {
 
     this.sessionTracker.closeAllSessions(ClosedBy.DaemonStop);
     this.sessionTracker.flush();
+    this.activityEvaluator.clear();
     this.removePidFile();
 
     console.log('Daemon stopped.');
@@ -101,9 +108,21 @@ export class Daemon {
 
     try {
       const results = await this.gitTracker.pollAll();
+
+      // 1. Session lifecycle + evidence
       for (const result of results) {
         this.sessionTracker.processPollResult(result);
       }
+
+      // 2. Build tick inputs for evaluator
+      const tickInputs = this.sessionTracker.buildTickInputs(results);
+
+      // 3. Evaluate activity scores and leadership
+      const evaluatorResult = this.activityEvaluator.processAllTicks(tickInputs);
+
+      // 4. Apply evaluator decisions (auto-pause/resume, promotion)
+      this.sessionTracker.applyEvaluatorResult(evaluatorResult);
+
       this.sessionTracker.flush();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -147,6 +166,7 @@ export class Daemon {
 
     const oldLog = this.sessionTracker.handleDayBoundary();
     writeDailyLog(oldLog);
+    this.activityEvaluator.clear();
 
     const sessionCount = oldLog.sessions.length;
     console.log(`[day] ${oldLog.date} closed (${sessionCount} sessions) → ${newDate}`);

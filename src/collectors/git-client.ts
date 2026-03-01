@@ -38,7 +38,7 @@ export class GitClient {
     ].join(' && ');
 
     try {
-      const { stdout } = await execAsync(cmd, { maxBuffer: GIT_MAX_BUFFER_BYTES });
+      const { stdout } = await execAsync(cmd, { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true });
       return GitClient.parseSections(stdout);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

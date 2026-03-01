@@ -16,7 +16,9 @@ import type {
   PauseResponse,
   ResumeResponse,
   StopResponse,
+  AutoPauseResponse,
   SessionDetail,
+  SessionSummary,
 } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -78,6 +80,15 @@ function formatDuration(ms: number): string {
   return `${hours.toFixed(1)}h`;
 }
 
+function formatSessionStatus(s: SessionSummary): string {
+  const parts: string[] = [];
+  if (s.isLeader) parts.push('LEADER');
+  if (s.paused && s.pauseSource) parts.push(`PAUSED:${s.pauseSource}`);
+  else if (s.paused) parts.push('PAUSED');
+  if (s.autoPauseDisabled) parts.push('AUTOPAUSE OFF');
+  return parts.length > 0 ? ` [${parts.join(', ')}]` : '';
+}
+
 function printStatusData(data: StatusResponse): void {
   console.log(`Daemon running (PID ${data.pid})`);
   console.log(`  Date:   ${data.date}`);
@@ -92,8 +103,9 @@ function printStatusData(data: StatusResponse): void {
   for (const s of data.openSessions) {
     const task = s.task ?? '—';
     const dur = formatDuration(s.effectiveDurationMs);
-    const pause = s.paused ? ' [PAUSED]' : '';
-    console.log(`    ${s.repo}  ${task}  ${s.branch}  ${s.state}  ${dur}${pause}`);
+    const status = formatSessionStatus(s);
+    const scoreStr = `score:${s.normalizedScore.toFixed(2)}`;
+    console.log(`    ${s.repo}  ${task}  ${s.branch}  ${s.state}  ${dur}  ${scoreStr}${status}`);
   }
 }
 
@@ -221,6 +233,28 @@ async function handleResume(): Promise<void> {
   }
 }
 
+async function handleAutoPause(args: string[]): Promise<void> {
+  const toggle = args[0]; // on | off
+  if (toggle !== 'on' && toggle !== 'off') {
+    console.log('Usage: workday autopause on|off [repo]');
+    return;
+  }
+  const repo = args[1];
+  const enabled = toggle === 'on';
+  const body: Record<string, unknown> = { enabled };
+  if (repo) body.repo = repo;
+
+  const result = await apiPost<AutoPauseResponse>('/api/autopause', body);
+  if (!result.ok) {
+    console.log(result.error);
+    return;
+  }
+
+  const target = result.data!.repo ?? 'all sessions';
+  const state = result.data!.autoPauseDisabled ? 'disabled' : 'enabled';
+  console.log(`Autopause ${state} for ${target}.`);
+}
+
 async function handleDaemon(): Promise<void> {
   // Foreground mode for dev/debug
   const { Daemon } = await import('./daemon.js');
@@ -287,6 +321,9 @@ async function main(): Promise<void> {
     case 'resume':
       await handleResume();
       break;
+    case 'autopause':
+      await handleAutoPause(args.slice(1));
+      break;
     case 'daemon':
       await handleDaemon();
       break;
@@ -305,7 +342,9 @@ Usage:
   workday today              Show today's full summary
   workday pause              Pause all active sessions
   workday pause <repo>       Pause a specific repo session
-  workday resume             Resume all paused sessions`);
+  workday resume             Resume all paused sessions
+  workday autopause on|off   Toggle autopause for all sessions
+  workday autopause on|off <repo>  Toggle autopause for a specific repo`);
 }
 
 await main();
