@@ -129,10 +129,12 @@ function printSessionDetail(s: SessionDetail): void {
   const dur = formatDuration(s.effectiveDurationMs);
   const status = s.closedBy ? `closed(${s.closedBy})` : (s.paused ? 'paused' : s.state);
   const ev = s.evidence;
-  const evidence = `C:${ev.commits} D:${ev.dynamicsHeartbeats} S:${ev.totalSnapshots} R:${ev.reflogEvents}`;
+  const added = ev.linesAdded ?? 0;
+  const removed = ev.linesRemoved ?? 0;
+  const files = ev.filesChanged ?? 0;
 
   console.log(`  [${s.id}] ${s.repo}  ${task}  ${dur}  ${status}`);
-  console.log(`         branch: ${s.branch}  evidence: ${evidence}`);
+  console.log(`         branch: ${s.branch}  ${ev.commits} commits  +${added} -${removed}  ${files} files`);
 
   if (s.pauseCount > 0) {
     console.log(`         pauses: ${s.pauseCount} (${formatDuration(s.totalPauseDurationMs)} total)`);
@@ -256,10 +258,10 @@ async function handleAutoPause(args: string[]): Promise<void> {
 }
 
 async function handleDaemon(): Promise<void> {
-  // Foreground mode for dev/debug
+  // Foreground mode with live status dashboard
   const { Daemon } = await import('./daemon.js');
   const daemon = new Daemon();
-  await daemon.start();
+  await daemon.start({ foreground: true });
 }
 
 // ─── Background spawn ───────────────────────────────────────────────────

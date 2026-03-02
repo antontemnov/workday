@@ -14,12 +14,13 @@ export class SnapshotParser {
    * status --porcelain: "?? filename" for untracked files
    */
   public parseSnapshot(raw: RawGitOutput, timestamp: number): GitSnapshot {
-    const trackedLines = SnapshotParser.parseDiffNumstat(raw.diffNumstat);
+    const { added, removed, fileCount } = SnapshotParser.parseDiffNumstat(raw.diffNumstat);
     const untrackedCount = SnapshotParser.parseUntrackedCount(raw.statusPorcelain);
 
     return {
       branch: raw.branch,
-      trackedLines,
+      trackedLines: { added, removed },
+      trackedFileCount: fileCount,
       untrackedCount,
       timestamp,
     };
@@ -51,20 +52,22 @@ export class SnapshotParser {
    * Each line: "added\tremoved\tfilename"
    * Binary files show "-\t-\tfilename" → skip.
    */
-  private static parseDiffNumstat(text: string): { readonly added: number; readonly removed: number } {
-    if (!text) return { added: 0, removed: 0 };
+  private static parseDiffNumstat(text: string): { readonly added: number; readonly removed: number; readonly fileCount: number } {
+    if (!text) return { added: 0, removed: 0, fileCount: 0 };
 
     let added = 0;
     let removed = 0;
+    let fileCount = 0;
 
     for (const line of text.split('\n')) {
       const match = line.match(/^(\d+)\t(\d+)\t/);
       if (!match) continue; // skip binary files or empty lines
       added += parseInt(match[1], 10);
       removed += parseInt(match[2], 10);
+      fileCount++;
     }
 
-    return { added, removed };
+    return { added, removed, fileCount };
   }
 
   /**

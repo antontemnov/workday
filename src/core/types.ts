@@ -71,6 +71,9 @@ export interface Evidence {
   dynamicsHeartbeats: number;
   totalSnapshots: number;
   reflogEvents: number;
+  linesAdded: number;
+  linesRemoved: number;
+  filesChanged: number;
 }
 
 export interface Session {
@@ -80,6 +83,7 @@ export interface Session {
   readonly branch: string;
   state: SessionState;
   startedAt: string;
+  activatedAt: string | null;
   lastSeenAt: string;
   closedBy: ClosedBy | null;
   evidence: Evidence;
@@ -98,7 +102,7 @@ export interface DiffDynamicsSignal {
   readonly ts: number;
   readonly type: SignalType.DiffDynamics;
   readonly repo: string;
-  readonly delta: { readonly added: number; readonly removed: number };
+  readonly delta: { readonly added: number; readonly removed: number; readonly untracked?: number };
 }
 
 export interface CommitSignal {
@@ -149,6 +153,7 @@ export interface DailyLog {
 export interface GitSnapshot {
   readonly branch: string;
   readonly trackedLines: { readonly added: number; readonly removed: number };
+  readonly trackedFileCount: number;
   readonly untrackedCount: number;
   readonly timestamp: number;
 }
@@ -164,7 +169,7 @@ export interface GitDelta {
 
 export interface ReflogEntry {
   readonly ts: number;
-  readonly type: 'commit' | 'checkout' | 'other';
+  readonly type: 'commit' | 'checkout' | 'reset' | 'other';
   readonly message: string;
 }
 
@@ -226,6 +231,7 @@ export interface SessionSummary {
   readonly branch: string;
   readonly state: string;
   readonly startedAt: string;
+  readonly activatedAt: string | null;
   readonly lastSeenAt: string;
   readonly paused: boolean;
   readonly pauseSource: string | null;

@@ -8,6 +8,7 @@ import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
+import { StatusRenderer } from './core/status-renderer.js';
 import type { AppConfig, Secrets } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import { PID_FILE_NAME } from './core/constants.js';
@@ -19,13 +20,16 @@ export class Daemon {
   private sessionTracker!: SessionTracker;
   private activityEvaluator!: ActivityEvaluator;
   private httpServer: HttpServer | null = null;
+  private statusRenderer: StatusRenderer | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private dayBoundaryTimer: ReturnType<typeof setInterval> | null = null;
   private currentDate: string = '';
   private running: boolean = false;
+  private foreground: boolean = false;
   private startedAt: number = 0;
 
-  public async start(): Promise<void> {
+  public async start(options?: { foreground?: boolean }): Promise<void> {
+    this.foreground = options?.foreground ?? false;
     this.config = loadConfig();
     this.secrets = loadSecrets();
 
@@ -66,28 +70,47 @@ export class Daemon {
     await this.httpServer.start();
 
     this.running = true;
+
+    if (this.foreground) {
+      this.statusRenderer = new StatusRenderer({
+        sessionTracker: this.sessionTracker,
+        currentDate: this.currentDate,
+        startedAt: this.startedAt,
+        timezone: this.config.timezone,
+        pollSeconds: this.config.session.diffPollSeconds,
+        repos: this.config.repos,
+      });
+    }
+
+    // First poll immediately, then on interval
+    await this.pollTick();
     const pollMs = this.config.session.diffPollSeconds * 1000;
     this.pollTimer = setInterval(() => void this.pollTick(), pollMs);
     const boundaryMs = this.config.session.dayBoundaryCheckSeconds * 1000;
     this.dayBoundaryTimer = setInterval(() => this.checkDayBoundary(), boundaryMs);
 
-    console.log(`Daemon started (PID ${process.pid})`);
-    console.log(`  API: http://127.0.0.1:${this.config.apiPort}`);
-    console.log(`  Timezone: ${this.config.timezone}`);
-    console.log(`  Repos: ${this.config.repos.map(r => r.split('/').pop()).join(', ')}`);
-    console.log(`  Poll: ${this.config.session.diffPollSeconds}s`);
-    console.log(`  Day boundary: ${this.config.dayBoundaryHour}:00`);
-    console.log(`  Date: ${this.currentDate}`);
+    if (!this.foreground) {
+      console.log(`Daemon started (PID ${process.pid})`);
+      console.log(`  API: http://127.0.0.1:${this.config.apiPort}`);
+      console.log(`  Timezone: ${this.config.timezone}`);
+      console.log(`  Repos: ${this.config.repos.map(r => r.split('/').pop()).join(', ')}`);
+      console.log(`  Poll: ${this.config.session.diffPollSeconds}s`);
+      console.log(`  Day boundary: ${this.config.dayBoundaryHour}:00`);
+      console.log(`  Date: ${this.currentDate}`);
+    }
   }
 
   public async stop(): Promise<void> {
     if (!this.running) return;
-    this.running = false;
 
-    if (this.httpServer) await this.httpServer.stop();
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.dayBoundaryTimer) clearInterval(this.dayBoundaryTimer);
 
+    // Final poll to capture last-moment activity before shutdown
+    await this.pollTick();
+
+    this.running = false;
+    if (this.httpServer) await this.httpServer.stop();
     this.sessionTracker.closeAllSessions(ClosedBy.DaemonStop);
     this.sessionTracker.flush();
     this.activityEvaluator.clear();
@@ -124,9 +147,17 @@ export class Daemon {
       this.sessionTracker.applyEvaluatorResult(evaluatorResult);
 
       this.sessionTracker.flush();
+
+      if (this.statusRenderer) {
+        this.statusRenderer.render();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[poll] ${message}`);
+      if (this.statusRenderer) {
+        this.statusRenderer.renderError(message);
+      } else {
+        console.error(`[poll] ${message}`);
+      }
     }
   }
 
@@ -169,8 +200,14 @@ export class Daemon {
     this.activityEvaluator.clear();
 
     const sessionCount = oldLog.sessions.length;
-    console.log(`[day] ${oldLog.date} closed (${sessionCount} sessions) → ${newDate}`);
     this.currentDate = newDate;
+
+    if (this.statusRenderer) {
+      this.statusRenderer.updateDate(newDate);
+      this.statusRenderer.render();
+    } else {
+      console.log(`[day] ${oldLog.date} closed (${sessionCount} sessions) → ${newDate}`);
+    }
   }
 
   // ─── PID file ──────────────────────────────────────────────────────────

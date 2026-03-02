@@ -5,7 +5,7 @@
   ],
   "dayBoundaryHour": 4,
   "taskPattern": "ATL-\\d+",
-  "genericBranches": ["develop", "main", "master", "HEAD"],
+  "genericBranches": ["develop", "main", "master"],
   "session": {
     "diffPollSeconds": 30,
     "minSessionMinutes": 15,

@@ -4,6 +4,7 @@ export const SECRETS_FILE_NAME = 'secrets.json';
 export const PID_FILE_NAME = 'workday.pid';
 export const DATA_DIR_NAME = 'data';
 export const TMP_EXTENSION = '.tmp';
+export const BACKUP_EXTENSION = '.bak';
 
 // ─── Daemon script resolution ───────────────────────────────────────────
 export const DAEMON_SCRIPT_TS = 'daemon.ts';

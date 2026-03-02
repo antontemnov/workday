@@ -71,6 +71,12 @@ export class GitTracker {
     const now = Date.now();
     const raw = await this.gitClient.fetchRepoState(repoPath);
 
+    // Detached HEAD: transient state (rebase, bisect, cherry-pick, squash)
+    // Skip tick entirely — preserve existing session and evaluator state
+    if (raw.branch === 'HEAD' || /^[0-9a-f]{7,40}$/.test(raw.branch)) {
+      return null;
+    }
+
     // Branch filter: only track developer's branches
     const task = extractTask(
       raw.branch,
@@ -93,7 +99,10 @@ export class GitTracker {
     state.previousSnapshot = snapshot;
     state.currentBranch = raw.branch;
     state.currentTask = task;
-    if (newEntries.length > 0) {
+    // First poll: set baseline from all entries so next poll can filter correctly
+    if (state.lastReflogTs === 0 && allEntries.length > 0) {
+      state.lastReflogTs = allEntries[allEntries.length - 1].ts;
+    } else if (newEntries.length > 0) {
       state.lastReflogTs = newEntries[newEntries.length - 1].ts;
     }
 

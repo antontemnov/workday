@@ -39,6 +39,8 @@ export class ReflogParser {
         type = 'commit';
       } else if (action.startsWith('checkout')) {
         type = 'checkout';
+      } else if (action.startsWith('reset')) {
+        type = 'reset';
       } else {
         type = 'other';
       }

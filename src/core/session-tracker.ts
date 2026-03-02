@@ -44,9 +44,13 @@ export class SessionTracker {
     this.config = config;
     this.dailyLog = initialLog ?? createEmptyLog(today, config);
 
-    // Normalize old sessions that lack pauses field
+    // Normalize old sessions that lack new fields
     for (const session of this.dailyLog.sessions) {
       if (!session.pauses) session.pauses = [];
+      if (session.activatedAt === undefined) (session as Session).activatedAt = null;
+      if (session.evidence.linesAdded === undefined) session.evidence.linesAdded = 0;
+      if (session.evidence.linesRemoved === undefined) session.evidence.linesRemoved = 0;
+      if (session.evidence.filesChanged === undefined) session.evidence.filesChanged = 0;
     }
   }
 
@@ -241,7 +245,7 @@ export class SessionTracker {
         // Pending → Active: score > 0 AND is leader
         if (sessionScore.score > 0 && isLeader) {
           session.state = SessionState.Active;
-          session.startedAt = now;
+          session.activatedAt = now;
         }
       }
     }
@@ -327,6 +331,7 @@ export class SessionTracker {
       branch,
       state: SessionState.Pending,
       startedAt: now,
+      activatedAt: null,
       lastSeenAt: now,
       closedBy: null,
       evidence: createEmptyEvidence(),
@@ -391,6 +396,19 @@ export class SessionTracker {
     if (result.delta.hasDynamics) {
       session.evidence.dynamicsHeartbeats++;
     }
+
+    // Accumulate line stats (positive deltas = new edits, negative = committed/reverted)
+    if (result.delta.addedDelta > 0) {
+      session.evidence.linesAdded += result.delta.addedDelta;
+    }
+    if (result.delta.removedDelta > 0) {
+      session.evidence.linesRemoved += result.delta.removedDelta;
+    }
+
+    // Track max concurrent files changed (high water mark)
+    if (result.snapshot.trackedFileCount > session.evidence.filesChanged) {
+      session.evidence.filesChanged = result.snapshot.trackedFileCount;
+    }
   }
 
   private creditReflogEvidence(session: Session, entries: ReflogEntry[]): void {
@@ -398,7 +416,7 @@ export class SessionTracker {
       if (entry.type === 'commit') {
         session.evidence.commits++;
         session.evidence.reflogEvents++;
-      } else if (entry.type === 'checkout') {
+      } else if (entry.type === 'checkout' || entry.type === 'reset') {
         session.evidence.reflogEvents++;
       }
     }
@@ -418,6 +436,7 @@ export class SessionTracker {
         delta: {
           added: result.delta.addedDelta,
           removed: result.delta.removedDelta,
+          untracked: result.delta.untrackedDelta,
         },
       }, dedup);
     }

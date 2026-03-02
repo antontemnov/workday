@@ -1,0 +1,52 @@
+=== Workday Day-1 Fixes Integration Tests ===
+Date: 2026-03-02T21:06:39.863Z
+Platform: win32
+
+[PASS] Test 1: Reflog parsing via GitClient (Fix 1: format escaping)
+  [+] GitClient reflog output is non-empty: 210 chars
+  [+] Reflog contains HEAD@{ timestamp } format: HEAD@{2026-03-03 01:05:40 +0400} commit: ATL-9999 add feature
+HEAD@{2026-03-03 0
+  [+] Parsed entries exist: 3 entries
+  [+] Commit entries found (>= 2: init + feature): 2 commits
+  [+] Commit timestamps are valid (> 0, not NaN): 2026-03-02T21:05:31.000Z, 2026-03-02T21:05:40.000Z
+  [+] Checkout entry found (branch switch in setup): 1 checkouts
+  [+] Feature commit message contains task key: commit: ATL-9999 add feature
+  [+] Task extracted from commit message: task = ATL-9999
+  [+] git-client.ts has no platform-dependent %% escaping: no %% found (fixed)
+
+[PASS] Test 2: Signal dedup uses milliseconds (Fix 2: * 1000)
+  [+] At least one alpha signal before second change: countBefore = 1
+  [+] Signal count unchanged after second change (deduped): before=1, after=1
+  [+] Last signal has accumulated added >= 2: added = 2
+  [+] daily-log.ts contains "deduplicationSeconds * 1000": found
+
+[PASS] Test 3: Signal dedup is per-repo (Fix 3: backward search by repo)
+  [+] Beta got a new signal (+1): betaBefore=0, betaAfter=1
+  [+] Alpha signals deduped (count unchanged or +1 max): alphaBefore=1, alphaAfter=1
+  [+] Last alpha signal has accumulated added deltas: added = 4
+  [+] addSignal does backward search checking repo: found
+
+[PASS] Test 4: activatedAt field (Fix 4: startedAt preserved, activatedAt set on promotion)
+  [+] Alpha session exists and is open: found
+  [+] activatedAt is not null: activatedAt = 2026-03-02T21:05:57.487Z
+  [+] activatedAt !== startedAt (different timestamps): activatedAt=2026-03-02T21:05:57.487Z, startedAt=2026-03-02T21:05:47.468Z
+  [+] activatedAt > startedAt (promoted later): diff = 10019ms
+  [+] state === "active": state = active
+
+[PASS] Test 5: Untracked in signal delta (Fix 5: delta.untracked field)
+  [+] Alpha diff_dynamics signals exist: count = 1
+  [+] delta.untracked field exists (not undefined): untracked = 1
+  [+] delta.untracked is a number: type = number
+  [+] session-tracker.ts passes untrackedDelta to signal: found
+
+[PASS] Test 6: EMA precision (Fix 6: toFixed(2) instead of toFixed(1))
+  [+] EMA > 0 after activity: ema = 0.008333333333333333
+  [+] toFixed(1) === "0.0" (invisible with old precision): toFixed(1) = "0.0"
+  [+] toFixed(2) !== "0.00" (visible with new precision): toFixed(2) = "0.01"
+  [+] status-renderer.ts uses toFixed(2) for EMA: found
+  [+] status-renderer.ts does NOT use ema.toFixed(1): correct
+
+──────────────────────────────────────────────────
+Tests: 6/6 passed
+Assertions: 31/31 passed
+Result: ALL PASSED

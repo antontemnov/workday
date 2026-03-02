@@ -205,6 +205,7 @@ export class HttpServer {
       branch: session.branch,
       state: session.state,
       startedAt: session.startedAt,
+      activatedAt: session.activatedAt ?? null,
       lastSeenAt: session.lastSeenAt,
       paused: tracker.isSessionPaused(session),
       pauseSource: openPause?.source ?? null,
