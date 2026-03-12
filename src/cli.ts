@@ -9,6 +9,19 @@ import {
   DAEMON_SCRIPT_TS,
   DAEMON_SCRIPT_JS,
 } from './core/constants.js';
+import {
+  readDailyLog,
+  writeDailyLog,
+  resolveSessionTarget,
+  addManualAdjustment,
+  setDayManualStart,
+  computeManualMinutes,
+  computeEffectiveDuration,
+  computeTotalPauseDuration,
+  computeBudgetMs,
+  computeTotalClaimedMs,
+  getRemainingBudgetMs,
+} from './core/daily-log.js';
 import type {
   ApiResponse,
   StatusResponse,
@@ -17,6 +30,8 @@ import type {
   ResumeResponse,
   StopResponse,
   AutoPauseResponse,
+  AdjustResponse,
+  SetStartResponse,
   SessionDetail,
   SessionSummary,
 } from './core/types.js';
@@ -100,12 +115,14 @@ function printStatusData(data: StatusResponse): void {
   }
 
   console.log(`  Sessions (${data.openSessions.length}):`);
-  for (const s of data.openSessions) {
+  for (let i = 0; i < data.openSessions.length; i++) {
+    const s = data.openSessions[i];
     const task = s.task ?? '—';
     const dur = formatDuration(s.effectiveDurationMs);
+    const manualStr = s.manualMinutes > 0 ? ` + ${s.manualMinutes}m manual` : '';
     const status = formatSessionStatus(s);
     const scoreStr = `score:${s.normalizedScore.toFixed(2)}`;
-    console.log(`    ${s.repo}  ${task}  ${s.branch}  ${s.state}  ${dur}  ${scoreStr}${status}`);
+    console.log(`    #${i + 1} ${s.repo}  ${task}  ${s.branch}  ${s.state}  ${dur}${manualStr}  ${scoreStr}${status}`);
   }
 }
 
@@ -113,27 +130,33 @@ function printTodayData(data: TodayResponse): void {
   console.log(`Date: ${data.date}  (${data.dayType})  Status: ${data.status}`);
   console.log(`Total: ${formatDuration(data.totalEffectiveMs)}  Signals: ${data.signalCount}`);
 
+  if (data.budgetMs > 0) {
+    console.log(`Budget: ${formatDuration(data.budgetMs)} | Claimed: ${formatDuration(data.claimedMs)} | Remaining: ${formatDuration(data.remainingBudgetMs)}`);
+  }
+
   if (data.sessions.length === 0) {
     console.log('No sessions.');
     return;
   }
 
   console.log('');
-  for (const s of data.sessions) {
-    printSessionDetail(s);
+  for (let i = 0; i < data.sessions.length; i++) {
+    printSessionDetail(data.sessions[i], i + 1);
   }
 }
 
-function printSessionDetail(s: SessionDetail): void {
+function printSessionDetail(s: SessionDetail, index?: number): void {
   const task = s.task ?? '—';
   const dur = formatDuration(s.effectiveDurationMs);
+  const manualStr = s.manualMinutes > 0 ? ` + ${s.manualMinutes}m manual` : '';
   const status = s.closedBy ? `closed(${s.closedBy})` : (s.paused ? 'paused' : s.state);
   const ev = s.evidence;
   const added = ev.linesAdded ?? 0;
   const removed = ev.linesRemoved ?? 0;
   const files = ev.filesChanged ?? 0;
 
-  console.log(`  [${s.id}] ${s.repo}  ${task}  ${dur}  ${status}`);
+  const prefix = index !== undefined ? `#${index}` : s.id;
+  console.log(`  [${prefix}] ${s.repo}  ${task}  ${dur}${manualStr}  ${status}`);
   console.log(`         branch: ${s.branch}  ${ev.commits} commits  +${added} -${removed}  ${files} files`);
 
   if (s.pauseCount > 0) {
@@ -257,6 +280,209 @@ async function handleAutoPause(args: string[]): Promise<void> {
   console.log(`Autopause ${state} for ${target}.`);
 }
 
+async function handleAdjust(args: string[]): Promise<void> {
+  // workday adjust <target> +<N> "<reason>" [--date YYYY-MM-DD]
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const target = cmdArgs[0];
+  const minutesStr = cmdArgs[1];
+  const reason = cmdArgs.slice(2).join(' ');
+
+  if (!target || !minutesStr) {
+    console.log('Usage: workday adjust <target> +<N> "<reason>" [--date YYYY-MM-DD]');
+    return;
+  }
+
+  const minutes = parseInt(minutesStr.replace('+', ''), 10);
+  if (isNaN(minutes) || minutes <= 0) {
+    console.log('Minutes must be a positive number (e.g. +30)');
+    return;
+  }
+
+  if (!reason) {
+    console.log('Reason is required');
+    return;
+  }
+
+  if (date) {
+    // Offline mode — past day
+    handleAdjustOffline(date, target, minutes, reason);
+  } else {
+    // Online mode — via HTTP
+    const result = await apiPost<AdjustResponse>('/api/adjust', { target, minutes, reason });
+    if (!result.ok) {
+      console.log(result.error);
+      return;
+    }
+    const d = result.data!;
+    console.log(`Adjusted ${d.repo} (${d.task ?? '—'}): +${d.addedMinutes}m (total manual: ${d.totalManualMinutes}m)`);
+    console.log(`Remaining budget: ${formatDuration(d.remainingBudgetMs)}`);
+  }
+}
+
+function handleAdjustOffline(date: string, target: string, minutes: number, reason: string): void {
+  const config = loadConfig();
+  const log = readDailyLog(date);
+  if (!log) {
+    console.log(`No data for ${date}`);
+    return;
+  }
+
+  const session = resolveSessionTarget(log, target);
+  if (!session) {
+    console.log(`Session not found: ${target}`);
+    return;
+  }
+
+  try {
+    addManualAdjustment(log, session.id, minutes, reason, config);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  writeDailyLog(log);
+  console.log(`Adjusted ${session.repo} (${session.task ?? '—'}): +${minutes}m`);
+  console.log(`Total manual for session: ${computeManualMinutes(session)}m`);
+  console.log(`Remaining budget: ${formatDuration(getRemainingBudgetMs(log, config))}`);
+}
+
+async function handleSetStart(args: string[]): Promise<void> {
+  // workday set-start HH:MM [--date YYYY-MM-DD]
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const time = cmdArgs[0];
+  if (!time || !/^\d{1,2}:\d{2}$/.test(time)) {
+    console.log('Usage: workday set-start HH:MM [--date YYYY-MM-DD]');
+    return;
+  }
+
+  if (date) {
+    handleSetStartOffline(date, time);
+  } else {
+    const result = await apiPost<SetStartResponse>('/api/set-start', { time });
+    if (!result.ok) {
+      console.log(result.error);
+      return;
+    }
+    const d = result.data!;
+    console.log(`Day start set to: ${d.dayStart}`);
+    console.log(`Budget: ${formatDuration(d.budgetMs)} | Remaining: ${formatDuration(d.remainingBudgetMs)}`);
+  }
+}
+
+function handleSetStartOffline(date: string, time: string): void {
+  const config = loadConfig();
+  const log = readDailyLog(date);
+  if (!log) {
+    console.log(`No data for ${date}`);
+    return;
+  }
+
+  const [h, m] = time.split(':').map(Number);
+  // Build ISO timestamp for date+time in config timezone
+  const [year, month, day] = date.split('-').map(Number);
+  const guess = new Date(Date.UTC(year, month - 1, day, h, m, 0));
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.timezone,
+    hour: 'numeric',
+    hour12: false,
+    minute: 'numeric',
+  }).formatToParts(guess);
+  const actualHour = parseInt(parts.find(p => p.type === 'hour')!.value);
+  const actualMinute = parseInt(parts.find(p => p.type === 'minute')!.value);
+  const ah = actualHour === 24 ? 0 : actualHour;
+  const diffMs = ((h - ah) * 60 + (m - actualMinute)) * 60_000;
+  const isoTimestamp = new Date(guess.getTime() + diffMs).toISOString();
+
+  try {
+    setDayManualStart(log, isoTimestamp, config);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  writeDailyLog(log);
+  console.log(`Day start set to: ${isoTimestamp}`);
+  console.log(`Budget: ${formatDuration(computeBudgetMs(log, config))} | Remaining: ${formatDuration(getRemainingBudgetMs(log, config))}`);
+}
+
+async function handleDay(args: string[]): Promise<void> {
+  const date = args[0];
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    console.log('Usage: workday day YYYY-MM-DD');
+    return;
+  }
+
+  // Try daemon first (it might be today)
+  const result = await apiGet<TodayResponse>(`/api/day?date=${date}`);
+  if (result.ok) {
+    printTodayData(result.data!);
+    return;
+  }
+
+  // Fallback: read from disk (daemon not running or past day)
+  const config = loadConfig();
+  const log = readDailyLog(date);
+  if (!log) {
+    console.log(`No data for ${date}`);
+    return;
+  }
+
+  // Build a TodayResponse-like object from the raw log
+  const sessions: SessionDetail[] = log.sessions.map(s => ({
+    id: s.id,
+    repo: s.repo,
+    task: s.task,
+    branch: s.branch,
+    state: s.state,
+    startedAt: s.startedAt,
+    activatedAt: s.activatedAt,
+    lastSeenAt: s.lastSeenAt,
+    paused: false,
+    pauseSource: null,
+    effectiveDurationMs: computeEffectiveDuration(s),
+    manualMinutes: computeManualMinutes(s),
+    score: 0,
+    normalizedScore: 0,
+    isLeader: false,
+    autoPauseDisabled: false,
+    closedBy: s.closedBy,
+    evidence: s.evidence,
+    pauseCount: s.pauses.length,
+    totalPauseDurationMs: computeTotalPauseDuration(s),
+  }));
+
+  const totalEffectiveMs = log.sessions.reduce(
+    (sum, s) => sum + computeEffectiveDuration(s), 0,
+  );
+
+  printTodayData({
+    date: log.date,
+    dayType: log.dayType,
+    status: log.status,
+    sessions,
+    totalEffectiveMs,
+    signalCount: log.signals.length,
+    budgetMs: computeBudgetMs(log, config),
+    claimedMs: computeTotalClaimedMs(log),
+    remainingBudgetMs: getRemainingBudgetMs(log, config),
+    dayStartedAt: log.dayStartedAt,
+  });
+}
+
 async function handleDaemon(): Promise<void> {
   // Foreground mode with live status dashboard
   const { Daemon } = await import('./daemon.js');
@@ -326,6 +552,15 @@ async function main(): Promise<void> {
     case 'autopause':
       await handleAutoPause(args.slice(1));
       break;
+    case 'adjust':
+      await handleAdjust(args.slice(1));
+      break;
+    case 'set-start':
+      await handleSetStart(args.slice(1));
+      break;
+    case 'day':
+      await handleDay(args.slice(1));
+      break;
     case 'daemon':
       await handleDaemon();
       break;
@@ -342,11 +577,18 @@ Usage:
   workday stop               Stop running daemon
   workday status             Show daemon status and open sessions
   workday today              Show today's full summary
+  workday day YYYY-MM-DD     Show summary for a specific date
   workday pause              Pause all active sessions
   workday pause <repo>       Pause a specific repo session
   workday resume             Resume all paused sessions
   workday autopause on|off   Toggle autopause for all sessions
-  workday autopause on|off <repo>  Toggle autopause for a specific repo`);
+  workday autopause on|off <repo>  Toggle autopause for a specific repo
+  workday adjust <target> +<N> "<reason>"              Add manual time (today)
+  workday adjust <target> +<N> "<reason>" --date DATE  Add manual time (past day)
+  workday set-start HH:MM                              Set day start earlier (today)
+  workday set-start HH:MM --date DATE                  Set day start earlier (past day)
+
+Target: session index (#1, #2) or session id (hex)`);
 }
 
 await main();

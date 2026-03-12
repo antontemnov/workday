@@ -17,6 +17,9 @@ export const DEFAULT_API_PORT = 9213;
 export const GIT_BATCH_SEPARATOR = '---WORKDAY-SEP---';
 export const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
+// ─── Budget / Manual adjustment ─────────────────────────────────────────
+export const MAX_ADJUSTMENT_MINUTES = 480;
+
 // ─── Activity Evaluator algorithm constants ─────────────────────────────
 export const MIN_TIMEOUT_MINUTES = 15;
 export const MAX_TIMEOUT_MINUTES = 45;

@@ -27,6 +27,7 @@ export class Daemon {
   private running: boolean = false;
   private foreground: boolean = false;
   private startedAt: number = 0;
+  private budgetExhaustedLogged: boolean = false;
 
   public async start(options?: { foreground?: boolean }): Promise<void> {
     this.foreground = options?.foreground ?? false;
@@ -45,6 +46,9 @@ export class Daemon {
     const existingLog = readDailyLog(this.currentDate) ?? undefined;
     this.sessionTracker = new SessionTracker(this.config, existingLog);
 
+    // Set dayStartedAt if not already set (first daemon start of the day)
+    this.sessionTracker.setDayStartedAt(new Date().toISOString());
+
     const crashedCount = this.sessionTracker.closeCrashedSessions();
     if (crashedCount > 0) {
       this.sessionTracker.flush();
@@ -62,9 +66,11 @@ export class Daemon {
     this.startedAt = Date.now();
     const deps: HttpServerDeps = {
       sessionTracker: this.sessionTracker,
+      config: this.config,
       stopCallback: () => this.stopAndExit(),
       getStartedAt: () => this.startedAt,
       getCurrentDate: () => this.currentDate,
+      onBudgetFreed: () => { this.budgetExhaustedLogged = false; },
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();
@@ -74,6 +80,7 @@ export class Daemon {
     if (this.foreground) {
       this.statusRenderer = new StatusRenderer({
         sessionTracker: this.sessionTracker,
+        config: this.config,
         currentDate: this.currentDate,
         startedAt: this.startedAt,
         timezone: this.config.timezone,
@@ -145,6 +152,15 @@ export class Daemon {
 
       // 4. Apply evaluator decisions (auto-pause/resume, promotion)
       this.sessionTracker.applyEvaluatorResult(evaluatorResult);
+
+      // 5. Budget check — close all sessions if budget exhausted
+      if (this.sessionTracker.isBudgetExhausted()) {
+        this.sessionTracker.closeBudgetExhausted();
+        if (!this.budgetExhaustedLogged) {
+          this.budgetExhaustedLogged = true;
+          console.warn('[budget] Day budget exhausted — all sessions closed. Use set-start to extend.');
+        }
+      }
 
       this.sessionTracker.flush();
 

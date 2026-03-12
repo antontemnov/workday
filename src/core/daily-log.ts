@@ -2,8 +2,8 @@ import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdi
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
-import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause } from './types.js';
-import { TMP_EXTENSION, BACKUP_EXTENSION } from './constants.js';
+import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment } from './types.js';
+import { TMP_EXTENSION, BACKUP_EXTENSION, MAX_ADJUSTMENT_MINUTES } from './constants.js';
 
 /** Generate short unique session id */
 export function generateSessionId(): string {
@@ -49,6 +49,7 @@ export function createEmptyLog(date: string, config: AppConfig): DailyLog {
     status: DayStatus.Draft,
     dayType: determineDayType(date, config),
     manualStart: null,
+    dayStartedAt: null,
     sessions: [],
     signals: [],
     confirmedAt: null,
@@ -220,6 +221,157 @@ export function computeDaySummary(sessions: readonly Session[]): {
   const workMs = merged.reduce((sum, iv) => sum + (iv.to - iv.from), 0);
 
   return { workMs, downtimeMs: spanMs - workMs, spanMs };
+}
+
+// ─── Session target resolution ───────────────────────────────────────────
+
+/** Resolve session by 1-based index or hex id */
+export function resolveSessionTarget(log: DailyLog, target: string): Session | null {
+  const index = parseInt(target.replace('#', ''), 10);
+  if (!isNaN(index) && index >= 1 && index <= log.sessions.length) {
+    return log.sessions[index - 1];
+  }
+  return log.sessions.find(s => s.id === target) ?? null;
+}
+
+// ─── Budget computation ─────────────────────────────────────────────────
+
+/** Sum of manual adjustment minutes for a session */
+export function computeManualMinutes(session: Session): number {
+  if (!session.manualAdjustments || session.manualAdjustments.length === 0) return 0;
+  return session.manualAdjustments.reduce((sum, a) => sum + a.minutes, 0);
+}
+
+/** Effective duration including manual adjustments (ms) */
+export function computeFullEffectiveDuration(session: Session): number {
+  return computeEffectiveDuration(session) + computeManualMinutes(session) * 60_000;
+}
+
+/** Resolve dayStart timestamp using priority chain: manualStart → dayStartedAt → first session */
+export function computeDayStart(log: DailyLog, config: AppConfig): number {
+  if (log.manualStart) {
+    return new Date(log.manualStart).getTime();
+  }
+  if (log.dayStartedAt) {
+    return new Date(log.dayStartedAt).getTime();
+  }
+  // Fallback: first activated session
+  for (const s of log.sessions) {
+    if (s.activatedAt) return new Date(s.activatedAt).getTime();
+  }
+  // No sessions yet — use day boundary start (date + dayBoundaryHour in timezone)
+  return parseDateWithHour(log.date, config.dayBoundaryHour, config.timezone);
+}
+
+/** Compute day end timestamp (next day boundary) */
+export function computeDayEnd(date: string, dayBoundaryHour: number, timezone: string): number {
+  // Day end = next calendar day at dayBoundaryHour
+  const nextDay = new Date(date + 'T12:00:00Z');
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  const nextDateStr = `${nextDay.getUTCFullYear()}-${String(nextDay.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDay.getUTCDate()).padStart(2, '0')}`;
+  return parseDateWithHour(nextDateStr, dayBoundaryHour, timezone);
+}
+
+/** Compute total budget in ms */
+export function computeBudgetMs(log: DailyLog, config: AppConfig): number {
+  const dayStart = computeDayStart(log, config);
+  const dayEnd = computeDayEnd(log.date, config.dayBoundaryHour, config.timezone);
+  return Math.max(0, dayEnd - dayStart);
+}
+
+/** Sum of all sessions' full effective duration (ms) */
+export function computeTotalClaimedMs(log: DailyLog): number {
+  return log.sessions.reduce((sum, s) => sum + computeFullEffectiveDuration(s), 0);
+}
+
+/** Check if day budget is exhausted */
+export function isBudgetExhausted(log: DailyLog, config: AppConfig): boolean {
+  return computeTotalClaimedMs(log) >= computeBudgetMs(log, config);
+}
+
+/** Remaining budget in ms, clamped >= 0 */
+export function getRemainingBudgetMs(log: DailyLog, config: AppConfig): number {
+  return Math.max(0, computeBudgetMs(log, config) - computeTotalClaimedMs(log));
+}
+
+/** Add manual adjustment to a session. Throws on validation failure. */
+export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: number, reason: string, config: AppConfig): void {
+  if (log.status !== DayStatus.Draft) {
+    throw new Error('Cannot adjust confirmed/pushed day');
+  }
+
+  const session = log.sessions.find(s => s.id === sessionId);
+  if (!session) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  if (minutes <= 0) {
+    throw new Error('Minutes must be positive');
+  }
+
+  if (minutes > MAX_ADJUSTMENT_MINUTES) {
+    throw new Error(`Max adjustment is ${MAX_ADJUSTMENT_MINUTES} minutes (8h)`);
+  }
+
+  // Check budget
+  const currentClaimed = computeTotalClaimedMs(log);
+  const addMs = minutes * 60_000;
+  const budget = computeBudgetMs(log, config);
+  if (currentClaimed + addMs > budget) {
+    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / 60_000);
+    throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
+  }
+
+  if (!session.manualAdjustments) {
+    session.manualAdjustments = [];
+  }
+
+  session.manualAdjustments.push({
+    minutes,
+    reason,
+    addedAt: new Date().toISOString(),
+  });
+}
+
+/** Set manual day start. Can only shift earlier. */
+export function setDayManualStart(log: DailyLog, isoTimestamp: string, config: AppConfig): void {
+  const newStart = new Date(isoTimestamp).getTime();
+  const currentStart = computeDayStart(log, config);
+
+  if (newStart > currentStart) {
+    throw new Error('Can only shift day start earlier');
+  }
+
+  // Must be >= previous day boundary
+  const prevBoundary = parseDateWithHour(log.date, config.dayBoundaryHour, config.timezone);
+  if (newStart < prevBoundary) {
+    throw new Error(`Cannot start before previous day boundary (${String(config.dayBoundaryHour).padStart(2, '0')}:00)`);
+  }
+
+  log.manualStart = isoTimestamp;
+}
+
+/** Parse a date string + hour into a timestamp in the given timezone */
+function parseDateWithHour(date: string, hour: number, timezone: string): number {
+  // Build a date at noon UTC, then adjust by finding the offset
+  const [year, month, day] = date.split('-').map(Number);
+  // Try the target hour in UTC first, then adjust for timezone
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, 0, 0));
+  // Get the actual hour in the target timezone for this guess
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(guess);
+
+  const actualHour = parseInt(parts.find(p => p.type === 'hour')!.value);
+  const h = actualHour === 24 ? 0 : actualHour;
+  // Offset correction
+  const diff = hour - h;
+  return guess.getTime() + diff * 3_600_000;
 }
 
 // ─── Signals ────────────────────────────────────────────────────────────

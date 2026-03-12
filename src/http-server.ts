@@ -1,8 +1,17 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { basename } from 'node:path';
 import type { SessionTracker } from './core/session-tracker.js';
-import { computeEffectiveDuration, computeTotalPauseDuration } from './core/daily-log.js';
+import {
+  computeEffectiveDuration,
+  computeTotalPauseDuration,
+  computeManualMinutes,
+  computeBudgetMs,
+  computeTotalClaimedMs,
+  getRemainingBudgetMs,
+  readDailyLog,
+} from './core/daily-log.js';
+import { computeWorkingDate } from './core/config.js';
 import type {
+  AppConfig,
   ApiResponse,
   StatusResponse,
   SessionSummary,
@@ -12,6 +21,8 @@ import type {
   ResumeResponse,
   StopResponse,
   AutoPauseResponse,
+  AdjustResponse,
+  SetStartResponse,
   Session,
 } from './core/types.js';
 
@@ -19,9 +30,11 @@ const MAX_BODY_BYTES = 4096;
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
+  readonly config: AppConfig;
   readonly stopCallback: () => Promise<void>;
   readonly getStartedAt: () => number;
   readonly getCurrentDate: () => string;
+  readonly onBudgetFreed: () => void;
 }
 
 export class HttpServer {
@@ -82,6 +95,18 @@ export class HttpServer {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, this.handleAutoPause(body));
       }
+      if (method === 'POST' && path === '/api/adjust') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleAdjust(body));
+      }
+      if (method === 'POST' && path === '/api/set-start') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleSetStart(body));
+      }
+      if (method === 'GET' && path === '/api/day') {
+        const date = url.searchParams.get('date');
+        return this.sendJson(res, 200, this.handleDay(date));
+      }
       if (method === 'POST' && path === '/api/stop') {
         const response: ApiResponse<StopResponse> = { ok: true, data: { message: 'Daemon stopping...' } };
         this.sendJson(res, 200, response);
@@ -118,6 +143,7 @@ export class HttpServer {
   private handleToday(): ApiResponse<TodayResponse> {
     const tracker = this.deps.sessionTracker;
     const log = tracker.getDailyLog();
+    const config = this.deps.config;
 
     const sessions: SessionDetail[] = log.sessions.map(s => ({
       ...this.toSessionSummary(s, tracker),
@@ -140,6 +166,10 @@ export class HttpServer {
         sessions,
         totalEffectiveMs,
         signalCount: log.signals.length,
+        budgetMs: computeBudgetMs(log, config),
+        claimedMs: computeTotalClaimedMs(log),
+        remainingBudgetMs: getRemainingBudgetMs(log, config),
+        dayStartedAt: log.dayStartedAt,
       },
     };
   }
@@ -191,6 +221,156 @@ export class HttpServer {
     return { ok: true, data: { resumed: before.map(s => s.repo) } };
   }
 
+  private handleAdjust(body: Record<string, unknown>): ApiResponse<AdjustResponse> {
+    const target = typeof body.target === 'string' ? body.target : '';
+    const minutes = typeof body.minutes === 'number' ? body.minutes : 0;
+    const reason = typeof body.reason === 'string' ? body.reason : '';
+
+    if (!target) return { ok: false, error: 'Missing target (session index or id)' };
+    if (!reason) return { ok: false, error: 'Missing reason' };
+
+    const tracker = this.deps.sessionTracker;
+    const result = tracker.addAdjustment(target, minutes, reason);
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+
+    tracker.flush();
+
+    const log = tracker.getDailyLog();
+    const session = log.sessions.find(s => s.id === result.sessionId)!;
+
+    return {
+      ok: true,
+      data: {
+        sessionId: session.id,
+        repo: session.repo,
+        task: session.task,
+        addedMinutes: minutes,
+        totalManualMinutes: computeManualMinutes(session),
+        remainingBudgetMs: getRemainingBudgetMs(log, this.deps.config),
+      },
+    };
+  }
+
+  private handleSetStart(body: Record<string, unknown>): ApiResponse<SetStartResponse> {
+    const time = typeof body.time === 'string' ? body.time : '';
+    if (!time) return { ok: false, error: 'Missing time (HH:MM format)' };
+
+    // Parse HH:MM to ISO timestamp for current working date
+    const match = time.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return { ok: false, error: 'Invalid time format. Use HH:MM' };
+
+    const tracker = this.deps.sessionTracker;
+    const log = tracker.getDailyLog();
+    const config = this.deps.config;
+
+    // Build ISO timestamp from current date + provided time in config timezone
+    const isoTimestamp = this.buildTimestamp(log.date, parseInt(match[1]), parseInt(match[2]), config.timezone);
+
+    const result = tracker.setManualDayStart(isoTimestamp);
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+
+    tracker.flush();
+
+    // If budget was exhausted and now freed, notify daemon
+    if (!tracker.isBudgetExhausted()) {
+      this.deps.onBudgetFreed();
+    }
+
+    return {
+      ok: true,
+      data: {
+        dayStart: isoTimestamp,
+        budgetMs: computeBudgetMs(log, config),
+        remainingBudgetMs: getRemainingBudgetMs(log, config),
+      },
+    };
+  }
+
+  private handleDay(date: string | null): ApiResponse<TodayResponse> {
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return { ok: false, error: 'Missing or invalid date. Use ?date=YYYY-MM-DD' };
+    }
+
+    const config = this.deps.config;
+
+    // If requesting today, delegate to handleToday
+    const today = computeWorkingDate(Date.now(), config.dayBoundaryHour, config.timezone);
+    if (date === today) {
+      return this.handleToday();
+    }
+
+    // Read past day from disk
+    const log = readDailyLog(date);
+    if (!log) {
+      return { ok: false, error: `No data for ${date}` };
+    }
+
+    const sessions: SessionDetail[] = log.sessions.map(s => ({
+      id: s.id,
+      repo: s.repo,
+      task: s.task,
+      branch: s.branch,
+      state: s.state,
+      startedAt: s.startedAt,
+      activatedAt: s.activatedAt,
+      lastSeenAt: s.lastSeenAt,
+      paused: false,
+      pauseSource: null,
+      effectiveDurationMs: computeEffectiveDuration(s),
+      manualMinutes: computeManualMinutes(s),
+      score: 0,
+      normalizedScore: 0,
+      isLeader: false,
+      autoPauseDisabled: false,
+      closedBy: s.closedBy,
+      evidence: s.evidence,
+      pauseCount: s.pauses.length,
+      totalPauseDurationMs: computeTotalPauseDuration(s),
+    }));
+
+    const totalEffectiveMs = log.sessions.reduce(
+      (sum, s) => sum + computeEffectiveDuration(s), 0,
+    );
+
+    return {
+      ok: true,
+      data: {
+        date: log.date,
+        dayType: log.dayType,
+        status: log.status,
+        sessions,
+        totalEffectiveMs,
+        signalCount: log.signals.length,
+        budgetMs: computeBudgetMs(log, config),
+        claimedMs: computeTotalClaimedMs(log),
+        remainingBudgetMs: getRemainingBudgetMs(log, config),
+        dayStartedAt: log.dayStartedAt,
+      },
+    };
+  }
+
+  /** Build ISO timestamp from date + hour:minute in timezone */
+  private buildTimestamp(date: string, hour: number, minute: number, timezone: string): string {
+    const [year, month, day] = date.split('-').map(Number);
+    // Start with UTC guess, then adjust for timezone offset
+    const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+      minute: 'numeric',
+    }).formatToParts(guess);
+    const actualHour = parseInt(parts.find(p => p.type === 'hour')!.value);
+    const actualMinute = parseInt(parts.find(p => p.type === 'minute')!.value);
+    const h = actualHour === 24 ? 0 : actualHour;
+    const diffMs = ((hour - h) * 60 + (minute - actualMinute)) * 60_000;
+    return new Date(guess.getTime() + diffMs).toISOString();
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────
 
   private toSessionSummary(session: Session, tracker: SessionTracker): SessionSummary {
@@ -210,6 +390,7 @@ export class HttpServer {
       paused: tracker.isSessionPaused(session),
       pauseSource: openPause?.source ?? null,
       effectiveDurationMs: computeEffectiveDuration(session),
+      manualMinutes: computeManualMinutes(session),
       score: sessionScore?.score ?? 0,
       normalizedScore: sessionScore?.normalizedScore ?? 0,
       isLeader: evalResult?.leaderId === session.id,

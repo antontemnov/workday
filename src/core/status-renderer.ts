@@ -1,6 +1,17 @@
 import { basename } from 'node:path';
 import type { SessionTracker } from './session-tracker.js';
-import { computeEffectiveDuration, computeTotalPauseDuration, computeDaySummary } from './daily-log.js';
+import type { AppConfig } from './types.js';
+import {
+  computeEffectiveDuration,
+  computeTotalPauseDuration,
+  computeDaySummary,
+  computeManualMinutes,
+  computeDayStart,
+  computeBudgetMs,
+  computeTotalClaimedMs,
+  getRemainingBudgetMs,
+  isBudgetExhausted,
+} from './daily-log.js';
 
 // ANSI helpers
 const CLEAR = '\x1b[2J\x1b[H';
@@ -20,6 +31,7 @@ const BAR_WIDTH = 10;
 
 interface RenderContext {
   readonly sessionTracker: SessionTracker;
+  readonly config: AppConfig;
   currentDate: string;
   readonly startedAt: number;
   readonly timezone: string;
@@ -55,12 +67,14 @@ export class StatusRenderer {
 
     // Daemon info
     const uptime = formatDuration(now - this.ctx.startedAt);
-    lines.push(`  ${DIM}PID${RESET} ${process.pid}  ${DIM}Date${RESET} ${this.ctx.currentDate}  ${DIM}Up${RESET} ${uptime} ${DIM}(#${this.tickCount})${RESET}`);
+    const tracker = this.ctx.sessionTracker;
+    const log = tracker.getDailyLog();
+    const dayStartTs = computeDayStart(log, this.ctx.config);
+    const dayStartTime = formatTime(dayStartTs, this.ctx.timezone);
+    lines.push(`  ${DIM}PID${RESET} ${process.pid}  ${DIM}Date${RESET} ${this.ctx.currentDate}  ${DIM}Start${RESET} ${dayStartTime}  ${DIM}Up${RESET} ${uptime} ${DIM}(#${this.tickCount})${RESET}`);
     lines.push('');
 
     // Sessions
-    const tracker = this.ctx.sessionTracker;
-    const log = tracker.getDailyLog();
     const openSessions = log.sessions.filter(s => !s.closedBy);
     const closedSessions = log.sessions.filter(s => s.closedBy);
     const evalResult = tracker.getLastEvaluatorResult();
@@ -73,13 +87,17 @@ export class StatusRenderer {
         lines.push(`${BOLD}  ACTIVE SESSIONS${RESET} ${DIM}(${openSessions.length})${RESET}`);
         lines.push(`${DIM}${'─'.repeat(LINE_WIDTH)}${RESET}`);
 
-        for (const session of openSessions) {
+        for (let si = 0; si < openSessions.length; si++) {
+          const session = openSessions[si];
+          const globalIdx = log.sessions.indexOf(session) + 1;
           const sessionScore = evalResult?.scores.get(session.id);
           const isPaused = tracker.isSessionPaused(session);
           const openPause = session.pauses.find(p => p.to === null);
 
           const repoLabel = basename(session.repo);
           const dur = formatDuration(computeEffectiveDuration(session));
+          const manualMin = computeManualMinutes(session);
+          const manualStr = manualMin > 0 ? ` ${MAGENTA}+ ${manualMin}m manual${RESET}` : '';
           const ema = sessionScore?.ema ?? 0;
 
           // Status badge + dot indicator
@@ -96,14 +114,14 @@ export class StatusRenderer {
 
           const COL1 = 18; // first value column width
 
-          lines.push(`  ${BOLD}${repoLabel}${RESET}${dot}  ${badge}${autoPauseOff}`);
+          lines.push(`  ${DIM}#${globalIdx}${RESET} ${BOLD}${repoLabel}${RESET}${dot}  ${badge}${autoPauseOff}`);
           const L = (label: string): string => `${INDENT}${DIM}${label.padEnd(LABEL_WIDTH)}${RESET}`;
           const R = (label: string): string => `${DIM}${label}${RESET} `;
 
           lines.push(`${L('Task')}${(session.task ?? '—').padEnd(COL1)}${R('branch')}${session.branch}`);
           const sinceTs = session.activatedAt ?? session.startedAt;
           const sinceTime = formatTime(new Date(sinceTs).getTime(), this.ctx.timezone);
-          lines.push(`${L('Time')}${dur.padEnd(COL1)}${R('since')}${sinceTime}`);
+          lines.push(`${L('Time')}${dur}${manualStr}${''.padEnd(Math.max(0, COL1 - dur.length))}${R('since')}${sinceTime}`);
 
           // Intensity bar (EMA) with autopause countdown
           const rawScore = sessionScore?.score ?? 0;
@@ -142,10 +160,28 @@ export class StatusRenderer {
       }
     }
 
-    // Footer: actual work/downtime via interval merge
+    // Footer: actual work/downtime via interval merge + budget
     const { workMs, downtimeMs, spanMs } = computeDaySummary(log.sessions);
     lines.push(`${DIM}${'─'.repeat(LINE_WIDTH)}${RESET}`);
     lines.push(`  ${BOLD}Worktime${RESET} ${formatDuration(workMs)}  ${BOLD}Idle${RESET} ${formatDuration(downtimeMs)}  ${BOLD}Total${RESET} ${formatDuration(spanMs)}`);
+
+    // Budget bar
+    const config = this.ctx.config;
+    const budgetMs = computeBudgetMs(log, config);
+    const claimedMs = computeTotalClaimedMs(log);
+    const remainingMs = getRemainingBudgetMs(log, config);
+    const totalManualMs = log.sessions.reduce((sum, s) => sum + computeManualMinutes(s) * 60_000, 0);
+    const autoWorkMs = claimedMs - totalManualMs;
+
+    const budgetLine = `  ${BOLD}Budget${RESET} ${formatDuration(budgetMs)} | ` +
+      `${BOLD}Work${RESET} ${formatDuration(autoWorkMs)}` +
+      (totalManualMs > 0 ? ` + ${MAGENTA}Manual ${formatDuration(totalManualMs)}${RESET}` : '') +
+      ` | ${BOLD}Free${RESET} ${formatDuration(remainingMs)}`;
+    lines.push(budgetLine);
+
+    if (isBudgetExhausted(log, config)) {
+      lines.push(`  ${RED}${BOLD}BUDGET EXHAUSTED${RESET} ${DIM}— tracking paused until budget freed or day resets${RESET}`);
+    }
 
     // Write to stdout
     process.stdout.write(CLEAR + lines.join('\n') + '\n');

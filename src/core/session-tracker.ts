@@ -7,6 +7,12 @@ import {
   createEmptyLog,
   writeDailyLog,
   addSignal,
+  isBudgetExhausted,
+  addManualAdjustment,
+  setDayManualStart,
+  resolveSessionTarget,
+  computeManualMinutes,
+  getRemainingBudgetMs,
 } from './daily-log.js';
 import { computeWorkingDate } from './config.js';
 
@@ -44,9 +50,15 @@ export class SessionTracker {
     this.config = config;
     this.dailyLog = initialLog ?? createEmptyLog(today, config);
 
+    // Normalize old logs that lack new fields
+    if (this.dailyLog.dayStartedAt === undefined) {
+      (this.dailyLog as DailyLog).dayStartedAt = null;
+    }
+
     // Normalize old sessions that lack new fields
     for (const session of this.dailyLog.sessions) {
       if (!session.pauses) session.pauses = [];
+      if (!session.manualAdjustments) session.manualAdjustments = [];
       if (session.activatedAt === undefined) (session as Session).activatedAt = null;
       if (session.evidence.linesAdded === undefined) session.evidence.linesAdded = 0;
       if (session.evidence.linesRemoved === undefined) session.evidence.linesRemoved = 0;
@@ -68,6 +80,8 @@ export class SessionTracker {
    * 4. Update session tick (lastSeenAt, evidence, promote PENDING→ACTIVE)
    */
   public processPollResult(result: PollResult): void {
+    if (this.isBudgetExhausted()) return;
+
     const now = new Date().toISOString();
     const repoName = basename(result.repoPath);
     let openSession = this.findOpenSession(repoName);
@@ -166,6 +180,59 @@ export class SessionTracker {
   /** Mark manual start of workday */
   public setManualStart(timestamp: string): void {
     this.dailyLog.manualStart = timestamp;
+  }
+
+  /** Set dayStartedAt (called by daemon on startup) */
+  public setDayStartedAt(timestamp: string): void {
+    if (!this.dailyLog.dayStartedAt) {
+      this.dailyLog.dayStartedAt = timestamp;
+    }
+  }
+
+  // ─── Budget ────────────────────────────────────────────────────────────
+
+  /** Check if budget is exhausted */
+  public isBudgetExhausted(): boolean {
+    return isBudgetExhausted(this.dailyLog, this.config);
+  }
+
+  /** Close all open sessions with BudgetExhausted */
+  public closeBudgetExhausted(): void {
+    this.closeAllSessions(ClosedBy.BudgetExhausted);
+  }
+
+  /** Add manual time adjustment to a session */
+  public addAdjustment(target: string, minutes: number, reason: string): { ok: boolean; error?: string; sessionId?: string } {
+    const session = resolveSessionTarget(this.dailyLog, target);
+    if (!session) {
+      return { ok: false, error: `Session not found: ${target}` };
+    }
+    try {
+      addManualAdjustment(this.dailyLog, session.id, minutes, reason, this.config);
+      return { ok: true, sessionId: session.id };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Set manual day start */
+  public setManualDayStart(isoTimestamp: string): { ok: boolean; error?: string } {
+    try {
+      setDayManualStart(this.dailyLog, isoTimestamp, this.config);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Get remaining budget in ms */
+  public getRemainingBudgetMs(): number {
+    return getRemainingBudgetMs(this.dailyLog, this.config);
+  }
+
+  /** Get manual minutes for a session */
+  public getManualMinutes(session: Session): number {
+    return computeManualMinutes(session);
   }
 
   /** Write current daily log to disk (atomic) */
@@ -336,6 +403,7 @@ export class SessionTracker {
       closedBy: null,
       evidence: createEmptyEvidence(),
       pauses: [],
+      manualAdjustments: [],
     };
     this.dailyLog.sessions.push(session);
     return session;

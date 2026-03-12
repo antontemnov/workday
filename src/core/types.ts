@@ -62,6 +62,15 @@ export enum ClosedBy {
   DaemonStop = 'daemon_stop',
   DaemonCrash = 'daemon_crash',
   ManualStop = 'manual_stop',
+  BudgetExhausted = 'budget_exhausted',
+}
+
+// ─── Manual Adjustment ──────────────────────────────────────────────────
+
+export interface ManualAdjustment {
+  readonly minutes: number;     // > 0, max 480
+  readonly reason: string;
+  readonly addedAt: string;     // ISO timestamp
 }
 
 // ─── Evidence & Sessions ─────────────────────────────────────────────────
@@ -88,6 +97,7 @@ export interface Session {
   closedBy: ClosedBy | null;
   evidence: Evidence;
   pauses: Pause[];
+  manualAdjustments: ManualAdjustment[];
 }
 
 // ─── Signals ─────────────────────────────────────────────────────────────
@@ -141,6 +151,7 @@ export interface DailyLog {
   status: DayStatus;
   dayType: DayType;
   manualStart: string | null;
+  dayStartedAt: string | null;
   sessions: Session[];
   signals: Signal[];
   confirmedAt: string | null;
@@ -236,6 +247,7 @@ export interface SessionSummary {
   readonly paused: boolean;
   readonly pauseSource: string | null;
   readonly effectiveDurationMs: number;
+  readonly manualMinutes: number;
   readonly score: number;
   readonly normalizedScore: number;
   readonly isLeader: boolean;
@@ -249,6 +261,10 @@ export interface TodayResponse {
   readonly sessions: readonly SessionDetail[];
   readonly totalEffectiveMs: number;
   readonly signalCount: number;
+  readonly budgetMs: number;
+  readonly claimedMs: number;
+  readonly remainingBudgetMs: number;
+  readonly dayStartedAt: string | null;
 }
 
 export interface SessionDetail extends SessionSummary {
@@ -273,6 +289,21 @@ export interface StopResponse {
 export interface AutoPauseResponse {
   readonly repo: string | null;
   readonly autoPauseDisabled: boolean;
+}
+
+export interface AdjustResponse {
+  readonly sessionId: string;
+  readonly repo: string;
+  readonly task: string | null;
+  readonly addedMinutes: number;
+  readonly totalManualMinutes: number;
+  readonly remainingBudgetMs: number;
+}
+
+export interface SetStartResponse {
+  readonly dayStart: string;
+  readonly budgetMs: number;
+  readonly remainingBudgetMs: number;
 }
 
 // ─── Activity Evaluator ─────────────────────────────────────────────────
