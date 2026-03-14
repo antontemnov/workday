@@ -1,19 +1,35 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { AppConfig, Secrets } from './types.js';
 import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT } from './constants.js';
 
-function findProjectRoot(): string {
+/** Find the directory containing this package's package.json */
+function findPackageRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   while (dir !== dirname(dir)) {
     if (existsSync(join(dir, 'package.json'))) return dir;
     dir = dirname(dir);
   }
-  throw new Error('Could not find project root (no package.json found)');
+  throw new Error('Could not find package root (no package.json found)');
 }
 
-const PROJECT_ROOT = findProjectRoot();
+/**
+ * Resolve workday home directory (where config, secrets, data live).
+ * 1. WORKDAY_HOME env — explicit override
+ * 2. Local mode — config.json next to package.json (dev / local install)
+ * 3. ~/.workday/ — global npm install
+ */
+function resolveWorkdayHome(): string {
+  if (process.env.WORKDAY_HOME) return process.env.WORKDAY_HOME;
+  const pkgRoot = findPackageRoot();
+  if (existsSync(join(pkgRoot, CONFIG_FILE_NAME))) return pkgRoot;
+  return join(homedir(), '.workday');
+}
+
+const PACKAGE_ROOT = findPackageRoot();
+const WORKDAY_HOME = resolveWorkdayHome();
 
 function readJson<T>(filePath: string): T {
   if (!existsSync(filePath)) {
@@ -67,7 +83,12 @@ function validateSecrets(secrets: Secrets): void {
 }
 
 export function loadConfig(): AppConfig {
-  const configPath = join(PROJECT_ROOT, CONFIG_FILE_NAME);
+  const configPath = join(WORKDAY_HOME, CONFIG_FILE_NAME);
+  if (!existsSync(configPath)) {
+    console.error(`Config not found: ${configPath}`);
+    console.error('Run "workday init" to create it.');
+    process.exit(1);
+  }
   const raw = readJson<Record<string, unknown>>(configPath);
   const systemTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const config = {
@@ -80,18 +101,27 @@ export function loadConfig(): AppConfig {
 }
 
 export function loadSecrets(): Secrets {
-  const secretsPath = join(PROJECT_ROOT, SECRETS_FILE_NAME);
+  const secretsPath = join(WORKDAY_HOME, SECRETS_FILE_NAME);
+  if (!existsSync(secretsPath)) {
+    console.error(`Secrets not found: ${secretsPath}`);
+    console.error('Run "workday init" to create it.');
+    process.exit(1);
+  }
   const secrets = readJson<Secrets>(secretsPath);
   validateSecrets(secrets);
   return secrets;
 }
 
-export function getProjectRoot(): string {
-  return PROJECT_ROOT;
+export function getWorkdayHome(): string {
+  return WORKDAY_HOME;
+}
+
+export function getPackageRoot(): string {
+  return PACKAGE_ROOT;
 }
 
 export function getDataDir(): string {
-  return join(PROJECT_ROOT, DATA_DIR_NAME);
+  return join(WORKDAY_HOME, DATA_DIR_NAME);
 }
 
 /** Get hour (0-23) in specified IANA timezone */

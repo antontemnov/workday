@@ -1,8 +1,14 @@
 {
-  "name": "workday",
-  "version": "0.1.0",
+  "name": "workday-daemon",
+  "version": "0.2.2",
   "description": "Lightweight activity tracker & timesheet tool",
   "type": "module",
+  "bin": {
+    "workday": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },
@@ -10,8 +16,17 @@
     "dev": "tsx src/daemon.ts",
     "build": "tsc",
     "start": "node dist/daemon.js",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "prepublishOnly": "npm run build"
   },
+  "keywords": [
+    "timesheet",
+    "tempo",
+    "worklog",
+    "git",
+    "activity-tracker"
+  ],
+  "license": "MIT",
   "devDependencies": {
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

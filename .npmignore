@@ -1,0 +1,9 @@
+src/
+legacy/
+.idea/
+.claude/
+data/
+*.tmp
+tsconfig.json
+config.json
+secrets.json

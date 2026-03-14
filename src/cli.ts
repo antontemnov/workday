@@ -1,8 +1,9 @@
-import { spawn } from 'node:child_process';
-import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
+#!/usr/bin/env node
+import { spawn, execSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getProjectRoot, getDataDir, buildTimestamp } from './core/config.js';
+import { loadConfig, loadSecrets, getWorkdayHome, getPackageRoot, getDataDir, buildTimestamp } from './core/config.js';
 import {
   CONFIG_FILE_NAME,
   SECRETS_FILE_NAME,
@@ -186,7 +187,55 @@ function printSessionDetail(s: SessionDetail, index?: number): void {
 
 // ─── Command handlers ───────────────────────────────────────────────────
 
+// ─── Auto-update ─────────────────────────────────────────────────────────
+
+const NPM_PACKAGE_NAME = 'workday-daemon';
+const UPDATE_CHECK_TIMEOUT_MS = 3000;
+const NPM_INSTALL_TIMEOUT_MS = 30000;
+
+function getCurrentVersion(): string {
+  const pkgPath = join(getPackageRoot(), 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  return pkg.version;
+}
+
+function isNewerVersion(latest: string, current: string): boolean {
+  const l = latest.split('.').map(Number);
+  const c = current.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (l[i] > c[i]) return true;
+    if (l[i] < c[i]) return false;
+  }
+  return false;
+}
+
+async function autoUpdate(): Promise<void> {
+  try {
+    const current = getCurrentVersion();
+    const res = await fetch(`https://registry.npmjs.org/${NPM_PACKAGE_NAME}/latest`, {
+      signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
+    });
+    if (!res.ok) return;
+
+    const data = await res.json() as { version: string };
+    if (!isNewerVersion(data.version, current)) return;
+
+    console.log(`Updating ${NPM_PACKAGE_NAME} ${current} → ${data.version}...`);
+    execSync(`npm install -g ${NPM_PACKAGE_NAME}@latest`, {
+      stdio: 'ignore',
+      timeout: NPM_INSTALL_TIMEOUT_MS,
+    });
+    console.log(`Updated to ${data.version}`);
+  } catch {
+    // Network error, timeout, npm failure — silently skip
+  }
+}
+
+// ─── Command handlers ───────────────────────────────────────────────────
+
 async function handleStart(): Promise<void> {
+  await autoUpdate();
+
   // Check if already running
   const check = await apiGet<StatusResponse>('/api/status');
   if (check.ok) {
@@ -489,6 +538,69 @@ async function handleDay(args: string[]): Promise<void> {
   });
 }
 
+function handleInit(): void {
+  const home = getWorkdayHome();
+
+  if (!existsSync(home)) {
+    mkdirSync(home, { recursive: true });
+    console.log(`Created ${home}`);
+  }
+
+  const configPath = join(home, CONFIG_FILE_NAME);
+  if (!existsSync(configPath)) {
+    const template = {
+      repos: [],
+      dayBoundaryHour: 4,
+      taskPattern: 'PROJ-\\d+',
+      genericBranches: ['develop', 'main', 'master'],
+      session: {
+        diffPollSeconds: 30,
+        signalDeduplicationSeconds: 300,
+        dayBoundaryCheckSeconds: 60,
+        reflogCount: 20,
+      },
+      report: { roundingMinutes: 15 },
+      workDays: [1, 2, 3, 4, 5],
+      holidays: [],
+    };
+    writeFileSync(configPath, JSON.stringify(template, null, 2) + '\n', 'utf-8');
+    console.log(`Created ${configPath}`);
+  } else {
+    console.log(`Config already exists: ${configPath}`);
+  }
+
+  const secretsPath = join(home, SECRETS_FILE_NAME);
+  if (!existsSync(secretsPath)) {
+    const template = {
+      Developer: 'your-git-username',
+      Jira_Email: 'your-email@company.com',
+      Jira_BaseUrl: 'https://your-company.atlassian.net',
+      Jira_Token: '',
+      Tempo_Token: '',
+    };
+    writeFileSync(secretsPath, JSON.stringify(template, null, 2) + '\n', 'utf-8');
+    console.log(`Created ${secretsPath}`);
+  } else {
+    console.log(`Secrets already exists: ${secretsPath}`);
+  }
+
+  console.log('');
+  console.log('Setup instructions:');
+  console.log('');
+  console.log(`  1. ${configPath}`);
+  console.log('     - "repos": add absolute paths to your git repositories');
+  console.log('       e.g. ["C:/projects/my-app", "C:/projects/my-api"]');
+  console.log('       or   ["/home/user/projects/my-app"]');
+  console.log('     - "taskPattern": change PROJ to your Jira prefix');
+  console.log('       e.g. "CORE-\\\\d+" for CORE-567, "WEB-\\\\d+" for WEB-123');
+  console.log('');
+  console.log(`  2. ${secretsPath}`);
+  console.log('     - "Developer": your git username (used to filter branches)');
+  console.log('     - Jira/Tempo tokens: optional, needed only for "workday tempo --push"');
+  console.log('');
+  console.log('  3. Run: workday start');
+}
+
 async function handleDaemon(): Promise<void> {
   // Foreground mode with live status dashboard
   const { Daemon } = await import('./daemon.js');
@@ -499,9 +611,9 @@ async function handleDaemon(): Promise<void> {
 // ─── Background spawn ───────────────────────────────────────────────────
 
 function spawnBackground(): void {
-  const root = getProjectRoot();
-  const configPath = join(root, CONFIG_FILE_NAME);
-  const secretsPath = join(root, SECRETS_FILE_NAME);
+  const home = getWorkdayHome();
+  const configPath = join(home, CONFIG_FILE_NAME);
+  const secretsPath = join(home, SECRETS_FILE_NAME);
 
   if (!existsSync(configPath)) {
     console.error(`Cannot start daemon: ${CONFIG_FILE_NAME} not found at ${configPath}`);
@@ -683,6 +795,11 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
 
+  if (command === '--version' || command === '-v') {
+    console.log(getCurrentVersion());
+    return;
+  }
+
   switch (command) {
     case 'start':
       await handleStart();
@@ -717,6 +834,9 @@ async function main(): Promise<void> {
     case 'tempo':
       await handleTempo(args.slice(1));
       break;
+    case 'init':
+      handleInit();
+      break;
     case 'daemon':
       await handleDaemon();
       break;
@@ -729,6 +849,7 @@ function printHelp(): void {
   console.log(`Workday — Activity Tracker & Timesheet Tool
 
 Usage:
+  workday init               Initialize config in ~/.workday/
   workday start              Start daemon and print status
   workday stop               Stop running daemon
   workday status             Show daemon status and open sessions
