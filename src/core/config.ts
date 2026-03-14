@@ -102,7 +102,10 @@ function getHourInTimezone(timestamp: number, timezone: string): number {
     hour12: false,
   }).formatToParts(new Date(timestamp));
 
-  const hour = parseInt(parts.find(p => p.type === 'hour')!.value);
+  const hourPart = parts.find(p => p.type === 'hour');
+  if (!hourPart) throw new Error(`Failed to parse hour in timezone ${timezone}`);
+  const hour = parseInt(hourPart.value);
+  // Some ICU implementations return hour=24 for midnight; normalize to 0
   return hour === 24 ? 0 : hour;
 }
 
@@ -115,10 +118,11 @@ export function formatDate(timestamp: number, timezone: string): string {
     day: '2-digit',
   }).formatToParts(new Date(timestamp));
 
-  const year = parts.find(p => p.type === 'year')!.value;
-  const month = parts.find(p => p.type === 'month')!.value;
-  const day = parts.find(p => p.type === 'day')!.value;
-  return `${year}-${month}-${day}`;
+  const yearPart = parts.find(p => p.type === 'year');
+  const monthPart = parts.find(p => p.type === 'month');
+  const dayPart = parts.find(p => p.type === 'day');
+  if (!yearPart || !monthPart || !dayPart) throw new Error(`Failed to parse date in timezone ${timezone}`);
+  return `${yearPart.value}-${monthPart.value}-${dayPart.value}`;
 }
 
 /**
@@ -132,6 +136,26 @@ export function computeWorkingDate(timestamp: number, dayBoundaryHour: number, t
     return formatDate(timestamp - 86_400_000, timezone);
   }
   return formatDate(timestamp, timezone);
+}
+
+/** Build ISO timestamp from date + hour:minute in timezone */
+export function buildTimestamp(date: string, hour: number, minute: number, timezone: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    hour12: false,
+    minute: 'numeric',
+  }).formatToParts(guess);
+  const hourPart = parts.find(p => p.type === 'hour');
+  const minutePart = parts.find(p => p.type === 'minute');
+  if (!hourPart || !minutePart) throw new Error(`Failed to parse time in timezone ${timezone}`);
+  const actualHour = parseInt(hourPart.value);
+  const actualMinute = parseInt(minutePart.value);
+  const h = actualHour === 24 ? 0 : actualHour;
+  const diffMs = ((hour - h) * 60 + (minute - actualMinute)) * 60_000;
+  return new Date(guess.getTime() + diffMs).toISOString();
 }
 
 /** Extract task key from branch name. Returns null for generic/foreign branches. */

@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
 import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment } from './types.js';
-import { TMP_EXTENSION, BACKUP_EXTENSION, MAX_ADJUSTMENT_MINUTES } from './constants.js';
+import { TMP_EXTENSION, BACKUP_EXTENSION, MAX_ADJUSTMENT_MINUTES, MS_PER_MINUTE } from './constants.js';
 
 /** Generate short unique session id */
 export function generateSessionId(): string {
@@ -52,9 +52,7 @@ export function createEmptyLog(date: string, config: AppConfig): DailyLog {
     dayStartedAt: null,
     sessions: [],
     signals: [],
-    confirmedAt: null,
     pushedAt: null,
-    note: '',
   };
 }
 
@@ -62,8 +60,6 @@ export function createEmptyLog(date: string, config: AppConfig): DailyLog {
 export function createEmptyEvidence(): Evidence {
   return {
     commits: 0,
-    dynamicsHeartbeats: 0,
-    totalSnapshots: 0,
     reflogEvents: 0,
     linesAdded: 0,
     linesRemoved: 0,
@@ -135,6 +131,13 @@ export function getOrCreateTodayLog(config: AppConfig): DailyLog {
 /** Find session by id */
 export function findSession(log: DailyLog, sessionId: string): Session | undefined {
   return log.sessions.find(s => s.id === sessionId);
+}
+
+// ─── Pause helpers ──────────────────────────────────────────────────────
+
+/** Find open (unclosed) pause in a session */
+export function getOpenPause(session: Session): Pause | null {
+  return session.pauses.find(p => p.to === null) ?? null;
 }
 
 // ─── Duration helpers ───────────────────────────────────────────────────
@@ -244,7 +247,7 @@ export function computeManualMinutes(session: Session): number {
 
 /** Effective duration including manual adjustments (ms) */
 export function computeFullEffectiveDuration(session: Session): number {
-  return computeEffectiveDuration(session) + computeManualMinutes(session) * 60_000;
+  return computeEffectiveDuration(session) + computeManualMinutes(session) * MS_PER_MINUTE;
 }
 
 /** Resolve dayStart timestamp using priority chain: manualStart → dayStartedAt → first session */
@@ -315,10 +318,10 @@ export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: n
 
   // Check budget
   const currentClaimed = computeTotalClaimedMs(log);
-  const addMs = minutes * 60_000;
+  const addMs = minutes * MS_PER_MINUTE;
   const budget = computeBudgetMs(log, config);
   if (currentClaimed + addMs > budget) {
-    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / 60_000);
+    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
     throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
   }
 
@@ -367,7 +370,9 @@ function parseDateWithHour(date: string, hour: number, timezone: string): number
     day: '2-digit',
   }).formatToParts(guess);
 
-  const actualHour = parseInt(parts.find(p => p.type === 'hour')!.value);
+  const hourPart = parts.find(p => p.type === 'hour');
+  if (!hourPart) throw new Error(`Failed to parse hour in timezone ${timezone}`);
+  const actualHour = parseInt(hourPart.value);
   const h = actualHour === 24 ? 0 : actualHour;
   // Offset correction
   const diff = hour - h;

@@ -13,6 +13,7 @@ import {
   resolveSessionTarget,
   computeManualMinutes,
   getRemainingBudgetMs,
+  getOpenPause,
 } from './daily-log.js';
 import { computeWorkingDate } from './config.js';
 
@@ -87,7 +88,7 @@ export class SessionTracker {
     let openSession = this.findOpenSession(repoName);
 
     // Pause handling
-    if (openSession && this.isSessionPaused(openSession)) {
+    if (openSession && this.hasOpenPause(openSession)) {
       const pauseSource = this.getOpenPauseSource(openSession);
       const hasActivity = result.delta.hasDynamics || result.newReflogEntries.some(e => e.type === 'commit');
 
@@ -259,7 +260,7 @@ export class SessionTracker {
       if (session.closedBy) continue;
 
       // Manually paused sessions are frozen — don't send to evaluator
-      if (this.isSessionPaused(session) && this.getOpenPauseSource(session) === PauseSource.Manual) {
+      if (this.hasOpenPause(session) && this.getOpenPauseSource(session) === PauseSource.Manual) {
         continue;
       }
 
@@ -351,7 +352,7 @@ export class SessionTracker {
   public pauseAllSessions(): void {
     const now = new Date().toISOString();
     for (const session of this.dailyLog.sessions) {
-      if (!session.closedBy && !this.isSessionPaused(session)) {
+      if (!session.closedBy && !this.hasOpenPause(session)) {
         session.pauses.push({ from: now, to: null, source: PauseSource.Manual });
       }
     }
@@ -360,7 +361,7 @@ export class SessionTracker {
   /** Pause a specific repo's open session. Returns true if a session was paused. */
   public pauseRepoSession(repoName: string): boolean {
     const session = this.findOpenSession(repoName);
-    if (!session || this.isSessionPaused(session)) return false;
+    if (!session || this.hasOpenPause(session)) return false;
 
     const now = new Date().toISOString();
     session.pauses.push({ from: now, to: null, source: PauseSource.Manual });
@@ -378,8 +379,8 @@ export class SessionTracker {
   }
 
   /** Check if a session is currently paused */
-  public isSessionPaused(session: Session): boolean {
-    return session.pauses.some(p => p.to === null);
+  public hasOpenPause(session: Session): boolean {
+    return getOpenPause(session) !== null;
   }
 
   // ─── Private: session lifecycle ────────────────────────────────────────
@@ -424,20 +425,20 @@ export class SessionTracker {
   }
 
   private closeOpenPause(session: Session, now: string): void {
-    const openPause = session.pauses.find(p => p.to === null);
-    if (openPause) {
-      openPause.to = now;
+    const pause = getOpenPause(session);
+    if (pause) {
+      pause.to = now;
     }
   }
 
   private getOpenPauseSource(session: Session): PauseSource | null {
-    const openPause = session.pauses.find(p => p.to === null);
-    return openPause?.source ?? null;
+    return getOpenPause(session)?.source ?? null;
   }
 
   /** Apply auto-pause if not already paused with the same source */
   private applyAutoPause(session: Session, source: PauseSource, now: string): void {
     const currentSource = this.getOpenPauseSource(session);
+    if (currentSource === PauseSource.Manual) return; // Never override manual pause
     if (currentSource === source) return; // already paused with same source
     if (currentSource !== null) {
       // Close existing auto-pause before applying new one
@@ -448,9 +449,9 @@ export class SessionTracker {
 
   /** Close auto-pause (IdleTimeout or Superseded) if present */
   private closeAutoPause(session: Session, now: string): void {
-    const openPause = session.pauses.find(p => p.to === null);
-    if (openPause && (openPause.source === PauseSource.IdleTimeout || openPause.source === PauseSource.Superseded)) {
-      openPause.to = now;
+    const pause = getOpenPause(session);
+    if (pause && (pause.source === PauseSource.IdleTimeout || pause.source === PauseSource.Superseded)) {
+      pause.to = now;
     }
   }
 
@@ -458,12 +459,6 @@ export class SessionTracker {
 
   private updateSessionTick(session: Session, result: PollResult, now: string): void {
     session.lastSeenAt = now;
-    session.evidence.totalSnapshots++;
-
-    // Count dynamics heartbeat
-    if (result.delta.hasDynamics) {
-      session.evidence.dynamicsHeartbeats++;
-    }
 
     // Accumulate line stats (positive deltas = new edits, negative = committed/reverted)
     if (result.delta.addedDelta > 0) {

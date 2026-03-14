@@ -8,8 +8,6 @@
   "genericBranches": ["develop", "main", "master"],
   "session": {
     "diffPollSeconds": 30,
-    "minSessionMinutes": 15,
-    "minConfidence": 0.3,
     "signalDeduplicationSeconds": 300,
     "dayBoundaryCheckSeconds": 60,
     "reflogCount": 20

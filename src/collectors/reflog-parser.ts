@@ -1,4 +1,4 @@
-import type { ReflogEntry } from '../core/types.js';
+import type { ReflogEntry, ReflogEntryType } from '../core/types.js';
 
 /**
  * Parses git reflog output into structured entries.
@@ -34,7 +34,9 @@ export class ReflogParser {
       const ts = Date.parse(`${match[1]}T${match[2]}${match[3]}`);
       const action = match[4];
 
-      let type: ReflogEntry['type'];
+      if (isNaN(ts)) continue;
+
+      let type: ReflogEntryType;
       if (action.startsWith('commit')) {
         type = 'commit';
       } else if (action.startsWith('checkout')) {

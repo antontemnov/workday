@@ -37,6 +37,16 @@ export class ActivityEvaluator {
   /**
    * Process one tick for all sessions. Returns scores and leader.
    * Manually paused sessions must NOT be included in ticks (caller responsibility).
+   *
+   * Scoring algorithm:
+   * 1. EMA — binary moving average of activity (1 if dynamics/commit, 0 otherwise)
+   * 2. dynamicMaxScore — adaptive ceiling [minTicks..maxTicks], shrinks when EMA high
+   * 3. Dynamics contribution — ACTIVITY_RATIO * dynamicMaxScore * magnitude bonus
+   * 4. Magnitude bonus — log2(1 + deltaMagnitude) / MAGNITUDE_SCALE, capped at MAGNITUDE_BONUS_MAX
+   * 5. Commit bonus — instant COMMIT_BONUS_SECONDS / diffPollSeconds ticks
+   * 6. Cap score at dynamicMaxScore, then decay by BASE_DECAY per tick
+   * 7. score == 0 → idle timeout → eligible for auto-pause
+   * Leader = highest normalizedScore (score/maxScore) among sessions with score > 0
    */
   public processAllTicks(ticks: readonly TickInput[]): EvaluatorResult {
     const scores = new Map<string, SessionScore>();

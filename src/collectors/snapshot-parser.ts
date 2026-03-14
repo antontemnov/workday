@@ -13,7 +13,7 @@ export class SnapshotParser {
    * diff --numstat format: "added\tremoved\tfilename" per line
    * status --porcelain: "?? filename" for untracked files
    */
-  public parseSnapshot(raw: RawGitOutput, timestamp: number): GitSnapshot {
+  public static parseSnapshot(raw: RawGitOutput, timestamp: number): GitSnapshot {
     const { added, removed, fileCount } = SnapshotParser.parseDiffNumstat(raw.diffNumstat);
     const untrackedCount = SnapshotParser.parseUntrackedCount(raw.statusPorcelain);
 
@@ -32,7 +32,7 @@ export class SnapshotParser {
    *
    * Returns null delta (hasDynamics=false) if previous is null (first tick after start).
    */
-  public computeDelta(previous: GitSnapshot | null, current: GitSnapshot): GitDelta {
+  public static computeDelta(previous: GitSnapshot | null, current: GitSnapshot): GitDelta {
     if (previous === null) {
       // First tick = baseline, no dynamics
       return { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false };

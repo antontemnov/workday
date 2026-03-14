@@ -2,13 +2,16 @@ import { spawn } from 'node:child_process';
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getProjectRoot, getDataDir } from './core/config.js';
+import { loadConfig, loadSecrets, getProjectRoot, getDataDir, buildTimestamp } from './core/config.js';
 import {
   CONFIG_FILE_NAME,
   SECRETS_FILE_NAME,
   DAEMON_SCRIPT_TS,
   DAEMON_SCRIPT_JS,
   TEMPO_REPORT_DIR,
+  DAEMON_START_MAX_ATTEMPTS,
+  DAEMON_START_POLL_MS,
+  MS_PER_MINUTE,
 } from './core/constants.js';
 import {
   readDailyLog,
@@ -44,9 +47,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ─── HTTP client helpers ────────────────────────────────────────────────
 
+let cachedApiBaseUrl: string | null = null;
+
 function getApiBaseUrl(): string {
-  const config = loadConfig();
-  return `http://127.0.0.1:${config.apiPort}`;
+  if (!cachedApiBaseUrl) {
+    const config = loadConfig();
+    cachedApiBaseUrl = `http://127.0.0.1:${config.apiPort}`;
+  }
+  return cachedApiBaseUrl;
 }
 
 async function apiGet<T>(path: string): Promise<ApiResponse<T>> {
@@ -93,7 +101,7 @@ function isConnectionRefused(err: unknown): boolean {
 // ─── Formatting helpers ─────────────────────────────────────────────────
 
 function formatDuration(ms: number): string {
-  const totalMinutes = Math.floor(ms / 60_000);
+  const totalMinutes = Math.floor(ms / MS_PER_MINUTE);
   if (totalMinutes < 60) return `${totalMinutes}m`;
   const hours = totalMinutes / 60;
   return `${hours.toFixed(1)}h`;
@@ -191,9 +199,8 @@ async function handleStart(): Promise<void> {
 
   // Poll for HTTP readiness
   const baseUrl = getApiBaseUrl();
-  const maxAttempts = 25; // 5s total
-  for (let i = 0; i < maxAttempts; i++) {
-    await sleep(200);
+  for (let i = 0; i < DAEMON_START_MAX_ATTEMPTS; i++) {
+    await sleep(DAEMON_START_POLL_MS);
     try {
       const res = await fetch(`${baseUrl}/api/status`);
       if (res.ok) {
@@ -404,20 +411,7 @@ function handleSetStartOffline(date: string, time: string): void {
   }
 
   const [h, m] = time.split(':').map(Number);
-  // Build ISO timestamp for date+time in config timezone
-  const [year, month, day] = date.split('-').map(Number);
-  const guess = new Date(Date.UTC(year, month - 1, day, h, m, 0));
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: config.timezone,
-    hour: 'numeric',
-    hour12: false,
-    minute: 'numeric',
-  }).formatToParts(guess);
-  const actualHour = parseInt(parts.find(p => p.type === 'hour')!.value);
-  const actualMinute = parseInt(parts.find(p => p.type === 'minute')!.value);
-  const ah = actualHour === 24 ? 0 : actualHour;
-  const diffMs = ((h - ah) * 60 + (m - actualMinute)) * 60_000;
-  const isoTimestamp = new Date(guess.getTime() + diffMs).toISOString();
+  const isoTimestamp = buildTimestamp(date, h, m, config.timezone);
 
   try {
     setDayManualStart(log, isoTimestamp, config);

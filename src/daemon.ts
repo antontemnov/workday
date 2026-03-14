@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from '
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getDataDir, computeWorkingDate } from './core/config.js';
-import { readDailyLog, writeDailyLog } from './core/daily-log.js';
+import { readDailyLog, writeDailyLog, getOpenPause } from './core/daily-log.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
@@ -11,7 +11,7 @@ import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
 import type { AppConfig, Secrets } from './core/types.js';
 import { ClosedBy } from './core/types.js';
-import { PID_FILE_NAME } from './core/constants.js';
+import { PID_FILE_NAME, CRASH_RECOVERY_LOOKBACK_DAYS } from './core/constants.js';
 
 export class Daemon {
   private config!: AppConfig;
@@ -181,7 +181,7 @@ export class Daemon {
 
   /** Scan recent daily logs for orphaned sessions (cross-day crash) */
   private recoverOrphanedLogs(): void {
-    const lookbackDays = 7;
+    const lookbackDays = CRASH_RECOVERY_LOOKBACK_DAYS;
 
     for (let i = 1; i <= lookbackDays; i++) {
       const d = new Date(this.currentDate + 'T12:00:00Z');
@@ -195,8 +195,8 @@ export class Daemon {
       if (openSessions.length === 0) continue;
 
       for (const session of openSessions) {
-        const openPause = session.pauses?.find(p => p.to === null);
-        if (openPause) openPause.to = session.lastSeenAt;
+        const pause = getOpenPause(session);
+        if (pause) pause.to = session.lastSeenAt;
         session.closedBy = ClosedBy.DaemonCrash;
       }
 
@@ -248,6 +248,7 @@ export class Daemon {
 
   private static isProcessRunning(pid: number): boolean {
     try {
+      // Signal 0 tests process existence without killing (POSIX idiom)
       process.kill(pid, 0);
       return true;
     } catch {

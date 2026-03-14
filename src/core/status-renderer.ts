@@ -11,7 +11,9 @@ import {
   computeTotalClaimedMs,
   getRemainingBudgetMs,
   isBudgetExhausted,
+  getOpenPause,
 } from './daily-log.js';
+import { MS_PER_MINUTE } from './constants.js';
 
 // ANSI helpers
 const CLEAR = '\x1b[2J\x1b[H';
@@ -91,8 +93,8 @@ export class StatusRenderer {
           const session = openSessions[si];
           const globalIdx = log.sessions.indexOf(session) + 1;
           const sessionScore = evalResult?.scores.get(session.id);
-          const isPaused = tracker.isSessionPaused(session);
-          const openPause = session.pauses.find(p => p.to === null);
+          const isPaused = tracker.hasOpenPause(session);
+          const openPause = getOpenPause(session);
 
           const repoLabel = basename(session.repo);
           const dur = formatDuration(computeEffectiveDuration(session));
@@ -170,7 +172,7 @@ export class StatusRenderer {
     const budgetMs = computeBudgetMs(log, config);
     const claimedMs = computeTotalClaimedMs(log);
     const remainingMs = getRemainingBudgetMs(log, config);
-    const totalManualMs = log.sessions.reduce((sum, s) => sum + computeManualMinutes(s) * 60_000, 0);
+    const totalManualMs = log.sessions.reduce((sum, s) => sum + computeManualMinutes(s) * MS_PER_MINUTE, 0);
     const autoWorkMs = claimedMs - totalManualMs;
 
     const budgetLine = `  ${BOLD}Budget${RESET} ${formatDuration(budgetMs)} | ` +

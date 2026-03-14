@@ -8,8 +8,10 @@ import {
   computeTotalClaimedMs,
   getRemainingBudgetMs,
   readDailyLog,
+  getOpenPause,
 } from './core/daily-log.js';
-import { computeWorkingDate } from './core/config.js';
+import { computeWorkingDate, buildTimestamp } from './core/config.js';
+import { MAX_BODY_BYTES } from './core/constants.js';
 import type {
   AppConfig,
   ApiResponse,
@@ -25,8 +27,6 @@ import type {
   SetStartResponse,
   Session,
 } from './core/types.js';
-
-const MAX_BODY_BYTES = 4096;
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
@@ -184,7 +184,7 @@ export class HttpServer {
         paused.push(repo);
       }
     } else {
-      const before = tracker.getOpenSessions().filter(s => !tracker.isSessionPaused(s));
+      const before = tracker.getOpenSessions().filter(s => !tracker.hasOpenPause(s));
       tracker.pauseAllSessions();
       paused.push(...before.map(s => s.repo));
     }
@@ -214,7 +214,7 @@ export class HttpServer {
 
   private handleResume(): ApiResponse<ResumeResponse> {
     const tracker = this.deps.sessionTracker;
-    const before = tracker.getOpenSessions().filter(s => tracker.isSessionPaused(s));
+    const before = tracker.getOpenSessions().filter(s => tracker.hasOpenPause(s));
     tracker.resumeAllSessions();
     tracker.flush();
 
@@ -266,7 +266,7 @@ export class HttpServer {
     const config = this.deps.config;
 
     // Build ISO timestamp from current date + provided time in config timezone
-    const isoTimestamp = this.buildTimestamp(log.date, parseInt(match[1]), parseInt(match[2]), config.timezone);
+    const isoTimestamp = buildTimestamp(log.date, parseInt(match[1]), parseInt(match[2]), config.timezone);
 
     const result = tracker.setManualDayStart(isoTimestamp);
     if (!result.ok) {
@@ -353,30 +353,12 @@ export class HttpServer {
     };
   }
 
-  /** Build ISO timestamp from date + hour:minute in timezone */
-  private buildTimestamp(date: string, hour: number, minute: number, timezone: string): string {
-    const [year, month, day] = date.split('-').map(Number);
-    // Start with UTC guess, then adjust for timezone offset
-    const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hour: 'numeric',
-      hour12: false,
-      minute: 'numeric',
-    }).formatToParts(guess);
-    const actualHour = parseInt(parts.find(p => p.type === 'hour')!.value);
-    const actualMinute = parseInt(parts.find(p => p.type === 'minute')!.value);
-    const h = actualHour === 24 ? 0 : actualHour;
-    const diffMs = ((hour - h) * 60 + (minute - actualMinute)) * 60_000;
-    return new Date(guess.getTime() + diffMs).toISOString();
-  }
-
   // ─── Helpers ──────────────────────────────────────────────────────
 
   private toSessionSummary(session: Session, tracker: SessionTracker): SessionSummary {
     const evalResult = tracker.getLastEvaluatorResult();
     const sessionScore = evalResult?.scores.get(session.id);
-    const openPause = session.pauses.find(p => p.to === null);
+    const openPause = getOpenPause(session);
 
     return {
       id: session.id,
@@ -387,7 +369,7 @@ export class HttpServer {
       startedAt: session.startedAt,
       activatedAt: session.activatedAt ?? null,
       lastSeenAt: session.lastSeenAt,
-      paused: tracker.isSessionPaused(session),
+      paused: tracker.hasOpenPause(session),
       pauseSource: openPause?.source ?? null,
       effectiveDurationMs: computeEffectiveDuration(session),
       manualMinutes: computeManualMinutes(session),

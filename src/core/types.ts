@@ -15,8 +15,6 @@ export interface AppConfig {
 
 export interface SessionConfig {
   readonly diffPollSeconds: number;
-  readonly minSessionMinutes: number;
-  readonly minConfidence: number;
   readonly signalDeduplicationSeconds: number;
   readonly dayBoundaryCheckSeconds: number;
   readonly reflogCount: number;
@@ -40,7 +38,6 @@ export enum PauseSource {
   Manual = 'manual',
   IdleTimeout = 'idle_timeout',
   Superseded = 'superseded',
-  TeamsAway = 'teams_away', // Phase 3
 }
 
 export interface Pause {
@@ -75,10 +72,9 @@ export interface ManualAdjustment {
 
 // ─── Evidence & Sessions ─────────────────────────────────────────────────
 
+// Mutable accumulator — fields incremented during session lifecycle
 export interface Evidence {
   commits: number;
-  dynamicsHeartbeats: number;
-  totalSnapshots: number;
   reflogEvents: number;
   linesAdded: number;
   linesRemoved: number;
@@ -154,9 +150,7 @@ export interface DailyLog {
   dayStartedAt: string | null;
   sessions: Session[];
   signals: Signal[];
-  confirmedAt: string | null;
   pushedAt: string | null;
-  note: string;
 }
 
 // ─── Git Snapshot (runtime, not persisted) ───────────────────────────────
@@ -178,9 +172,11 @@ export interface GitDelta {
 
 // ─── Reflog ──────────────────────────────────────────────────────────────
 
+export type ReflogEntryType = 'commit' | 'checkout' | 'reset' | 'other';
+
 export interface ReflogEntry {
   readonly ts: number;
-  readonly type: 'commit' | 'checkout' | 'reset' | 'other';
+  readonly type: ReflogEntryType;
   readonly message: string;
 }
 

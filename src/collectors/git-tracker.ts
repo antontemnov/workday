@@ -11,7 +11,7 @@ import { RepoState } from '../core/types.js';
 import { extractTask } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
-import { SnapshotParser } from './snapshot-parser.js';
+import { SnapshotParser } from './snapshot-parser.js';  // static methods only
 
 /**
  * Main git activity tracker.
@@ -27,7 +27,6 @@ export class GitTracker {
   private readonly developer: string;
   private readonly gitClient: GitClient;
   private readonly reflogParser: ReflogParser;
-  private readonly snapshotParser: SnapshotParser;
   private readonly repoStates: Map<string, RepoTracker> = new Map();
 
   public constructor(config: AppConfig, secrets: Secrets) {
@@ -35,7 +34,6 @@ export class GitTracker {
     this.developer = secrets.Developer;
     this.gitClient = new GitClient(config.session.reflogCount);
     this.reflogParser = new ReflogParser(config.taskPattern);
-    this.snapshotParser = new SnapshotParser();
   }
 
   /** Poll all configured repos. Returns results only for accessible repos. */
@@ -71,8 +69,7 @@ export class GitTracker {
     const now = Date.now();
     const raw = await this.gitClient.fetchRepoState(repoPath);
 
-    // Detached HEAD: transient state (rebase, bisect, cherry-pick, squash)
-    // Skip tick entirely — preserve existing session and evaluator state
+    // Detached HEAD shows as commit SHA (7-40 hex chars); skip to avoid disrupting sessions
     if (raw.branch === 'HEAD' || /^[0-9a-f]{7,40}$/.test(raw.branch)) {
       return null;
     }
@@ -88,8 +85,8 @@ export class GitTracker {
     const state = this.getOrCreateRepoState(repoPath);
 
     // Parse snapshot and compute delta
-    const snapshot = this.snapshotParser.parseSnapshot(raw, now);
-    const delta = this.snapshotParser.computeDelta(state.previousSnapshot, snapshot);
+    const snapshot = SnapshotParser.parseSnapshot(raw, now);
+    const delta = SnapshotParser.computeDelta(state.previousSnapshot, snapshot);
 
     // Parse reflog, filter to new entries only
     const allEntries = this.reflogParser.parseEntries(raw.reflog);
