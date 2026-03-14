@@ -23,7 +23,7 @@ export interface SessionConfig {
 }
 
 export interface ReportConfig {
-  readonly roundToHalfHour: boolean;
+  readonly roundingMinutes: number; // 15 = quarter-hour, 30 = half-hour
 }
 
 export interface Secrets {
@@ -304,6 +304,68 @@ export interface SetStartResponse {
   readonly dayStart: string;
   readonly budgetMs: number;
   readonly remainingBudgetMs: number;
+}
+
+// ─── Report & Push ──────────────────────────────────────────────────────
+
+export interface TaskDayReport {
+  readonly date: string;        // YYYY-MM-DD
+  readonly task: string;        // e.g. ATL-6173
+  readonly totalSeconds: number;
+  readonly sessionCount: number;
+}
+
+export interface TempoWorklog {
+  readonly tempoWorklogId: number;
+  readonly issueId: number;
+  readonly startDate: string;
+  readonly timeSpentSeconds: number;
+}
+
+export interface JiraIssue {
+  readonly issueId: number;
+  readonly summary: string;
+}
+
+export type PushActionType = 'create' | 'update' | 'skip' | 'error';
+
+export interface PushPlanEntry {
+  readonly date: string;
+  readonly task: string;
+  readonly targetSeconds: number;
+  readonly action: PushActionType;
+  readonly detail: string;
+  readonly issueId?: number;
+  readonly existingWorklogId?: number;
+  readonly extraWorklogIds?: readonly number[];
+}
+
+export interface PushResult {
+  readonly posted: number;
+  readonly updated: number;
+  readonly deleted: number;
+  readonly skipped: number;
+  readonly failed: number;
+}
+
+export interface ReportResponse {
+  readonly from: string;
+  readonly to: string;
+  readonly entries: readonly TaskDayReport[];
+  readonly taskTotals: Readonly<Record<string, number>>;
+  readonly totalSeconds: number;
+}
+
+export interface PushLogEntry {
+  readonly tempoWorklogId: number;
+  readonly timeSpentSeconds: number;
+  readonly pushedAt: string;
+}
+
+export interface PushResponse {
+  readonly dryRun: boolean;
+  readonly plan: readonly PushPlanEntry[];
+  readonly result?: PushResult;
 }
 
 // ─── Activity Evaluator ─────────────────────────────────────────────────

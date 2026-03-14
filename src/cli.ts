@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, getProjectRoot } from './core/config.js';
+import { loadConfig, loadSecrets, getProjectRoot, getDataDir } from './core/config.js';
 import {
   CONFIG_FILE_NAME,
   SECRETS_FILE_NAME,
   DAEMON_SCRIPT_TS,
   DAEMON_SCRIPT_JS,
+  TEMPO_REPORT_DIR,
 } from './core/constants.js';
 import {
   readDailyLog,
@@ -34,6 +35,9 @@ import type {
   SetStartResponse,
   SessionDetail,
   SessionSummary,
+  TaskDayReport,
+  PushPlanEntry,
+  ReportResponse,
 } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -93,6 +97,14 @@ function formatDuration(ms: number): string {
   if (totalMinutes < 60) return `${totalMinutes}m`;
   const hours = totalMinutes / 60;
   return `${hours.toFixed(1)}h`;
+}
+
+/** Format seconds as hours with enough precision for quarter-hour values */
+function formatReportHours(seconds: number): string {
+  const hours = seconds / 3600;
+  const rounded1 = parseFloat(hours.toFixed(1));
+  if (Math.abs(hours - rounded1) < 0.01) return `${hours.toFixed(1)}h`;
+  return `${hours.toFixed(2)}h`;
 }
 
 function formatSessionStatus(s: SessionSummary): string {
@@ -524,6 +536,153 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ─── Tempo report & push ─────────────────────────────────────────────────
+
+/** Extract value for a named flag (e.g. --from 2026-03-01) */
+function parseArgValue(args: string[], flag: string): string | null {
+  const idx = args.indexOf(flag);
+  if (idx === -1 || idx + 1 >= args.length) return null;
+  return args[idx + 1];
+}
+
+/** Resolve file path: relative names go to data/tempo/, absolute paths stay as-is */
+function resolveTempoFilePath(filePath: string): string {
+  if (isAbsolute(filePath) || filePath.includes('/') || filePath.includes('\\')) {
+    return filePath;
+  }
+  const tempoDir = join(getDataDir(), TEMPO_REPORT_DIR);
+  if (!existsSync(tempoDir)) {
+    mkdirSync(tempoDir, { recursive: true });
+  }
+  return join(tempoDir, filePath);
+}
+
+async function handleTempo(args: string[]): Promise<void> {
+  const { buildReportResponse, getDefaultFromDate, getDefaultToDate } = await import('./push/report-builder.js');
+  const { runPush } = await import('./push/tempo-pusher.js');
+
+  const config = loadConfig();
+  const from = parseArgValue(args, '--from') ?? getDefaultFromDate(config);
+  const to = parseArgValue(args, '--to') ?? getDefaultToDate(config);
+  const rawFile = parseArgValue(args, '--file');
+  const filePath = rawFile ? resolveTempoFilePath(rawFile) : null;
+  const push = args.includes('--push');
+
+  if (push) {
+    // Push mode
+    const secrets = loadSecrets();
+    let response;
+    try {
+      response = await runPush({ from, to, commit: true, config, secrets, filePath: filePath ?? undefined });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    printPushPlan(response.plan);
+    if (response.result) {
+      console.log('');
+      console.log(`Result: ${response.result.posted} posted, ${response.result.updated} updated, ${response.result.skipped} skipped, ${response.result.failed} failed`);
+    }
+  } else if (filePath) {
+    // Save report to file
+    const report = buildReportResponse(from, to, config);
+    writeFileSync(filePath, JSON.stringify(report, null, 2), 'utf-8');
+    console.log(`Report saved to ${filePath}`);
+    printReport(report);
+  } else {
+    // Display report
+    const report = buildReportResponse(from, to, config);
+    printReport(report);
+  }
+}
+
+function printReport(report: ReportResponse): void {
+  console.log(`Report: ${report.from} → ${report.to}`);
+  console.log('');
+
+  if (report.entries.length === 0) {
+    console.log('No data.');
+    return;
+  }
+
+  // Group by date
+  const byDate = new Map<string, TaskDayReport[]>();
+  for (const entry of report.entries) {
+    const list = byDate.get(entry.date) ?? [];
+    list.push(entry);
+    byDate.set(entry.date, list);
+  }
+
+  const COL_DATE = 13;
+  const COL_TASK = 14;
+  const COL_HOURS = 8;
+
+  console.log('DATE'.padEnd(COL_DATE) + 'TASK'.padEnd(COL_TASK) + 'HOURS'.padStart(COL_HOURS));
+  console.log('─'.repeat(COL_DATE + COL_TASK + COL_HOURS));
+
+  const sortedDates = [...byDate.keys()].sort();
+  for (const date of sortedDates) {
+    const entries = byDate.get(date)!.sort((a, b) => b.totalSeconds - a.totalSeconds);
+    let dayTotal = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const hoursStr = formatReportHours(entries[i].totalSeconds);
+      dayTotal += entries[i].totalSeconds;
+      console.log(
+        (i === 0 ? date : '').padEnd(COL_DATE)
+        + entries[i].task.padEnd(COL_TASK)
+        + hoursStr.padStart(COL_HOURS),
+      );
+    }
+    if (entries.length > 1) {
+      console.log(''.padEnd(COL_DATE) + '── total'.padEnd(COL_TASK) + formatReportHours(dayTotal).padStart(COL_HOURS));
+    }
+  }
+
+  console.log('─'.repeat(COL_DATE + COL_TASK + COL_HOURS));
+  console.log(''.padEnd(COL_DATE) + 'TOTAL'.padEnd(COL_TASK) + formatReportHours(report.totalSeconds).padStart(COL_HOURS));
+
+  // Task summary
+  console.log('');
+  console.log('Task totals:');
+  const tasks = Object.entries(report.taskTotals).sort((a, b) => b[1] - a[1]);
+  for (const [task, seconds] of tasks) {
+    console.log(`  ${task.padEnd(14)} ${formatReportHours(seconds)}`);
+  }
+}
+
+function printPushPlan(plan: readonly PushPlanEntry[]): void {
+  if (plan.length === 0) {
+    console.log('Empty plan.');
+    return;
+  }
+
+  const COL_DATE = 13;
+  const COL_TASK = 14;
+  const COL_HOURS = 8;
+  const COL_ACTION = 8;
+
+  console.log('');
+  console.log('DATE'.padEnd(COL_DATE) + 'TASK'.padEnd(COL_TASK) + 'HOURS'.padStart(COL_HOURS) + '  ' + 'ACTION'.padEnd(COL_ACTION) + '  DETAIL');
+  console.log('─'.repeat(COL_DATE + COL_TASK + COL_HOURS + COL_ACTION + 40));
+
+  for (const entry of plan) {
+    const hoursStr = formatReportHours(entry.targetSeconds);
+    const actionStr = entry.action.toUpperCase();
+    console.log(
+      entry.date.padEnd(COL_DATE)
+      + entry.task.padEnd(COL_TASK)
+      + hoursStr.padStart(COL_HOURS)
+      + '  ' + actionStr.padEnd(COL_ACTION)
+      + '  ' + entry.detail,
+    );
+  }
+
+  const counts = { create: 0, update: 0, skip: 0, error: 0 };
+  for (const e of plan) counts[e.action]++;
+  console.log('');
+  console.log(`Create: ${counts.create}  Update: ${counts.update}  Skip: ${counts.skip}  Error: ${counts.error}`);
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -561,6 +720,9 @@ async function main(): Promise<void> {
     case 'day':
       await handleDay(args.slice(1));
       break;
+    case 'tempo':
+      await handleTempo(args.slice(1));
+      break;
     case 'daemon':
       await handleDaemon();
       break;
@@ -587,6 +749,11 @@ Usage:
   workday adjust <target> +<N> "<reason>" --date DATE  Add manual time (past day)
   workday set-start HH:MM                              Set day start earlier (today)
   workday set-start HH:MM --date DATE                  Set day start earlier (past day)
+  workday tempo                                        Show report (1st of month → today)
+  workday tempo --from DATE --to DATE                  Report for a custom range
+  workday tempo --file report.json                     Save report to JSON file
+  workday tempo --file report.json --push              Push from saved report
+  workday tempo --push                                 Push computed data to Tempo
 
 Target: session index (#1, #2) or session id (hex)`);
 }

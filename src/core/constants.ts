@@ -20,6 +20,14 @@ export const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 // ─── Budget / Manual adjustment ─────────────────────────────────────────
 export const MAX_ADJUSTMENT_MINUTES = 480;
 
+// ─── Push / Tempo ───────────────────────────────────────────────────────
+export const ISSUE_CACHE_FILE = 'issue-cache.json';
+export const PUSH_LOG_FILE = 'push-log.json';
+export const TEMPO_REPORT_DIR = 'tempo';
+export const TEMPO_BASE_URL = 'https://api.tempo.io';
+export const TEMPO_RATE_LIMIT_MS = 210;
+export const TEMPO_TOLERANCE_SECONDS = 60;
+
 // ─── Activity Evaluator algorithm constants ─────────────────────────────
 export const MIN_TIMEOUT_MINUTES = 15;
 export const MAX_TIMEOUT_MINUTES = 45;

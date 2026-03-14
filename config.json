@@ -15,7 +15,7 @@
     "reflogCount": 20
   },
   "report": {
-    "roundToHalfHour": true
+    "roundingMinutes": 15
   },
   "workDays": [1, 2, 3, 4, 5],
   "holidays": []
