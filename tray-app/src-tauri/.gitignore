@@ -2,3 +2,6 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Signing keys (private key must never be committed)
+/keys/workday.key

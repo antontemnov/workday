@@ -5,6 +5,7 @@ use tauri::{
     RunEvent,
     WindowEvent,
 };
+use tauri_plugin_updater::UpdaterExt;
 
 fn is_command_available(cmd: &str) -> bool {
     Command::new("which")
@@ -61,6 +62,7 @@ fn stop_daemon() {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -73,6 +75,14 @@ pub fn run() {
             // Ensure workday CLI is installed, then start daemon
             ensure_npm_package();
             start_daemon();
+
+            // Check for UI updates in background (non-blocking)
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = check_for_updates(handle).await {
+                    eprintln!("workday: update check failed: {}", e);
+                }
+            });
 
             // Hide window on startup — tray-only until double-click
             let window = app.get_webview_window("main").unwrap();
@@ -112,4 +122,39 @@ pub fn run() {
             stop_daemon();
         }
     });
+}
+
+async fn check_for_updates(handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let updater = handle.updater()?;
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            eprintln!(
+                "workday: update available: {} -> {}",
+                update.current_version,
+                update.version
+            );
+
+            // Download and install silently
+            let mut downloaded: u64 = 0;
+            update
+                .download_and_install(
+                    |chunk, _total| {
+                        downloaded += chunk as u64;
+                    },
+                    || {
+                        eprintln!("workday: update downloaded, will apply on next restart");
+                    },
+                )
+                .await?;
+        }
+        Ok(None) => {
+            eprintln!("workday: app is up to date");
+        }
+        Err(e) => {
+            eprintln!("workday: could not check for updates: {}", e);
+        }
+    }
+
+    Ok(())
 }
