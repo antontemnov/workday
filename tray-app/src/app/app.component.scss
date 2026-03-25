@@ -1,0 +1,244 @@
+:host {
+  display: block;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.app {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+  background: #1e1e2e;
+  min-height: 100vh;
+  padding: 12px;
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+// Header
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+
+  h1 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #89b4fa;
+    letter-spacing: 1px;
+  }
+
+  .header-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .date {
+    color: #a6adc8;
+  }
+}
+
+// Badges
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+
+  &.day-type {
+    background: #313244;
+    color: #a6adc8;
+  }
+  &.active {
+    background: #1e3a2a;
+    color: #a6e3a1;
+  }
+  &.pending {
+    background: #3a3520;
+    color: #f9e2af;
+  }
+  &.paused {
+    background: #3a2020;
+    color: #f38ba8;
+  }
+}
+
+// Budget
+.budget {
+  margin-bottom: 16px;
+
+  .budget-bar {
+    height: 6px;
+    background: #313244;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+
+  .budget-fill {
+    height: 100%;
+    background: #89b4fa;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+
+  .budget-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #6c7086;
+
+    strong {
+      color: #bac2de;
+    }
+  }
+}
+
+// Sessions
+.sessions {
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 0 0 8px 0;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #bac2de;
+    letter-spacing: 0.5px;
+
+    .count {
+      font-weight: 400;
+      color: #6c7086;
+    }
+  }
+}
+
+.session-card {
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+
+  .repo {
+    font-weight: 700;
+    color: #cdd6f4;
+  }
+
+  .leader {
+    color: #f9e2af;
+    font-size: 14px;
+  }
+}
+
+.session-details {
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.8;
+  }
+
+  .label {
+    color: #6c7086;
+    min-width: 60px;
+    font-size: 11px;
+  }
+
+  .value {
+    color: #bac2de;
+  }
+
+  .ml {
+    margin-left: 12px;
+  }
+
+  .branch {
+    color: #6c7086;
+    font-size: 11px;
+  }
+
+  .time {
+    color: #cdd6f4;
+    font-weight: 600;
+  }
+
+  .manual {
+    color: #cba6f7;
+    font-size: 11px;
+  }
+
+  .added { color: #a6e3a1; }
+  .removed { color: #f38ba8; }
+}
+
+// Intensity bar
+.intensity-row {
+  .intensity-bar {
+    width: 80px;
+    height: 4px;
+    background: #313244;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .intensity-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  .intensity-pct {
+    font-size: 11px;
+    color: #6c7086;
+    min-width: 30px;
+  }
+}
+
+// Closed sessions
+.sessions.closed {
+  .closed-row {
+    display: flex;
+    gap: 12px;
+    line-height: 1.8;
+    color: #6c7086;
+    font-size: 11px;
+
+    .repo {
+      min-width: 100px;
+      color: #585b70;
+    }
+    .task {
+      min-width: 80px;
+    }
+    .dur {
+      min-width: 60px;
+    }
+    .reason {
+      color: #585b70;
+    }
+  }
+}
+
+// Status messages
+.status-msg {
+  color: #6c7086;
+  text-align: center;
+  padding: 40px 0;
+
+  &.error {
+    color: #f38ba8;
+  }
+}
