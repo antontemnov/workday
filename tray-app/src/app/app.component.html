@@ -1,0 +1,93 @@
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <h1>WORKDAY</h1>
+    <div class="header-meta" *ngIf="data">
+      <span class="date">{{ data.date }}</span>
+      <span class="badge day-type">{{ data.dayType }}</span>
+    </div>
+  </header>
+
+  <!-- Loading / Error -->
+  <div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
+  <div class="status-msg error" *ngIf="error && !loading">{{ error }}</div>
+
+  <!-- Content -->
+  <div class="content" *ngIf="data && !error">
+    <!-- Budget bar -->
+    <section class="budget">
+      <div class="budget-bar">
+        <div class="budget-fill" [style.width.%]="budgetPercent"></div>
+      </div>
+      <div class="budget-labels">
+        <span>Work <strong>{{ formatDuration(data.claimedMs) }}</strong></span>
+        <span>Budget <strong>{{ formatDuration(data.budgetMs) }}</strong></span>
+        <span>Free <strong>{{ formatDuration(data.remainingBudgetMs) }}</strong></span>
+      </div>
+    </section>
+
+    <!-- Active sessions -->
+    <section class="sessions" *ngIf="openSessions.length > 0">
+      <h2>Active <span class="count">({{ openSessions.length }})</span></h2>
+      <div class="session-card" *ngFor="let s of openSessions">
+        <div class="session-header">
+          <span class="repo">{{ repoName(s.repo) }}</span>
+          <span class="badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
+          <span class="leader" *ngIf="s.isLeader" title="Leader">&#9733;</span>
+        </div>
+        <div class="session-details">
+          <div class="row">
+            <span class="label">Task</span>
+            <span class="value">{{ s.task ?? '—' }}</span>
+            <span class="label ml">Branch</span>
+            <span class="value branch">{{ s.branch }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Time</span>
+            <span class="value time">{{ formatDuration(s.effectiveDurationMs) }}</span>
+            <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
+          </div>
+          <div class="row intensity-row">
+            <span class="label">Intensity</span>
+            <div class="intensity-bar">
+              <div class="intensity-fill"
+                   [style.width.%]="intensityPercent(s.normalizedScore)"
+                   [style.backgroundColor]="intensityColor(s.normalizedScore)">
+              </div>
+            </div>
+            <span class="intensity-pct">{{ intensityPercent(s.normalizedScore) }}%</span>
+          </div>
+          <div class="row">
+            <span class="label">Changes</span>
+            <span class="value">
+              {{ s.evidence.commits }} commits
+              <span *ngIf="s.evidence.filesChanged"> &middot; {{ s.evidence.filesChanged }} files</span>
+              <span class="added"> +{{ s.evidence.linesAdded }}</span>
+              <span class="removed"> -{{ s.evidence.linesRemoved }}</span>
+            </span>
+          </div>
+          <div class="row" *ngIf="s.pauseCount > 0">
+            <span class="label">Pauses</span>
+            <span class="value">{{ s.pauseCount }} ({{ formatDuration(s.totalPauseDurationMs) }} total)</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Closed sessions -->
+    <section class="sessions closed" *ngIf="closedSessions.length > 0">
+      <h2>Closed <span class="count">({{ closedSessions.length }})</span></h2>
+      <div class="closed-row" *ngFor="let s of closedSessions">
+        <span class="repo">{{ repoName(s.repo) }}</span>
+        <span class="task">{{ s.task ?? '—' }}</span>
+        <span class="dur">{{ formatDuration(s.effectiveDurationMs) }}</span>
+        <span class="reason">{{ s.closedBy }}</span>
+      </div>
+    </section>
+
+    <!-- No sessions -->
+    <div class="status-msg" *ngIf="data.sessions.length === 0">
+      No sessions yet. Waiting for git activity...
+    </div>
+  </div>
+</div>
