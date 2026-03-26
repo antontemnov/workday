@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::env;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconEvent,
@@ -8,20 +9,48 @@ use tauri::{
 };
 use tauri_plugin_updater::UpdaterExt;
 
+/// Build a PATH that includes standard Node.js/npm locations.
+/// GUI apps on Windows don't inherit the full user PATH.
+fn enriched_path() -> String {
+    let mut path = env::var("PATH").unwrap_or_default();
+
+    if cfg!(target_os = "windows") {
+        if let Ok(appdata) = env::var("APPDATA") {
+            path = format!("{appdata}\\npm;{path}");
+        }
+        if let Ok(pf) = env::var("ProgramFiles") {
+            path = format!("{pf}\\nodejs;{path}");
+        }
+        // nvm-windows
+        if let Ok(nvm_home) = env::var("NVM_SYMLINK") {
+            path = format!("{nvm_home};{path}");
+        }
+    }
+
+    path
+}
+
 fn stop_daemon() {
     let _ = Command::new("workday")
         .arg("stop")
+        .env("PATH", enriched_path())
         .output();
 }
 
 #[tauri::command]
 async fn upgrade_daemon() -> Result<String, String> {
+    let path = enriched_path();
+
     // Stop old daemon
-    let _ = Command::new("workday").arg("stop").output();
+    let _ = Command::new("workday")
+        .arg("stop")
+        .env("PATH", &path)
+        .output();
 
     // Install latest version
     let output = Command::new("npm")
         .args(["install", "-g", "workday-daemon"])
+        .env("PATH", &path)
         .output()
         .map_err(|e| format!("Failed to run npm: {}", e))?;
 
@@ -33,7 +62,10 @@ async fn upgrade_daemon() -> Result<String, String> {
     }
 
     // Start updated daemon
-    let _ = Command::new("workday").arg("start").spawn();
+    let _ = Command::new("workday")
+        .arg("start")
+        .env("PATH", &path)
+        .spawn();
 
     Ok("Daemon upgraded and restarted".to_string())
 }
