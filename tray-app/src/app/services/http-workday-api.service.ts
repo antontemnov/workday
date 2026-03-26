@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { invoke } from '@tauri-apps/api/core';
 import { WorkdayApiService } from './workday-api.service';
 import { ApiResponse, TodayResponse, StatusResponse, EXPECTED_API_VERSION } from '../models/workday.models';
 
@@ -7,11 +8,27 @@ const BASE_URL = 'http://127.0.0.1:9213';
 @Injectable()
 export class HttpWorkdayApiService extends WorkdayApiService {
 
+  private upgrading = false;
+
   private checkApiVersion(response: ApiResponse<unknown>): ApiResponse<unknown> {
     if (response.ok && response.apiVersion !== undefined && response.apiVersion !== EXPECTED_API_VERSION) {
-      return { ok: false, error: `API version mismatch: daemon v${response.apiVersion}, app expects v${EXPECTED_API_VERSION}. Update workday-daemon: npm i -g workday-daemon` };
+      if (!this.upgrading) {
+        this.upgradeDaemon();
+      }
+      return { ok: false, error: 'Updating daemon to match app version...' };
     }
     return response;
+  }
+
+  private async upgradeDaemon(): Promise<void> {
+    this.upgrading = true;
+    try {
+      await invoke('upgrade_daemon');
+    } catch (e) {
+      console.error('Daemon upgrade failed:', e);
+    } finally {
+      this.upgrading = false;
+    }
   }
 
   private async get<T>(path: string): Promise<ApiResponse<T>> {

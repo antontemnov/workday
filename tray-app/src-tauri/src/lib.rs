@@ -14,11 +14,36 @@ fn stop_daemon() {
         .output();
 }
 
+#[tauri::command]
+async fn upgrade_daemon() -> Result<String, String> {
+    // Stop old daemon
+    let _ = Command::new("workday").arg("stop").output();
+
+    // Install latest version
+    let output = Command::new("npm")
+        .args(["install", "-g", "workday-daemon"])
+        .output()
+        .map_err(|e| format!("Failed to run npm: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "npm install failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    // Start updated daemon
+    let _ = Command::new("workday").arg("start").spawn();
+
+    Ok("Daemon upgraded and restarted".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![upgrade_daemon])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
