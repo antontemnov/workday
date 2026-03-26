@@ -129,12 +129,14 @@ install_tray_app() {
       ok "Tray app installed to /Applications"
       ;;
     *-setup.exe)
+      # Stop running tray app before reinstall
+      taskkill //IM "app.exe" //F 2>/dev/null || true
       local dl_dir="${USERPROFILE:-$HOME}/Downloads"
       cp "${tmpdir}/${filename}" "${dl_dir}/${filename}"
       local win_path
       win_path="$(cygpath -w "${dl_dir}/${filename}" 2>/dev/null || echo "${dl_dir}/${filename}")"
-      info "Launching installer (UAC prompt may appear)..."
-      if powershell.exe -Command "Start-Process '${win_path}' -Verb RunAs -Wait" 2>/dev/null; then
+      info "Launching installer..."
+      if powershell.exe -Command "Start-Process '${win_path}' -ArgumentList '/S' -Verb RunAs -Wait" 2>/dev/null; then
         ok "Tray app installed"
       else
         ok "Tray app installer launched"
