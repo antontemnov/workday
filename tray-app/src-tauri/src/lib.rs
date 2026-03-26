@@ -1,5 +1,7 @@
 use std::process::Command;
 use std::env;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconEvent,
@@ -36,32 +38,38 @@ fn stop_daemon() {
 
 /// Run a shell command (cmd.exe /c on Windows, sh -c on Unix).
 /// Needed because npm/workday are .cmd files on Windows.
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 fn shell_run(command: &str, path: &str) -> Result<std::process::Output, std::io::Error> {
-    if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", command])
-            .env("PATH", path)
-            .output()
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut c = Command::new("cmd");
+        c.args(["/C", command]);
+        c
     } else {
-        Command::new("sh")
-            .args(["-c", command])
-            .env("PATH", path)
-            .output()
-    }
+        let mut c = Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+    cmd.env("PATH", path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.output()
 }
 
 fn shell_spawn(command: &str, path: &str) {
-    if cfg!(target_os = "windows") {
-        let _ = Command::new("cmd")
-            .args(["/C", command])
-            .env("PATH", path)
-            .spawn();
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut c = Command::new("cmd");
+        c.args(["/C", command]);
+        c
     } else {
-        let _ = Command::new("sh")
-            .args(["-c", command])
-            .env("PATH", path)
-            .spawn();
-    }
+        let mut c = Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+    cmd.env("PATH", path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let _ = cmd.spawn();
 }
 
 #[tauri::command]
