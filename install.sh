@@ -98,20 +98,11 @@ install_tray_app() {
   local filename=""
 
   case "$OS" in
-    linux)
-      if [ "$ARCH" = "amd64" ]; then
-        # Prefer AppImage, fallback to deb
-        download_url="$(echo "$release_json" | grep -o '"browser_download_url":\s*"[^"]*\.AppImage"' | head -1 | cut -d'"' -f4)"
-        if [ -z "$download_url" ]; then
-          download_url="$(echo "$release_json" | grep -o '"browser_download_url":\s*"[^"]*\.deb"' | head -1 | cut -d'"' -f4)"
-        fi
-      fi
-      ;;
     macos)
       download_url="$(echo "$release_json" | grep -o '"browser_download_url":\s*"[^"]*\.dmg"' | head -1 | cut -d'"' -f4)"
       ;;
     windows)
-      download_url="$(echo "$release_json" | grep -o '"browser_download_url":\s*"[^"]*\.msi"' | head -1 | cut -d'"' -f4)"
+      download_url="$(echo "$release_json" | grep -o '"browser_download_url":\s*"[^"]*-setup\.exe"' | head -1 | cut -d'"' -f4)"
       ;;
   esac
 
@@ -129,18 +120,6 @@ install_tray_app() {
   curl -fSL -o "${tmpdir}/${filename}" "$download_url"
 
   case "$filename" in
-    *.AppImage)
-      local install_dir="${HOME}/.local/bin"
-      mkdir -p "$install_dir"
-      mv "${tmpdir}/${filename}" "${install_dir}/${APP_NAME}"
-      chmod +x "${install_dir}/${APP_NAME}"
-      ok "Tray app installed to ${install_dir}/${APP_NAME}"
-      ;;
-    *.deb)
-      info "Installing .deb package (may ask for sudo password)..."
-      sudo dpkg -i "${tmpdir}/${filename}" || sudo apt-get install -f -y
-      ok "Tray app installed via dpkg"
-      ;;
     *.dmg)
       info "Mounting ${filename}..."
       local mount_point
@@ -149,14 +128,14 @@ install_tray_app() {
       hdiutil detach "$mount_point" -quiet
       ok "Tray app installed to /Applications"
       ;;
-    *.msi)
+    *-setup.exe)
       local dl_dir="${USERPROFILE:-$HOME}/Downloads"
       cp "${tmpdir}/${filename}" "${dl_dir}/${filename}"
       local win_path
       win_path="$(cygpath -w "${dl_dir}/${filename}" 2>/dev/null || echo "${dl_dir}/${filename}")"
-      info "Installing ${filename} (UAC prompt may appear)..."
-      powershell.exe -Command "Start-Process msiexec -ArgumentList '/i','${win_path}','/passive','/norestart' -Verb RunAs -Wait" 2>/dev/null && {
-        ok "Tray app installed via MSI"
+      info "Launching installer (UAC prompt may appear)..."
+      powershell.exe -Command "Start-Process '${win_path}' -Verb RunAs -Wait" 2>/dev/null && {
+        ok "Tray app installed"
       } || {
         warn "Auto-install failed. Run manually: ${dl_dir}/${filename}"
       }
@@ -177,21 +156,6 @@ setup_autostart() {
   esac
 
   case "$OS" in
-    linux)
-      local autostart_dir="${HOME}/.config/autostart"
-      mkdir -p "$autostart_dir"
-      cat > "${autostart_dir}/workday.desktop" <<DESKTOP
-[Desktop Entry]
-Type=Application
-Name=Workday
-Exec=${HOME}/.local/bin/${APP_NAME}
-Icon=workday
-Terminal=false
-StartupNotify=false
-X-GNOME-Autostart-enabled=true
-DESKTOP
-      ok "Autostart entry created at ${autostart_dir}/workday.desktop"
-      ;;
     macos)
       local plist_dir="${HOME}/Library/LaunchAgents"
       local plist_file="${plist_dir}/com.workday.tray.plist"
