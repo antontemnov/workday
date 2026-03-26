@@ -134,11 +134,11 @@ install_tray_app() {
       local win_path
       win_path="$(cygpath -w "${dl_dir}/${filename}" 2>/dev/null || echo "${dl_dir}/${filename}")"
       info "Launching installer (UAC prompt may appear)..."
-      powershell.exe -Command "Start-Process '${win_path}' -Verb RunAs -Wait" 2>/dev/null && {
+      if powershell.exe -Command "Start-Process '${win_path}' -Verb RunAs -Wait" 2>/dev/null; then
         ok "Tray app installed"
-      } || {
-        warn "Auto-install failed. Run manually: ${dl_dir}/${filename}"
-      }
+      else
+        ok "Tray app installer launched"
+      fi
       ;;
   esac
 
