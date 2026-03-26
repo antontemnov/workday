@@ -150,8 +150,9 @@ install_tray_app() {
       ok "Tray app installed to /Applications"
       ;;
     *.msi)
-      info "Run the downloaded installer: ${tmpdir}/${filename}"
-      ok "MSI downloaded to ${tmpdir}/${filename}"
+      info "Installing ${filename} via msiexec..."
+      msiexec //i "${tmpdir}/${filename}" //passive //norestart
+      ok "Tray app installed via MSI"
       ;;
   esac
 

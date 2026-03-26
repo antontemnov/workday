@@ -72,10 +72,24 @@ export class HttpServer {
 
   // ─── Router ─────────────────────────────────────────────────────────
 
+  private setCorsHeaders(res: ServerResponse): void {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     const method = req.method ?? 'GET';
     const path = url.pathname;
+
+    this.setCorsHeaders(res);
+
+    if (method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
     try {
       if (method === 'GET' && path === '/api/status') {
