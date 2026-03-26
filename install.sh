@@ -148,19 +148,6 @@ install_tray_app() {
 # ─── Autostart ────────────────────────────────────────────────────────
 
 setup_autostart() {
-  # Skip if stdin is not a terminal (e.g. curl | bash)
-  if [ ! -t 0 ]; then
-    info "Skipping autostart setup (non-interactive mode)."
-    return 0
-  fi
-
-  echo ""
-  read -rp "$(echo -e "${CYAN}${BOLD}::${RESET} Add Workday to autostart? [y/N] ")" answer
-  case "$answer" in
-    [yY]|[yY][eE][sS]) ;;
-    *) info "Skipping autostart setup."; return 0 ;;
-  esac
-
   case "$OS" in
     macos)
       local plist_dir="${HOME}/Library/LaunchAgents"
@@ -185,7 +172,27 @@ PLIST
       ok "LaunchAgent created at ${plist_file}"
       ;;
     windows)
-      warn "On Windows, add the app shortcut to shell:startup folder manually."
+      local exe_path="C:/Program Files/workday/workday.exe"
+      if [ ! -f "$exe_path" ]; then
+        warn "Workday exe not found, skipping autostart."
+        return 0
+      fi
+      local win_exe
+      win_exe="$(cygpath -w "$exe_path" 2>/dev/null || echo "$exe_path")"
+      powershell.exe -Command "
+        \$startup = [Environment]::GetFolderPath('Startup')
+        \$link = Join-Path \$startup 'Workday.lnk'
+        if (-not (Test-Path \$link)) {
+          \$ws = New-Object -ComObject WScript.Shell
+          \$sc = \$ws.CreateShortcut(\$link)
+          \$sc.TargetPath = '${win_exe}'
+          \$sc.Save()
+        }
+      " 2>/dev/null && {
+        ok "Added to autostart (shell:startup)"
+      } || {
+        warn "Could not add to autostart."
+      }
       ;;
   esac
 }
