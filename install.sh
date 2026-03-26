@@ -150,9 +150,17 @@ install_tray_app() {
       ok "Tray app installed to /Applications"
       ;;
     *.msi)
-      info "Installing ${filename} via msiexec..."
-      msiexec //i "${tmpdir}/${filename}" //passive //norestart
-      ok "Tray app installed via MSI"
+      local dl_dir="${USERPROFILE:-$HOME}/Downloads"
+      cp "${tmpdir}/${filename}" "${dl_dir}/${filename}"
+      info "Installing ${filename}..."
+      local win_path
+      win_path="$(cygpath -w "${dl_dir}/${filename}" 2>/dev/null || echo "${dl_dir}/${filename}")"
+      cmd.exe /c "start /wait msiexec /i \"${win_path}\" /passive /norestart" 2>/dev/null && {
+        ok "Tray app installed via MSI"
+      } || {
+        warn "Auto-install requires admin rights."
+        warn "Run manually: ${dl_dir}/${filename}"
+      }
       ;;
   esac
 
