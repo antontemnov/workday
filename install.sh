@@ -148,6 +148,12 @@ install_tray_app() {
 # ─── Autostart ────────────────────────────────────────────────────────
 
 setup_autostart() {
+  # Skip if stdin is not a terminal (e.g. curl | bash)
+  if [ ! -t 0 ]; then
+    info "Skipping autostart setup (non-interactive mode)."
+    return 0
+  fi
+
   echo ""
   read -rp "$(echo -e "${CYAN}${BOLD}::${RESET} Add Workday to autostart? [y/N] ")" answer
   case "$answer" in
