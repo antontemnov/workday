@@ -1,5 +1,6 @@
 use std::process::Command;
 use tauri::{
+    menu::{Menu, MenuItem},
     tray::TrayIconEvent,
     Manager,
     RunEvent,
@@ -8,7 +9,8 @@ use tauri::{
 use tauri_plugin_updater::UpdaterExt;
 
 fn is_command_available(cmd: &str) -> bool {
-    Command::new("which")
+    let check = if cfg!(target_os = "windows") { "where" } else { "which" };
+    Command::new(check)
         .arg(cmd)
         .output()
         .map(|o| o.status.success())
@@ -88,8 +90,28 @@ pub fn run() {
             let window = app.get_webview_window("main").unwrap();
             window.hide().unwrap();
 
-            // Tray: double-click → show/hide window
+            // Tray context menu
             let tray = app.tray_by_id("main").expect("tray not found");
+
+            let show_item = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            tray.set_menu(Some(menu))?;
+            tray.set_show_menu_on_left_click(false)?;
+
+            let app_handle = app.handle().clone();
+            let menu_window = window.clone();
+            tray.on_menu_event(move |_tray, event| {
+                if event.id() == "quit" {
+                    stop_daemon();
+                    app_handle.exit(0);
+                } else if event.id() == "show" {
+                    let _ = menu_window.show();
+                    let _ = menu_window.set_focus();
+                }
+            });
+
+            // Tray: double-click → show/hide window
             let window_clone = window.clone();
             tray.on_tray_icon_event(move |_tray, event| {
                 if let TrayIconEvent::DoubleClick { .. } = event {
