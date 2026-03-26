@@ -172,9 +172,9 @@ PLIST
       ok "LaunchAgent created at ${plist_file}"
       ;;
     windows)
-      local exe_path="C:/Program Files/workday/workday.exe"
+      local exe_path="${LOCALAPPDATA}/workday/app.exe"
       if [ ! -f "$exe_path" ]; then
-        warn "Workday exe not found, skipping autostart."
+        warn "Workday exe not found at ${exe_path}, skipping autostart."
         return 0
       fi
       local win_exe
