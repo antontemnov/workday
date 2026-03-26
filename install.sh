@@ -152,14 +152,13 @@ install_tray_app() {
     *.msi)
       local dl_dir="${USERPROFILE:-$HOME}/Downloads"
       cp "${tmpdir}/${filename}" "${dl_dir}/${filename}"
-      info "Installing ${filename}..."
       local win_path
       win_path="$(cygpath -w "${dl_dir}/${filename}" 2>/dev/null || echo "${dl_dir}/${filename}")"
-      cmd.exe /c "start /wait msiexec /i \"${win_path}\" /passive /norestart" 2>/dev/null && {
+      info "Installing ${filename} (UAC prompt may appear)..."
+      powershell.exe -Command "Start-Process msiexec -ArgumentList '/i','${win_path}','/passive','/norestart' -Verb RunAs -Wait" 2>/dev/null && {
         ok "Tray app installed via MSI"
       } || {
-        warn "Auto-install requires admin rights."
-        warn "Run manually: ${dl_dir}/${filename}"
+        warn "Auto-install failed. Run manually: ${dl_dir}/${filename}"
       }
       ;;
   esac
