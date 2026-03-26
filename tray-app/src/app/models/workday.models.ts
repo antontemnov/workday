@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 1;
+export const EXPECTED_API_VERSION = 2;
 
 export interface ApiResponse<T = unknown> {
   ok: boolean;
