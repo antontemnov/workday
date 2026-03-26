@@ -1,9 +1,9 @@
-import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync, statSync, writeSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
 import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment } from './types.js';
-import { TMP_EXTENSION, BACKUP_EXTENSION, MAX_ADJUSTMENT_MINUTES, MS_PER_MINUTE } from './constants.js';
+import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ADJUSTMENT_MINUTES, MS_PER_MINUTE } from './constants.js';
 
 /** Generate short unique session id */
 export function generateSessionId(): string {
@@ -100,20 +100,64 @@ export function readDailyLog(date: string): DailyLog | null {
   return null;
 }
 
+// ─── File locking ──────────────────────────────────────────────────────
+
+/** Acquire an exclusive lock file. Removes stale locks automatically. */
+function acquireLock(lockPath: string): number {
+  try {
+    const fd = openSync(lockPath, 'wx');
+    writeSync(fd, String(process.pid));
+    return fd;
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+
+    // Lock exists — check if stale
+    try {
+      const stat = statSync(lockPath);
+      if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
+        unlinkSync(lockPath);
+        const fd = openSync(lockPath, 'wx');
+        writeSync(fd, String(process.pid));
+        return fd;
+      }
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+        // Lock was released between check and unlink — retry once
+        const fd = openSync(lockPath, 'wx');
+        writeSync(fd, String(process.pid));
+        return fd;
+      }
+    }
+    throw new Error(`File is locked: ${lockPath}`);
+  }
+}
+
+/** Release a lock file */
+function releaseLock(lockPath: string, fd: number): void {
+  try { closeSync(fd); } catch { /* best effort */ }
+  try { unlinkSync(lockPath); } catch { /* best effort */ }
+}
+
 /** Write daily log to disk using atomic write pattern with backup */
 export function writeDailyLog(log: DailyLog): void {
   ensureDataDir(log.date);
   const filePath = getDailyLogPath(log.date);
+  const lockPath = filePath + LOCK_EXTENSION;
   const tmpPath = filePath + TMP_EXTENSION;
   const bakPath = filePath + BACKUP_EXTENSION;
 
-  // Backup current valid file before overwriting (copy, not rename — safe if crash mid-write)
-  if (tryParseLogFile(filePath)) {
-    try { copyFileSync(filePath, bakPath); } catch { /* best effort */ }
-  }
+  const fd = acquireLock(lockPath);
+  try {
+    // Backup current valid file before overwriting
+    if (tryParseLogFile(filePath)) {
+      try { copyFileSync(filePath, bakPath); } catch { /* best effort */ }
+    }
 
-  writeFileSync(tmpPath, JSON.stringify(log, null, 2), 'utf-8');
-  renameSync(tmpPath, filePath);
+    writeFileSync(tmpPath, JSON.stringify(log, null, 2), 'utf-8');
+    renameSync(tmpPath, filePath);
+  } finally {
+    releaseLock(lockPath, fd);
+  }
 }
 
 /** Get or create today's daily log */

@@ -11,7 +11,7 @@ import {
   getOpenPause,
 } from './core/daily-log.js';
 import { computeWorkingDate, buildTimestamp } from './core/config.js';
-import { MAX_BODY_BYTES } from './core/constants.js';
+import { MAX_BODY_BYTES, API_VERSION } from './core/constants.js';
 import type {
   AppConfig,
   ApiResponse,
@@ -395,7 +395,8 @@ export class HttpServer {
   }
 
   private sendJson(res: ServerResponse, statusCode: number, data: unknown): void {
-    const body = JSON.stringify(data);
+    const enriched = { ...(data as Record<string, unknown>), apiVersion: API_VERSION };
+    const body = JSON.stringify(enriched);
     res.writeHead(statusCode, {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(body),

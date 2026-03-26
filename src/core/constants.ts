@@ -12,6 +12,11 @@ export const DAEMON_SCRIPT_JS = 'daemon.js';
 
 // ─── HTTP API ──────────────────────────────────────────────────────────
 export const DEFAULT_API_PORT = 9213;
+export const API_VERSION = 1;
+
+// ─── File locking ──────────────────────────────────────────────────────
+export const LOCK_EXTENSION = '.lock';
+export const LOCK_STALE_MS = 10_000;
 
 // ─── Git internals ──────────────────────────────────────────────────────
 export const GIT_BATCH_SEPARATOR = '---WORKDAY-SEP---';

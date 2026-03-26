@@ -221,6 +221,7 @@ export interface ApiResponse<T = unknown> {
   readonly ok: boolean;
   readonly data?: T;
   readonly error?: string;
+  readonly apiVersion?: number;
 }
 
 export interface StatusResponse {
