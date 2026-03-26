@@ -8,52 +8,6 @@ use tauri::{
 };
 use tauri_plugin_updater::UpdaterExt;
 
-fn is_command_available(cmd: &str) -> bool {
-    let check = if cfg!(target_os = "windows") { "where" } else { "which" };
-    Command::new(check)
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-fn ensure_npm_package() {
-    if is_command_available("workday") {
-        return;
-    }
-
-    if !is_command_available("npm") {
-        eprintln!("workday: npm not found — please install Node.js >= 20");
-        return;
-    }
-
-    eprintln!("workday: CLI not found, installing workday-daemon via npm...");
-    let result = Command::new("npm")
-        .args(["install", "-g", "workday-daemon"])
-        .output();
-
-    match result {
-        Ok(out) if out.status.success() => {
-            eprintln!("workday: workday-daemon installed successfully");
-        }
-        Ok(out) => {
-            eprintln!(
-                "workday: npm install failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-        }
-        Err(e) => {
-            eprintln!("workday: failed to run npm: {}", e);
-        }
-    }
-}
-
-fn start_daemon() {
-    let _ = Command::new("workday")
-        .arg("start")
-        .spawn();
-}
-
 fn stop_daemon() {
     let _ = Command::new("workday")
         .arg("stop")
@@ -73,10 +27,6 @@ pub fn run() {
                         .build(),
                 )?;
             }
-
-            // Ensure workday CLI is installed, then start daemon
-            ensure_npm_package();
-            start_daemon();
 
             // Check for UI updates in background (non-blocking)
             let handle = app.handle().clone();
