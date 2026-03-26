@@ -49,6 +49,32 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#tray-v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: $VERSION"
+
+      - name: Patch version in tauri.conf.json
+        shell: bash
+        working-directory: tray-app/src-tauri
+        run: |
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('tauri.conf.json', 'utf8'));
+            conf.version = '${{ steps.version.outputs.version }}';
+            fs.writeFileSync('tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+
+      - name: Patch version in Cargo.toml
+        shell: bash
+        working-directory: tray-app/src-tauri
+        run: |
+          sed -i.bak 's/^version = ".*"/version = "${{ steps.version.outputs.version }}"/' Cargo.toml
+          rm -f Cargo.toml.bak
+
       - name: Install frontend dependencies
         working-directory: tray-app
         run: npm ci
