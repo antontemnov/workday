@@ -10,22 +10,28 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   private upgrading = false;
 
+  private upgradeError: string | null = null;
+
   private checkApiVersion(response: ApiResponse<unknown>): ApiResponse<unknown> {
     if (response.ok && response.apiVersion !== undefined && response.apiVersion !== EXPECTED_API_VERSION) {
       if (!this.upgrading) {
         this.upgradeDaemon();
       }
-      return { ok: false, error: 'Updating daemon to match app version...' };
+      const msg = this.upgradeError
+        ? `Daemon upgrade failed: ${this.upgradeError}`
+        : 'Updating daemon to match app version...';
+      return { ok: false, error: msg };
     }
     return response;
   }
 
   private async upgradeDaemon(): Promise<void> {
     this.upgrading = true;
+    this.upgradeError = null;
     try {
       await invoke('upgrade_daemon');
-    } catch (e) {
-      console.error('Daemon upgrade failed:', e);
+    } catch (e: unknown) {
+      this.upgradeError = String(e);
     } finally {
       this.upgrading = false;
     }

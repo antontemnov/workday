@@ -31,10 +31,37 @@ fn enriched_path() -> String {
 }
 
 fn stop_daemon() {
-    let _ = Command::new("workday")
-        .arg("stop")
-        .env("PATH", enriched_path())
-        .output();
+    let _ = shell_run("workday stop", &enriched_path());
+}
+
+/// Run a shell command (cmd.exe /c on Windows, sh -c on Unix).
+/// Needed because npm/workday are .cmd files on Windows.
+fn shell_run(command: &str, path: &str) -> Result<std::process::Output, std::io::Error> {
+    if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(["/C", command])
+            .env("PATH", path)
+            .output()
+    } else {
+        Command::new("sh")
+            .args(["-c", command])
+            .env("PATH", path)
+            .output()
+    }
+}
+
+fn shell_spawn(command: &str, path: &str) {
+    if cfg!(target_os = "windows") {
+        let _ = Command::new("cmd")
+            .args(["/C", command])
+            .env("PATH", path)
+            .spawn();
+    } else {
+        let _ = Command::new("sh")
+            .args(["-c", command])
+            .env("PATH", path)
+            .spawn();
+    }
 }
 
 #[tauri::command]
@@ -42,16 +69,10 @@ async fn upgrade_daemon() -> Result<String, String> {
     let path = enriched_path();
 
     // Stop old daemon
-    let _ = Command::new("workday")
-        .arg("stop")
-        .env("PATH", &path)
-        .output();
+    let _ = shell_run("workday stop", &path);
 
     // Install latest version
-    let output = Command::new("npm")
-        .args(["install", "-g", "workday-daemon"])
-        .env("PATH", &path)
-        .output()
+    let output = shell_run("npm install -g workday-daemon", &path)
         .map_err(|e| format!("Failed to run npm: {}", e))?;
 
     if !output.status.success() {
@@ -62,10 +83,7 @@ async fn upgrade_daemon() -> Result<String, String> {
     }
 
     // Start updated daemon
-    let _ = Command::new("workday")
-        .arg("start")
-        .env("PATH", &path)
-        .spawn();
+    shell_spawn("workday start", &path);
 
     Ok("Daemon upgraded and restarted".to_string())
 }
