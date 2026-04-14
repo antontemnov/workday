@@ -34,6 +34,34 @@
           <span class="repo">{{ repoName(s.repo) }}</span>
           <span class="badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
           <span class="leader" *ngIf="s.isLeader" title="Leader">&#9733;</span>
+          <span class="badge paused" *ngIf="s.autoPauseDisabled" title="Autopause disabled">AUTO OFF</span>
+
+          <div class="session-actions">
+            <button class="icon-btn"
+                    *ngIf="!s.paused"
+                    (click)="pauseSession(s.repo)"
+                    [disabled]="actionPending"
+                    title="Pause this session">⏸</button>
+            <button class="icon-btn"
+                    *ngIf="s.paused"
+                    (click)="resumeAll()"
+                    [disabled]="actionPending"
+                    title="Resume">▶</button>
+            <button class="icon-btn"
+                    (click)="openAdjustModal(s)"
+                    [disabled]="actionPending"
+                    title="Add manual time">＋</button>
+            <button class="icon-btn"
+                    (click)="toggleMenu(s.id)"
+                    [disabled]="actionPending"
+                    title="More">⋯</button>
+          </div>
+
+          <div class="session-menu" *ngIf="activeMenuSessionId === s.id">
+            <button (click)="toggleAutopauseForRepo(s)">
+              {{ s.autoPauseDisabled ? 'Enable' : 'Disable' }} autopause for {{ repoName(s.repo) }}
+            </button>
+          </div>
         </div>
         <div class="session-details">
           <div class="row">
@@ -88,6 +116,81 @@
     <!-- No sessions -->
     <div class="status-msg" *ngIf="data.sessions.length === 0">
       No sessions yet. Waiting for git activity...
+    </div>
+  </div>
+
+  <!-- Bottom bar -->
+  <footer class="bottom-bar" *ngIf="data && !error">
+    <button class="action-btn"
+            (click)="pauseAll()"
+            [disabled]="openSessions.length === 0 || actionPending"
+            title="Pause all sessions">
+      ⏸ Pause all
+    </button>
+    <button class="action-btn"
+            (click)="resumeAll()"
+            [disabled]="!anyPaused || actionPending"
+            title="Resume all paused sessions">
+      ▶ Resume
+    </button>
+    <button class="action-btn"
+            (click)="setStartModalOpen = true"
+            [disabled]="actionPending"
+            title="Set day start time">
+      🕘 Day start
+    </button>
+    <button class="action-btn toggle"
+            [class.off]="allAutopauseDisabled"
+            (click)="toggleAutopauseGlobal()"
+            [disabled]="openSessions.length === 0 || actionPending"
+            [title]="allAutopauseDisabled ? 'Re-enable autopause' : 'Disable autopause for all sessions'">
+      {{ allAutopauseDisabled ? '🔕 Autopause OFF' : '🔔 Autopause ON' }}
+    </button>
+  </footer>
+
+  <!-- Toast -->
+  <div class="toast error" *ngIf="actionError" (click)="dismissToast()">
+    {{ actionError }}
+  </div>
+
+  <!-- Adjust modal -->
+  <div class="modal-backdrop" *ngIf="adjustModal" (click)="adjustModal = null">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Add manual time</h3>
+      <div class="modal-sub">{{ repoName(adjustModal.repo) }} — {{ adjustModal.task ?? '—' }}</div>
+      <label>Minutes
+        <input #adjMins type="number" min="1" max="480" value="30" />
+      </label>
+      <label>Reason
+        <input #adjReason type="text" maxlength="200" placeholder="e.g. code review off-screen" />
+      </label>
+      <div class="modal-actions">
+        <button (click)="adjustModal = null">Cancel</button>
+        <button class="primary"
+                [disabled]="!adjReason.value.trim() || !adjMins.value || actionPending"
+                (click)="submitAdjust(+adjMins.value, adjReason.value.trim())">
+          Add
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Set-start modal -->
+  <div class="modal-backdrop" *ngIf="setStartModalOpen" (click)="setStartModalOpen = false">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Set day start</h3>
+      <div class="modal-sub">Extends today's budget retroactively</div>
+      <label>Time
+        <input #startTime type="time" value="09:00" />
+      </label>
+      <div class="modal-actions">
+        <button (click)="setStartModalOpen = false">Cancel</button>
+        <button class="primary"
+                [disabled]="!startTime.value || actionPending"
+                (click)="submitSetStart(startTime.value)">
+          Apply
+        </button>
+      </div>
     </div>
   </div>
 </div>
