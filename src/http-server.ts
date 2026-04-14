@@ -35,6 +35,12 @@ export interface HttpServerDeps {
   readonly getStartedAt: () => number;
   readonly getCurrentDate: () => string;
   readonly onBudgetFreed: () => void;
+  /**
+   * Forces an immediate evaluator tick — used after mutating actions so the
+   * next read reflects leadership/auto-pause decisions without waiting for
+   * the scheduled poll interval.
+   */
+  readonly forceTick: () => Promise<void>;
 }
 
 export class HttpServer {
@@ -100,22 +106,22 @@ export class HttpServer {
       }
       if (method === 'POST' && path === '/api/pause') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, this.handlePause(body));
+        return this.sendJson(res, 200, await this.handlePause(body));
       }
       if (method === 'POST' && path === '/api/resume') {
-        return this.sendJson(res, 200, this.handleResume());
+        return this.sendJson(res, 200, await this.handleResume());
       }
       if (method === 'POST' && path === '/api/autopause') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, this.handleAutoPause(body));
+        return this.sendJson(res, 200, await this.handleAutoPause(body));
       }
       if (method === 'POST' && path === '/api/adjust') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, this.handleAdjust(body));
+        return this.sendJson(res, 200, await this.handleAdjust(body));
       }
       if (method === 'POST' && path === '/api/set-start') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, this.handleSetStart(body));
+        return this.sendJson(res, 200, await this.handleSetStart(body));
       }
       if (method === 'GET' && path === '/api/day') {
         const date = url.searchParams.get('date');
@@ -188,7 +194,7 @@ export class HttpServer {
     };
   }
 
-  private handlePause(body: Record<string, unknown>): ApiResponse<PauseResponse> {
+  private async handlePause(body: Record<string, unknown>): Promise<ApiResponse<PauseResponse>> {
     const tracker = this.deps.sessionTracker;
     const repo = typeof body.repo === 'string' ? body.repo : null;
     const paused: string[] = [];
@@ -204,10 +210,12 @@ export class HttpServer {
     }
 
     tracker.flush();
+    // Re-run evaluator so the remaining non-paused sessions settle leadership now.
+    await this.deps.forceTick();
     return { ok: true, data: { paused } };
   }
 
-  private handleAutoPause(body: Record<string, unknown>): ApiResponse<AutoPauseResponse> {
+  private async handleAutoPause(body: Record<string, unknown>): Promise<ApiResponse<AutoPauseResponse>> {
     const tracker = this.deps.sessionTracker;
     // { enabled: boolean, repo?: string } — enabled=true means autopause ON (not disabled)
     const enabled = body.enabled !== false;
@@ -216,6 +224,8 @@ export class HttpServer {
 
     const affected = tracker.setAutoPauseDisabled(disabled, repo);
     tracker.flush();
+    // Re-run evaluator so the toggle takes effect immediately.
+    await this.deps.forceTick();
 
     return {
       ok: true,
@@ -226,16 +236,19 @@ export class HttpServer {
     };
   }
 
-  private handleResume(): ApiResponse<ResumeResponse> {
+  private async handleResume(): Promise<ApiResponse<ResumeResponse>> {
     const tracker = this.deps.sessionTracker;
     const before = tracker.getOpenSessions().filter(s => tracker.hasOpenPause(s));
     tracker.resumeAllSessions();
     tracker.flush();
+    // Re-run evaluator immediately so Superseded/IdleTimeout are re-applied
+    // before the client fetches the next state snapshot.
+    await this.deps.forceTick();
 
     return { ok: true, data: { resumed: before.map(s => s.repo) } };
   }
 
-  private handleAdjust(body: Record<string, unknown>): ApiResponse<AdjustResponse> {
+  private async handleAdjust(body: Record<string, unknown>): Promise<ApiResponse<AdjustResponse>> {
     const target = typeof body.target === 'string' ? body.target : '';
     const minutes = typeof body.minutes === 'number' ? body.minutes : 0;
     const reason = typeof body.reason === 'string' ? body.reason : '';
@@ -253,8 +266,7 @@ export class HttpServer {
 
     const log = tracker.getDailyLog();
     const session = log.sessions.find(s => s.id === result.sessionId)!;
-
-    return {
+    const response: ApiResponse<AdjustResponse> = {
       ok: true,
       data: {
         sessionId: session.id,
@@ -265,9 +277,14 @@ export class HttpServer {
         remainingBudgetMs: getRemainingBudgetMs(log, this.deps.config),
       },
     };
+
+    // Re-run evaluator so a tick after manual adjustment picks up any
+    // budget-exhaustion implications (may close sessions).
+    await this.deps.forceTick();
+    return response;
   }
 
-  private handleSetStart(body: Record<string, unknown>): ApiResponse<SetStartResponse> {
+  private async handleSetStart(body: Record<string, unknown>): Promise<ApiResponse<SetStartResponse>> {
     const time = typeof body.time === 'string' ? body.time : '';
     if (!time) return { ok: false, error: 'Missing time (HH:MM format)' };
 
@@ -294,7 +311,7 @@ export class HttpServer {
       this.deps.onBudgetFreed();
     }
 
-    return {
+    const response: ApiResponse<SetStartResponse> = {
       ok: true,
       data: {
         dayStart: isoTimestamp,
@@ -302,6 +319,10 @@ export class HttpServer {
         remainingBudgetMs: getRemainingBudgetMs(log, config),
       },
     };
+
+    // Re-run evaluator so budget state settles before the next read.
+    await this.deps.forceTick();
+    return response;
   }
 
   private handleDay(date: string | null): ApiResponse<TodayResponse> {

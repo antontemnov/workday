@@ -28,6 +28,9 @@ export class Daemon {
   private foreground: boolean = false;
   private startedAt: number = 0;
   private budgetExhaustedLogged: boolean = false;
+  // Serializes scheduled and forced ticks so parallel calls do not race
+  // over git polling, in-memory state or flush writes.
+  private tickQueue: Promise<void> = Promise.resolve();
 
   public async start(options?: { foreground?: boolean }): Promise<void> {
     this.foreground = options?.foreground ?? false;
@@ -71,6 +74,7 @@ export class Daemon {
       getStartedAt: () => this.startedAt,
       getCurrentDate: () => this.currentDate,
       onBudgetFreed: () => { this.budgetExhaustedLogged = false; },
+      forceTick: () => this.pollTick(),
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();
@@ -133,7 +137,16 @@ export class Daemon {
 
   // ─── Poll loop ─────────────────────────────────────────────────────────
 
-  private async pollTick(): Promise<void> {
+  /**
+   * Run one tick. Serializes with any currently-running tick via tickQueue
+   * so scheduled ticks and HTTP-triggered force ticks never overlap.
+   */
+  public pollTick(): Promise<void> {
+    this.tickQueue = this.tickQueue.then(() => this.runTickBody());
+    return this.tickQueue;
+  }
+
+  private async runTickBody(): Promise<void> {
     if (!this.running) return;
 
     try {
