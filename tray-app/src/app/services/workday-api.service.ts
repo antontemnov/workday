@@ -1,5 +1,12 @@
 import { Injectable } from '@angular/core';
-import { ApiResponse, TodayResponse, StatusResponse } from '../models/workday.models';
+import {
+  ApiResponse,
+  TodayResponse,
+  StatusResponse,
+  AutoPauseResponse,
+  AdjustResponse,
+  SetStartResponse,
+} from '../models/workday.models';
 
 /**
  * Abstract API service — implementations:
@@ -13,6 +20,8 @@ export abstract class WorkdayApiService {
   abstract getStatus(): Promise<ApiResponse<StatusResponse>>;
   abstract pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>>;
   abstract resume(): Promise<ApiResponse<{ resumed: string[] }>>;
-  abstract adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<unknown>>;
+  abstract autopause(enabled: boolean, repo?: string): Promise<ApiResponse<AutoPauseResponse>>;
+  abstract adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>>;
+  abstract setStart(time: string): Promise<ApiResponse<SetStartResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
 }

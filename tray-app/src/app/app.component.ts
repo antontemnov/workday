@@ -1,7 +1,13 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { WorkdayApiService } from './services/workday-api.service';
-import { TodayResponse, SessionDetail } from './models/workday.models';
+import { TodayResponse, SessionDetail, ApiResponse } from './models/workday.models';
+
+interface AdjustModalState {
+  sessionId: string;
+  repo: string;
+  task: string | null;
+}
 
 @Component({
   selector: 'app-root',
@@ -15,7 +21,15 @@ export class AppComponent implements OnInit, OnDestroy {
   error: string | null = null;
   loading = true;
 
+  // UI state
+  activeMenuSessionId: string | null = null;
+  adjustModal: AdjustModalState | null = null;
+  setStartModalOpen = false;
+  actionError: string | null = null;
+  actionPending = false;
+
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private api: WorkdayApiService) {}
 
@@ -26,6 +40,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
   }
 
   async refresh(): Promise<void> {
@@ -50,6 +65,15 @@ export class AppComponent implements OnInit, OnDestroy {
   get budgetPercent(): number {
     if (!this.data || !this.data.budgetMs) return 0;
     return Math.min(100, (this.data.claimedMs / this.data.budgetMs) * 100);
+  }
+
+  get allAutopauseDisabled(): boolean {
+    const open = this.openSessions;
+    return open.length > 0 && open.every(s => s.autoPauseDisabled);
+  }
+
+  get anyPaused(): boolean {
+    return this.openSessions.some(s => s.paused);
   }
 
   formatDuration(ms: number): string {
@@ -85,5 +109,79 @@ export class AppComponent implements OnInit, OnDestroy {
   statusLabel(session: SessionDetail): string {
     if (session.paused) return `PAUSED:${session.pauseSource}`;
     return session.state.toUpperCase();
+  }
+
+  // ─── Actions ──────────────────────────────────────────────────────────
+
+  async pauseSession(repo: string): Promise<void> {
+    await this.runAction(() => this.api.pause(repo));
+  }
+
+  async pauseAll(): Promise<void> {
+    await this.runAction(() => this.api.pause());
+  }
+
+  async resumeAll(): Promise<void> {
+    await this.runAction(() => this.api.resume());
+  }
+
+  async toggleAutopauseForRepo(session: SessionDetail): Promise<void> {
+    // current state is `autoPauseDisabled`; toggle means "enabled = current"
+    const enabled = session.autoPauseDisabled; // true → re-enable
+    await this.runAction(() => this.api.autopause(enabled, session.repo));
+    this.activeMenuSessionId = null;
+  }
+
+  async toggleAutopauseGlobal(): Promise<void> {
+    const enabled = this.allAutopauseDisabled; // all disabled → enable
+    await this.runAction(() => this.api.autopause(enabled));
+  }
+
+  openAdjustModal(session: SessionDetail): void {
+    this.adjustModal = { sessionId: session.id, repo: session.repo, task: session.task };
+  }
+
+  async submitAdjust(minutes: number, reason: string): Promise<void> {
+    if (!this.adjustModal) return;
+    const sessionId = this.adjustModal.sessionId;
+    const ok = await this.runAction(() => this.api.adjust(sessionId, minutes, reason));
+    if (ok) this.adjustModal = null;
+  }
+
+  async submitSetStart(time: string): Promise<void> {
+    const ok = await this.runAction(() => this.api.setStart(time));
+    if (ok) this.setStartModalOpen = false;
+  }
+
+  toggleMenu(sessionId: string): void {
+    this.activeMenuSessionId = this.activeMenuSessionId === sessionId ? null : sessionId;
+  }
+
+  dismissToast(): void {
+    this.actionError = null;
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+  }
+
+  private async runAction<T>(fn: () => Promise<ApiResponse<T>>): Promise<boolean> {
+    if (this.actionPending) return false;
+    this.actionPending = true;
+    this.actionError = null;
+    try {
+      const res = await fn();
+      if (!res.ok) {
+        this.showToast(res.error ?? 'Action failed');
+        return false;
+      }
+      await this.refresh();
+      return true;
+    } finally {
+      this.actionPending = false;
+    }
+  }
+
+  private showToast(msg: string): void {
+    this.actionError = msg;
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.actionError = null, 4000);
   }
 }

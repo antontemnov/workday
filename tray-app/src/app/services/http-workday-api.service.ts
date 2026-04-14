@@ -1,7 +1,15 @@
 import { Injectable } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { WorkdayApiService } from './workday-api.service';
-import { ApiResponse, TodayResponse, StatusResponse, EXPECTED_API_VERSION } from '../models/workday.models';
+import {
+  ApiResponse,
+  TodayResponse,
+  StatusResponse,
+  AutoPauseResponse,
+  AdjustResponse,
+  SetStartResponse,
+  EXPECTED_API_VERSION,
+} from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
 
@@ -81,8 +89,16 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/resume');
   }
 
-  override async adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<unknown>> {
+  override async autopause(enabled: boolean, repo?: string): Promise<ApiResponse<AutoPauseResponse>> {
+    return this.post('/api/autopause', repo ? { enabled, repo } : { enabled });
+  }
+
+  override async adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>> {
     return this.post('/api/adjust', { target, minutes, reason });
+  }
+
+  override async setStart(time: string): Promise<ApiResponse<SetStartResponse>> {
+    return this.post('/api/set-start', { time });
   }
 
   override async stop(): Promise<ApiResponse<unknown>> {

@@ -59,3 +59,23 @@ export interface StatusResponse {
   date: string;
   uptime: number;
 }
+
+export interface AutoPauseResponse {
+  repo: string | null;
+  autoPauseDisabled: boolean;
+}
+
+export interface AdjustResponse {
+  sessionId: string;
+  repo: string;
+  task: string | null;
+  addedMinutes: number;
+  totalManualMinutes: number;
+  remainingBudgetMs: number;
+}
+
+export interface SetStartResponse {
+  dayStart: string;
+  budgetMs: number;
+  remainingBudgetMs: number;
+}
