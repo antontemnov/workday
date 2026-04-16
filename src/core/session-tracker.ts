@@ -47,7 +47,7 @@ export class SessionTracker {
   public onSessionClosed: ((sessionId: string) => void) | null = null;
 
   public constructor(config: AppConfig, initialLog?: DailyLog) {
-    const today = computeWorkingDate(Date.now(), config.dayBoundaryHour, config.timezone);
+    const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
     this.config = config;
     this.dailyLog = initialLog ?? createEmptyLog(today, config);
 
@@ -169,7 +169,7 @@ export class SessionTracker {
     this.closeAllSessions(ClosedBy.DayBoundary);
     const completedLog = this.dailyLog;
 
-    const newDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour, this.config.timezone);
+    const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     this.dailyLog = createEmptyLog(newDate, this.config);
 
     this.autoPauseDisabledSessions.clear();

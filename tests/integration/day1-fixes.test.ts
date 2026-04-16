@@ -144,7 +144,7 @@ function swapConfig(): void {
 
   const testConfig = {
     repos: [REPO_ALPHA, REPO_BETA],
-    dayBoundaryHour: 4,
+    schedule: { start: 10, end: 4 },
     taskPattern: 'ATL-\\d+',
     genericBranches: ['develop', 'main', 'master', 'HEAD'],
     session: {

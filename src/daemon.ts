@@ -39,7 +39,7 @@ export class Daemon {
 
     this.ensureSingleInstance();
 
-    this.currentDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour, this.config.timezone);
+    this.currentDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     this.gitTracker = new GitTracker(this.config, this.secrets);
 
     // Crash recovery: close orphaned sessions from previous days
@@ -106,7 +106,7 @@ export class Daemon {
       console.log(`  Timezone: ${this.config.timezone}`);
       console.log(`  Repos: ${this.config.repos.map(r => r.split('/').pop()).join(', ')}`);
       console.log(`  Poll: ${this.config.session.diffPollSeconds}s`);
-      console.log(`  Day boundary: ${this.config.dayBoundaryHour}:00`);
+      console.log(`  Schedule: ${this.config.schedule.start}:00 — ${this.config.schedule.end}:00`);
       console.log(`  Date: ${this.currentDate}`);
     }
   }
@@ -221,7 +221,7 @@ export class Daemon {
   // ─── Day boundary ─────────────────────────────────────────────────────
 
   private checkDayBoundary(): void {
-    const newDate = computeWorkingDate(Date.now(), this.config.dayBoundaryHour, this.config.timezone);
+    const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     if (newDate === this.currentDate) return;
 
     const oldLog = this.sessionTracker.handleDayBoundary();

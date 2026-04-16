@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdi
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
-import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment } from './types.js';
+import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment, type ActiveInterval } from './types.js';
 import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ADJUSTMENT_MINUTES, MS_PER_MINUTE } from './constants.js';
 
 /** Generate short unique session id */
@@ -162,7 +162,7 @@ export function writeDailyLog(log: DailyLog): void {
 
 /** Get or create today's daily log */
 export function getOrCreateTodayLog(config: AppConfig): DailyLog {
-  const today = computeWorkingDate(Date.now(), config.dayBoundaryHour, config.timezone);
+  const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
   const existing = readDailyLog(today);
   if (existing) {
     return existing;
@@ -307,7 +307,7 @@ export function computeDayStart(log: DailyLog, config: AppConfig): number {
     if (s.activatedAt) return new Date(s.activatedAt).getTime();
   }
   // No sessions yet — use day boundary start (date + dayBoundaryHour in timezone)
-  return parseDateWithHour(log.date, config.dayBoundaryHour, config.timezone);
+  return parseDateWithHour(log.date, config.schedule.end, config.timezone);
 }
 
 /** Compute day end timestamp (next day boundary) */
@@ -322,7 +322,7 @@ export function computeDayEnd(date: string, dayBoundaryHour: number, timezone: s
 /** Compute total budget in ms */
 export function computeBudgetMs(log: DailyLog, config: AppConfig): number {
   const dayStart = computeDayStart(log, config);
-  const dayEnd = computeDayEnd(log.date, config.dayBoundaryHour, config.timezone);
+  const dayEnd = computeDayEnd(log.date, config.schedule.end, config.timezone);
   return Math.max(0, dayEnd - dayStart);
 }
 
@@ -339,6 +339,59 @@ export function isBudgetExhausted(log: DailyLog, config: AppConfig): boolean {
 /** Remaining budget in ms, clamped >= 0 */
 export function getRemainingBudgetMs(log: DailyLog, config: AppConfig): number {
   return Math.max(0, computeBudgetMs(log, config) - computeTotalClaimedMs(log));
+}
+
+/** Compute merged active work intervals from sessions (excluding pauses) */
+export function computeActiveIntervals(sessions: readonly Session[]): ActiveInterval[] {
+  const raw: Array<{ from: number; to: number }> = [];
+
+  for (const session of sessions) {
+    if (!session.activatedAt) continue;
+
+    const start = new Date(session.activatedAt).getTime();
+    const end = session.closedBy
+      ? new Date(session.lastSeenAt).getTime()
+      : Date.now();
+
+    const sortedPauses = [...session.pauses]
+      .map(p => ({
+        from: Math.max(new Date(p.from).getTime(), start),
+        to: Math.min(p.to ? new Date(p.to).getTime() : Date.now(), end),
+      }))
+      .filter(p => p.from < p.to)
+      .sort((a, b) => a.from - b.from);
+
+    let cursor = start;
+    for (const pause of sortedPauses) {
+      if (pause.from > cursor) {
+        raw.push({ from: cursor, to: pause.from });
+      }
+      cursor = Math.max(cursor, pause.to);
+    }
+    if (cursor < end) {
+      raw.push({ from: cursor, to: end });
+    }
+  }
+
+  if (raw.length === 0) return [];
+
+  raw.sort((a, b) => a.from - b.from);
+  const merged: Array<{ from: number; to: number }> = [{ ...raw[0] }];
+
+  for (let i = 1; i < raw.length; i++) {
+    const last = merged[merged.length - 1];
+    const curr = raw[i];
+    if (curr.from <= last.to) {
+      last.to = Math.max(last.to, curr.to);
+    } else {
+      merged.push({ ...curr });
+    }
+  }
+
+  return merged.map(iv => ({
+    from: new Date(iv.from).toISOString(),
+    to: new Date(iv.to).toISOString(),
+  }));
 }
 
 /** Add manual adjustment to a session. Throws on validation failure. */
@@ -390,9 +443,9 @@ export function setDayManualStart(log: DailyLog, isoTimestamp: string, config: A
   }
 
   // Must be >= previous day boundary
-  const prevBoundary = parseDateWithHour(log.date, config.dayBoundaryHour, config.timezone);
+  const prevBoundary = parseDateWithHour(log.date, config.schedule.end, config.timezone);
   if (newStart < prevBoundary) {
-    throw new Error(`Cannot start before previous day boundary (${String(config.dayBoundaryHour).padStart(2, '0')}:00)`);
+    throw new Error(`Cannot start before previous day boundary (${String(config.schedule.end).padStart(2, '0')}:00)`);
   }
 
   log.manualStart = isoTimestamp;

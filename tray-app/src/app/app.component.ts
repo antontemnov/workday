@@ -20,6 +20,7 @@ export class AppComponent implements OnInit, OnDestroy {
   data: TodayResponse | null = null;
   error: string | null = null;
   loading = true;
+  daemonStarting = false;
 
   // UI state
   activeMenuSessionId: string | null = null;
@@ -62,9 +63,40 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.data?.sessions.filter(s => s.closedBy) ?? [];
   }
 
-  get budgetPercent(): number {
-    if (!this.data || !this.data.budgetMs) return 0;
-    return Math.min(100, (this.data.claimedMs / this.data.budgetMs) * 100);
+  get scheduleWindowMs(): number {
+    if (!this.data?.schedule) return 0;
+    const { start, end } = this.data.schedule;
+    const hours = end <= start ? (24 - start + end) : (end - start);
+    return hours * 3_600_000;
+  }
+
+  timeToPercent(isoTimestamp: string): number {
+    if (!this.data?.schedule) return 0;
+    const windowMs = this.scheduleWindowMs;
+    if (windowMs === 0) return 0;
+    const ts = new Date(isoTimestamp).getTime();
+    const offset = ts - this.getScheduleStartMs();
+    return Math.max(0, Math.min(100, (offset / windowMs) * 100));
+  }
+
+  get currentTimePercent(): number {
+    return this.timeToPercent(new Date().toISOString());
+  }
+
+  get totalActiveMs(): number {
+    if (!this.data?.activeIntervals) return 0;
+    return this.data.activeIntervals.reduce((sum, iv) =>
+      sum + (new Date(iv.to).getTime() - new Date(iv.from).getTime()), 0);
+  }
+
+  formatHourLabel(hour: number): string {
+    return `${String(hour).padStart(2, '0')}:00`;
+  }
+
+  private getScheduleStartMs(): number {
+    if (!this.data) return 0;
+    const [y, m, d] = this.data.date.split('-').map(Number);
+    return new Date(y, m - 1, d, this.data.schedule.start, 0, 0).getTime();
   }
 
   get allAutopauseDisabled(): boolean {
@@ -112,6 +144,19 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────
+
+  async startDaemon(): Promise<void> {
+    this.daemonStarting = true;
+    try {
+      await this.api.startDaemon();
+      setTimeout(() => this.refresh(), 2000);
+      setTimeout(() => this.refresh(), 5000);
+    } catch (e: unknown) {
+      this.showToast(e instanceof Error ? e.message : 'Failed to start daemon');
+    } finally {
+      this.daemonStarting = false;
+    }
+  }
 
   async pauseSession(repo: string): Promise<void> {
     await this.runAction(() => this.api.pause(repo));

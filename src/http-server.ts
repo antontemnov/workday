@@ -7,6 +7,7 @@ import {
   computeBudgetMs,
   computeTotalClaimedMs,
   getRemainingBudgetMs,
+  computeActiveIntervals,
   readDailyLog,
   getOpenPause,
 } from './core/daily-log.js';
@@ -190,6 +191,8 @@ export class HttpServer {
         claimedMs: computeTotalClaimedMs(log),
         remainingBudgetMs: getRemainingBudgetMs(log, config),
         dayStartedAt: log.dayStartedAt,
+        schedule: { start: config.schedule.start, end: config.schedule.end },
+        activeIntervals: computeActiveIntervals(log.sessions),
       },
     };
   }
@@ -333,7 +336,7 @@ export class HttpServer {
     const config = this.deps.config;
 
     // If requesting today, delegate to handleToday
-    const today = computeWorkingDate(Date.now(), config.dayBoundaryHour, config.timezone);
+    const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
     if (date === today) {
       return this.handleToday();
     }
@@ -384,6 +387,8 @@ export class HttpServer {
         claimedMs: computeTotalClaimedMs(log),
         remainingBudgetMs: getRemainingBudgetMs(log, config),
         dayStartedAt: log.dayStartedAt,
+        schedule: { start: config.schedule.start, end: config.schedule.end },
+        activeIntervals: computeActiveIntervals(log.sessions),
       },
     };
   }

@@ -1,8 +1,13 @@
 // ─── Config ──────────────────────────────────────────────────────────────
 
+export interface ScheduleConfig {
+  readonly start: number; // 0-23, hour when work schedule begins
+  readonly end: number;   // 0-23, hour when work schedule ends (next day if < start)
+}
+
 export interface AppConfig {
   readonly repos: readonly string[];
-  readonly dayBoundaryHour: number; // 0-23, hour in 24h format when the working day resets
+  readonly schedule: ScheduleConfig;
   readonly timezone: string;        // IANA timezone, e.g. "Europe/Moscow"
   readonly taskPattern: string;
   readonly genericBranches: readonly string[];
@@ -251,6 +256,11 @@ export interface SessionSummary {
   readonly autoPauseDisabled: boolean;
 }
 
+export interface ActiveInterval {
+  readonly from: string; // ISO timestamp
+  readonly to: string;   // ISO timestamp
+}
+
 export interface TodayResponse {
   readonly date: string;
   readonly dayType: string;
@@ -262,6 +272,8 @@ export interface TodayResponse {
   readonly claimedMs: number;
   readonly remainingBudgetMs: number;
   readonly dayStartedAt: string | null;
+  readonly schedule: ScheduleConfig;
+  readonly activeIntervals: readonly ActiveInterval[];
 }
 
 export interface SessionDetail extends SessionSummary {

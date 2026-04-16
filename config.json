@@ -3,7 +3,7 @@
     "D:/projects/atlas-frontend",
     "D:/projects/appone-backend"
   ],
-  "dayBoundaryHour": 4,
+  "schedule": { "start": 10, "end": 4 },
   "taskPattern": "ATL-\\d+",
   "genericBranches": ["develop", "main", "master"],
   "session": {

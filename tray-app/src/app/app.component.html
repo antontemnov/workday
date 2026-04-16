@@ -8,21 +8,35 @@
     </div>
   </header>
 
-  <!-- Loading / Error -->
+  <!-- Loading -->
   <div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
-  <div class="status-msg error" *ngIf="error && !loading">{{ error }}</div>
+
+  <!-- Daemon not running: Start button -->
+  <div class="start-screen" *ngIf="error && !loading">
+    <button class="start-btn"
+            (click)="startDaemon()"
+            [disabled]="daemonStarting">
+      {{ daemonStarting ? '...' : 'Start' }}
+    </button>
+    <div class="start-hint">Launch the workday daemon</div>
+  </div>
 
   <!-- Content -->
   <div class="content" *ngIf="data && !error">
-    <!-- Budget bar -->
-    <section class="budget">
-      <div class="budget-bar">
-        <div class="budget-fill" [style.width.%]="budgetPercent"></div>
+    <!-- Day timeline -->
+    <section class="timeline">
+      <div class="timeline-bar">
+        <div class="timeline-segment"
+             *ngFor="let iv of data.activeIntervals"
+             [style.left.%]="timeToPercent(iv.from)"
+             [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)">
+        </div>
+        <div class="timeline-now" [style.left.%]="currentTimePercent"></div>
       </div>
-      <div class="budget-labels">
-        <span>Work <strong>{{ formatDuration(data.claimedMs) }}</strong></span>
-        <span>Budget <strong>{{ formatDuration(data.budgetMs) }}</strong></span>
-        <span>Free <strong>{{ formatDuration(data.remainingBudgetMs) }}</strong></span>
+      <div class="timeline-labels">
+        <span>{{ formatHourLabel(data.schedule.start) }}</span>
+        <span class="timeline-total">Active <strong>{{ formatDuration(totalActiveMs) }}</strong></span>
+        <span>{{ formatHourLabel(data.schedule.end) }}</span>
       </div>
     </section>
 

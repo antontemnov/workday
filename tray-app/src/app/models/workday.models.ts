@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 2;
+export const EXPECTED_API_VERSION = 3;
 
 export interface ApiResponse<T = unknown> {
   ok: boolean;
@@ -40,6 +40,11 @@ export interface SessionDetail {
   totalPauseDurationMs: number;
 }
 
+export interface ActiveInterval {
+  readonly from: string;
+  readonly to: string;
+}
+
 export interface TodayResponse {
   date: string;
   dayType: string;
@@ -51,6 +56,8 @@ export interface TodayResponse {
   claimedMs: number;
   remainingBudgetMs: number;
   dayStartedAt: string | null;
+  schedule: { start: number; end: number };
+  activeIntervals: ActiveInterval[];
 }
 
 export interface StatusResponse {

@@ -63,8 +63,14 @@ function validateConfig(config: AppConfig): void {
     throw new Error('config.json: taskPattern is required');
   }
 
-  if (!Number.isInteger(config.dayBoundaryHour) || config.dayBoundaryHour < 0 || config.dayBoundaryHour > 23) {
-    throw new Error('config.json: dayBoundaryHour must be an integer 0-23');
+  if (!config.schedule || typeof config.schedule.start !== 'number' || typeof config.schedule.end !== 'number') {
+    throw new Error('config.json: schedule must have numeric start and end');
+  }
+  if (!Number.isInteger(config.schedule.start) || config.schedule.start < 0 || config.schedule.start > 23) {
+    throw new Error('config.json: schedule.start must be an integer 0-23');
+  }
+  if (!Number.isInteger(config.schedule.end) || config.schedule.end < 0 || config.schedule.end > 23) {
+    throw new Error('config.json: schedule.end must be an integer 0-23');
   }
 
   if (!isValidTimezone(config.timezone)) {
@@ -91,8 +97,16 @@ export function loadConfig(): AppConfig {
   }
   const raw = readJson<Record<string, unknown>>(configPath);
   const systemTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // Backward compat: dayBoundaryHour → schedule.end
+  if (!raw.schedule && typeof raw.dayBoundaryHour === 'number') {
+    raw.schedule = { start: 10, end: raw.dayBoundaryHour };
+    delete raw.dayBoundaryHour;
+  }
+
   const config = {
     ...raw,
+    schedule: raw.schedule ?? { start: 10, end: 4 },
     apiPort: raw.apiPort ?? DEFAULT_API_PORT,
     timezone: raw.timezone ?? systemTimezone,
   } as AppConfig;

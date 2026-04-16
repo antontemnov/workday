@@ -104,4 +104,13 @@ export class HttpWorkdayApiService extends WorkdayApiService {
   override async stop(): Promise<ApiResponse<unknown>> {
     return this.post('/api/stop');
   }
+
+  override async startDaemon(): Promise<void> {
+    try {
+      await invoke('start_daemon');
+    } catch {
+      // Outside Tauri webview (e.g. browser dev mode) — invoke is unavailable
+      throw new Error('Cannot start daemon outside Tauri app');
+    }
+  }
 }

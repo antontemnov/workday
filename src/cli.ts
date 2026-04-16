@@ -26,6 +26,7 @@ import {
   computeBudgetMs,
   computeTotalClaimedMs,
   getRemainingBudgetMs,
+  computeActiveIntervals,
 } from './core/daily-log.js';
 import type {
   ApiResponse,
@@ -535,6 +536,8 @@ async function handleDay(args: string[]): Promise<void> {
     claimedMs: computeTotalClaimedMs(log),
     remainingBudgetMs: getRemainingBudgetMs(log, config),
     dayStartedAt: log.dayStartedAt,
+    schedule: { start: config.schedule.start, end: config.schedule.end },
+    activeIntervals: computeActiveIntervals(log.sessions),
   });
 }
 
@@ -550,7 +553,7 @@ function handleInit(): void {
   if (!existsSync(configPath)) {
     const template = {
       repos: [],
-      dayBoundaryHour: 4,
+      schedule: { start: 10, end: 4 },
       taskPattern: 'PROJ-\\d+',
       genericBranches: ['develop', 'main', 'master'],
       session: {

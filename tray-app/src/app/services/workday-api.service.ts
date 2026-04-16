@@ -24,4 +24,5 @@ export abstract class WorkdayApiService {
   abstract adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>>;
   abstract setStart(time: string): Promise<ApiResponse<SetStartResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
+  abstract startDaemon(): Promise<void>;
 }

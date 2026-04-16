@@ -96,12 +96,19 @@ async fn upgrade_daemon() -> Result<String, String> {
     Ok("Daemon upgraded and restarted".to_string())
 }
 
+#[tauri::command]
+async fn start_daemon() -> Result<String, String> {
+    let path = enriched_path();
+    shell_spawn("workday start", &path);
+    Ok("Daemon starting...".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![upgrade_daemon])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
