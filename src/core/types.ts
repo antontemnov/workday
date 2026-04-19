@@ -259,6 +259,8 @@ export interface SessionSummary {
 export interface ActiveInterval {
   readonly from: string; // ISO timestamp
   readonly to: string;   // ISO timestamp
+  readonly sessionId: string;
+  readonly repo: string;
 }
 
 export interface TodayResponse {

@@ -17,6 +17,12 @@ interface AdjustModalState {
   styleUrl: './app.component.scss',
 })
 export class AppComponent implements OnInit, OnDestroy {
+  // Stable palette, stepped by session order within the day.
+  private static readonly SESSION_COLOR_PALETTE: readonly string[] = [
+    '#89b4fa', '#f38ba8', '#a6e3a1', '#fab387', '#cba6f7',
+    '#f9e2af', '#94e2d5', '#f5c2e7', '#74c7ec', '#eba0ac',
+  ];
+
   data: TodayResponse | null = null;
   error: string | null = null;
   loading = true;
@@ -28,6 +34,7 @@ export class AppComponent implements OnInit, OnDestroy {
   setStartModalOpen = false;
   actionError: string | null = null;
   actionPending = false;
+  hoveredSessionId: string | null = null;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,18 +86,54 @@ export class AppComponent implements OnInit, OnDestroy {
     return Math.max(0, Math.min(100, (offset / windowMs) * 100));
   }
 
-  get currentTimePercent(): number {
-    return this.timeToPercent(new Date().toISOString());
-  }
-
   get totalActiveMs(): number {
     if (!this.data?.activeIntervals) return 0;
     return this.data.activeIntervals.reduce((sum, iv) =>
       sum + (new Date(iv.to).getTime() - new Date(iv.from).getTime()), 0);
   }
 
-  formatHourLabel(hour: number): string {
-    return `${String(hour).padStart(2, '0')}:00`;
+  get totalPauseMs(): number {
+    if (!this.data) return 0;
+    return this.data.sessions.reduce((sum, s) => sum + s.totalPauseDurationMs, 0);
+  }
+
+  get formattedDate(): string {
+    if (!this.data) return '';
+    const [y, m, d] = this.data.date.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+  }
+
+  get dayStartIso(): string | null {
+    if (!this.data) return null;
+    if (this.data.dayStartedAt) return this.data.dayStartedAt;
+    const firstActivated = this.data.sessions.find(s => !!s.activatedAt)?.activatedAt;
+    if (firstActivated) return firstActivated;
+    return this.data.sessions[0]?.startedAt ?? null;
+  }
+
+  get dayStartLabel(): string {
+    const iso = this.dayStartIso;
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  get dayStartPercent(): number | null {
+    const iso = this.dayStartIso;
+    return iso ? this.timeToPercent(iso) : null;
+  }
+
+  sessionColor(sessionId: string): string {
+    const idx = this.data?.sessions.findIndex(s => s.id === sessionId) ?? -1;
+    if (idx < 0) return '#6c7086';
+    const palette = AppComponent.SESSION_COLOR_PALETTE;
+    return palette[idx % palette.length];
+  }
+
+  isSessionClosed(sessionId: string): boolean {
+    return this.data?.sessions.find(s => s.id === sessionId)?.closedBy != null;
   }
 
   private getScheduleStartMs(): number {

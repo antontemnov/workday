@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 3;
+export const EXPECTED_API_VERSION = 4;
 
 export interface ApiResponse<T = unknown> {
   ok: boolean;
@@ -43,6 +43,8 @@ export interface SessionDetail {
 export interface ActiveInterval {
   readonly from: string;
   readonly to: string;
+  readonly sessionId: string;
+  readonly repo: string;
 }
 
 export interface TodayResponse {

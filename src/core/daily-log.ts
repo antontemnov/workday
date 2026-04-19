@@ -341,9 +341,9 @@ export function getRemainingBudgetMs(log: DailyLog, config: AppConfig): number {
   return Math.max(0, computeBudgetMs(log, config) - computeTotalClaimedMs(log));
 }
 
-/** Compute merged active work intervals from sessions (excluding pauses) */
+/** Compute per-session active intervals (pauses excluded, no cross-session merge). */
 export function computeActiveIntervals(sessions: readonly Session[]): ActiveInterval[] {
-  const raw: Array<{ from: number; to: number }> = [];
+  const intervals: Array<{ from: number; to: number; sessionId: string; repo: string }> = [];
 
   for (const session of sessions) {
     if (!session.activatedAt) continue;
@@ -364,33 +364,22 @@ export function computeActiveIntervals(sessions: readonly Session[]): ActiveInte
     let cursor = start;
     for (const pause of sortedPauses) {
       if (pause.from > cursor) {
-        raw.push({ from: cursor, to: pause.from });
+        intervals.push({ from: cursor, to: pause.from, sessionId: session.id, repo: session.repo });
       }
       cursor = Math.max(cursor, pause.to);
     }
     if (cursor < end) {
-      raw.push({ from: cursor, to: end });
+      intervals.push({ from: cursor, to: end, sessionId: session.id, repo: session.repo });
     }
   }
 
-  if (raw.length === 0) return [];
+  intervals.sort((a, b) => a.from - b.from);
 
-  raw.sort((a, b) => a.from - b.from);
-  const merged: Array<{ from: number; to: number }> = [{ ...raw[0] }];
-
-  for (let i = 1; i < raw.length; i++) {
-    const last = merged[merged.length - 1];
-    const curr = raw[i];
-    if (curr.from <= last.to) {
-      last.to = Math.max(last.to, curr.to);
-    } else {
-      merged.push({ ...curr });
-    }
-  }
-
-  return merged.map(iv => ({
+  return intervals.map(iv => ({
     from: new Date(iv.from).toISOString(),
     to: new Date(iv.to).toISOString(),
+    sessionId: iv.sessionId,
+    repo: iv.repo,
   }));
 }
 

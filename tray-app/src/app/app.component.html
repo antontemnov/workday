@@ -1,11 +1,11 @@
 <div class="app">
   <!-- Header -->
   <header class="header">
-    <h1>WORKDAY</h1>
-    <div class="header-meta" *ngIf="data">
-      <span class="date">{{ data.date }}</span>
-      <span class="badge day-type">{{ data.dayType }}</span>
-    </div>
+    <span class="header-slot"></span>
+    <span class="date" *ngIf="data">{{ formattedDate }}</span>
+    <span class="header-slot right">
+      <span class="badge day-type" *ngIf="data">{{ data.dayType }}</span>
+    </span>
   </header>
 
   <!-- Loading -->
@@ -24,26 +24,39 @@
   <!-- Content -->
   <div class="content" *ngIf="data && !error">
     <!-- Day timeline -->
-    <section class="timeline">
+    <section class="timeline" *ngIf="data.activeIntervals.length || dayStartIso">
       <div class="timeline-bar">
         <div class="timeline-segment"
              *ngFor="let iv of data.activeIntervals"
+             [class.closed]="isSessionClosed(iv.sessionId)"
+             [class.highlight]="hoveredSessionId === iv.sessionId"
              [style.left.%]="timeToPercent(iv.from)"
-             [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)">
+             [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
+             [style.background-color]="sessionColor(iv.sessionId)"
+             (mouseenter)="hoveredSessionId = iv.sessionId"
+             (mouseleave)="hoveredSessionId = null">
         </div>
-        <div class="timeline-now" [style.left.%]="currentTimePercent"></div>
+        <div class="timeline-daystart"
+             *ngIf="dayStartPercent !== null"
+             [style.left.%]="dayStartPercent">
+          <span class="timeline-daystart-label">{{ dayStartLabel }}</span>
+        </div>
       </div>
-      <div class="timeline-labels">
-        <span>{{ formatHourLabel(data.schedule.start) }}</span>
-        <span class="timeline-total">Active <strong>{{ formatDuration(totalActiveMs) }}</strong></span>
-        <span>{{ formatHourLabel(data.schedule.end) }}</span>
+      <div class="timeline-stats">
+        <div class="active-line">Active <strong>{{ formatDuration(totalActiveMs) }}</strong></div>
+        <div class="pause-line">Pauses <strong>{{ formatDuration(totalPauseMs) }}</strong></div>
       </div>
     </section>
 
     <!-- Active sessions -->
     <section class="sessions" *ngIf="openSessions.length > 0">
       <h2>Active <span class="count">({{ openSessions.length }})</span></h2>
-      <div class="session-card" *ngFor="let s of openSessions">
+      <div class="session-card"
+           *ngFor="let s of openSessions"
+           [class.highlight]="hoveredSessionId === s.id"
+           (mouseenter)="hoveredSessionId = s.id"
+           (mouseleave)="hoveredSessionId = null">
+        <span class="session-color-bar" [style.background-color]="sessionColor(s.id)"></span>
         <div class="session-header">
           <span class="repo">{{ repoName(s.repo) }}</span>
           <span class="badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
@@ -119,7 +132,12 @@
     <!-- Closed sessions -->
     <section class="sessions closed" *ngIf="closedSessions.length > 0">
       <h2>Closed <span class="count">({{ closedSessions.length }})</span></h2>
-      <div class="closed-row" *ngFor="let s of closedSessions">
+      <div class="closed-row"
+           *ngFor="let s of closedSessions"
+           [class.highlight]="hoveredSessionId === s.id"
+           (mouseenter)="hoveredSessionId = s.id"
+           (mouseleave)="hoveredSessionId = null">
+        <span class="session-color-dot" [style.background-color]="sessionColor(s.id)"></span>
         <span class="repo">{{ repoName(s.repo) }}</span>
         <span class="task">{{ s.task ?? '—' }}</span>
         <span class="dur">{{ formatDuration(s.effectiveDurationMs) }}</span>
