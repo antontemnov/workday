@@ -39,7 +39,8 @@
         <div class="timeline-daystart"
              *ngIf="dayStartPercent !== null"
              [style.left.%]="dayStartPercent">
-          <span class="timeline-daystart-label">{{ dayStartLabel }}</span>
+          <span class="timeline-daystart-label"
+                [style.transform]="dayStartLabelTransform">{{ dayStartLabel }}</span>
         </div>
       </div>
       <div class="timeline-stats">

@@ -148,6 +148,7 @@ export class SessionTracker {
         count++;
       }
     }
+    this.pruneEmptySessions();
     return count;
   }
 
@@ -158,6 +159,26 @@ export class SessionTracker {
       if (!session.closedBy) {
         this.closeSession(session, reason, now);
       }
+    }
+    this.pruneEmptySessions();
+  }
+
+  /**
+   * Drop sessions that never reached ACTIVE (no activatedAt).
+   * Called from all shutdown / recovery paths before flushing.
+   * Notifies the evaluator so it releases any runtime state.
+   */
+  private pruneEmptySessions(): void {
+    const kept: Session[] = [];
+    for (const session of this.dailyLog.sessions) {
+      if (session.activatedAt) {
+        kept.push(session);
+      } else {
+        this.onSessionClosed?.(session.id);
+      }
+    }
+    if (kept.length !== this.dailyLog.sessions.length) {
+      this.dailyLog.sessions = kept;
     }
   }
 

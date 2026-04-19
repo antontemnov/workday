@@ -125,6 +125,15 @@ export class AppComponent implements OnInit, OnDestroy {
     return iso ? this.timeToPercent(iso) : null;
   }
 
+  // Keep the label inside the bar's horizontal bounds.
+  get dayStartLabelTransform(): string {
+    const p = this.dayStartPercent;
+    if (p === null) return 'translateX(-50%)';
+    if (p < 10) return 'translateX(0)';
+    if (p > 90) return 'translateX(-100%)';
+    return 'translateX(-50%)';
+  }
+
   sessionColor(sessionId: string): string {
     const idx = this.data?.sessions.findIndex(s => s.id === sessionId) ?? -1;
     if (idx < 0) return '#6c7086';
