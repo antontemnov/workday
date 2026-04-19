@@ -114,7 +114,7 @@
 
 // Day timeline
 .timeline {
-  margin: 14px 0 14px 0;
+  margin: 22px 0 14px 0;
 
   .timeline-bar {
     height: 20px;
@@ -130,7 +130,8 @@
     top: 3px;
     bottom: 3px;
     border-radius: 3px;
-    min-width: 3px;
+    min-width: 6px;
+    cursor: default;
     transition: box-shadow 0.15s ease, opacity 0.15s ease;
 
     &.closed {
@@ -541,6 +542,14 @@
         font-weight: 600;
         &:hover:not(:disabled) {
           background: #74a3f8;
+        }
+      }
+      &.ghost {
+        background: transparent;
+        color: #f38ba8;
+        border: 1px solid #3a2020;
+        &:hover:not(:disabled) {
+          background: #3a2020;
         }
       }
       &:disabled {

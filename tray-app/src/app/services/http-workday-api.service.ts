@@ -101,6 +101,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/set-start', { time });
   }
 
+  override async clearStart(): Promise<ApiResponse<SetStartResponse>> {
+    return this.post('/api/set-start', { clear: true });
+  }
+
   override async stop(): Promise<ApiResponse<unknown>> {
     return this.post('/api/stop');
   }

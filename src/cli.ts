@@ -27,7 +27,7 @@ import {
   computeTotalClaimedMs,
   getRemainingBudgetMs,
   computeActiveIntervals,
-  computeDayStart,
+  resolveUiDayStart,
 } from './core/daily-log.js';
 import type {
   ApiResponse,
@@ -536,7 +536,7 @@ async function handleDay(args: string[]): Promise<void> {
     budgetMs: computeBudgetMs(log, config),
     claimedMs: computeTotalClaimedMs(log),
     remainingBudgetMs: getRemainingBudgetMs(log, config),
-    dayStartedAt: new Date(computeDayStart(log, config)).toISOString(),
+    dayStartedAt: resolveUiDayStart(log),
     schedule: { start: config.schedule.start, end: config.schedule.end },
     activeIntervals: computeActiveIntervals(log.sessions),
   });

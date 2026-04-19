@@ -250,6 +250,25 @@ export class AppComponent implements OnInit, OnDestroy {
     if (ok) this.setStartModalOpen = false;
   }
 
+  async clearDayStart(): Promise<void> {
+    const ok = await this.runAction(() => this.api.clearStart());
+    if (ok) this.setStartModalOpen = false;
+  }
+
+  intervalTooltip(iv: { from: string; to: string; sessionId: string }): string {
+    const from = this.formatHm(iv.from);
+    const isOpen = !this.isSessionClosed(iv.sessionId);
+    const toRaw = isOpen ? Date.now() : new Date(iv.to).getTime();
+    const to = isOpen ? 'сейчас' : this.formatHm(iv.to);
+    const mins = Math.max(1, Math.round((toRaw - new Date(iv.from).getTime()) / 60_000));
+    return `${from} → ${to} · ${mins}m`;
+  }
+
+  private formatHm(iso: string): string {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
   toggleMenu(sessionId: string): void {
     this.activeMenuSessionId = this.activeMenuSessionId === sessionId ? null : sessionId;
   }

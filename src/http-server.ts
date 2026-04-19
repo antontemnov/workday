@@ -8,7 +8,7 @@ import {
   computeTotalClaimedMs,
   getRemainingBudgetMs,
   computeActiveIntervals,
-  computeDayStart,
+  resolveUiDayStart,
   readDailyLog,
   getOpenPause,
 } from './core/daily-log.js';
@@ -191,7 +191,7 @@ export class HttpServer {
         budgetMs: computeBudgetMs(log, config),
         claimedMs: computeTotalClaimedMs(log),
         remainingBudgetMs: getRemainingBudgetMs(log, config),
-        dayStartedAt: new Date(computeDayStart(log, config)).toISOString(),
+        dayStartedAt: resolveUiDayStart(log),
         schedule: { start: config.schedule.start, end: config.schedule.end },
         activeIntervals: computeActiveIntervals(log.sessions),
       },
@@ -289,19 +289,19 @@ export class HttpServer {
   }
 
   private async handleSetStart(body: Record<string, unknown>): Promise<ApiResponse<SetStartResponse>> {
-    const time = typeof body.time === 'string' ? body.time : '';
-    if (!time) return { ok: false, error: 'Missing time (HH:MM format)' };
-
-    // Parse HH:MM to ISO timestamp for current working date
-    const match = time.match(/^(\d{1,2}):(\d{2})$/);
-    if (!match) return { ok: false, error: 'Invalid time format. Use HH:MM' };
-
     const tracker = this.deps.sessionTracker;
     const log = tracker.getDailyLog();
     const config = this.deps.config;
 
-    // Build ISO timestamp from current date + provided time in config timezone
-    const isoTimestamp = buildTimestamp(log.date, parseInt(match[1]), parseInt(match[2]), config.timezone);
+    const rawTime = typeof body.time === 'string' ? body.time : '';
+    const wantClear = body.clear === true || rawTime === '';
+
+    let isoTimestamp: string | null = null;
+    if (!wantClear) {
+      const match = rawTime.match(/^(\d{1,2}):(\d{2})$/);
+      if (!match) return { ok: false, error: 'Invalid time format. Use HH:MM' };
+      isoTimestamp = buildTimestamp(log.date, parseInt(match[1]), parseInt(match[2]), config.timezone);
+    }
 
     const result = tracker.setManualDayStart(isoTimestamp);
     if (!result.ok) {
@@ -318,7 +318,7 @@ export class HttpServer {
     const response: ApiResponse<SetStartResponse> = {
       ok: true,
       data: {
-        dayStart: isoTimestamp,
+        dayStart: isoTimestamp ?? '',
         budgetMs: computeBudgetMs(log, config),
         remainingBudgetMs: getRemainingBudgetMs(log, config),
       },
@@ -387,7 +387,7 @@ export class HttpServer {
         budgetMs: computeBudgetMs(log, config),
         claimedMs: computeTotalClaimedMs(log),
         remainingBudgetMs: getRemainingBudgetMs(log, config),
-        dayStartedAt: new Date(computeDayStart(log, config)).toISOString(),
+        dayStartedAt: resolveUiDayStart(log),
         schedule: { start: config.schedule.start, end: config.schedule.end },
         activeIntervals: computeActiveIntervals(log.sessions),
       },

@@ -23,6 +23,7 @@ export abstract class WorkdayApiService {
   abstract autopause(enabled: boolean, repo?: string): Promise<ApiResponse<AutoPauseResponse>>;
   abstract adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>>;
   abstract setStart(time: string): Promise<ApiResponse<SetStartResponse>>;
+  abstract clearStart(): Promise<ApiResponse<SetStartResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
   abstract startDaemon(): Promise<void>;
 }

@@ -237,8 +237,8 @@ export class SessionTracker {
     }
   }
 
-  /** Set manual day start */
-  public setManualDayStart(isoTimestamp: string): { ok: boolean; error?: string } {
+  /** Set manual day start. Pass null to clear. */
+  public setManualDayStart(isoTimestamp: string | null): { ok: boolean; error?: string } {
     try {
       setDayManualStart(this.dailyLog, isoTimestamp, this.config);
       return { ok: true };

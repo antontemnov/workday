@@ -310,6 +310,20 @@ export function computeDayStart(log: DailyLog, config: AppConfig): number {
   return parseDateWithHour(log.date, config.schedule.end, config.timezone);
 }
 
+/**
+ * UI-only resolver for the day-start indicator. Unlike `computeDayStart`,
+ * this returns null when nothing meaningful is set yet, so the client can
+ * hide the indicator until the user either marks it manually or the first
+ * session reaches ACTIVE.
+ */
+export function resolveUiDayStart(log: DailyLog): string | null {
+  if (log.manualStart) return log.manualStart;
+  for (const s of log.sessions) {
+    if (s.activatedAt) return s.activatedAt;
+  }
+  return null;
+}
+
 /** Compute day end timestamp (next day boundary) */
 export function computeDayEnd(date: string, dayBoundaryHour: number, timezone: string): number {
   // Day end = next calendar day at dayBoundaryHour
@@ -422,19 +436,34 @@ export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: n
   });
 }
 
-/** Set manual day start. Can only shift earlier. */
-export function setDayManualStart(log: DailyLog, isoTimestamp: string, config: AppConfig): void {
-  const newStart = new Date(isoTimestamp).getTime();
-  const currentStart = computeDayStart(log, config);
-
-  if (newStart > currentStart) {
-    throw new Error('Can only shift day start earlier');
+/**
+ * Set manual day start. Passing null clears the override.
+ *
+ * Rules:
+ * - Must be >= schedule.start hour on the log date (start of tracking window).
+ * - If any sessions exist, must be <= the first session's startedAt.
+ */
+export function setDayManualStart(log: DailyLog, isoTimestamp: string | null, config: AppConfig): void {
+  if (isoTimestamp === null) {
+    log.manualStart = null;
+    return;
   }
 
-  // Must be >= previous day boundary
-  const prevBoundary = parseDateWithHour(log.date, config.schedule.end, config.timezone);
-  if (newStart < prevBoundary) {
-    throw new Error(`Cannot start before previous day boundary (${String(config.schedule.end).padStart(2, '0')}:00)`);
+  const newStart = new Date(isoTimestamp).getTime();
+
+  const lowerBound = parseDateWithHour(log.date, config.schedule.start, config.timezone);
+  if (newStart < lowerBound) {
+    throw new Error(`Cannot start before ${String(config.schedule.start).padStart(2, '0')}:00 (tracking window)`);
+  }
+
+  const firstSession = log.sessions[0];
+  if (firstSession) {
+    const firstStart = new Date(firstSession.startedAt).getTime();
+    if (newStart > firstStart) {
+      const d = new Date(firstSession.startedAt);
+      const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      throw new Error(`Cannot start after the first session (${hhmm})`);
+    }
   }
 
   log.manualStart = isoTimestamp;

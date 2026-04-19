@@ -33,6 +33,7 @@
              [style.left.%]="timeToPercent(iv.from)"
              [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
              [style.background-color]="sessionColor(iv.sessionId)"
+             [title]="intervalTooltip(iv)"
              (mouseenter)="hoveredSessionId = iv.sessionId"
              (mouseleave)="hoveredSessionId = null">
         </div>
@@ -212,12 +213,18 @@
   <div class="modal-backdrop" *ngIf="setStartModalOpen" (click)="setStartModalOpen = false">
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>Set day start</h3>
-      <div class="modal-sub">Extends today's budget retroactively</div>
+      <div class="modal-sub">Override when the working day begins</div>
       <label>Time
-        <input #startTime type="time" value="09:00" />
+        <input #startTime type="time" [value]="dayStartLabel || '09:00'" />
       </label>
       <div class="modal-actions">
         <button (click)="setStartModalOpen = false">Cancel</button>
+        <button class="ghost"
+                [disabled]="actionPending"
+                (click)="clearDayStart()"
+                title="Fall back to the first active session">
+          Clear
+        </button>
         <button class="primary"
                 [disabled]="!startTime.value || actionPending"
                 (click)="submitSetStart(startTime.value)">
