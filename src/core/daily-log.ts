@@ -440,13 +440,19 @@ export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: n
  * Set manual day start. Passing null clears the override.
  *
  * Rules:
- * - Must be >= schedule.start hour on the log date (start of tracking window).
- * - If any sessions exist, must be <= the first session's startedAt.
+ * - Manual start is unavailable until the first session exists — nothing to anchor to.
+ * - Once sessions exist: schedule.start <= newStart <= first session's startedAt.
+ *   Real logged activity wins; user may only shift earlier, never after it.
  */
 export function setDayManualStart(log: DailyLog, isoTimestamp: string | null, config: AppConfig): void {
   if (isoTimestamp === null) {
     log.manualStart = null;
     return;
+  }
+
+  const firstSession = log.sessions[0];
+  if (!firstSession) {
+    throw new Error('No sessions yet — manual day start is unavailable until work begins');
   }
 
   const newStart = new Date(isoTimestamp).getTime();
@@ -456,14 +462,11 @@ export function setDayManualStart(log: DailyLog, isoTimestamp: string | null, co
     throw new Error(`Cannot start before ${String(config.schedule.start).padStart(2, '0')}:00 (tracking window)`);
   }
 
-  const firstSession = log.sessions[0];
-  if (firstSession) {
-    const firstStart = new Date(firstSession.startedAt).getTime();
-    if (newStart > firstStart) {
-      const d = new Date(firstSession.startedAt);
-      const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      throw new Error(`Cannot start after the first session (${hhmm})`);
-    }
+  const firstStart = new Date(firstSession.startedAt).getTime();
+  if (newStart > firstStart) {
+    const d = new Date(firstSession.startedAt);
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    throw new Error(`Cannot start after the first session (${hhmm})`);
   }
 
   log.manualStart = isoTimestamp;

@@ -537,6 +537,7 @@ async function handleDay(args: string[]): Promise<void> {
     claimedMs: computeTotalClaimedMs(log),
     remainingBudgetMs: getRemainingBudgetMs(log, config),
     dayStartedAt: resolveUiDayStart(log),
+    manualStart: log.manualStart,
     schedule: { start: config.schedule.start, end: config.schedule.end },
     activeIntervals: computeActiveIntervals(log.sessions),
   });

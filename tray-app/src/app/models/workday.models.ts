@@ -58,6 +58,7 @@ export interface TodayResponse {
   claimedMs: number;
   remainingBudgetMs: number;
   dayStartedAt: string | null;
+  manualStart?: string | null;
   schedule: { start: number; end: number };
   activeIntervals: ActiveInterval[];
 }

@@ -274,6 +274,7 @@ export interface TodayResponse {
   readonly claimedMs: number;
   readonly remainingBudgetMs: number;
   readonly dayStartedAt: string | null;
+  readonly manualStart: string | null;
   readonly schedule: ScheduleConfig;
   readonly activeIntervals: readonly ActiveInterval[];
 }

@@ -160,6 +160,14 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.openSessions.some(s => s.paused);
   }
 
+  get hasSessions(): boolean {
+    return (this.data?.sessions.length ?? 0) > 0;
+  }
+
+  get hasManualStart(): boolean {
+    return !!this.data?.manualStart;
+  }
+
   formatDuration(ms: number): string {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
