@@ -100,7 +100,27 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get totalPauseMs(): number {
     if (!this.data) return 0;
-    return this.data.sessions.reduce((sum, s) => sum + s.totalPauseDurationMs, 0);
+    if (typeof this.data.downtimeMs === 'number') return this.data.downtimeMs;
+    // Fallback for older daemons: union active intervals, subtract from span.
+    return this.computeIdleFromIntervals();
+  }
+
+  private computeIdleFromIntervals(): number {
+    const intervals = this.data?.activeIntervals;
+    if (!intervals || intervals.length === 0) return 0;
+    const sorted = intervals
+      .map(iv => ({ from: new Date(iv.from).getTime(), to: new Date(iv.to).getTime() }))
+      .sort((a, b) => a.from - b.from);
+    const merged: Array<{ from: number; to: number }> = [{ ...sorted[0] }];
+    for (let i = 1; i < sorted.length; i++) {
+      const last = merged[merged.length - 1];
+      const curr = sorted[i];
+      if (curr.from <= last.to) last.to = Math.max(last.to, curr.to);
+      else merged.push({ ...curr });
+    }
+    const span = merged[merged.length - 1].to - merged[0].from;
+    const work = merged.reduce((sum, iv) => sum + (iv.to - iv.from), 0);
+    return span - work;
   }
 
   get formattedDate(): string {

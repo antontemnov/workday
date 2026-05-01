@@ -8,6 +8,7 @@ import {
   computeTotalClaimedMs,
   getRemainingBudgetMs,
   computeActiveIntervals,
+  computeDaySummary,
   resolveUiDayStart,
   readDailyLog,
   getOpenPause,
@@ -195,6 +196,7 @@ export class HttpServer {
         manualStart: log.manualStart,
         schedule: { start: config.schedule.start, end: config.schedule.end },
         activeIntervals: computeActiveIntervals(log.sessions),
+        downtimeMs: computeDaySummary(log.sessions).downtimeMs,
       },
     };
   }
@@ -392,6 +394,7 @@ export class HttpServer {
         manualStart: log.manualStart,
         schedule: { start: config.schedule.start, end: config.schedule.end },
         activeIntervals: computeActiveIntervals(log.sessions),
+        downtimeMs: computeDaySummary(log.sessions).downtimeMs,
       },
     };
   }

@@ -277,6 +277,8 @@ export interface TodayResponse {
   readonly manualStart: string | null;
   readonly schedule: ScheduleConfig;
   readonly activeIntervals: readonly ActiveInterval[];
+  // Time when no session was active (union of work intervals subtracted from full span).
+  readonly downtimeMs: number;
 }
 
 export interface SessionDetail extends SessionSummary {

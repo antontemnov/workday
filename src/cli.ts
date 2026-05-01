@@ -27,6 +27,7 @@ import {
   computeTotalClaimedMs,
   getRemainingBudgetMs,
   computeActiveIntervals,
+  computeDaySummary,
   resolveUiDayStart,
 } from './core/daily-log.js';
 import type {
@@ -540,6 +541,7 @@ async function handleDay(args: string[]): Promise<void> {
     manualStart: log.manualStart,
     schedule: { start: config.schedule.start, end: config.schedule.end },
     activeIntervals: computeActiveIntervals(log.sessions),
+    downtimeMs: computeDaySummary(log.sessions).downtimeMs,
   });
 }
 
