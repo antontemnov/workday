@@ -117,18 +117,18 @@
   margin: 22px 0 14px 0;
 
   .timeline-bar {
-    height: 20px;
+    height: 30px;
     background: #11111b;
     border: 1px solid #45475a;
     border-radius: 4px;
     position: relative;
-    margin-bottom: 8px;
+    margin-bottom: 14px;
   }
 
   .timeline-segment {
     position: absolute;
-    top: 3px;
-    bottom: 3px;
+    top: 4px;
+    bottom: 4px;
     border-radius: 3px;
     min-width: 6px;
     cursor: default;
@@ -148,23 +148,40 @@
   .timeline-daystart,
   .timeline-dayend {
     position: absolute;
-    top: -6px;
-    bottom: -2px;
     width: 1px;
     background: #cdd6f4;
     z-index: 3;
     pointer-events: none;
   }
 
-  .timeline-daystart-label,
-  .timeline-dayend-label {
-    position: absolute;
-    top: -12px;
-    left: 0;
-    font-size: 9px;
-    color: #cdd6f4;
-    letter-spacing: 0.3px;
-    white-space: nowrap;
+  .timeline-daystart {
+    top: -6px;
+    bottom: -2px;
+
+    .timeline-daystart-label {
+      position: absolute;
+      top: -12px;
+      left: 0;
+      font-size: 9px;
+      color: #cdd6f4;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+  }
+
+  .timeline-dayend {
+    top: -2px;
+    bottom: -6px;
+
+    .timeline-dayend-label {
+      position: absolute;
+      bottom: -12px;
+      left: 0;
+      font-size: 9px;
+      color: #cdd6f4;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
   }
 
   .timeline-stats {
