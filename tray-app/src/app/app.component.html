@@ -43,6 +43,12 @@
           <span class="timeline-daystart-label"
                 [style.transform]="dayStartLabelTransform">{{ dayStartLabel }}</span>
         </div>
+        <div class="timeline-dayend"
+             *ngIf="lastActivityPercent !== null"
+             [style.left.%]="lastActivityPercent">
+          <span class="timeline-dayend-label"
+                [style.transform]="lastActivityLabelTransform">{{ lastActivityLabel }}</span>
+        </div>
       </div>
       <div class="timeline-stats">
         <div class="active-line">Active <strong>{{ formatDuration(totalActiveMs) }}</strong></div>

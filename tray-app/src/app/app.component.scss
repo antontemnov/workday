@@ -145,7 +145,8 @@
     }
   }
 
-  .timeline-daystart {
+  .timeline-daystart,
+  .timeline-dayend {
     position: absolute;
     top: -6px;
     bottom: -2px;
@@ -153,16 +154,17 @@
     background: #cdd6f4;
     z-index: 3;
     pointer-events: none;
+  }
 
-    .timeline-daystart-label {
-      position: absolute;
-      top: -12px;
-      left: 0;
-      font-size: 9px;
-      color: #cdd6f4;
-      letter-spacing: 0.3px;
-      white-space: nowrap;
-    }
+  .timeline-daystart-label,
+  .timeline-dayend-label {
+    position: absolute;
+    top: -12px;
+    left: 0;
+    font-size: 9px;
+    color: #cdd6f4;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
   }
 
   .timeline-stats {

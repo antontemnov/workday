@@ -37,17 +37,23 @@ export class AppComponent implements OnInit, OnDestroy {
   hoveredSessionId: string | null = null;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private tickTimer: ReturnType<typeof setInterval> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Used by lastActivity getters to advance the live marker between polls.
+  currentTimeMs: number = Date.now();
 
   constructor(private api: WorkdayApiService) {}
 
   ngOnInit(): void {
     this.refresh();
     this.pollTimer = setInterval(() => this.refresh(), 10_000);
+    this.tickTimer = setInterval(() => this.currentTimeMs = Date.now(), 30_000);
   }
 
   ngOnDestroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.tickTimer) clearInterval(this.tickTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
   }
 
@@ -128,6 +134,42 @@ export class AppComponent implements OnInit, OnDestroy {
   // Keep the label inside the bar's horizontal bounds.
   get dayStartLabelTransform(): string {
     const p = this.dayStartPercent;
+    if (p === null) return 'translateX(-50%)';
+    if (p < 10) return 'translateX(0)';
+    if (p > 90) return 'translateX(-100%)';
+    return 'translateX(-50%)';
+  }
+
+  // Latest activity timestamp: live `now` if any session is actively running,
+  // otherwise the most recent interval `to` (frozen at pause start or session close).
+  get lastActivityIso(): string | null {
+    if (!this.data?.activeIntervals.length) return null;
+
+    const hasLiveSession = this.openSessions.some(s => !s.paused && s.activatedAt !== null);
+    if (hasLiveSession) return new Date(this.currentTimeMs).toISOString();
+
+    let maxTo = 0;
+    for (const iv of this.data.activeIntervals) {
+      const t = new Date(iv.to).getTime();
+      if (t > maxTo) maxTo = t;
+    }
+    return maxTo > 0 ? new Date(maxTo).toISOString() : null;
+  }
+
+  get lastActivityLabel(): string {
+    const iso = this.lastActivityIso;
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  get lastActivityPercent(): number | null {
+    const iso = this.lastActivityIso;
+    return iso ? this.timeToPercent(iso) : null;
+  }
+
+  get lastActivityLabelTransform(): string {
+    const p = this.lastActivityPercent;
     if (p === null) return 'translateX(-50%)';
     if (p < 10) return 'translateX(0)';
     if (p > 90) return 'translateX(-100%)';
