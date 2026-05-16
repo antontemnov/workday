@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 4;
+export const EXPECTED_API_VERSION = 5;
 
 export interface ApiResponse<T = unknown> {
   ok: boolean;
@@ -89,4 +89,8 @@ export interface SetStartResponse {
   dayStart: string;
   budgetMs: number;
   remainingBudgetMs: number;
+}
+
+export interface DaysResponse {
+  readonly dates: readonly string[];
 }

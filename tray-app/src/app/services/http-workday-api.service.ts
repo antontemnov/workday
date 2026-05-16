@@ -8,6 +8,7 @@ import {
   AutoPauseResponse,
   AdjustResponse,
   SetStartResponse,
+  DaysResponse,
   EXPECTED_API_VERSION,
 } from '../models/workday.models';
 
@@ -75,6 +76,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async getDay(date: string): Promise<ApiResponse<TodayResponse>> {
     return this.get(`/api/day?date=${date}`);
+  }
+
+  override async getDays(): Promise<ApiResponse<DaysResponse>> {
+    return this.get('/api/days');
   }
 
   override async getStatus(): Promise<ApiResponse<StatusResponse>> {

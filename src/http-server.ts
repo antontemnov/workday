@@ -12,6 +12,7 @@ import {
   resolveUiDayStart,
   readDailyLog,
   getOpenPause,
+  listAvailableDates,
 } from './core/daily-log.js';
 import { computeWorkingDate, buildTimestamp } from './core/config.js';
 import { MAX_BODY_BYTES, API_VERSION } from './core/constants.js';
@@ -28,6 +29,7 @@ import type {
   AutoPauseResponse,
   AdjustResponse,
   SetStartResponse,
+  DaysResponse,
   Session,
 } from './core/types.js';
 
@@ -129,6 +131,9 @@ export class HttpServer {
       if (method === 'GET' && path === '/api/day') {
         const date = url.searchParams.get('date');
         return this.sendJson(res, 200, this.handleDay(date));
+      }
+      if (method === 'GET' && path === '/api/days') {
+        return this.sendJson(res, 200, this.handleDays());
       }
       if (method === 'POST' && path === '/api/stop') {
         const response: ApiResponse<StopResponse> = { ok: true, data: { message: 'Daemon stopping...' } };
@@ -397,6 +402,10 @@ export class HttpServer {
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
       },
     };
+  }
+
+  private handleDays(): ApiResponse<DaysResponse> {
+    return { ok: true, data: { dates: listAvailableDates() } };
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────

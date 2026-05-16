@@ -2,10 +2,11 @@
   <!-- Header -->
   <header class="header">
     <span class="header-slot"></span>
-    <div class="date-nav" *ngIf="data">
+    <div class="date-nav" *ngIf="formattedDate">
       <button class="nav-btn"
               (click)="goPrevDay()"
-              title="Previous day">‹</button>
+              [disabled]="!hasPrevDay"
+              title="Previous day with data">‹</button>
       <span class="date"
             [class.clickable]="!isViewingToday"
             (click)="goToday()"
@@ -13,7 +14,7 @@
       <button class="nav-btn"
               (click)="goNextDay()"
               [disabled]="isViewingToday"
-              title="Next day">›</button>
+              title="Next day with data">›</button>
     </div>
     <span class="header-slot right">
       <span class="badge day-type" *ngIf="data">{{ data.dayType }}</span>

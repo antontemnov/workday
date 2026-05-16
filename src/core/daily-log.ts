@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync, statSync, writeSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync, statSync, writeSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
@@ -76,6 +76,43 @@ function tryParseLogFile(filePath: string): DailyLog | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * List all stored dates that have at least one session.
+ * Scans the data directory; sorted descending (newest first).
+ */
+export function listAvailableDates(): string[] {
+  const dataDir = getDataDir();
+  if (!existsSync(dataDir)) return [];
+
+  let monthDirs: string[];
+  try {
+    monthDirs = readdirSync(dataDir).filter(d => /^\d{4}-\d{2}$/.test(d));
+  } catch {
+    return [];
+  }
+
+  const dates: string[] = [];
+  for (const monthDir of monthDirs) {
+    let files: string[];
+    try {
+      files = readdirSync(join(dataDir, monthDir));
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      const match = file.match(/^(\d{2})-(\d{2})\.json$/);
+      if (!match) continue;
+      const date = `${monthDir}-${match[2]}`;
+      const log = readDailyLog(date);
+      if (log && log.sessions.length > 0) {
+        dates.push(date);
+      }
+    }
+  }
+
+  return dates.sort().reverse();
 }
 
 /** Read daily log from disk. Falls back to .bak if main file is corrupted. */

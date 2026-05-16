@@ -320,6 +320,11 @@ export interface SetStartResponse {
   readonly remainingBudgetMs: number;
 }
 
+export interface DaysResponse {
+  // YYYY-MM-DD, descending (newest first). Includes only days with sessions.
+  readonly dates: readonly string[];
+}
+
 // ─── Report & Push ──────────────────────────────────────────────────────
 
 export interface TaskDayReport {

@@ -6,6 +6,7 @@ import {
   AutoPauseResponse,
   AdjustResponse,
   SetStartResponse,
+  DaysResponse,
 } from '../models/workday.models';
 
 /**
@@ -17,6 +18,7 @@ import {
 export abstract class WorkdayApiService {
   abstract getToday(): Promise<ApiResponse<TodayResponse>>;
   abstract getDay(date: string): Promise<ApiResponse<TodayResponse>>;
+  abstract getDays(): Promise<ApiResponse<DaysResponse>>;
   abstract getStatus(): Promise<ApiResponse<StatusResponse>>;
   abstract pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>>;
   abstract resume(): Promise<ApiResponse<{ resumed: string[] }>>;

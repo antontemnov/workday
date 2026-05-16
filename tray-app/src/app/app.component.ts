@@ -40,6 +40,9 @@ export class AppComponent implements OnInit, OnDestroy {
   viewedDate: string | null = null;
   // Latest known "today" date from the daemon — used to clamp the Next button.
   private todayDate: string | null = null;
+  // Past days (with sessions), descending. Drives Prev/Next so navigation only
+  // lands on days with real data instead of stepping through empty calendar days.
+  private availableDates: string[] = [];
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -51,6 +54,7 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(private api: WorkdayApiService) {}
 
   ngOnInit(): void {
+    void this.refreshAvailableDates();
     this.refresh();
     // Polling and live ticks only make sense for today.
     this.pollTimer = setInterval(() => {
@@ -59,6 +63,13 @@ export class AppComponent implements OnInit, OnDestroy {
     this.tickTimer = setInterval(() => {
       if (this.isViewingToday) this.currentTimeMs = Date.now();
     }, 30_000);
+  }
+
+  private async refreshAvailableDates(): Promise<void> {
+    const res = await this.api.getDays();
+    if (res.ok && res.data) {
+      this.availableDates = [...res.data.dates];
+    }
   }
 
   ngOnDestroy(): void {
@@ -76,6 +87,10 @@ export class AppComponent implements OnInit, OnDestroy {
       this.data = res.data;
       this.error = null;
       if (!date) this.todayDate = res.data.date;
+      // Keep navigation list in sync when a day first gains sessions.
+      if (res.data.sessions.length > 0 && !this.availableDates.includes(res.data.date)) {
+        this.availableDates = [res.data.date, ...this.availableDates].sort().reverse();
+      }
     } else {
       this.error = res.error ?? 'Unknown error';
     }
@@ -89,36 +104,59 @@ export class AppComponent implements OnInit, OnDestroy {
   goPrevDay(): void {
     const base = this.viewedDate ?? this.todayDate ?? this.data?.date;
     if (!base) return;
-    this.viewedDate = this.shiftDate(base, -1);
-    this.loading = true;
-    void this.refresh();
+    const target = this.findPrevDate(base);
+    if (!target) return;
+    this.navigateTo(target);
   }
 
   goNextDay(): void {
-    if (this.isViewingToday || !this.viewedDate) return;
-    const next = this.shiftDate(this.viewedDate, 1);
-    // Stepping past (or onto) today returns to the live view.
-    this.viewedDate = this.todayDate && next >= this.todayDate ? null : next;
-    this.loading = true;
-    void this.refresh();
+    if (this.isViewingToday) return;
+    const base = this.viewedDate;
+    if (!base) return;
+    const target = this.findNextDate(base);
+    // No later past day, or we'd land on/after today → back to live view.
+    if (!target || (this.todayDate && target >= this.todayDate)) {
+      this.navigateTo(null);
+      return;
+    }
+    this.navigateTo(target);
   }
 
   goToday(): void {
     if (this.isViewingToday) return;
-    this.viewedDate = null;
+    this.navigateTo(null);
+    void this.refreshAvailableDates();
+  }
+
+  private navigateTo(date: string | null): void {
+    this.viewedDate = date;
+    // Clear stale data so the header/badges/timeline don't reflect the previous day.
+    this.data = null;
+    this.error = null;
     this.loading = true;
     void this.refresh();
   }
 
-  // YYYY-MM-DD + integer day offset → YYYY-MM-DD, handling month/year rollover.
-  private shiftDate(dateStr: string, days: number): string {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    date.setDate(date.getDate() + days);
-    const yy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yy}-${mm}-${dd}`;
+  private findPrevDate(from: string): string | null {
+    // availableDates is sorted descending — first match < from is the closest earlier day.
+    for (const d of this.availableDates) {
+      if (d < from) return d;
+    }
+    return null;
+  }
+
+  private findNextDate(from: string): string | null {
+    // Walk from oldest upward to find the closest day > from.
+    for (let i = this.availableDates.length - 1; i >= 0; i--) {
+      const d = this.availableDates[i];
+      if (d > from) return d;
+    }
+    return null;
+  }
+
+  get hasPrevDay(): boolean {
+    const base = this.viewedDate ?? this.todayDate ?? this.data?.date;
+    return base != null && this.findPrevDate(base) !== null;
   }
 
   get openSessions(): SessionDetail[] {
@@ -177,8 +215,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get formattedDate(): string {
-    if (!this.data) return '';
-    const [y, m, d] = this.data.date.split('-').map(Number);
+    // Prefer viewedDate so the header reflects the navigation target immediately,
+    // even while loading or when the daemon has no data for that day.
+    const date = this.viewedDate ?? this.data?.date;
+    if (!date) return '';
+    const [y, m, d] = date.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
