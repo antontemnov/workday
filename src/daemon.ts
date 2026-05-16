@@ -150,7 +150,8 @@ export class Daemon {
     if (!this.running) return;
 
     try {
-      const results = await this.gitTracker.pollAll();
+      const baseShas = this.sessionTracker.getBaseShasPerRepoPath(this.config.repos);
+      const results = await this.gitTracker.pollAll(baseShas);
 
       // 1. Session lifecycle + evidence
       for (const result of results) {

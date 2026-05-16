@@ -114,6 +114,11 @@ export interface Session {
   evidence: Evidence;
   pauses: Pause[];
   manualAdjustments: ManualAdjustment[];
+  // Commit SHA captured at session open (or copied from a prior session
+  // on the same repo+task today). Evidence is computed each tick as
+  // `git diff baseSha` / `git rev-list baseSha..HEAD` — what a PR would
+  // show. Null until the first poll fills it in.
+  baseSha: string | null;
 }
 
 // ─── Signals ─────────────────────────────────────────────────────────────
@@ -204,9 +209,25 @@ export interface ReflogEntry {
 
 export interface RawGitOutput {
   readonly branch: string;
+  readonly currentHead: string;
   readonly diffNumstat: string;
   readonly statusPorcelain: string;
   readonly reflog: string;
+  // Populated only when baseSha is passed to GitClient.fetchRepoState().
+  readonly diffSinceBase?: string;
+  readonly commitsSinceBase?: string;
+}
+
+/**
+ * Evidence snapshot vs baseSha — what a PR/MR diff would show.
+ * Computed each tick from `git diff <baseSha> --numstat` and
+ * `git rev-list <baseSha>..HEAD --count`. Overwrites session.evidence.
+ */
+export interface EvidenceSnapshot {
+  readonly commits: number;
+  readonly linesAdded: number;
+  readonly linesRemoved: number;
+  readonly filesChanged: number;
 }
 
 export interface PollResult {
@@ -216,6 +237,10 @@ export interface PollResult {
   readonly snapshot: GitSnapshot;
   readonly delta: GitDelta;
   readonly newReflogEntries: ReflogEntry[];
+  readonly currentHead: string;
+  // null when baseSha for this repo wasn't known at poll time — first tick
+  // after openSession resets it via SessionTracker.captureBaseSha().
+  readonly evidenceSnapshot: EvidenceSnapshot | null;
 }
 
 // ─── Daemon runtime state (per repo, not persisted) ─────────────────────

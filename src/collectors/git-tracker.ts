@@ -6,6 +6,7 @@ import type {
   PollResult,
   ReflogEntry,
   RepoTracker,
+  EvidenceSnapshot,
 } from '../core/types.js';
 import { RepoState } from '../core/types.js';
 import { extractTask } from '../core/config.js';
@@ -36,13 +37,20 @@ export class GitTracker {
     this.reflogParser = new ReflogParser(config.taskPattern);
   }
 
-  /** Poll all configured repos. Returns results only for accessible repos. */
-  public async pollAll(): Promise<PollResult[]> {
+  /**
+   * Poll all configured repos. Returns results only for accessible repos.
+   * baseShas (per repoPath) drives the PR-equivalent evidence snapshot —
+   * if a baseSha is provided for a repo, the batch includes diff/log vs
+   * that base; otherwise the snapshot is null and SessionTracker is
+   * expected to capture currentHead as the new baseSha.
+   */
+  public async pollAll(baseShas?: ReadonlyMap<string, string | null>): Promise<PollResult[]> {
     const results: PollResult[] = [];
 
     for (const repoPath of this.config.repos) {
       try {
-        const result = await this.pollRepo(repoPath);
+        const baseSha = baseShas?.get(repoPath) ?? null;
+        const result = await this.pollRepo(repoPath, baseSha);
         if (result !== null) {
           results.push(result);
         }
@@ -65,9 +73,9 @@ export class GitTracker {
    * Poll a single repo.
    * Returns null if branch is not developer's (skip this repo for now).
    */
-  private async pollRepo(repoPath: string): Promise<PollResult | null> {
+  private async pollRepo(repoPath: string, baseSha: string | null): Promise<PollResult | null> {
     const now = Date.now();
-    const raw = await this.gitClient.fetchRepoState(repoPath);
+    const raw = await this.gitClient.fetchRepoState(repoPath, baseSha ?? undefined);
 
     // Detached HEAD shows as commit SHA (7-40 hex chars); skip to avoid disrupting sessions
     if (raw.branch === 'HEAD' || /^[0-9a-f]{7,40}$/.test(raw.branch)) {
@@ -106,6 +114,20 @@ export class GitTracker {
     // Determine repo state based on signals
     this.updateRepoState(state, task, delta, newEntries);
 
+    // PR-equivalent evidence snapshot (only when baseSha was supplied AND
+    // git accepted it — fetchRepoState transparently drops it on bad-ref).
+    let evidenceSnapshot: EvidenceSnapshot | null = null;
+    if (raw.diffSinceBase !== undefined && raw.commitsSinceBase !== undefined) {
+      const { added, removed, fileCount } = SnapshotParser.parseDiffNumstatTotals(raw.diffSinceBase);
+      const commits = parseInt(raw.commitsSinceBase, 10);
+      evidenceSnapshot = {
+        commits: Number.isFinite(commits) ? commits : 0,
+        linesAdded: added,
+        linesRemoved: removed,
+        filesChanged: fileCount,
+      };
+    }
+
     return {
       repoPath,
       branch: raw.branch,
@@ -113,6 +135,8 @@ export class GitTracker {
       snapshot,
       delta,
       newReflogEntries: newEntries,
+      currentHead: raw.currentHead,
+      evidenceSnapshot,
     };
   }
 

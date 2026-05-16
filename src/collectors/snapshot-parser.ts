@@ -48,6 +48,14 @@ export class SnapshotParser {
   }
 
   /**
+   * Public alias — used by GitTracker to parse a `diff <baseSha> --numstat`
+   * output for the PR-equivalent evidence snapshot.
+   */
+  public static parseDiffNumstatTotals(text: string): { readonly added: number; readonly removed: number; readonly fileCount: number } {
+    return SnapshotParser.parseDiffNumstat(text);
+  }
+
+  /**
    * Parse "git diff --numstat" output.
    * Each line: "added\tremoved\tfilename"
    * Binary files show "-\t-\tfilename" → skip.

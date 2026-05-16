@@ -532,16 +532,30 @@
     }
 
     &.active {
-      background: #45475a;
-      color: #cdd6f4;
-      border-color: #585b70;
       font-weight: 600;
     }
 
-    &.pause-pill.active {
-      background: #3a2020;
-      color: #f38ba8;
-      border-color: #f38ba8;
+    // Per-pill colour palette (cold → warm gradient with explicit poles).
+    // Inactive pills hint their colour on hover; active pills wear it fully.
+    &.pause-pill {
+      &:hover:not(:disabled):not(.active) { color: #f38ba8; }
+      &.active { background: #3a2020; color: #f38ba8; border-color: #f38ba8; }
+    }
+    &.low-pill {
+      &:hover:not(:disabled):not(.active) { color: #f9e2af; }
+      &.active { background: #3a3520; color: #f9e2af; border-color: #f9e2af; }
+    }
+    &.normal-pill {
+      &:hover:not(:disabled):not(.active) { color: #a6e3a1; }
+      &.active { background: #1e3a2a; color: #a6e3a1; border-color: #a6e3a1; }
+    }
+    &.patient-pill {
+      &:hover:not(:disabled):not(.active) { color: #89b4fa; }
+      &.active { background: #20283a; color: #89b4fa; border-color: #89b4fa; }
+    }
+    &.alwayson-pill {
+      &:hover:not(:disabled):not(.active) { color: #cba6f7; }
+      &.active { background: #2c2a3a; color: #cba6f7; border-color: #cba6f7; }
     }
 
     &:disabled {

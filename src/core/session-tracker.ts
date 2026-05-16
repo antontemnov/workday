@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
-import type { AppConfig, DailyLog, Session, PollResult, ReflogEntry, TickInput, EvaluatorResult, ActivitySignals } from './types.js';
+import type { AppConfig, DailyLog, Session, PollResult, TickInput, EvaluatorResult, ActivitySignals } from './types.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -63,6 +63,7 @@ export class SessionTracker {
       if (session.evidence.linesAdded === undefined) session.evidence.linesAdded = 0;
       if (session.evidence.linesRemoved === undefined) session.evidence.linesRemoved = 0;
       if (session.evidence.filesChanged === undefined) session.evidence.filesChanged = 0;
+      if (session.baseSha === undefined) session.baseSha = null;
     }
   }
 
@@ -103,12 +104,8 @@ export class SessionTracker {
       // Auto-pauses (IdleTimeout/Superseded) — fall through, normal processing
     }
 
-    // 1. Credit reflog evidence to current open session before potential close
-    if (openSession && result.newReflogEntries.length > 0) {
-      this.creditReflogEvidence(openSession, result.newReflogEntries);
-    }
-
-    // 2. Log signals
+    // 1. Log signals (reflog evidence is now derived from `git rev-list baseSha..HEAD`
+    //    each tick, not accumulated from reflog entries — see updateSessionTick).
     this.logSignals(repoName, result);
 
     // 3. Handle session lifecycle
@@ -263,6 +260,21 @@ export class SessionTracker {
   /** Get summary of open sessions (for status display) */
   public getOpenSessions(): readonly Session[] {
     return this.dailyLog.sessions.filter(s => !s.closedBy);
+  }
+
+  /**
+   * Resolve baseSha per configured repoPath for the next poll tick — used by
+   * GitTracker to build `git diff baseSha` / `git rev-list baseSha..HEAD`.
+   * Returns null for repos with no open session yet.
+   */
+  public getBaseShasPerRepoPath(repoPaths: readonly string[]): Map<string, string | null> {
+    const map = new Map<string, string | null>();
+    for (const repoPath of repoPaths) {
+      const name = basename(repoPath);
+      const session = this.dailyLog.sessions.find(s => !s.closedBy && s.repo === name);
+      map.set(repoPath, session?.baseSha ?? null);
+    }
+    return map;
   }
 
   // ─── Evaluator integration ────────────────────────────────────────────
@@ -437,9 +449,23 @@ export class SessionTracker {
       evidence: createEmptyEvidence(),
       pauses: [],
       manualAdjustments: [],
+      // Continued work on the same repo+task today should keep the PR-equivalent
+      // baseline. If no prior session is found, the first poll will fill it from
+      // currentHead — see updateSessionTick.
+      baseSha: this.findPriorBaseSha(repo, task),
     };
     this.dailyLog.sessions.push(session);
     return session;
+  }
+
+  /** Most-recent baseSha among today's sessions on the same (repo, task). */
+  private findPriorBaseSha(repo: string, task: string | null): string | null {
+    if (!task) return null;
+    for (let i = this.dailyLog.sessions.length - 1; i >= 0; i--) {
+      const s = this.dailyLog.sessions[i];
+      if (s.repo === repo && s.task === task && s.baseSha) return s.baseSha;
+    }
+    return null;
   }
 
   private closeSession(session: Session, reason: ClosedBy, now: string): void {
@@ -488,31 +514,27 @@ export class SessionTracker {
 
   // ─── Private: tick update ──────────────────────────────────────────────
 
+  /**
+   * Apply one poll tick: capture baseSha on first contact, then overwrite
+   * evidence from the PR-equivalent snapshot. Snapshot is null on the first
+   * tick (no baseSha to query against); subsequent ticks fill it in.
+   */
   private updateSessionTick(session: Session, result: PollResult, now: string): void {
     session.lastSeenAt = now;
 
-    // Accumulate line stats (positive deltas = new edits, negative = committed/reverted)
-    if (result.delta.addedDelta > 0) {
-      session.evidence.linesAdded += result.delta.addedDelta;
-    }
-    if (result.delta.removedDelta > 0) {
-      session.evidence.linesRemoved += result.delta.removedDelta;
+    if (session.baseSha === null) {
+      session.baseSha = result.currentHead;
+      // Evidence stays at zeros until next tick — baseSha and HEAD are equal here.
+      return;
     }
 
-    // Track max concurrent files changed (high water mark)
-    if (result.snapshot.trackedFileCount > session.evidence.filesChanged) {
-      session.evidence.filesChanged = result.snapshot.trackedFileCount;
-    }
-  }
-
-  private creditReflogEvidence(session: Session, entries: ReflogEntry[]): void {
-    for (const entry of entries) {
-      if (entry.type === 'commit') {
-        session.evidence.commits++;
-        session.evidence.reflogEvents++;
-      } else if (entry.type === 'checkout' || entry.type === 'reset') {
-        session.evidence.reflogEvents++;
-      }
+    if (result.evidenceSnapshot !== null) {
+      session.evidence.commits = result.evidenceSnapshot.commits;
+      session.evidence.linesAdded = result.evidenceSnapshot.linesAdded;
+      session.evidence.linesRemoved = result.evidenceSnapshot.linesRemoved;
+      session.evidence.filesChanged = result.evidenceSnapshot.filesChanged;
+      // reflogEvents is left untouched — preserved for log compatibility but no
+      // longer surfaced in the UI.
     }
   }
 

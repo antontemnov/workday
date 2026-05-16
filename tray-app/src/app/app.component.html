@@ -142,6 +142,10 @@
                       *ngFor="let p of sensitivityPills"
                       [class.active]="activePill(s) === p.key"
                       [class.pause-pill]="p.key === 'pause'"
+                      [class.low-pill]="p.key === 'low'"
+                      [class.normal-pill]="p.key === 'normal'"
+                      [class.patient-pill]="p.key === 'patient'"
+                      [class.alwayson-pill]="p.key === 'always_on'"
                       [disabled]="actionPending"
                       [title]="p.title"
                       (click)="selectPill(s, p.key)">
