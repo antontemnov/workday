@@ -17,20 +17,26 @@
   user-select: none;
 }
 
-// Header — horizontal padding (40px) is chosen to align with the timeline
-// bar's edges below: 12px content padding + 24px edge-btn width + 4px gap.
-// Date-nav and weekday-grid sit flush with the bar's left/right edges.
+// Header — three-column grid keeps the date-nav perfectly centred regardless
+// of weekday-grid width. Horizontal padding (40px) aligns the weekday-grid's
+// right edge with the timeline bar's right edge below.
 .header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: 10px 40px 8px 40px;
   flex-shrink: 0;
 
   .date-nav {
+    grid-column: 2;
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+
+  .weekday-grid {
+    grid-column: 3;
+    justify-self: end;
   }
 
   .date {
