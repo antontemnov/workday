@@ -2,8 +2,10 @@ import { Injectable } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { WorkdayApiService } from './workday-api.service';
 import {
+  ActiveInterval,
   ApiResponse,
   TodayResponse,
+  SessionDetail,
   StatusResponse,
   SensitivityResponse,
   SensitivityLevel,
@@ -75,12 +77,32 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.get('/api/today');
   }
 
+  /**
+   * Past-day read: HTTP first (daemon has computed budget / live state); on
+   * failure, fall back to the raw DailyLog file via Tauri. The disk fallback
+   * gives a partial view (no budget, score=0) but lets the user browse history
+   * before pressing Start.
+   */
   override async getDay(date: string): Promise<ApiResponse<TodayResponse>> {
-    return this.get(`/api/day?date=${date}`);
+    const httpRes = await this.get<TodayResponse>(`/api/day?date=${date}`);
+    if (httpRes.ok) return httpRes;
+    const fromDisk = await this.readDayFromDisk(date);
+    return fromDisk ?? httpRes;
   }
 
+  /**
+   * Available dates: HTTP first; if the daemon is down, list the data folder
+   * directly so the date navigation still works on a cold tray launch.
+   */
   override async getDays(): Promise<ApiResponse<DaysResponse>> {
-    return this.get('/api/days');
+    const httpRes = await this.get<DaysResponse>('/api/days');
+    if (httpRes.ok) return httpRes;
+    try {
+      const dates = await invoke<string[]>('list_local_days');
+      return { ok: true, data: { dates } };
+    } catch {
+      return httpRes;
+    }
   }
 
   override async getStatus(): Promise<ApiResponse<StatusResponse>> {
@@ -123,4 +145,176 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       throw new Error('Cannot start daemon outside Tauri app');
     }
   }
+
+  // ─── Disk fallback (no daemon) ──────────────────────────────────────
+
+  private async readDayFromDisk(date: string): Promise<ApiResponse<TodayResponse> | null> {
+    try {
+      const raw = await invoke<string>('read_local_day', { date });
+      const log = JSON.parse(raw) as RawDailyLog;
+      return { ok: true, data: this.buildTodayResponseFromLog(log) };
+    } catch {
+      return null;
+    }
+  }
+
+  private buildTodayResponseFromLog(log: RawDailyLog): TodayResponse {
+    const sessions: SessionDetail[] = (log.sessions ?? []).map(s => this.toSessionDetail(s));
+    const totalEffectiveMs = sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
+    const activeIntervals = this.computeActiveIntervals(log.sessions ?? []);
+
+    return {
+      date: log.date,
+      dayType: log.dayType ?? 'workday',
+      status: log.status ?? 'draft',
+      sessions,
+      totalEffectiveMs,
+      signalCount: (log.signals ?? []).length,
+      // Disk fallback: budget is daemon-computed, surface as zero. Past-day UI
+      // does not show the budget bar anyway.
+      budgetMs: 0,
+      claimedMs: 0,
+      remainingBudgetMs: 0,
+      dayStartedAt: log.dayStartedAt ?? null,
+      manualStart: log.manualStart ?? null,
+      // Schedule is config-driven and not persisted in the log. Fall back to
+      // 10:00 → 04:00 — matches the daemon's default and is good enough for
+      // timeline rendering of a past day.
+      schedule: { start: 10, end: 4 },
+      activeIntervals,
+      downtimeMs: this.computeDowntime(activeIntervals),
+    };
+  }
+
+  private toSessionDetail(s: RawSession): SessionDetail {
+    return {
+      id: s.id,
+      repo: s.repo,
+      task: s.task ?? null,
+      branch: s.branch,
+      state: s.state,
+      startedAt: s.startedAt,
+      activatedAt: s.activatedAt ?? null,
+      lastSeenAt: s.lastSeenAt,
+      paused: false, // past day → no live open pause
+      pauseSource: null,
+      effectiveDurationMs: this.computeEffectiveDuration(s),
+      manualMinutes: this.computeManualMinutes(s),
+      score: 0,
+      normalizedScore: 0,
+      isLeader: false,
+      sensitivity: SensitivityLevel.Normal,
+      closedBy: s.closedBy ?? null,
+      evidence: s.evidence ?? { commits: 0, reflogEvents: 0, linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
+      pauseCount: (s.pauses ?? []).length,
+      totalPauseDurationMs: this.computeTotalPauseDuration(s),
+    };
+  }
+
+  private computeEffectiveDuration(s: RawSession): number {
+    if (!s.activatedAt) return 0;
+    const start = new Date(s.activatedAt).getTime();
+    const end = new Date(s.lastSeenAt).getTime();
+    return Math.max(0, end - start - this.computeTotalPauseDuration(s));
+  }
+
+  private computeTotalPauseDuration(s: RawSession): number {
+    return (s.pauses ?? []).reduce((sum, p) => {
+      const from = new Date(p.from).getTime();
+      const to = p.to ? new Date(p.to).getTime() : new Date(s.lastSeenAt).getTime();
+      return sum + Math.max(0, to - from);
+    }, 0);
+  }
+
+  private computeManualMinutes(s: RawSession): number {
+    return (s.manualAdjustments ?? []).reduce((sum, a) => sum + (a.minutes ?? 0), 0);
+  }
+
+  private computeActiveIntervals(sessions: readonly RawSession[]): ActiveInterval[] {
+    const intervals: ActiveInterval[] = [];
+    for (const s of sessions) {
+      if (!s.activatedAt) continue;
+      const sessionStart = new Date(s.activatedAt).getTime();
+      const sessionEnd = new Date(s.lastSeenAt).getTime();
+      const pauses = [...(s.pauses ?? [])]
+        .map(p => ({
+          from: new Date(p.from).getTime(),
+          to: p.to ? new Date(p.to).getTime() : sessionEnd,
+        }))
+        .filter(p => p.to > sessionStart && p.from < sessionEnd)
+        .sort((a, b) => a.from - b.from);
+
+      let cursor = sessionStart;
+      for (const p of pauses) {
+        if (p.from > cursor) {
+          intervals.push({
+            from: new Date(cursor).toISOString(),
+            to: new Date(p.from).toISOString(),
+            sessionId: s.id,
+            repo: s.repo,
+          });
+        }
+        cursor = Math.max(cursor, p.to);
+      }
+      if (cursor < sessionEnd) {
+        intervals.push({
+          from: new Date(cursor).toISOString(),
+          to: new Date(sessionEnd).toISOString(),
+          sessionId: s.id,
+          repo: s.repo,
+        });
+      }
+    }
+    return intervals;
+  }
+
+  private computeDowntime(intervals: readonly ActiveInterval[]): number {
+    if (intervals.length === 0) return 0;
+    const sorted = [...intervals]
+      .map(iv => ({ from: new Date(iv.from).getTime(), to: new Date(iv.to).getTime() }))
+      .sort((a, b) => a.from - b.from);
+    const merged: { from: number; to: number }[] = [{ ...sorted[0] }];
+    for (let i = 1; i < sorted.length; i++) {
+      const last = merged[merged.length - 1];
+      const curr = sorted[i];
+      if (curr.from <= last.to) last.to = Math.max(last.to, curr.to);
+      else merged.push({ ...curr });
+    }
+    const span = merged[merged.length - 1].to - merged[0].from;
+    const work = merged.reduce((sum, iv) => sum + (iv.to - iv.from), 0);
+    return Math.max(0, span - work);
+  }
+}
+
+// ─── Disk JSON shape (mirrors daemon's DailyLog) ─────────────────────
+
+interface RawDailyLog {
+  readonly date: string;
+  readonly status?: string;
+  readonly dayType?: string;
+  readonly manualStart?: string | null;
+  readonly dayStartedAt?: string | null;
+  readonly sessions?: RawSession[];
+  readonly signals?: unknown[];
+}
+
+interface RawSession {
+  readonly id: string;
+  readonly repo: string;
+  readonly task: string | null;
+  readonly branch: string;
+  readonly state: string;
+  readonly startedAt: string;
+  readonly activatedAt: string | null;
+  readonly lastSeenAt: string;
+  readonly closedBy: string | null;
+  readonly evidence?: {
+    readonly commits: number;
+    readonly reflogEvents: number;
+    readonly linesAdded: number;
+    readonly linesRemoved: number;
+    readonly filesChanged: number;
+  };
+  readonly pauses?: { readonly from: string; readonly to: string | null; readonly source: string }[];
+  readonly manualAdjustments?: { readonly minutes: number; readonly reason: string; readonly addedAt: string }[];
 }

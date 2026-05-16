@@ -1,5 +1,8 @@
 use std::process::Command;
 use std::env;
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use tauri::{
@@ -10,6 +13,12 @@ use tauri::{
     WindowEvent,
 };
 use tauri_plugin_updater::UpdaterExt;
+
+/// Set when the user clicks "Quit" in the tray context menu — signals the
+/// ExitRequested handler to leave the daemon running. Crash / OS shutdown
+/// paths reach ExitRequested without this flag set, so they keep stopping
+/// the daemon as before.
+static MANUAL_QUIT: AtomicBool = AtomicBool::new(false);
 
 /// Build a PATH that includes standard Node.js/npm locations.
 /// GUI apps on Windows don't inherit the full user PATH.
@@ -103,12 +112,76 @@ async fn start_daemon() -> Result<String, String> {
     Ok("Daemon starting...".to_string())
 }
 
+/// Resolve workday home — WORKDAY_HOME env wins, else ~/.workday/.
+fn workday_home() -> Option<PathBuf> {
+    if let Ok(h) = env::var("WORKDAY_HOME") {
+        return Some(PathBuf::from(h));
+    }
+    let home_var = if cfg!(target_os = "windows") { "USERPROFILE" } else { "HOME" };
+    env::var(home_var).ok().map(|h| PathBuf::from(h).join(".workday"))
+}
+
+/// List available day dates (YYYY-MM-DD) directly from disk — works even when
+/// the daemon is not running. Layout: <home>/data/YYYY-MM/MM-DD.json.
+#[tauri::command]
+async fn list_local_days() -> Result<Vec<String>, String> {
+    let data_dir = match workday_home() {
+        Some(h) => h.join("data"),
+        None => return Ok(vec![]),
+    };
+    if !data_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut dates: Vec<String> = Vec::new();
+    for month_entry in fs::read_dir(&data_dir).map_err(|e| e.to_string())? {
+        let month_entry = match month_entry { Ok(e) => e, Err(_) => continue };
+        if !month_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let year_month = match month_entry.file_name().into_string() { Ok(s) => s, Err(_) => continue };
+        // Expect "YYYY-MM"
+        let ym_parts: Vec<&str> = year_month.split('-').collect();
+        if ym_parts.len() != 2 || ym_parts[0].len() != 4 || ym_parts[1].len() != 2 {
+            continue;
+        }
+
+        for day_entry in fs::read_dir(month_entry.path()).map_err(|e| e.to_string())? {
+            let day_entry = match day_entry { Ok(e) => e, Err(_) => continue };
+            let name = match day_entry.file_name().into_string() { Ok(s) => s, Err(_) => continue };
+            if !name.ends_with(".json") { continue; }
+            let stem = &name[..name.len() - 5]; // "MM-DD"
+            let dd_parts: Vec<&str> = stem.split('-').collect();
+            if dd_parts.len() != 2 || dd_parts[1].len() != 2 { continue; }
+            dates.push(format!("{}-{}-{}", ym_parts[0], ym_parts[1], dd_parts[1]));
+        }
+    }
+    // Descending — newest first, matches /api/days contract.
+    dates.sort_by(|a, b| b.cmp(a));
+    Ok(dates)
+}
+
+/// Read a single day's raw JSON (the daemon's DailyLog) directly from disk.
+/// Caller decodes; computed fields (durations, intervals) are derived client-side.
+#[tauri::command]
+async fn read_local_day(date: String) -> Result<String, String> {
+    let parts: Vec<&str> = date.split('-').collect();
+    if parts.len() != 3 || parts[0].len() != 4 || parts[1].len() != 2 || parts[2].len() != 2 {
+        return Err(format!("invalid date: {}", date));
+    }
+    let home = workday_home().ok_or_else(|| "no workday home".to_string())?;
+    let path = home.join("data")
+        .join(format!("{}-{}", parts[0], parts[1]))
+        .join(format!("{}-{}.json", parts[1], parts[2]));
+    fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, list_local_days, read_local_day])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -143,7 +216,10 @@ pub fn run() {
             let menu_window = window.clone();
             tray.on_menu_event(move |_tray, event| {
                 if event.id() == "quit" {
-                    stop_daemon();
+                    // Manual quit leaves the daemon running so background
+                    // tracking survives a tray restart. Crash/shutdown paths
+                    // still tear it down via ExitRequested.
+                    MANUAL_QUIT.store(true, Ordering::Relaxed);
                     app_handle.exit(0);
                 } else if event.id() == "show" {
                     let _ = menu_window.show();
@@ -180,8 +256,12 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|_handle, event| {
+        // Manual Quit sets MANUAL_QUIT and skips the stop — the daemon stays
+        // alive across tray restarts. Crash / OS shutdown still stop it.
         if let RunEvent::ExitRequested { .. } = event {
-            stop_daemon();
+            if !MANUAL_QUIT.load(Ordering::Relaxed) {
+                stop_daemon();
+            }
         }
     });
 }
