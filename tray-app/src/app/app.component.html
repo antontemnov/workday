@@ -60,15 +60,13 @@
         </button>
         <div class="timeline-bar">
           <div class="timeline-segment"
-               *ngFor="let iv of data.activeIntervals; let i = index"
+               *ngFor="let iv of data.activeIntervals"
                [class.closed]="isSessionClosed(iv.sessionId)"
                [class.highlight]="hoveredSessionId === iv.sessionId"
                [style.left.%]="timeToPercent(iv.from)"
                [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
                [style.background-color]="sessionColor(iv.sessionId)"
                [style.--seg-color]="sessionColor(iv.sessionId)"
-               [style.--seg-index]="i"
-               [title]="intervalTooltip(iv)"
                (mouseenter)="hoveredSessionId = iv.sessionId"
                (mouseleave)="hoveredSessionId = null">
           </div>
@@ -202,13 +200,17 @@
       <div class="closed-row"
            *ngFor="let s of closedSessions"
            [class.highlight]="hoveredSessionId === s.id"
+           [style.--repo-color]="sessionColor(s.id)"
            (mouseenter)="hoveredSessionId = s.id"
            (mouseleave)="hoveredSessionId = null">
-        <span class="session-color-dot" [style.background-color]="sessionColor(s.id)"></span>
+        <span class="closed-color-bar"></span>
         <span class="repo">{{ repoName(s.repo) }}</span>
         <span class="task">{{ s.task ?? '—' }}</span>
+        <span class="interval">{{ sessionInterval(s) }}</span>
         <span class="dur">{{ formatDuration(s.effectiveDurationMs) }}</span>
-        <span class="reason">{{ s.closedBy }}</span>
+        <span class="reason-badge"
+              [class]="'reason-badge ' + closedReasonClass(s.closedBy)"
+              [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
       </div>
     </section>
 

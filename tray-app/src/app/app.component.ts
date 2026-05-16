@@ -510,18 +510,40 @@ export class AppComponent implements OnInit, OnDestroy {
     if (ok) this.endDayModalOpen = false;
   }
 
-  intervalTooltip(iv: { from: string; to: string; sessionId: string }): string {
-    const from = this.formatHm(iv.from);
-    const isOpen = !this.isSessionClosed(iv.sessionId);
-    const toRaw = isOpen ? Date.now() : new Date(iv.to).getTime();
-    const to = isOpen ? 'сейчас' : this.formatHm(iv.to);
-    const mins = Math.max(1, Math.round((toRaw - new Date(iv.from).getTime()) / 60_000));
-    return `${from} → ${to} · ${mins}m`;
-  }
-
   private formatHm(iso: string): string {
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  /** Closed session interval shown in the Closed list: "09:18 → 12:35". */
+  sessionInterval(s: SessionDetail): string {
+    return `${this.formatHm(s.startedAt)} → ${this.formatHm(s.lastSeenAt)}`;
+  }
+
+  /** Human label for the close-reason badge — keeps the badge short and readable. */
+  closedReasonLabel(closedBy: string | null): string {
+    switch ((closedBy ?? '').toLowerCase()) {
+      case 'idle_timeout': return 'Idle';
+      case 'day_boundary': return 'Day end';
+      case 'superseded':   return 'Switched';
+      case 'manual':
+      case 'user':         return 'Manual';
+      case 'stopped':      return 'Stopped';
+      default:             return closedBy ?? '—';
+    }
+  }
+
+  /** Returns a CSS class for the close-reason badge that picks its colour. */
+  closedReasonClass(closedBy: string | null): string {
+    switch ((closedBy ?? '').toLowerCase()) {
+      case 'idle_timeout': return 'reason-idle';
+      case 'day_boundary': return 'reason-dayend';
+      case 'superseded':   return 'reason-switched';
+      case 'manual':
+      case 'user':         return 'reason-manual';
+      case 'stopped':      return 'reason-stopped';
+      default:             return 'reason-other';
+    }
   }
 
   dismissToast(): void {
