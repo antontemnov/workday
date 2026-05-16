@@ -170,59 +170,63 @@
 .timeline {
   margin: 22px 0 14px 0;
 
-  // Flex row: [DAY btn] [bar] [END btn] — buttons match the bar's height
-  // (30px) and sit flush against it.
+  // Flex row: [start glyph] [bar] [end glyph]. Edge controls are flat icon
+  // buttons, no chrome by default — they only colour up on hover.
   .timeline-row {
     display: flex;
-    align-items: stretch;
-    gap: 6px;
-    margin-bottom: 14px;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
   }
 
   .timeline-bar {
     flex: 1;
     height: 30px;
     background: #11111b;
-    border: 1px solid #45475a;
+    border: 1px solid #313244;
     border-radius: 4px;
     position: relative;
+    overflow: visible;       // labels and now-marker bleed outside the bar
   }
 
   .timeline-edge-btn {
     flex-shrink: 0;
-    width: 38px;
-    background: #181825;
-    border: 1px solid #313244;
-    color: #6c7086;
+    width: 24px;
+    height: 30px;
+    background: transparent;
+    border: none;
+    color: #585b70;
     font-family: inherit;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
+    font-size: 14px;
+    line-height: 1;
     border-radius: 4px;
     cursor: pointer;
     padding: 0;
-    line-height: 1;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+
+    .edge-glyph {
+      display: inline-block;
+      transition: transform 0.15s ease;
+    }
 
     &:disabled {
-      opacity: 0.35;
+      opacity: 0.25;
       cursor: default;
     }
 
-    &.start {
-      &:hover:not(:disabled) {
-        background: #20283a;
-        color: #89b4fa;
-        border-color: #89b4fa;
-      }
+    &.start:hover:not(:disabled) {
+      color: #89b4fa;
+      background: rgba(137, 180, 250, 0.08);
+      .edge-glyph { transform: translateX(-1px); }
     }
 
-    &.end {
-      &:hover:not(:disabled) {
-        background: #3a2020;
-        color: #f38ba8;
-        border-color: #f38ba8;
-      }
+    &.end:hover:not(:disabled) {
+      color: #f38ba8;
+      background: rgba(243, 139, 168, 0.08);
+      .edge-glyph { transform: scale(1.08); }
     }
   }
 
@@ -233,19 +237,56 @@
     border-radius: 3px;
     min-width: 6px;
     cursor: default;
-    transition: box-shadow 0.15s ease, opacity 0.15s ease;
+    // Use a CSS var so highlight can glow in the segment's own colour.
+    --seg-color: #cdd6f4;
+    transition: box-shadow 0.18s ease, opacity 0.18s ease, filter 0.18s ease;
 
     &.closed {
-      opacity: 0.7;
+      opacity: 0.55;
     }
 
     &.highlight {
-      box-shadow: 0 0 0 2px rgba(205, 214, 244, 0.35);
       opacity: 1;
       z-index: 2;
+      box-shadow:
+        0 0 0 1px var(--seg-color),
+        0 0 12px 0 color-mix(in srgb, var(--seg-color) 55%, transparent);
+      filter: saturate(1.15);
     }
   }
 
+  // Live "now" indicator — thin pulsing line, today view only.
+  .timeline-now {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 1px;
+    background: #cdd6f4;
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0.65;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: -3px;
+      left: -2px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #cdd6f4;
+      box-shadow: 0 0 6px rgba(205, 214, 244, 0.6);
+      animation: now-pulse 1.8s ease-in-out infinite;
+    }
+  }
+
+  @keyframes now-pulse {
+    0%, 100% { opacity: 0.55; transform: scale(0.85); }
+    50%      { opacity: 1;    transform: scale(1.15); }
+  }
+
+  // Time markers (day start / last activity). Slim line + a label chip
+  // that floats over the bar so it stays readable on top of segments.
   .timeline-daystart,
   .timeline-dayend {
     position: absolute;
@@ -253,54 +294,92 @@
     background: #cdd6f4;
     z-index: 3;
     pointer-events: none;
+
+    &::after {           // small tick triangle pointing toward the bar
+      content: '';
+      position: absolute;
+      left: 50%;
+      width: 0;
+      height: 0;
+      transform: translateX(-50%);
+      border-left: 3px solid transparent;
+      border-right: 3px solid transparent;
+    }
   }
 
   .timeline-daystart {
-    top: -6px;
+    top: -7px;
     bottom: -2px;
+
+    &::after {
+      top: -4px;
+      border-top: 4px solid #cdd6f4;
+    }
 
     .timeline-daystart-label {
       position: absolute;
-      top: -12px;
+      top: -16px;
       left: 0;
       font-size: 9px;
       color: #cdd6f4;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.4px;
       white-space: nowrap;
+      padding: 1px 4px;
+      background: #1e1e2e;
+      border-radius: 3px;
+      font-variant-numeric: tabular-nums;
     }
   }
 
   .timeline-dayend {
     top: -2px;
-    bottom: -6px;
+    bottom: -7px;
+
+    &::after {
+      bottom: -4px;
+      border-bottom: 4px solid #cdd6f4;
+    }
 
     .timeline-dayend-label {
       position: absolute;
-      bottom: -12px;
+      bottom: -16px;
       left: 0;
       font-size: 9px;
       color: #cdd6f4;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.4px;
       white-space: nowrap;
+      padding: 1px 4px;
+      background: #1e1e2e;
+      border-radius: 3px;
+      font-variant-numeric: tabular-nums;
     }
   }
 
+  // Stats row sits just under the bar, left-aligned and small — no longer
+  // visually anchors the timeline. Aligns with the bar's left edge by
+  // matching the start-button width + gap.
   .timeline-stats {
     display: flex;
     flex-direction: row;
-    justify-content: center;
     align-items: baseline;
-    gap: 8px;
-    margin-top: 18px;        // breathing room from the timeline labels (e.g. "18:11")
-    font-size: 11px;
+    gap: 6px;
+    margin-top: 16px;
+    padding-left: 28px;     // 24px button + 4px gap
+    font-size: 10px;
+    letter-spacing: 0.3px;
     line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    text-transform: uppercase;
 
     strong {
       font-weight: 600;
+      text-transform: none;
+      font-size: 11px;
+      letter-spacing: 0;
     }
 
     .active-line {
-      color: #a6e3a1;
+      color: #6c7086;
       strong { color: #a6e3a1; }
     }
 
@@ -443,10 +522,11 @@
   .removed { color: #f38ba8; }
 }
 
-// Compact trigger on the Time row that opens the Add-time modal
+// Compact trigger on the Time row that opens the Add-time modal.
+// Sits right after the time value (under the Branch column), not flush-right.
 .time-row {
   .add-time-btn {
-    margin-left: auto;
+    margin-left: 8px;
     background: transparent;
     border: 1px dashed #45475a;
     color: #6c7086;
@@ -470,54 +550,107 @@
       cursor: default;
     }
   }
+
+  .manual {
+    margin-left: auto;       // manual marker — pushed to the right edge
+  }
 }
 
-// Stamina bar (formerly Intensity)
+// Stamina bar (formerly Intensity). Stretches across the row so it matches
+// the width of the Mode pills below; the percent column has fixed width
+// so a 3-digit value (100%) doesn't squeeze the bar.
 .stamina-row {
   .stamina-bar {
-    width: 80px;
+    flex: 1;
     height: 4px;
     background: #313244;
     border-radius: 2px;
     overflow: hidden;
+    position: relative;
+  }
+
+  // Tiny tick marks at the colour thresholds (30% → yellow, 60% → green).
+  // Faint by default; subtle hint about the bar's internal logic.
+  .stamina-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(108, 112, 134, 0.45);
+    z-index: 1;
+    pointer-events: none;
+
+    &.low { left: 30%; }
+    &.mid { left: 60%; }
   }
 
   .stamina-fill {
     height: 100%;
     border-radius: 2px;
-    transition: width 0.5s ease;
+    transition: width 0.5s ease, background-color 0.5s ease;
+    position: relative;
+    z-index: 2;
   }
 
   .stamina-pct {
     font-size: 11px;
     color: #6c7086;
-    min-width: 30px;
+    width: 32px;             // fixed so 100% still fits without nudging the bar
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Always-on variant: bar shimmers with the accent colour instead of a number.
+  .stamina-bar.always-on {
+    background: rgba(137, 180, 250, 0.12);
+  }
+  .stamina-fill.always-on-fill {
+    width: 100%;
+    background: linear-gradient(
+      90deg,
+      rgba(137, 180, 250, 0.4) 0%,
+      rgba(137, 180, 250, 0.9) 50%,
+      rgba(137, 180, 250, 0.4) 100%
+    );
+    background-size: 200% 100%;
+    animation: alwayson-shimmer 3s linear infinite;
+  }
+
+  @keyframes alwayson-shimmer {
+    0%   { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
   }
 
   .stamina-infinity {
     color: #89b4fa;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 700;
     line-height: 1;
-    padding-left: 2px;
+    width: 32px;
+    text-align: right;
   }
 }
 
-// Sensitivity scale (5 pills: Pause | Low | Normal | Patient | Always-on)
+// Sensitivity scale (5 pills: Pause | Low | Normal | Patient | Always-on).
+// Pills flex-grow to equal widths so the row aligns with the stamina bar
+// above (which is also flex: 1 with a fixed-width % column on the right).
 .sensitivity-row {
   .sensitivity-scale {
     display: flex;
+    flex: 1;
     gap: 3px;
     flex-wrap: nowrap;
   }
 
   .pill {
+    flex: 1;
+    text-align: center;
     background: #181825;
     border: 1px solid #313244;
     color: #6c7086;
     font-family: inherit;
     font-size: 10px;
-    padding: 3px 7px;
+    padding: 3px 4px;
     border-radius: 10px;
     cursor: pointer;
     line-height: 1;

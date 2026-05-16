@@ -51,7 +51,10 @@
                 *ngIf="isViewingToday && hasSessions"
                 (click)="setStartModalOpen = true"
                 [disabled]="actionPending"
-                title="Set day start time">DAY</button>
+                aria-label="Set day start time"
+                title="Set day start time">
+          <span class="edge-glyph">⇤</span>
+        </button>
         <div class="timeline-bar">
           <div class="timeline-segment"
                *ngFor="let iv of data.activeIntervals"
@@ -60,9 +63,15 @@
                [style.left.%]="timeToPercent(iv.from)"
                [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
                [style.background-color]="sessionColor(iv.sessionId)"
+               [style.--seg-color]="sessionColor(iv.sessionId)"
                [title]="intervalTooltip(iv)"
                (mouseenter)="hoveredSessionId = iv.sessionId"
                (mouseleave)="hoveredSessionId = null">
+          </div>
+          <div class="timeline-now"
+               *ngIf="isViewingToday && currentTimePercent !== null"
+               [style.left.%]="currentTimePercent"
+               title="Now">
           </div>
           <div class="timeline-daystart"
                *ngIf="dayStartPercent !== null"
@@ -81,7 +90,10 @@
                 *ngIf="isViewingToday && hasSessions"
                 (click)="endDayModalOpen = true"
                 [disabled]="actionPending"
-                title="End workday — close all sessions and stop the daemon">END</button>
+                aria-label="End workday"
+                title="End workday — close all sessions and stop the daemon">
+          <span class="edge-glyph">⏻</span>
+        </button>
       </div>
       <div class="timeline-stats">
         <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
@@ -115,17 +127,19 @@
           <div class="row time-row">
             <span class="label">Time</span>
             <span class="value time">{{ formatDuration(s.effectiveDurationMs) }}</span>
-            <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
             <button class="add-time-btn"
                     *ngIf="isViewingToday"
                     [disabled]="actionPending"
                     (click)="openAdjustModal(s)"
                     title="Add manual time">＋ add time</button>
+            <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
           </div>
           <div class="row stamina-row">
             <span class="label">Stamina</span>
             <ng-container *ngIf="!isAlwaysOn(s); else alwaysOnTpl">
               <div class="stamina-bar">
+                <div class="stamina-tick low"></div>
+                <div class="stamina-tick mid"></div>
                 <div class="stamina-fill"
                      [style.width.%]="staminaPercent(s.normalizedScore)"
                      [style.backgroundColor]="staminaColor(s.normalizedScore)">
@@ -134,6 +148,9 @@
               <span class="stamina-pct">{{ staminaPercent(s.normalizedScore) }}%</span>
             </ng-container>
             <ng-template #alwaysOnTpl>
+              <div class="stamina-bar always-on">
+                <div class="stamina-fill always-on-fill"></div>
+              </div>
               <span class="stamina-infinity" title="Always-on — no idle timeout">&infin;</span>
             </ng-template>
           </div>

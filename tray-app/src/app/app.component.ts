@@ -331,6 +331,16 @@ export class AppComponent implements OnInit, OnDestroy {
     return 'translateX(-50%)';
   }
 
+  // Live "now" cursor on the timeline. Only meaningful on the today view.
+  get currentTimePercent(): number | null {
+    if (!this.isViewingToday || !this.data?.schedule) return null;
+    const windowMs = this.scheduleWindowMs;
+    if (windowMs === 0) return null;
+    const offset = this.currentTimeMs - this.getScheduleStartMs();
+    if (offset < 0 || offset > windowMs) return null;
+    return (offset / windowMs) * 100;
+  }
+
   sessionColor(sessionId: string): string {
     const idx = this.data?.sessions.findIndex(s => s.id === sessionId) ?? -1;
     if (idx < 0) return '#6c7086';
