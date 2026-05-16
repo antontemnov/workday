@@ -9,10 +9,16 @@ import type {
   EvidenceSnapshot,
 } from '../core/types.js';
 import { RepoState } from '../core/types.js';
-import { extractTask } from '../core/config.js';
+import { extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
 import { SnapshotParser } from './snapshot-parser.js';  // static methods only
+
+/**
+ * Final fallback list when no config and no `origin/HEAD` are available.
+ * Tried in order; the first ref that actually exists wins.
+ */
+const DEFAULT_BRANCH_FALLBACK_NAMES: readonly string[] = ['main', 'master', 'develop'];
 
 /**
  * Main git activity tracker.
@@ -29,6 +35,10 @@ export class GitTracker {
   private readonly gitClient: GitClient;
   private readonly reflogParser: ReflogParser;
   private readonly repoStates: Map<string, RepoTracker> = new Map();
+  // Resolved default-branch ref (e.g. "origin/master" or "master"). null = no
+  // ref resolved → merge-base advancement disabled for this repo, evidence
+  // falls back to per-session baseSha. `undefined` = not yet resolved.
+  private readonly defaultBranchRefCache: Map<string, string | null> = new Map();
 
   public constructor(config: AppConfig, secrets: Secrets) {
     this.config = config;
@@ -75,7 +85,12 @@ export class GitTracker {
    */
   private async pollRepo(repoPath: string, baseSha: string | null): Promise<PollResult | null> {
     const now = Date.now();
-    const raw = await this.gitClient.fetchRepoState(repoPath, baseSha ?? undefined);
+    const defaultBranchRef = await this.resolveDefaultBranchRef(repoPath);
+    const raw = await this.gitClient.fetchRepoState(
+      repoPath,
+      baseSha ?? undefined,
+      defaultBranchRef ?? undefined,
+    );
 
     // Detached HEAD shows as commit SHA (7-40 hex chars); skip to avoid disrupting sessions
     if (raw.branch === 'HEAD' || /^[0-9a-f]{7,40}$/.test(raw.branch)) {
@@ -137,7 +152,53 @@ export class GitTracker {
       newReflogEntries: newEntries,
       currentHead: raw.currentHead,
       evidenceSnapshot,
+      mergeBaseSha: raw.mergeBase ?? null,
     };
+  }
+
+  /**
+   * Resolve the default-branch ref for a repo through the configured cascade.
+   * Result is cached (including the null "no ref" outcome) — git probes only
+   * happen on first poll per repo.
+   *
+   * Chain:
+   *   1. config.defaultBranches[basename(repo)] or [fullPath]
+   *   2. config.defaultBranch (global)
+   *   3. `git symbolic-ref refs/remotes/origin/HEAD` auto-detect
+   *   4. fallback list — first of [main, master, develop] that exists
+   * For each candidate name we prefer "origin/<name>" over local "<name>".
+   */
+  private async resolveDefaultBranchRef(repoPath: string): Promise<string | null> {
+    const cached = this.defaultBranchRefCache.get(repoPath);
+    if (cached !== undefined) return cached;
+
+    const configuredName = getConfiguredDefaultBranchName(this.config, repoPath);
+    const detectedName = configuredName ? null : await this.gitClient.detectDefaultBranchName(repoPath);
+
+    // Build candidate list — dedup while preserving order.
+    const seen = new Set<string>();
+    const candidates: string[] = [];
+    for (const name of [configuredName, detectedName, ...DEFAULT_BRANCH_FALLBACK_NAMES]) {
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      candidates.push(name);
+    }
+
+    for (const name of candidates) {
+      if (await this.gitClient.refExists(repoPath, `origin/${name}`)) {
+        return this.cacheBranchRef(repoPath, `origin/${name}`);
+      }
+      if (await this.gitClient.refExists(repoPath, name)) {
+        return this.cacheBranchRef(repoPath, name);
+      }
+    }
+
+    return this.cacheBranchRef(repoPath, null);
+  }
+
+  private cacheBranchRef(repoPath: string, ref: string | null): string | null {
+    this.defaultBranchRefCache.set(repoPath, ref);
+    return ref;
   }
 
   /** Get or initialize per-repo tracking state */

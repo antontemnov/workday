@@ -90,6 +90,20 @@ function validateConfig(config: AppConfig): void {
       throw new Error(`config.json: invalid sensitivity.perRepo[${repo}] "${level}"`);
     }
   }
+
+  if (config.defaultBranch !== undefined && typeof config.defaultBranch !== 'string') {
+    throw new Error('config.json: defaultBranch must be a string');
+  }
+  if (config.defaultBranches !== undefined) {
+    if (typeof config.defaultBranches !== 'object' || config.defaultBranches === null) {
+      throw new Error('config.json: defaultBranches must be an object');
+    }
+    for (const [repo, name] of Object.entries(config.defaultBranches)) {
+      if (typeof name !== 'string') {
+        throw new Error(`config.json: defaultBranches[${repo}] must be a string`);
+      }
+    }
+  }
 }
 
 function isValidSensitivity(level: string): level is SensitivityLevel {
@@ -150,6 +164,18 @@ export function writeConfig(config: AppConfig): void {
 export function getSensitivityForRepo(config: AppConfig, repo: string): SensitivityLevel {
   const name = basename(repo);
   return config.sensitivity.perRepo[name] ?? config.sensitivity.perRepo[repo] ?? config.sensitivity.default;
+}
+
+/**
+ * Configured default-branch name for a repo — used by GitTracker as the
+ * first link in the resolution chain (perRepo → global → auto-detect → fallback).
+ * Returns undefined when nothing is configured; the caller takes over.
+ */
+export function getConfiguredDefaultBranchName(config: AppConfig, repoPath: string): string | undefined {
+  const name = basename(repoPath);
+  return config.defaultBranches?.[name]
+    ?? config.defaultBranches?.[repoPath]
+    ?? config.defaultBranch;
 }
 
 /** Resolve (minTicks, maxTicks, ignoreIdleTimeout) for evaluator from sensitivity. */

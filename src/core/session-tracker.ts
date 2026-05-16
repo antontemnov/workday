@@ -515,16 +515,26 @@ export class SessionTracker {
   // ─── Private: tick update ──────────────────────────────────────────────
 
   /**
-   * Apply one poll tick: capture baseSha on first contact, then overwrite
-   * evidence from the PR-equivalent snapshot. Snapshot is null on the first
-   * tick (no baseSha to query against); subsequent ticks fill it in.
+   * Apply one poll tick.
+   *
+   * First tick: capture baseSha — prefer merge-base (PR-equivalent baseline)
+   * over currentHead.
+   *
+   * Subsequent ticks: overwrite evidence from the snapshot. Then advance
+   * baseSha to merge-base when it's known so that `pull --rebase` / upstream
+   * pull don't leave master's commits piling into the counter — next tick
+   * recomputes evidence against the moved-forward base.
+   *
+   * Bad-revision fallback (baseSha became unreachable after force-push /
+   * hard reset far back): snapshot is null even though baseSha was passed.
+   * We zero evidence and let the merge-base advancement (or first-tick
+   * recapture) reset baseSha on the next round.
    */
   private updateSessionTick(session: Session, result: PollResult, now: string): void {
     session.lastSeenAt = now;
 
     if (session.baseSha === null) {
-      session.baseSha = result.currentHead;
-      // Evidence stays at zeros until next tick — baseSha and HEAD are equal here.
+      session.baseSha = result.mergeBaseSha ?? result.currentHead;
       return;
     }
 
@@ -533,8 +543,23 @@ export class SessionTracker {
       session.evidence.linesAdded = result.evidenceSnapshot.linesAdded;
       session.evidence.linesRemoved = result.evidenceSnapshot.linesRemoved;
       session.evidence.filesChanged = result.evidenceSnapshot.filesChanged;
-      // reflogEvents is left untouched — preserved for log compatibility but no
-      // longer surfaced in the UI.
+    } else {
+      // baseSha invalidated by force-push / hard reset — zero out until next tick.
+      session.evidence.commits = 0;
+      session.evidence.linesAdded = 0;
+      session.evidence.linesRemoved = 0;
+      session.evidence.filesChanged = 0;
+      // Without a merge-base we can't pick a sensible new baseline either;
+      // fall back to currentHead so the session re-anchors here.
+      if (result.mergeBaseSha === null) {
+        session.baseSha = result.currentHead;
+        return;
+      }
+    }
+
+    // Advance baseSha to the up-to-date merge-base so rebases stay "free".
+    if (result.mergeBaseSha) {
+      session.baseSha = result.mergeBaseSha;
     }
   }
 

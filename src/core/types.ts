@@ -17,6 +17,15 @@ export interface AppConfig {
   readonly holidays: readonly string[];
   readonly apiPort: number;
   sensitivity: SensitivityConfig;
+  // Default branch to compute merge-base against — what the PR is opened from.
+  // Resolved at session level by SessionTracker through GitTracker's cache:
+  //   defaultBranches[basename] || defaultBranches[fullPath] || defaultBranch
+  //   ?? `git symbolic-ref refs/remotes/origin/HEAD`
+  //   ?? fallback ('main' / 'master' / 'develop' — first that exists)
+  // When nothing resolves, merge-base advancement is disabled and the older
+  // per-session baseSha logic takes over.
+  readonly defaultBranch?: string;
+  readonly defaultBranches?: Readonly<Record<string, string>>;
 }
 
 // ─── Sensitivity ────────────────────────────────────────────────────────
@@ -216,6 +225,9 @@ export interface RawGitOutput {
   // Populated only when baseSha is passed to GitClient.fetchRepoState().
   readonly diffSinceBase?: string;
   readonly commitsSinceBase?: string;
+  // Populated only when defaultBranchRef is passed to GitClient.fetchRepoState().
+  // SHA of `git merge-base HEAD <ref>` — the point where feature branch diverges.
+  readonly mergeBase?: string;
 }
 
 /**
@@ -241,6 +253,10 @@ export interface PollResult {
   // null when baseSha for this repo wasn't known at poll time — first tick
   // after openSession resets it via SessionTracker.captureBaseSha().
   readonly evidenceSnapshot: EvidenceSnapshot | null;
+  // Merge-base against the resolved default branch. SessionTracker uses this
+  // to "advance" session.baseSha after rebases / upstream pulls so chunks of
+  // master/main don't inflate the evidence counter.
+  readonly mergeBaseSha: string | null;
 }
 
 // ─── Daemon runtime state (per repo, not persisted) ─────────────────────

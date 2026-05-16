@@ -22,9 +22,16 @@ export class GitClient {
    * Always: branch name, current HEAD SHA, working-tree diff, untracked status, reflog.
    * When baseSha is provided: also a diff and commit count vs that base — used
    * for PR-equivalent evidence stats on the open session.
-   * ~80–100ms per repo.
+   * When defaultBranchRef is provided: also `merge-base HEAD <ref>` — SessionTracker
+   * advances session.baseSha to this on subsequent ticks so rebases don't inflate
+   * the counter with upstream commits.
+   * ~80–120ms per repo.
    */
-  public async fetchRepoState(repoPath: string, baseSha?: string): Promise<RawGitOutput> {
+  public async fetchRepoState(
+    repoPath: string,
+    baseSha?: string,
+    defaultBranchRef?: string,
+  ): Promise<RawGitOutput> {
     if (!existsSync(repoPath)) {
       throw new Error(`Repo path not found: ${repoPath}`);
     }
@@ -54,11 +61,18 @@ export class GitClient {
       );
     }
 
+    if (defaultBranchRef) {
+      parts.push(
+        `echo ${GIT_BATCH_SEPARATOR}`,
+        `git -C "${repoPath}" merge-base HEAD ${defaultBranchRef}`,
+      );
+    }
+
     const cmd = parts.join(' && ');
 
     try {
       const { stdout } = await execAsync(cmd, { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true });
-      return GitClient.parseSections(stdout, baseSha !== undefined);
+      return GitClient.parseSections(stdout, baseSha !== undefined, defaultBranchRef !== undefined);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -68,19 +82,58 @@ export class GitClient {
       }
 
       // baseSha can become invalid after a hard reset / force-push — fall back
-      // to a baseless fetch so the caller can re-capture a fresh baseSha.
+      // to a baseless fetch (but keep defaultBranchRef so SessionTracker can
+      // recapture from merge-base on the next tick).
       if (baseSha && (message.includes('unknown revision') || message.includes('bad revision'))) {
-        return this.fetchRepoState(repoPath);
+        return this.fetchRepoState(repoPath, undefined, defaultBranchRef);
       }
 
       throw new Error(`Git command failed for ${repoPath}: ${message}`);
     }
   }
 
-  private static parseSections(raw: string, withBase: boolean): RawGitOutput {
+  /** Verify that a ref exists locally (`git rev-parse --verify`). */
+  public async refExists(repoPath: string, ref: string): Promise<boolean> {
+    try {
+      await execAsync(`git -C "${repoPath}" rev-parse --verify --quiet ${ref}`, {
+        maxBuffer: GIT_MAX_BUFFER_BYTES,
+        windowsHide: true,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Read `git symbolic-ref refs/remotes/origin/HEAD` and return its short name
+   * (e.g. "master" or "main"). Null when the symbolic ref is not configured —
+   * typical for shallow clones or repos that never had origin/HEAD set.
+   */
+  public async detectDefaultBranchName(repoPath: string): Promise<string | null> {
+    try {
+      const { stdout } = await execAsync(
+        `git -C "${repoPath}" symbolic-ref refs/remotes/origin/HEAD`,
+        { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
+      );
+      const trimmed = stdout.trim();           // refs/remotes/origin/master
+      const parts = trimmed.split('/');
+      const name = parts[parts.length - 1];
+      return name && name.length > 0 ? name : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private static parseSections(raw: string, withBase: boolean, withMergeBase: boolean): RawGitOutput {
     const normalized = raw.replace(/\r\n/g, '\n');
     // Windows echo may add trailing space: "---WORKDAY-SEP--- \n"
     const sections = normalized.split(new RegExp(GIT_BATCH_SEPARATOR + '\\s*\\n'));
+
+    let idx = 5; // fixed: branch, head, diff, status, reflog
+    const diffSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
+    const commitsSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
+    const mergeBase = withMergeBase ? (sections[idx++] ?? '').trim() : undefined;
 
     return {
       branch: (sections[0] ?? '').trim(),
@@ -88,8 +141,9 @@ export class GitClient {
       diffNumstat: (sections[2] ?? '').trim(),
       statusPorcelain: (sections[3] ?? '').trim(),
       reflog: (sections[4] ?? '').trim(),
-      diffSinceBase: withBase ? (sections[5] ?? '').trim() : undefined,
-      commitsSinceBase: withBase ? (sections[6] ?? '').trim() : undefined,
+      diffSinceBase,
+      commitsSinceBase,
+      mergeBase: mergeBase && /^[0-9a-f]{40}$/.test(mergeBase) ? mergeBase : undefined,
     };
   }
 }
