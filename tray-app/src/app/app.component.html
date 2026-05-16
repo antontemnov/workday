@@ -2,7 +2,19 @@
   <!-- Header -->
   <header class="header">
     <span class="header-slot"></span>
-    <span class="date" *ngIf="data">{{ formattedDate }}</span>
+    <div class="date-nav" *ngIf="data">
+      <button class="nav-btn"
+              (click)="goPrevDay()"
+              title="Previous day">‹</button>
+      <span class="date"
+            [class.clickable]="!isViewingToday"
+            (click)="goToday()"
+            [title]="isViewingToday ? '' : 'Back to today'">{{ formattedDate }}</span>
+      <button class="nav-btn"
+              (click)="goNextDay()"
+              [disabled]="isViewingToday"
+              title="Next day">›</button>
+    </div>
     <span class="header-slot right">
       <span class="badge day-type" *ngIf="data">{{ data.dayType }}</span>
     </span>
@@ -11,14 +23,19 @@
   <!-- Loading -->
   <div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
 
-  <!-- Daemon not running: Start button -->
-  <div class="start-screen" *ngIf="error && !loading">
+  <!-- Daemon not running: Start button (only when on "today" view) -->
+  <div class="start-screen" *ngIf="error && !loading && isViewingToday">
     <button class="start-btn"
             (click)="startDaemon()"
             [disabled]="daemonStarting">
       {{ daemonStarting ? '...' : 'Start' }}
     </button>
     <div class="start-hint">Launch the workday daemon</div>
+  </div>
+
+  <!-- No data for past day -->
+  <div class="status-msg empty-day" *ngIf="error && !loading && !isViewingToday">
+    No data for this day
   </div>
 
   <!-- Content -->
@@ -71,7 +88,7 @@
           <span class="leader" *ngIf="s.isLeader" title="Leader">&#9733;</span>
           <span class="badge paused" *ngIf="s.autoPauseDisabled" title="Autopause disabled">AUTO OFF</span>
 
-          <div class="session-actions">
+          <div class="session-actions" *ngIf="isViewingToday">
             <button class="icon-btn"
                     *ngIf="!s.paused"
                     (click)="pauseSession(s.repo)"
@@ -160,7 +177,7 @@
   </div>
 
   <!-- Bottom bar -->
-  <footer class="bottom-bar" *ngIf="data && !error">
+  <footer class="bottom-bar" *ngIf="data && !error && isViewingToday">
     <button class="action-btn"
             (click)="pauseAll()"
             [disabled]="openSessions.length === 0 || actionPending"

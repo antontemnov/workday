@@ -32,12 +32,58 @@
     }
   }
 
+  .date-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .date {
     color: #cdd6f4;
     font-size: 12px;
     text-align: center;
     letter-spacing: 0.3px;
+
+    &.clickable {
+      cursor: pointer;
+      text-decoration: underline dotted #6c7086;
+      text-underline-offset: 3px;
+
+      &:hover {
+        color: #ffffff;
+        text-decoration-color: #cdd6f4;
+      }
+    }
   }
+
+  .nav-btn {
+    background: transparent;
+    border: none;
+    color: #a6adc8;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: background 0.15s ease, color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background: #313244;
+      color: #cdd6f4;
+    }
+    &:disabled {
+      opacity: 0.25;
+      cursor: default;
+    }
+  }
+}
+
+.empty-day {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 // Content (scrollable)

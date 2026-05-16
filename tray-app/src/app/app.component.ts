@@ -36,6 +36,11 @@ export class AppComponent implements OnInit, OnDestroy {
   actionPending = false;
   hoveredSessionId: string | null = null;
 
+  // Day navigation: null = viewing today (live), otherwise a YYYY-MM-DD past date.
+  viewedDate: string | null = null;
+  // Latest known "today" date from the daemon — used to clamp the Next button.
+  private todayDate: string | null = null;
+
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -47,8 +52,13 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.refresh();
-    this.pollTimer = setInterval(() => this.refresh(), 10_000);
-    this.tickTimer = setInterval(() => this.currentTimeMs = Date.now(), 30_000);
+    // Polling and live ticks only make sense for today.
+    this.pollTimer = setInterval(() => {
+      if (this.isViewingToday) this.refresh();
+    }, 10_000);
+    this.tickTimer = setInterval(() => {
+      if (this.isViewingToday) this.currentTimeMs = Date.now();
+    }, 30_000);
   }
 
   ngOnDestroy(): void {
@@ -58,14 +68,57 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async refresh(): Promise<void> {
-    const res = await this.api.getToday();
+    const date = this.viewedDate;
+    const res = date
+      ? await this.api.getDay(date)
+      : await this.api.getToday();
     if (res.ok && res.data) {
       this.data = res.data;
       this.error = null;
+      if (!date) this.todayDate = res.data.date;
     } else {
       this.error = res.error ?? 'Unknown error';
     }
     this.loading = false;
+  }
+
+  get isViewingToday(): boolean {
+    return this.viewedDate === null;
+  }
+
+  goPrevDay(): void {
+    const base = this.viewedDate ?? this.todayDate ?? this.data?.date;
+    if (!base) return;
+    this.viewedDate = this.shiftDate(base, -1);
+    this.loading = true;
+    void this.refresh();
+  }
+
+  goNextDay(): void {
+    if (this.isViewingToday || !this.viewedDate) return;
+    const next = this.shiftDate(this.viewedDate, 1);
+    // Stepping past (or onto) today returns to the live view.
+    this.viewedDate = this.todayDate && next >= this.todayDate ? null : next;
+    this.loading = true;
+    void this.refresh();
+  }
+
+  goToday(): void {
+    if (this.isViewingToday) return;
+    this.viewedDate = null;
+    this.loading = true;
+    void this.refresh();
+  }
+
+  // YYYY-MM-DD + integer day offset → YYYY-MM-DD, handling month/year rollover.
+  private shiftDate(dateStr: string, days: number): string {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + days);
+    const yy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
   }
 
   get openSessions(): SessionDetail[] {
