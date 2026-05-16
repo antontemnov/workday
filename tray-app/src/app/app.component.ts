@@ -43,6 +43,9 @@ export class AppComponent implements OnInit, OnDestroy {
   // Past days (with sessions), descending. Drives Prev/Next so navigation only
   // lands on days with real data instead of stepping through empty calendar days.
   private availableDates: string[] = [];
+  // True once getDays() has returned at least once — keeps refresh() from
+  // retrying the list call on every poll after a successful load.
+  private navLoaded = false;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -69,6 +72,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const res = await this.api.getDays();
     if (res.ok && res.data) {
       this.availableDates = [...res.data.dates];
+      this.navLoaded = true;
     }
   }
 
@@ -90,6 +94,11 @@ export class AppComponent implements OnInit, OnDestroy {
       // Keep navigation list in sync when a day first gains sessions.
       if (res.data.sessions.length > 0 && !this.availableDates.includes(res.data.date)) {
         this.availableDates = [res.data.date, ...this.availableDates].sort().reverse();
+      }
+      // Lazy-load the nav list on the first successful response — covers the
+      // case where ngOnInit fired getDays() before the daemon was reachable.
+      if (!this.navLoaded) {
+        void this.refreshAvailableDates();
       }
     } else {
       this.error = res.error ?? 'Unknown error';
