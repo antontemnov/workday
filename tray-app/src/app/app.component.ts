@@ -440,7 +440,7 @@ export class AppComponent implements OnInit, OnDestroy {
         default:             return 'status-paused';
       }
     }
-    return s.state === 'active' ? 'status-live' : 'status-starting';
+    return s.state === 'active' ? 'status-live' : 'status-pending';
   }
 
   statusLabel(s: SessionDetail): string {
@@ -453,7 +453,7 @@ export class AppComponent implements OnInit, OnDestroy {
         default:             return 'Paused';
       }
     }
-    return s.state === 'active' ? 'Live' : 'Starting';
+    return s.state === 'active' ? 'Live' : 'Pending';
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────
