@@ -127,6 +127,50 @@
   }
 }
 
+// Week-day grid in the header — 7 small cells (Mon..Sun) with the active
+// day highlighted. Weekend cells get a faint warm tint even when inactive,
+// so the weekly rhythm is visible at a glance.
+.weekday-grid {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 4px;
+  background: rgba(17, 17, 27, 0.6);
+  border: 1px solid #313244;
+}
+
+.weekday-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: #45475a;
+  border-radius: 2px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: default;
+  transition: color 0.2s ease, background 0.2s ease;
+
+  &.weekend:not(.active) {
+    color: #585b70;
+  }
+
+  &.active {
+    color: #1e1e2e;
+    background: #cdd6f4;
+    font-weight: 700;
+  }
+
+  &.active.weekend {
+    background: #f9e2af;
+    color: #1e1e2e;
+  }
+}
+
 // Start screen
 .start-screen {
   flex: 1;
@@ -239,7 +283,11 @@
     cursor: default;
     // Use a CSS var so highlight can glow in the segment's own colour.
     --seg-color: #cdd6f4;
-    transition: box-shadow 0.18s ease, opacity 0.18s ease, filter 0.18s ease;
+    --seg-index: 0;
+    transition: box-shadow 0.18s ease, opacity 0.18s ease, filter 0.18s ease, transform 0.18s ease;
+    animation: seg-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(var(--seg-index) * 40ms);
+    transform-origin: left center;
 
     &.closed {
       opacity: 0.55;
@@ -250,9 +298,15 @@
       z-index: 2;
       box-shadow:
         0 0 0 1px var(--seg-color),
-        0 0 12px 0 color-mix(in srgb, var(--seg-color) 55%, transparent);
-      filter: saturate(1.15);
+        0 0 14px 0 color-mix(in srgb, var(--seg-color) 65%, transparent);
+      filter: saturate(1.2) brightness(1.05);
+      transform: translateY(-1px);
     }
+  }
+
+  @keyframes seg-in {
+    from { opacity: 0; transform: scaleX(0.6) translateY(2px); }
+    to   { opacity: 1; transform: scaleX(1)   translateY(0);   }
   }
 
   // Live "now" indicator — thin pulsing line, today view only.
@@ -414,6 +468,7 @@
 }
 
 .session-card {
+  --repo-color: #cdd6f4;
   background: #181825;
   border: 1px solid #313244;
   border-radius: 6px;
@@ -421,10 +476,13 @@
   margin-bottom: 6px;
   position: relative;
   overflow: hidden;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 
+  // Bidirectional hover: card highlight echoes the segment glow on the timeline,
+  // so the link between "this session" and "those bars" is visible from both sides.
   &.highlight {
-    border-color: rgba(205, 214, 244, 0.35);
+    border-color: var(--repo-color);
+    box-shadow: 0 0 14px 0 color-mix(in srgb, var(--repo-color) 28%, transparent);
   }
 
   .session-color-bar {
@@ -433,6 +491,12 @@
     top: 0;
     bottom: 0;
     width: 4px;
+    transition: width 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  &.highlight .session-color-bar {
+    width: 5px;
+    box-shadow: 0 0 8px 0 var(--repo-color);
   }
 }
 
@@ -448,15 +512,10 @@
     color: #cdd6f4;
   }
 
-  .leader {
-    color: #f9e2af;
-    font-size: 14px;
-  }
-
-  .session-actions {
+  // Status badge anchors the right edge of the header — no more star clutter,
+  // and the badge is the strongest signal of "what is this session doing".
+  .status-badge {
     margin-left: auto;
-    display: flex;
-    gap: 2px;
   }
 }
 
@@ -487,25 +546,36 @@
     align-items: center;
     gap: 6px;
     line-height: 1.8;
+    min-width: 0;          // lets the branch ellipsis kick in inside flex
   }
 
   .label {
     color: #6c7086;
     min-width: 60px;
     font-size: 11px;
+    flex-shrink: 0;
   }
 
   .value {
     color: #bac2de;
+    min-width: 0;
   }
 
   .ml {
     margin-left: 12px;
   }
 
+  // Branch path: clip with ellipsis instead of overflowing. The native title
+  // tooltip on the element reveals the full name on hover.
   .branch {
     color: #6c7086;
     font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .time {
@@ -520,6 +590,28 @@
 
   .added { color: #a6e3a1; }
   .removed { color: #f38ba8; }
+}
+
+// Settings block — stamina + sensitivity, visually separated from the info block.
+// A 1-pixel rule sits above the block as a quiet section break.
+.session-controls {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #2a2b3c;
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.8;
+  }
+
+  .label {
+    color: #6c7086;
+    min-width: 60px;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
 }
 
 // Compact trigger on the Time row that opens the Add-time modal.

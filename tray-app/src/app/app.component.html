@@ -17,10 +17,16 @@
               title="Next day with data">›</button>
     </div>
     <span class="header-slot right">
-      <span class="badge day-type"
-            *ngIf="data"
-            [class]="'badge day-type ' + data.dayType"
-            [title]="data.dayType">{{ dayWeekdayLabel }}</span>
+      <div class="weekday-grid"
+           *ngIf="data"
+           [title]="dayWeekdayLabel + ' · ' + data.dayType">
+        <span class="weekday-cell"
+              *ngFor="let c of weekdayCells; let i = index"
+              [class.active]="i === activeWeekdayCell"
+              [class.weekend]="c.weekend"
+              [attr.aria-current]="i === activeWeekdayCell ? 'date' : null"
+              [title]="c.full">{{ c.letter }}</span>
+      </div>
     </span>
   </header>
 
@@ -57,13 +63,14 @@
         </button>
         <div class="timeline-bar">
           <div class="timeline-segment"
-               *ngFor="let iv of data.activeIntervals"
+               *ngFor="let iv of data.activeIntervals; let i = index"
                [class.closed]="isSessionClosed(iv.sessionId)"
                [class.highlight]="hoveredSessionId === iv.sessionId"
                [style.left.%]="timeToPercent(iv.from)"
                [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
                [style.background-color]="sessionColor(iv.sessionId)"
                [style.--seg-color]="sessionColor(iv.sessionId)"
+               [style.--seg-index]="i"
                [title]="intervalTooltip(iv)"
                (mouseenter)="hoveredSessionId = iv.sessionId"
                (mouseleave)="hoveredSessionId = null">
@@ -108,21 +115,20 @@
       <div class="session-card"
            *ngFor="let s of openSessions"
            [class.highlight]="hoveredSessionId === s.id"
+           [style.--repo-color]="sessionColor(s.id)"
            (mouseenter)="hoveredSessionId = s.id"
            (mouseleave)="hoveredSessionId = null">
         <span class="session-color-bar" [style.background-color]="sessionColor(s.id)"></span>
         <div class="session-header">
           <span class="repo">{{ repoName(s.repo) }}</span>
-          <span class="badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
-          <span class="leader" *ngIf="s.isLeader" title="Leader">&#9733;</span>
-
+          <span class="badge status-badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
         </div>
         <div class="session-details">
           <div class="row">
             <span class="label">Task</span>
             <span class="value">{{ s.task ?? '—' }}</span>
             <span class="label ml">Branch</span>
-            <span class="value branch">{{ s.branch }}</span>
+            <span class="value branch" [title]="s.branch">{{ s.branch }}</span>
           </div>
           <div class="row time-row">
             <span class="label">Time</span>
@@ -134,6 +140,23 @@
                     title="Add manual time">＋ add time</button>
             <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
           </div>
+          <div class="row">
+            <span class="label">Changes</span>
+            <span class="value">
+              {{ s.evidence.commits }} commits
+              <span *ngIf="s.evidence.filesChanged"> &middot; {{ s.evidence.filesChanged }} files</span>
+              <span class="added"> +{{ s.evidence.linesAdded }}</span>
+              <span class="removed"> -{{ s.evidence.linesRemoved }}</span>
+            </span>
+          </div>
+          <div class="row" *ngIf="s.pauseCount > 0">
+            <span class="label">Pauses</span>
+            <span class="value">{{ s.pauseCount }} ({{ formatDuration(s.totalPauseDurationMs) }} total)</span>
+          </div>
+        </div>
+
+        <!-- Settings block: stamina + sensitivity, separated from the info block above. -->
+        <div class="session-controls">
           <div class="row stamina-row">
             <span class="label">Stamina</span>
             <ng-container *ngIf="!isAlwaysOn(s); else alwaysOnTpl">
@@ -171,19 +194,6 @@
                 {{ p.label }}
               </button>
             </div>
-          </div>
-          <div class="row">
-            <span class="label">Changes</span>
-            <span class="value">
-              {{ s.evidence.commits }} commits
-              <span *ngIf="s.evidence.filesChanged"> &middot; {{ s.evidence.filesChanged }} files</span>
-              <span class="added"> +{{ s.evidence.linesAdded }}</span>
-              <span class="removed"> -{{ s.evidence.linesRemoved }}</span>
-            </span>
-          </div>
-          <div class="row" *ngIf="s.pauseCount > 0">
-            <span class="label">Pauses</span>
-            <span class="value">{{ s.pauseCount }} ({{ formatDuration(s.totalPauseDurationMs) }} total)</span>
           </div>
         </div>
       </div>

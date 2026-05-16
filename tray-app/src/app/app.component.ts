@@ -231,11 +231,30 @@ export class AppComponent implements OnInit, OnDestroy {
     return span - work;
   }
 
-  /** Full weekday label (Saturday/Sunday/Monday...) — shown in the top-right header badge. */
+  /** Full weekday label (Saturday/Sunday/Monday...) — shown as the tooltip on the day-grid cell. */
   get dayWeekdayLabel(): string {
     const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
     const [y, m, d] = date.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'long' });
+  }
+
+  /** Week-day grid (Mon..Sun). Highlights the active cell for the currently viewed date. */
+  readonly weekdayCells: ReadonlyArray<{ letter: string; full: string; idx: number; weekend: boolean }> = [
+    { letter: 'M', full: 'Monday',    idx: 1, weekend: false },
+    { letter: 'T', full: 'Tuesday',   idx: 2, weekend: false },
+    { letter: 'W', full: 'Wednesday', idx: 3, weekend: false },
+    { letter: 'T', full: 'Thursday',  idx: 4, weekend: false },
+    { letter: 'F', full: 'Friday',    idx: 5, weekend: false },
+    { letter: 'S', full: 'Saturday',  idx: 6, weekend: true  },
+    { letter: 'S', full: 'Sunday',    idx: 0, weekend: true  },
+  ];
+
+  /** 0..6 from weekdayCells where idx matches today's getDay() for the viewed date. */
+  get activeWeekdayCell(): number {
+    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
+    const [y, m, d] = date.split('-').map(Number);
+    const dow = new Date(y, m - 1, d).getDay();
+    return this.weekdayCells.findIndex(c => c.idx === dow);
   }
 
   /** Compact duration without seconds — used for timeline stats. */
@@ -342,10 +361,22 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   sessionColor(sessionId: string): string {
-    const idx = this.data?.sessions.findIndex(s => s.id === sessionId) ?? -1;
+    const session = this.data?.sessions.find(s => s.id === sessionId);
+    if (!session) return '#6c7086';
+    // Index into the sorted list of unique repos in this day — guarantees
+    // each repo gets a distinct slot (no hash collisions) and stays stable
+    // across session reorderings as long as the repo set doesn't change.
+    const idx = this.uniqueReposSorted.indexOf(session.repo);
     if (idx < 0) return '#6c7086';
     const palette = AppComponent.SESSION_COLOR_PALETTE;
     return palette[idx % palette.length];
+  }
+
+  private get uniqueReposSorted(): readonly string[] {
+    if (!this.data) return [];
+    const set = new Set<string>();
+    for (const s of this.data.sessions) set.add(s.repo);
+    return [...set].sort();
   }
 
   isSessionClosed(sessionId: string): boolean {
