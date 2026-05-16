@@ -37,7 +37,7 @@ import type {
   PauseResponse,
   ResumeResponse,
   StopResponse,
-  AutoPauseResponse,
+  SensitivityResponse,
   AdjustResponse,
   SetStartResponse,
   SessionDetail,
@@ -46,6 +46,7 @@ import type {
   PushPlanEntry,
   ReportResponse,
 } from './core/types.js';
+import { SensitivityLevel } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -124,7 +125,7 @@ function formatSessionStatus(s: SessionSummary): string {
   if (s.isLeader) parts.push('LEADER');
   if (s.paused && s.pauseSource) parts.push(`PAUSED:${s.pauseSource}`);
   else if (s.paused) parts.push('PAUSED');
-  if (s.autoPauseDisabled) parts.push('AUTOPAUSE OFF');
+  parts.push(`SENS:${s.sensitivity}`);
   return parts.length > 0 ? ` [${parts.join(', ')}]` : '';
 }
 
@@ -329,26 +330,30 @@ async function handleResume(): Promise<void> {
   }
 }
 
-async function handleAutoPause(args: string[]): Promise<void> {
-  const toggle = args[0]; // on | off
-  if (toggle !== 'on' && toggle !== 'off') {
-    console.log('Usage: workday autopause on|off [repo]');
+async function handleSensitivity(args: string[]): Promise<void> {
+  const level = args[0];
+  const validLevels: readonly SensitivityLevel[] = [
+    SensitivityLevel.Low,
+    SensitivityLevel.Normal,
+    SensitivityLevel.Patient,
+    SensitivityLevel.AlwaysOn,
+  ];
+  if (!validLevels.includes(level as SensitivityLevel)) {
+    console.log('Usage: workday sensitivity <low|normal|patient|always_on> [repo]');
     return;
   }
   const repo = args[1];
-  const enabled = toggle === 'on';
-  const body: Record<string, unknown> = { enabled };
+  const body: Record<string, unknown> = { level };
   if (repo) body.repo = repo;
 
-  const result = await apiPost<AutoPauseResponse>('/api/autopause', body);
+  const result = await apiPost<SensitivityResponse>('/api/sensitivity', body);
   if (!result.ok) {
     console.log(result.error);
     return;
   }
 
-  const target = result.data!.repo ?? 'all sessions';
-  const state = result.data!.autoPauseDisabled ? 'disabled' : 'enabled';
-  console.log(`Autopause ${state} for ${target}.`);
+  const target = result.data!.repo ?? 'global default';
+  console.log(`Sensitivity for ${target}: ${result.data!.level}.`);
 }
 
 async function handleAdjust(args: string[]): Promise<void> {
@@ -516,7 +521,7 @@ async function handleDay(args: string[]): Promise<void> {
     score: 0,
     normalizedScore: 0,
     isLeader: false,
-    autoPauseDisabled: false,
+    sensitivity: SensitivityLevel.Normal,
     closedBy: s.closedBy,
     evidence: s.evidence,
     pauseCount: s.pauses.length,
@@ -826,8 +831,8 @@ async function main(): Promise<void> {
     case 'resume':
       await handleResume();
       break;
-    case 'autopause':
-      await handleAutoPause(args.slice(1));
+    case 'sensitivity':
+      await handleSensitivity(args.slice(1));
       break;
     case 'adjust':
       await handleAdjust(args.slice(1));
@@ -865,8 +870,8 @@ Usage:
   workday pause              Pause all active sessions
   workday pause <repo>       Pause a specific repo session
   workday resume             Resume all paused sessions
-  workday autopause on|off   Toggle autopause for all sessions
-  workday autopause on|off <repo>  Toggle autopause for a specific repo
+  workday sensitivity <level>             Set global default (low|normal|patient|always_on)
+  workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday adjust <target> +<N> "<reason>"              Add manual time (today)
   workday adjust <target> +<N> "<reason>" --date DATE  Add manual time (past day)
   workday set-start HH:MM                              Set day start earlier (today)

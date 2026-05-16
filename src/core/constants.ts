@@ -12,7 +12,7 @@ export const DAEMON_SCRIPT_JS = 'daemon.js';
 
 // ─── HTTP API ──────────────────────────────────────────────────────────
 export const DEFAULT_API_PORT = 9213;
-export const API_VERSION = 5;
+export const API_VERSION = 6;
 
 // ─── File locking ──────────────────────────────────────────────────────
 export const LOCK_EXTENSION = '.lock';
@@ -47,10 +47,6 @@ export const DAEMON_START_POLL_MS = 200;
 export const MS_PER_MINUTE = 60_000;
 
 // ─── Activity Evaluator algorithm constants ─────────────────────────────
-/** Min inactivity timeout (when developer is frequently active) */
-export const MIN_TIMEOUT_MINUTES = 15;
-/** Max inactivity timeout (when developer is rarely active) */
-export const MAX_TIMEOUT_MINUTES = 45;
 /** Smoothing window for activity frequency */
 export const EMA_WINDOW_MINUTES = 10;
 /** Fraction of max score awarded per active tick */
@@ -63,3 +59,14 @@ export const MAGNITUDE_BONUS_MAX = 0.5;
 export const COMMIT_BONUS_SECONDS = 150;
 /** Constant per-tick score drain */
 export const BASE_DECAY = 1;
+
+// ─── Sensitivity → (min, max) timeout in minutes ─────────────────────────
+// AlwaysOn uses Normal numbers but isIdleTimeout is ignored at apply stage.
+export const SENSITIVITY_TIMEOUTS = {
+  low:       { min: 10, max: 15 },
+  normal:    { min: 15, max: 45 },
+  patient:   { min: 30, max: 90 },
+  always_on: { min: 15, max: 45 },
+} as const;
+
+export const DEFAULT_SENSITIVITY = 'normal';

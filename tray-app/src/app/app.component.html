@@ -87,33 +87,12 @@
           <span class="repo">{{ repoName(s.repo) }}</span>
           <span class="badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
           <span class="leader" *ngIf="s.isLeader" title="Leader">&#9733;</span>
-          <span class="badge paused" *ngIf="s.autoPauseDisabled" title="Autopause disabled">AUTO OFF</span>
 
           <div class="session-actions" *ngIf="isViewingToday">
-            <button class="icon-btn"
-                    *ngIf="!s.paused"
-                    (click)="pauseSession(s.repo)"
-                    [disabled]="actionPending"
-                    title="Pause this session">⏸</button>
-            <button class="icon-btn"
-                    *ngIf="s.paused"
-                    (click)="resumeAll()"
-                    [disabled]="actionPending"
-                    title="Resume">▶</button>
             <button class="icon-btn"
                     (click)="openAdjustModal(s)"
                     [disabled]="actionPending"
                     title="Add manual time">＋</button>
-            <button class="icon-btn"
-                    (click)="toggleMenu(s.id)"
-                    [disabled]="actionPending"
-                    title="More">⋯</button>
-          </div>
-
-          <div class="session-menu" *ngIf="activeMenuSessionId === s.id">
-            <button (click)="toggleAutopauseForRepo(s)">
-              {{ s.autoPauseDisabled ? 'Enable' : 'Disable' }} autopause for {{ repoName(s.repo) }}
-            </button>
           </div>
         </div>
         <div class="session-details">
@@ -128,15 +107,34 @@
             <span class="value time">{{ formatDuration(s.effectiveDurationMs) }}</span>
             <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
           </div>
-          <div class="row intensity-row">
-            <span class="label">Intensity</span>
-            <div class="intensity-bar">
-              <div class="intensity-fill"
-                   [style.width.%]="intensityPercent(s.normalizedScore)"
-                   [style.backgroundColor]="intensityColor(s.normalizedScore)">
+          <div class="row stamina-row">
+            <span class="label">Stamina</span>
+            <ng-container *ngIf="!isAlwaysOn(s); else alwaysOnTpl">
+              <div class="stamina-bar">
+                <div class="stamina-fill"
+                     [style.width.%]="staminaPercent(s.normalizedScore)"
+                     [style.backgroundColor]="staminaColor(s.normalizedScore)">
+                </div>
               </div>
+              <span class="stamina-pct">{{ staminaPercent(s.normalizedScore) }}%</span>
+            </ng-container>
+            <ng-template #alwaysOnTpl>
+              <span class="stamina-infinity" title="Always-on — no idle timeout">&infin;</span>
+            </ng-template>
+          </div>
+          <div class="row sensitivity-row" *ngIf="isViewingToday">
+            <span class="label">Mode</span>
+            <div class="sensitivity-scale">
+              <button class="pill"
+                      *ngFor="let p of sensitivityPills"
+                      [class.active]="activePill(s) === p.key"
+                      [class.pause-pill]="p.key === 'pause'"
+                      [disabled]="actionPending"
+                      [title]="p.title"
+                      (click)="selectPill(s, p.key)">
+                {{ p.label }}
+              </button>
             </div>
-            <span class="intensity-pct">{{ intensityPercent(s.normalizedScore) }}%</span>
           </div>
           <div class="row">
             <span class="label">Changes</span>
@@ -180,29 +178,10 @@
   <!-- Bottom bar -->
   <footer class="bottom-bar" *ngIf="data && !error && isViewingToday">
     <button class="action-btn"
-            (click)="pauseAll()"
-            [disabled]="openSessions.length === 0 || actionPending"
-            title="Pause all sessions">
-      ⏸ Pause all
-    </button>
-    <button class="action-btn"
-            (click)="resumeAll()"
-            [disabled]="!anyPaused || actionPending"
-            title="Resume all paused sessions">
-      ▶ Resume
-    </button>
-    <button class="action-btn"
             (click)="setStartModalOpen = true"
             [disabled]="actionPending || !hasSessions"
             [title]="hasSessions ? 'Set day start time' : 'Available after the first session starts'">
       🕘 Day start
-    </button>
-    <button class="action-btn toggle"
-            [class.off]="allAutopauseDisabled"
-            (click)="toggleAutopauseGlobal()"
-            [disabled]="openSessions.length === 0 || actionPending"
-            [title]="allAutopauseDisabled ? 'Re-enable autopause' : 'Disable autopause for all sessions'">
-      {{ allAutopauseDisabled ? '🔕 Autopause OFF' : '🔔 Autopause ON' }}
     </button>
   </footer>
 

@@ -16,6 +16,21 @@ export interface AppConfig {
   readonly workDays: readonly number[];
   readonly holidays: readonly string[];
   readonly apiPort: number;
+  sensitivity: SensitivityConfig;
+}
+
+// ─── Sensitivity ────────────────────────────────────────────────────────
+
+export enum SensitivityLevel {
+  Low = 'low',
+  Normal = 'normal',
+  Patient = 'patient',
+  AlwaysOn = 'always_on',
+}
+
+export interface SensitivityConfig {
+  default: SensitivityLevel;
+  perRepo: Record<string, SensitivityLevel>;
 }
 
 export interface SessionConfig {
@@ -253,7 +268,7 @@ export interface SessionSummary {
   readonly score: number;
   readonly normalizedScore: number;
   readonly isLeader: boolean;
-  readonly autoPauseDisabled: boolean;
+  readonly sensitivity: SensitivityLevel;
 }
 
 export interface ActiveInterval {
@@ -300,9 +315,9 @@ export interface StopResponse {
   readonly message: string;
 }
 
-export interface AutoPauseResponse {
+export interface SensitivityResponse {
   readonly repo: string | null;
-  readonly autoPauseDisabled: boolean;
+  readonly level: SensitivityLevel;
 }
 
 export interface AdjustResponse {
@@ -398,7 +413,9 @@ export interface ActivitySignals {
 export interface TickInput {
   readonly sessionId: string;
   readonly signals: ActivitySignals;
-  readonly autoPauseDisabled: boolean;
+  readonly minTicks: number;
+  readonly maxTicks: number;
+  readonly ignoreIdleTimeout: boolean;
 }
 
 export interface EvaluatorResult {

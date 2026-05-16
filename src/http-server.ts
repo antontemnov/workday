@@ -26,12 +26,13 @@ import type {
   PauseResponse,
   ResumeResponse,
   StopResponse,
-  AutoPauseResponse,
+  SensitivityResponse,
   AdjustResponse,
   SetStartResponse,
   DaysResponse,
   Session,
 } from './core/types.js';
+import { SensitivityLevel } from './core/types.js';
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
@@ -116,9 +117,9 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/resume') {
         return this.sendJson(res, 200, await this.handleResume());
       }
-      if (method === 'POST' && path === '/api/autopause') {
+      if (method === 'POST' && path === '/api/sensitivity') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, await this.handleAutoPause(body));
+        return this.sendJson(res, 200, await this.handleSensitivity(body));
       }
       if (method === 'POST' && path === '/api/adjust') {
         const body = await this.readBody(req);
@@ -227,23 +228,25 @@ export class HttpServer {
     return { ok: true, data: { paused } };
   }
 
-  private async handleAutoPause(body: Record<string, unknown>): Promise<ApiResponse<AutoPauseResponse>> {
+  private async handleSensitivity(body: Record<string, unknown>): Promise<ApiResponse<SensitivityResponse>> {
     const tracker = this.deps.sessionTracker;
-    // { enabled: boolean, repo?: string } — enabled=true means autopause ON (not disabled)
-    const enabled = body.enabled !== false;
+    // { level: 'low' | 'normal' | 'patient' | 'always_on', repo?: string }
+    const rawLevel = typeof body.level === 'string' ? body.level : '';
+    if (!isSensitivityLevel(rawLevel)) {
+      return { ok: false, error: `Invalid level: ${rawLevel}. Use low|normal|patient|always_on` };
+    }
     const repo = typeof body.repo === 'string' ? body.repo : undefined;
-    const disabled = !enabled;
 
-    const affected = tracker.setAutoPauseDisabled(disabled, repo);
+    tracker.setSensitivity(rawLevel, repo);
     tracker.flush();
-    // Re-run evaluator so the toggle takes effect immediately.
+    // Re-run evaluator so the new (minTicks, maxTicks) take effect immediately.
     await this.deps.forceTick();
 
     return {
       ok: true,
       data: {
         repo: repo ?? null,
-        autoPauseDisabled: disabled,
+        level: rawLevel,
       },
     };
   }
@@ -372,7 +375,7 @@ export class HttpServer {
       score: 0,
       normalizedScore: 0,
       isLeader: false,
-      autoPauseDisabled: false,
+      sensitivity: SensitivityLevel.Normal,
       closedBy: s.closedBy,
       evidence: s.evidence,
       pauseCount: s.pauses.length,
@@ -431,7 +434,7 @@ export class HttpServer {
       score: sessionScore?.score ?? 0,
       normalizedScore: sessionScore?.normalizedScore ?? 0,
       isLeader: evalResult?.leaderId === session.id,
-      autoPauseDisabled: tracker.isAutoPauseDisabled(session.id),
+      sensitivity: tracker.getSensitivity(session.repo),
     };
   }
 
@@ -444,6 +447,7 @@ export class HttpServer {
     });
     res.end(body);
   }
+
 
   private readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
@@ -472,4 +476,11 @@ export class HttpServer {
       req.on('error', reject);
     });
   }
+}
+
+function isSensitivityLevel(value: string): value is SensitivityLevel {
+  return value === SensitivityLevel.Low
+    || value === SensitivityLevel.Normal
+    || value === SensitivityLevel.Patient
+    || value === SensitivityLevel.AlwaysOn;
 }

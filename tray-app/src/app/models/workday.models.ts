@@ -1,6 +1,15 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 5;
+export const EXPECTED_API_VERSION = 6;
+
+export enum SensitivityLevel {
+  Low = 'low',
+  Normal = 'normal',
+  Patient = 'patient',
+  AlwaysOn = 'always_on',
+}
+
+export type SensitivityPill = SensitivityLevel | 'pause';
 
 export interface ApiResponse<T = unknown> {
   ok: boolean;
@@ -33,7 +42,7 @@ export interface SessionDetail {
   score: number;
   normalizedScore: number;
   isLeader: boolean;
-  autoPauseDisabled: boolean;
+  sensitivity: SensitivityLevel;
   closedBy: string | null;
   evidence: Evidence;
   pauseCount: number;
@@ -71,9 +80,9 @@ export interface StatusResponse {
   uptime: number;
 }
 
-export interface AutoPauseResponse {
+export interface SensitivityResponse {
   repo: string | null;
-  autoPauseDisabled: boolean;
+  level: SensitivityLevel;
 }
 
 export interface AdjustResponse {

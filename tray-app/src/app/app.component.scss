@@ -342,34 +342,6 @@
   }
 }
 
-.session-menu {
-  position: absolute;
-  right: 0;
-  top: 26px;
-  background: #181825;
-  border: 1px solid #45475a;
-  border-radius: 4px;
-  z-index: 20;
-  min-width: 200px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-
-  button {
-    background: transparent;
-    border: none;
-    color: #cdd6f4;
-    padding: 8px 12px;
-    width: 100%;
-    text-align: left;
-    cursor: pointer;
-    font-size: 11px;
-    font-family: inherit;
-
-    &:hover {
-      background: #313244;
-    }
-  }
-}
-
 .session-details {
   .row {
     display: flex;
@@ -411,9 +383,9 @@
   .removed { color: #f38ba8; }
 }
 
-// Intensity bar
-.intensity-row {
-  .intensity-bar {
+// Stamina bar (formerly Intensity)
+.stamina-row {
+  .stamina-bar {
     width: 80px;
     height: 4px;
     background: #313244;
@@ -421,16 +393,69 @@
     overflow: hidden;
   }
 
-  .intensity-fill {
+  .stamina-fill {
     height: 100%;
     border-radius: 2px;
     transition: width 0.5s ease;
   }
 
-  .intensity-pct {
+  .stamina-pct {
     font-size: 11px;
     color: #6c7086;
     min-width: 30px;
+  }
+
+  .stamina-infinity {
+    color: #89b4fa;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    padding-left: 2px;
+  }
+}
+
+// Sensitivity scale (5 pills: Pause | Low | Normal | Patient | Always-on)
+.sensitivity-row {
+  .sensitivity-scale {
+    display: flex;
+    gap: 3px;
+    flex-wrap: nowrap;
+  }
+
+  .pill {
+    background: #181825;
+    border: 1px solid #313244;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 3px 7px;
+    border-radius: 10px;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+    &:hover:not(:disabled):not(.active) {
+      background: #313244;
+      color: #cdd6f4;
+    }
+
+    &.active {
+      background: #45475a;
+      color: #cdd6f4;
+      border-color: #585b70;
+      font-weight: 600;
+    }
+
+    &.pause-pill.active {
+      background: #3a2020;
+      color: #f38ba8;
+      border-color: #f38ba8;
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
   }
 }
 
@@ -513,13 +538,6 @@
   &:disabled {
     opacity: 0.35;
     cursor: default;
-  }
-  &.toggle.off {
-    background: #3a2020;
-    color: #f38ba8;
-    &:hover:not(:disabled) {
-      background: #4a2828;
-    }
   }
 }
 

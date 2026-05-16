@@ -1,7 +1,5 @@
 import type { TickInput, EvaluatorResult, SessionScore } from './types.js';
 import {
-  MIN_TIMEOUT_MINUTES,
-  MAX_TIMEOUT_MINUTES,
   EMA_WINDOW_MINUTES,
   ACTIVITY_RATIO,
   MAGNITUDE_SCALE,
@@ -18,17 +16,15 @@ interface SessionState {
 /**
  * Pure computational class — no I/O.
  * Maintains per-session activity score and EMA, determines cross-repo leadership.
+ *
+ * Per-session minTicks/maxTicks come from the caller (resolved from sensitivity).
  */
 export class ActivityEvaluator {
-  private readonly minTicks: number;
-  private readonly maxTicks: number;
   private readonly emaAlpha: number;
   private readonly commitBonus: number;
   private readonly state: Map<string, SessionState> = new Map();
 
   public constructor(diffPollSeconds: number) {
-    this.minTicks = MIN_TIMEOUT_MINUTES * 60 / diffPollSeconds;
-    this.maxTicks = MAX_TIMEOUT_MINUTES * 60 / diffPollSeconds;
     const emaWindowTicks = EMA_WINDOW_MINUTES * 60 / diffPollSeconds;
     this.emaAlpha = 1 / emaWindowTicks;
     this.commitBonus = COMMIT_BONUS_SECONDS / diffPollSeconds;
@@ -45,13 +41,12 @@ export class ActivityEvaluator {
    * 4. Magnitude bonus — log2(1 + deltaMagnitude) / MAGNITUDE_SCALE, capped at MAGNITUDE_BONUS_MAX
    * 5. Commit bonus — instant COMMIT_BONUS_SECONDS / diffPollSeconds ticks
    * 6. Cap score at dynamicMaxScore, then decay by BASE_DECAY per tick
-   * 7. score == 0 → idle timeout → eligible for auto-pause
+   * 7. score == 0 → idle timeout → eligible for auto-pause (unless ignoreIdleTimeout)
    * Leader = highest normalizedScore (score/maxScore) among sessions with score > 0
    */
   public processAllTicks(ticks: readonly TickInput[]): EvaluatorResult {
     const scores = new Map<string, SessionScore>();
 
-    // Update state for each session
     for (const tick of ticks) {
       const st = this.getOrCreateState(tick.sessionId);
       const hasActivity = tick.signals.hasDynamics || tick.signals.hasCommit;
@@ -59,8 +54,8 @@ export class ActivityEvaluator {
       // 1. EMA update (binary input)
       st.ema = this.emaAlpha * (hasActivity ? 1 : 0) + (1 - this.emaAlpha) * st.ema;
 
-      // 2. Adaptive max score
-      const dynamicMaxScore = this.maxTicks - (this.maxTicks - this.minTicks) * Math.min(1, st.ema);
+      // 2. Adaptive max score (per-session min/max from sensitivity)
+      const dynamicMaxScore = tick.maxTicks - (tick.maxTicks - tick.minTicks) * Math.min(1, st.ema);
 
       // 3. Activity points from dynamics
       if (tick.signals.hasDynamics) {
@@ -86,7 +81,7 @@ export class ActivityEvaluator {
         maxScore: dynamicMaxScore,
         normalizedScore,
         ema: st.ema,
-        isIdleTimeout: st.score === 0,
+        isIdleTimeout: st.score === 0 && !tick.ignoreIdleTimeout,
       });
     }
 

@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { SessionState, ClosedBy, SignalType, PauseSource } from './types.js';
+import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
 import type { AppConfig, DailyLog, Session, PollResult, ReflogEntry, TickInput, EvaluatorResult, ActivitySignals } from './types.js';
 import {
   generateSessionId,
@@ -15,7 +15,7 @@ import {
   getRemainingBudgetMs,
   getOpenPause,
 } from './daily-log.js';
-import { computeWorkingDate } from './config.js';
+import { computeWorkingDate, getSensitivityForRepo, resolveSensitivityTicks, writeConfig } from './config.js';
 
 /**
  * Manages session lifecycle within a DailyLog.
@@ -42,7 +42,6 @@ import { computeWorkingDate } from './config.js';
 export class SessionTracker {
   private dailyLog: DailyLog;
   private readonly config: AppConfig;
-  private readonly autoPauseDisabledSessions: Set<string> = new Set();
   private lastEvaluatorResult: EvaluatorResult | null = null;
   public onSessionClosed: ((sessionId: string) => void) | null = null;
 
@@ -193,7 +192,6 @@ export class SessionTracker {
     const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     this.dailyLog = createEmptyLog(newDate, this.config);
 
-    this.autoPauseDisabledSessions.clear();
     this.lastEvaluatorResult = null;
 
     return completedLog;
@@ -276,6 +274,7 @@ export class SessionTracker {
       resultMap.set(basename(r.repoPath), r);
     }
 
+    const pollSeconds = this.config.session.diffPollSeconds;
     const ticks: TickInput[] = [];
     for (const session of this.dailyLog.sessions) {
       if (session.closedBy) continue;
@@ -294,10 +293,15 @@ export class SessionTracker {
           }
         : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
 
+      const level = getSensitivityForRepo(this.config, session.repo);
+      const { minTicks, maxTicks, ignoreIdleTimeout } = resolveSensitivityTicks(level, pollSeconds);
+
       ticks.push({
         sessionId: session.id,
         signals,
-        autoPauseDisabled: this.autoPauseDisabledSessions.has(session.id),
+        minTicks,
+        maxTicks,
+        ignoreIdleTimeout,
       });
     }
 
@@ -322,10 +326,8 @@ export class SessionTracker {
           // Leader — close any auto-pause
           this.closeAutoPause(session, now);
         } else if (sessionScore.isIdleTimeout) {
-          // score == 0 → IdleTimeout (unless autopause disabled)
-          if (!this.autoPauseDisabledSessions.has(session.id)) {
-            this.applyAutoPause(session, PauseSource.IdleTimeout, now);
-          }
+          // score == 0 with idle-timeout eligible (Always-on already filtered upstream)
+          this.applyAutoPause(session, PauseSource.IdleTimeout, now);
         } else {
           // score > 0 but not leader → Superseded
           this.applyAutoPause(session, PauseSource.Superseded, now);
@@ -344,27 +346,36 @@ export class SessionTracker {
     return this.lastEvaluatorResult;
   }
 
-  // ─── Autopause management ────────────────────────────────────────────
+  // ─── Sensitivity management ──────────────────────────────────────────
 
-  /** Toggle autopause for a specific repo or all repos. Returns affected repo names. */
-  public setAutoPauseDisabled(disabled: boolean, repoName?: string): string[] {
-    const affected: string[] = [];
+  /**
+   * Set sensitivity for a repo (perRepo override) or global default.
+   * Persisted to config.json immediately. Auto-resumes manual pause on the
+   * affected repos as a side effect — switching off Pause via the scale pill.
+   */
+  public setSensitivity(level: SensitivityLevel, repoName?: string): void {
+    if (repoName) {
+      this.config.sensitivity.perRepo[repoName] = level;
+    } else {
+      this.config.sensitivity.default = level;
+    }
+    writeConfig(this.config);
+
+    // Side effect: any manual pause on the affected repo(s) is closed —
+    // picking a sensitivity pill implicitly resumes the session.
+    const now = new Date().toISOString();
     for (const session of this.dailyLog.sessions) {
       if (session.closedBy) continue;
       if (repoName && session.repo !== repoName) continue;
-
-      if (disabled) {
-        this.autoPauseDisabledSessions.add(session.id);
-      } else {
-        this.autoPauseDisabledSessions.delete(session.id);
+      if (this.getOpenPauseSource(session) === PauseSource.Manual) {
+        this.closeOpenPause(session, now);
       }
-      affected.push(session.repo);
     }
-    return affected;
   }
 
-  public isAutoPauseDisabled(sessionId: string): boolean {
-    return this.autoPauseDisabledSessions.has(sessionId);
+  /** Current sensitivity for a repo (perRepo override → default). */
+  public getSensitivity(repoName: string): SensitivityLevel {
+    return getSensitivityForRepo(this.config, repoName);
   }
 
   // ─── Pause / Resume ──────────────────────────────────────────────────
@@ -441,7 +452,6 @@ export class SessionTracker {
     session.lastSeenAt = now;
     // state stays as 'pending' or 'active' — preserved for reporting
 
-    this.autoPauseDisabledSessions.delete(session.id);
     this.onSessionClosed?.(session.id);
   }
 

@@ -112,11 +112,11 @@ export class StatusRenderer {
             badge = `${YELLOW}PENDING${RESET}`;
           }
           const dot = (!isPaused && session.state === 'active') ? ` ${GREEN}●${RESET}` : '';
-          const autoPauseOff = tracker.isAutoPauseDisabled(session.id) ? ` ${DIM}[AP OFF]${RESET}` : '';
+          const sens = ` ${DIM}[${tracker.getSensitivity(session.repo).toUpperCase()}]${RESET}`;
 
           const COL1 = 18; // first value column width
 
-          lines.push(`  ${DIM}#${globalIdx}${RESET} ${BOLD}${repoLabel}${RESET}${dot}  ${badge}${autoPauseOff}`);
+          lines.push(`  ${DIM}#${globalIdx}${RESET} ${BOLD}${repoLabel}${RESET}${dot}  ${badge}${sens}`);
           const L = (label: string): string => `${INDENT}${DIM}${label.padEnd(LABEL_WIDTH)}${RESET}`;
           const R = (label: string): string => `${DIM}${label}${RESET} `;
 
@@ -131,7 +131,7 @@ export class StatusRenderer {
           const autoPauseStr = showAutopause
             ? `   ${DIM}auto-pause${RESET} ${formatDuration(rawScore * this.ctx.pollSeconds * 1000)}`
             : '';
-          lines.push(`${L('Intensity')}${renderBar(ema, BAR_WIDTH)}${autoPauseStr}`);
+          lines.push(`${L('Stamina')}${renderBar(ema, BAR_WIDTH)}${autoPauseStr}`);
 
           // Evidence: GitHub-style stats
           const ev = session.evidence;

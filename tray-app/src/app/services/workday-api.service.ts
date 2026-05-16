@@ -3,7 +3,8 @@ import {
   ApiResponse,
   TodayResponse,
   StatusResponse,
-  AutoPauseResponse,
+  SensitivityResponse,
+  SensitivityLevel,
   AdjustResponse,
   SetStartResponse,
   DaysResponse,
@@ -22,7 +23,7 @@ export abstract class WorkdayApiService {
   abstract getStatus(): Promise<ApiResponse<StatusResponse>>;
   abstract pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>>;
   abstract resume(): Promise<ApiResponse<{ resumed: string[] }>>;
-  abstract autopause(enabled: boolean, repo?: string): Promise<ApiResponse<AutoPauseResponse>>;
+  abstract sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>>;
   abstract adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>>;
   abstract setStart(time: string): Promise<ApiResponse<SetStartResponse>>;
   abstract clearStart(): Promise<ApiResponse<SetStartResponse>>;

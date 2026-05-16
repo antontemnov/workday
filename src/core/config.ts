@@ -1,9 +1,10 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
+import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { AppConfig, Secrets } from './types.js';
-import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT } from './constants.js';
+import type { AppConfig, Secrets, SensitivityConfig } from './types.js';
+import { SensitivityLevel } from './types.js';
+import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
 /** Find the directory containing this package's package.json */
 function findPackageRoot(): string {
@@ -80,6 +81,22 @@ function validateConfig(config: AppConfig): void {
   if (!config.session?.diffPollSeconds || config.session.diffPollSeconds < 5) {
     throw new Error('config.json: session.diffPollSeconds must be >= 5');
   }
+
+  if (!isValidSensitivity(config.sensitivity.default)) {
+    throw new Error(`config.json: invalid sensitivity.default "${config.sensitivity.default}"`);
+  }
+  for (const [repo, level] of Object.entries(config.sensitivity.perRepo)) {
+    if (!isValidSensitivity(level)) {
+      throw new Error(`config.json: invalid sensitivity.perRepo[${repo}] "${level}"`);
+    }
+  }
+}
+
+function isValidSensitivity(level: string): level is SensitivityLevel {
+  return level === SensitivityLevel.Low
+    || level === SensitivityLevel.Normal
+    || level === SensitivityLevel.Patient
+    || level === SensitivityLevel.AlwaysOn;
 }
 
 function validateSecrets(secrets: Secrets): void {
@@ -104,14 +121,48 @@ export function loadConfig(): AppConfig {
     delete raw.dayBoundaryHour;
   }
 
+  const rawSensitivity = (raw.sensitivity ?? {}) as Partial<SensitivityConfig>;
+  const sensitivity: SensitivityConfig = {
+    default: rawSensitivity.default ?? (DEFAULT_SENSITIVITY as SensitivityLevel),
+    perRepo: rawSensitivity.perRepo ?? {},
+  };
+
   const config = {
     ...raw,
     schedule: raw.schedule ?? { start: 10, end: 4 },
     apiPort: raw.apiPort ?? DEFAULT_API_PORT,
     timezone: raw.timezone ?? systemTimezone,
+    sensitivity,
   } as AppConfig;
   validateConfig(config);
   return config;
+}
+
+/** Atomic write of config.json — tmp + rename, preserves formatting. */
+export function writeConfig(config: AppConfig): void {
+  const configPath = join(WORKDAY_HOME, CONFIG_FILE_NAME);
+  const tmpPath = configPath + TMP_EXTENSION;
+  writeFileSync(tmpPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  renameSync(tmpPath, configPath);
+}
+
+/** Resolve sensitivity for a repo (perRepo override → default). repo is either path or basename. */
+export function getSensitivityForRepo(config: AppConfig, repo: string): SensitivityLevel {
+  const name = basename(repo);
+  return config.sensitivity.perRepo[name] ?? config.sensitivity.perRepo[repo] ?? config.sensitivity.default;
+}
+
+/** Resolve (minTicks, maxTicks, ignoreIdleTimeout) for evaluator from sensitivity. */
+export function resolveSensitivityTicks(
+  level: SensitivityLevel,
+  pollSeconds: number,
+): { minTicks: number; maxTicks: number; ignoreIdleTimeout: boolean } {
+  const t = SENSITIVITY_TIMEOUTS[level];
+  return {
+    minTicks: t.min * 60 / pollSeconds,
+    maxTicks: t.max * 60 / pollSeconds,
+    ignoreIdleTimeout: level === SensitivityLevel.AlwaysOn,
+  };
 }
 
 export function loadSecrets(): Secrets {

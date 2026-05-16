@@ -1,7 +1,13 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { WorkdayApiService } from './services/workday-api.service';
-import { TodayResponse, SessionDetail, ApiResponse } from './models/workday.models';
+import { TodayResponse, SessionDetail, ApiResponse, SensitivityLevel, SensitivityPill } from './models/workday.models';
+
+interface SensitivityPillOption {
+  readonly key: SensitivityPill;
+  readonly label: string;
+  readonly title: string;
+}
 
 interface AdjustModalState {
   sessionId: string;
@@ -28,8 +34,15 @@ export class AppComponent implements OnInit, OnDestroy {
   loading = true;
   daemonStarting = false;
 
+  readonly sensitivityPills: readonly SensitivityPillOption[] = [
+    { key: 'pause',                       label: 'Pause',     title: 'Pause this session' },
+    { key: SensitivityLevel.Low,          label: 'Low',       title: 'Short timeout — pauses quickly (10–15 min)' },
+    { key: SensitivityLevel.Normal,       label: 'Normal',    title: 'Default behaviour (15–45 min)' },
+    { key: SensitivityLevel.Patient,      label: 'Patient',   title: 'Tolerant — long timeout (30–90 min)' },
+    { key: SensitivityLevel.AlwaysOn,     label: 'Always-on', title: 'Never auto-paused by idle timeout' },
+  ];
+
   // UI state
-  activeMenuSessionId: string | null = null;
   adjustModal: AdjustModalState | null = null;
   setStartModalOpen = false;
   actionError: string | null = null;
@@ -323,15 +336,6 @@ export class AppComponent implements OnInit, OnDestroy {
     return new Date(y, m - 1, d, this.data.schedule.start, 0, 0).getTime();
   }
 
-  get allAutopauseDisabled(): boolean {
-    const open = this.openSessions;
-    return open.length > 0 && open.every(s => s.autoPauseDisabled);
-  }
-
-  get anyPaused(): boolean {
-    return this.openSessions.some(s => s.paused);
-  }
-
   get hasSessions(): boolean {
     return (this.data?.sessions.length ?? 0) > 0;
   }
@@ -354,14 +358,23 @@ export class AppComponent implements OnInit, OnDestroy {
     return repoPath.split('/').pop() ?? repoPath;
   }
 
-  intensityColor(normalizedScore: number): string {
+  staminaColor(normalizedScore: number): string {
     if (normalizedScore >= 0.6) return '#a6e3a1';
     if (normalizedScore >= 0.3) return '#f9e2af';
     return '#f38ba8';
   }
 
-  intensityPercent(normalizedScore: number): number {
+  staminaPercent(normalizedScore: number): number {
     return Math.round(Math.max(0, Math.min(1, normalizedScore)) * 100);
+  }
+
+  /** Pill key currently active for the session — Pause if paused, else its sensitivity. */
+  activePill(s: SessionDetail): SensitivityPill {
+    return s.paused ? 'pause' : s.sensitivity;
+  }
+
+  isAlwaysOn(s: SessionDetail): boolean {
+    return !s.paused && s.sensitivity === SensitivityLevel.AlwaysOn;
   }
 
   statusClass(session: SessionDetail): string {
@@ -393,28 +406,19 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  async pauseSession(repo: string): Promise<void> {
-    await this.runAction(() => this.api.pause(repo));
-  }
-
-  async pauseAll(): Promise<void> {
-    await this.runAction(() => this.api.pause());
-  }
-
-  async resumeAll(): Promise<void> {
-    await this.runAction(() => this.api.resume());
-  }
-
-  async toggleAutopauseForRepo(session: SessionDetail): Promise<void> {
-    // current state is `autoPauseDisabled`; toggle means "enabled = current"
-    const enabled = session.autoPauseDisabled; // true → re-enable
-    await this.runAction(() => this.api.autopause(enabled, session.repo));
-    this.activeMenuSessionId = null;
-  }
-
-  async toggleAutopauseGlobal(): Promise<void> {
-    const enabled = this.allAutopauseDisabled; // all disabled → enable
-    await this.runAction(() => this.api.autopause(enabled));
+  /**
+   * Pill click on the session scale.
+   * - 'pause' → manual pause for this repo (existing /api/pause behaviour).
+   * - sensitivity level → set per-repo sensitivity; the daemon side effect closes any open manual pause.
+   * Clicking the already-active pill is a no-op.
+   */
+  async selectPill(session: SessionDetail, pill: SensitivityPill): Promise<void> {
+    if (pill === this.activePill(session)) return;
+    if (pill === 'pause') {
+      await this.runAction(() => this.api.pause(session.repo));
+    } else {
+      await this.runAction(() => this.api.sensitivity(pill, session.repo));
+    }
   }
 
   openAdjustModal(session: SessionDetail): void {
@@ -450,10 +454,6 @@ export class AppComponent implements OnInit, OnDestroy {
   private formatHm(iso: string): string {
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-
-  toggleMenu(sessionId: string): void {
-    this.activeMenuSessionId = this.activeMenuSessionId === sessionId ? null : sessionId;
   }
 
   dismissToast(): void {
