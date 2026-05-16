@@ -235,6 +235,22 @@ export class AppComponent implements OnInit, OnDestroy {
     return span - work;
   }
 
+  /** Short weekday label (Sat/Sun/Mon...) — shown in the top-right header badge. */
+  get dayWeekdayLabel(): string {
+    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
+    const [y, m, d] = date.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'short' });
+  }
+
+  /** Compact duration without seconds — used for timeline stats. */
+  formatDurationHm(ms: number): string {
+    const totalMinutes = Math.floor(ms / 60_000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+    return `${minutes}m`;
+  }
+
   get formattedDate(): string {
     // Prefer viewedDate (navigation target). Fall back to data, then to local
     // "today" so the header + nav stay visible on the Start screen too —

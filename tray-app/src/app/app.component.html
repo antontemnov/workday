@@ -17,7 +17,10 @@
               title="Next day with data">›</button>
     </div>
     <span class="header-slot right">
-      <span class="badge day-type" *ngIf="data">{{ data.dayType }}</span>
+      <span class="badge day-type"
+            *ngIf="data"
+            [class]="'badge day-type ' + data.dayType"
+            [title]="data.dayType">{{ dayWeekdayLabel }}</span>
     </span>
   </header>
 
@@ -69,8 +72,9 @@
         </div>
       </div>
       <div class="timeline-stats">
-        <div class="active-line">Active <strong>{{ formatDuration(totalActiveMs) }}</strong></div>
-        <div class="pause-line">Pauses <strong>{{ formatDuration(totalPauseMs) }}</strong></div>
+        <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
+        <span class="dot-sep" *ngIf="totalPauseMs > 0">&middot;</span>
+        <span class="idle-line" *ngIf="totalPauseMs > 0">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
       </div>
     </section>
 

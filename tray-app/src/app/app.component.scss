@@ -104,6 +104,10 @@
   &.day-type {
     background: #313244;
     color: #a6adc8;
+
+    &.weekend  { background: #3a3520; color: #f9e2af; }
+    &.holiday  { background: #3a2c20; color: #fab387; }
+    &.overtime { background: #2c2a3a; color: #cba6f7; }
   }
   &.active {
     background: #1e3a2a;
@@ -232,25 +236,30 @@
 
   .timeline-stats {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 18px;        // breathing room from the timeline labels (e.g. "18:11")
     font-size: 11px;
     line-height: 1.2;
 
     strong {
-      color: #cdd6f4;
       font-weight: 600;
     }
 
     .active-line {
       color: #a6e3a1;
-
       strong { color: #a6e3a1; }
     }
 
-    .pause-line {
+    .idle-line {
       color: #6c7086;
+      strong { color: #bac2de; }
+    }
+
+    .dot-sep {
+      color: #45475a;
     }
   }
 }
