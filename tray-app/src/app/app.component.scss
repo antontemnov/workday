@@ -110,18 +110,53 @@
     &.holiday  { background: #3a2c20; color: #fab387; }
     &.overtime { background: #2c2a3a; color: #cba6f7; }
   }
-  &.active {
-    background: #1e3a2a;
+}
+
+// Open-session status pill. Softer than the rectangular "history stamps" on
+// closed rows — sentence case, capsule shape, faint tinted background.
+// A small leading dot reinforces the live/idle/paused state.
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.15px;
+  padding: 2px 8px 2px 7px;
+  border-radius: 10px;
+  background: rgba(108, 112, 134, 0.14);
+  color: #a6adc8;
+  line-height: 1.3;
+
+  &::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  &.status-live {
+    background: rgba(166, 227, 161, 0.14);
     color: #a6e3a1;
+
+    &::before {
+      // Subtle breathing pulse — only on live, the most "alive" state.
+      animation: status-pulse 1.6s ease-in-out infinite;
+    }
   }
-  &.pending {
-    background: #3a3520;
-    color: #f9e2af;
-  }
-  &.paused {
-    background: #3a2020;
-    color: #f38ba8;
-  }
+  &.status-starting { background: rgba(249, 226, 175, 0.14); color: #f9e2af; }
+  &.status-idle     { background: rgba(250, 179, 135, 0.14); color: #fab387; }
+  &.status-paused   { background: rgba(243, 139, 168, 0.14); color: #f38ba8; }
+  &.status-switched { background: rgba(116, 199, 236, 0.14); color: #74c7ec; }
+  &.status-away     { background: rgba(180, 190, 254, 0.14); color: #b4befe; }
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%      { opacity: 0.5; transform: scale(0.7); }
 }
 
 // Week-day grid in the header — 7 small cells (Mon..Sun) with the active

@@ -430,15 +430,30 @@ export class AppComponent implements OnInit, OnDestroy {
     return !s.paused && s.sensitivity === SensitivityLevel.AlwaysOn;
   }
 
-  statusClass(session: SessionDetail): string {
-    if (session.paused) return 'paused';
-    if (session.state === 'active') return 'active';
-    return 'pending';
+  statusClass(s: SessionDetail): string {
+    if (s.paused) {
+      switch ((s.pauseSource ?? '').toLowerCase()) {
+        case 'idle_timeout': return 'status-idle';
+        case 'superseded':   return 'status-switched';
+        case 'teams_away':   return 'status-away';
+        case 'manual':       return 'status-paused';
+        default:             return 'status-paused';
+      }
+    }
+    return s.state === 'active' ? 'status-live' : 'status-starting';
   }
 
-  statusLabel(session: SessionDetail): string {
-    if (session.paused) return `PAUSED:${session.pauseSource}`;
-    return session.state.toUpperCase();
+  statusLabel(s: SessionDetail): string {
+    if (s.paused) {
+      switch ((s.pauseSource ?? '').toLowerCase()) {
+        case 'idle_timeout': return 'Idle';
+        case 'superseded':   return 'Switched';
+        case 'teams_away':   return 'Away';
+        case 'manual':       return 'Paused';
+        default:             return 'Paused';
+      }
+    }
+    return s.state === 'active' ? 'Live' : 'Starting';
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────
