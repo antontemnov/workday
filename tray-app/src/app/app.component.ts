@@ -9,12 +9,6 @@ interface SensitivityPillOption {
   readonly title: string;
 }
 
-interface AdjustModalState {
-  sessionId: string;
-  repo: string;
-  task: string | null;
-}
-
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -43,7 +37,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ];
 
   // UI state
-  adjustModal: AdjustModalState | null = null;
   setStartModalOpen = false;
   actionError: string | null = null;
   actionPending = false;
@@ -235,11 +228,11 @@ export class AppComponent implements OnInit, OnDestroy {
     return span - work;
   }
 
-  /** Short weekday label (Sat/Sun/Mon...) — shown in the top-right header badge. */
+  /** Full weekday label (Saturday/Sunday/Monday...) — shown in the top-right header badge. */
   get dayWeekdayLabel(): string {
     const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
     const [y, m, d] = date.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'short' });
+    return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'long' });
   }
 
   /** Compact duration without seconds — used for timeline stats. */
@@ -437,15 +430,17 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  openAdjustModal(session: SessionDetail): void {
-    this.adjustModal = { sessionId: session.id, repo: session.repo, task: session.task };
-  }
-
-  async submitAdjust(minutes: number, reason: string): Promise<void> {
-    if (!this.adjustModal) return;
-    const sessionId = this.adjustModal.sessionId;
-    const ok = await this.runAction(() => this.api.adjust(sessionId, minutes, reason));
-    if (ok) this.adjustModal = null;
+  /**
+   * Inline manual-time submit from the session card's Time row.
+   * Reason is hardcoded since the inline UI intentionally has no free-text input —
+   * the daemon stores it on ManualAdjustment, but nothing currently surfaces it.
+   */
+  async submitAndClearInline(session: SessionDetail, input: HTMLInputElement): Promise<void> {
+    const minutes = parseInt(input.value, 10);
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    const ok = await this.runAction(() =>
+      this.api.adjust(session.id, minutes, 'manual via tray'));
+    if (ok) input.value = '';
   }
 
   async submitSetStart(time: string): Promise<void> {

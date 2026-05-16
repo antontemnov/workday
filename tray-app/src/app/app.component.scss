@@ -26,9 +26,35 @@
   flex-shrink: 0;
 
   .header-slot {
+    &.left {
+      display: flex;
+      justify-content: flex-start;
+    }
     &.right {
       display: flex;
       justify-content: flex-end;
+    }
+  }
+
+  .header-icon-btn {
+    background: transparent;
+    border: none;
+    color: #a6adc8;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: background 0.15s ease, color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background: #313244;
+      color: #cdd6f4;
+    }
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
     }
   }
 
@@ -392,6 +418,63 @@
   .removed { color: #f38ba8; }
 }
 
+// Inline manual-time control on the Time row
+.time-row {
+  .adjust-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: auto;
+  }
+
+  .adjust-input {
+    width: 36px;
+    background: #181825;
+    border: 1px solid #313244;
+    color: #cdd6f4;
+    padding: 1px 4px;
+    font-family: inherit;
+    font-size: 11px;
+    border-radius: 3px;
+    text-align: center;
+    -moz-appearance: textfield;
+
+    &::-webkit-inner-spin-button,
+    &::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    &:focus {
+      outline: none;
+      border-color: #89b4fa;
+    }
+  }
+
+  .adjust-submit {
+    background: transparent;
+    border: 1px solid #313244;
+    color: #a6adc8;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background: #1e3a2a;
+      color: #a6e3a1;
+      border-color: #a6e3a1;
+    }
+    &:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+  }
+}
+
 // Stamina bar (formerly Intensity)
 .stamina-row {
   .stamina-bar {
@@ -519,37 +602,6 @@
   }
 }
 
-// Bottom bar
-.bottom-bar {
-  background: #181825;
-  border-top: 1px solid #313244;
-  padding: 8px 12px;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-
-.action-btn {
-  background: #313244;
-  border: 1px solid transparent;
-  color: #cdd6f4;
-  font-family: inherit;
-  font-size: 11px;
-  padding: 5px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-
-  &:hover:not(:disabled) {
-    background: #45475a;
-  }
-  &:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-}
-
 // Modals
 .modal-backdrop {
   position: fixed;
@@ -655,7 +707,7 @@
 // Toast
 .toast {
   position: fixed;
-  bottom: 56px;
+  bottom: 12px;
   left: 12px;
   right: 12px;
   padding: 8px 10px;
