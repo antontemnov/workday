@@ -38,6 +38,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // UI state
   setStartModalOpen = false;
+  endDayModalOpen = false;
   adjustModalSession: SessionDetail | null = null;
   readonly adjustQuickPicks: readonly number[] = [15, 30, 45, 60, 90];
   actionError: string | null = null;
@@ -459,6 +460,13 @@ export class AppComponent implements OnInit, OnDestroy {
   async clearDayStart(): Promise<void> {
     const ok = await this.runAction(() => this.api.clearStart());
     if (ok) this.setStartModalOpen = false;
+  }
+
+  // End workday: close all sessions + stop the daemon. After this the tray
+  // falls back to the Start screen since /api/today will refuse to connect.
+  async confirmEndDay(): Promise<void> {
+    const ok = await this.runAction(() => this.api.stop());
+    if (ok) this.endDayModalOpen = false;
   }
 
   intervalTooltip(iv: { from: string; to: string; sessionId: string }): string {

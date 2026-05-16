@@ -36,28 +36,6 @@
     }
   }
 
-  .header-icon-btn {
-    background: transparent;
-    border: none;
-    color: #a6adc8;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 14px;
-    line-height: 1;
-    padding: 2px 6px;
-    border-radius: 3px;
-    transition: background 0.15s ease, color 0.15s ease;
-
-    &:hover:not(:disabled) {
-      background: #313244;
-      color: #cdd6f4;
-    }
-    &:disabled {
-      opacity: 0.35;
-      cursor: default;
-    }
-  }
-
   .date-nav {
     display: flex;
     align-items: center;
@@ -192,13 +170,60 @@
 .timeline {
   margin: 22px 0 14px 0;
 
+  // Flex row: [DAY btn] [bar] [END btn] — buttons match the bar's height
+  // (30px) and sit flush against it.
+  .timeline-row {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
   .timeline-bar {
+    flex: 1;
     height: 30px;
     background: #11111b;
     border: 1px solid #45475a;
     border-radius: 4px;
     position: relative;
-    margin-bottom: 14px;
+  }
+
+  .timeline-edge-btn {
+    flex-shrink: 0;
+    width: 38px;
+    background: #181825;
+    border: 1px solid #313244;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    &.start {
+      &:hover:not(:disabled) {
+        background: #20283a;
+        color: #89b4fa;
+        border-color: #89b4fa;
+      }
+    }
+
+    &.end {
+      &:hover:not(:disabled) {
+        background: #3a2020;
+        color: #f38ba8;
+        border-color: #f38ba8;
+      }
+    }
   }
 
   .timeline-segment {
@@ -720,6 +745,14 @@
         border: 1px solid #3a2020;
         &:hover:not(:disabled) {
           background: #3a2020;
+        }
+      }
+      &.danger {
+        background: #f38ba8;
+        color: #1e1e2e;
+        font-weight: 600;
+        &:hover:not(:disabled) {
+          background: #eb6f93;
         }
       }
       &:disabled {
