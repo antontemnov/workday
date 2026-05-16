@@ -50,14 +50,6 @@
     <!-- Day timeline -->
     <section class="timeline" *ngIf="data.activeIntervals.length || dayStartIso">
       <div class="timeline-row">
-        <button class="timeline-edge-btn start"
-                *ngIf="isViewingToday && hasSessions"
-                (click)="setStartModalOpen = true"
-                [disabled]="actionPending"
-                aria-label="Set day start time"
-                title="Set day start time">
-          <span class="edge-glyph">⇤</span>
-        </button>
         <div class="timeline-bar">
           <div class="timeline-segment"
                *ngFor="let iv of data.activeIntervals"
@@ -88,6 +80,14 @@
                   [style.transform]="lastActivityLabelTransform">{{ lastActivityLabel }}</span>
           </div>
         </div>
+        <button class="timeline-edge-btn start"
+                *ngIf="isViewingToday && hasSessions"
+                (click)="setStartModalOpen = true"
+                [disabled]="actionPending"
+                aria-label="Set day start time"
+                title="Set day start time">
+          <span class="edge-glyph">⇤</span>
+        </button>
         <button class="timeline-edge-btn end"
                 *ngIf="isViewingToday && hasSessions"
                 (click)="endDayModalOpen = true"

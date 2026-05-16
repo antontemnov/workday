@@ -18,13 +18,14 @@
 }
 
 // Header — three-column grid keeps the date-nav perfectly centred regardless
-// of weekday-grid width. Horizontal padding (40px) aligns the weekday-grid's
-// right edge with the timeline bar's right edge below.
+// of weekday-grid width. Horizontal padding matches the content padding below
+// so the weekday-grid lines up with the timeline edge controls (end / start)
+// that now live on the bar's right side.
 .header {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 10px 40px 8px 40px;
+  padding: 10px 12px 8px 12px;
   flex-shrink: 0;
 
   .date-nav {
@@ -433,15 +434,14 @@
   }
 
   // Stats row sits just under the bar, left-aligned and small — no longer
-  // visually anchors the timeline. Aligns with the bar's left edge by
-  // matching the start-button width + gap.
+  // visually anchors the timeline. The bar now starts at the content's left
+  // edge, so stats line up with it without any extra padding.
   .timeline-stats {
     display: flex;
     flex-direction: row;
     align-items: baseline;
     gap: 6px;
     margin-top: 16px;
-    padding-left: 28px;     // 24px button + 4px gap
     font-size: 10px;
     letter-spacing: 0.3px;
     line-height: 1.2;
