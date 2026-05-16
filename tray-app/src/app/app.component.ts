@@ -38,6 +38,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // UI state
   setStartModalOpen = false;
+  adjustModalSession: SessionDetail | null = null;
+  readonly adjustQuickPicks: readonly number[] = [15, 30, 45, 60, 90];
   actionError: string | null = null;
   actionPending = false;
   hoveredSessionId: string | null = null;
@@ -430,17 +432,23 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * Inline manual-time submit from the session card's Time row.
-   * Reason is hardcoded since the inline UI intentionally has no free-text input —
-   * the daemon stores it on ManualAdjustment, but nothing currently surfaces it.
-   */
-  async submitAndClearInline(session: SessionDetail, input: HTMLInputElement): Promise<void> {
-    const minutes = parseInt(input.value, 10);
+  openAdjustModal(session: SessionDetail): void {
+    this.adjustModalSession = session;
+  }
+
+  closeAdjustModal(): void {
+    this.adjustModalSession = null;
+  }
+
+  async submitAdjust(minutesStr: string, reason: string): Promise<void> {
+    const session = this.adjustModalSession;
+    if (!session) return;
+    const minutes = parseInt(minutesStr, 10);
     if (!Number.isFinite(minutes) || minutes <= 0) return;
+    const reasonText = reason?.trim() || 'manual via tray';
     const ok = await this.runAction(() =>
-      this.api.adjust(session.id, minutes, 'manual via tray'));
-    if (ok) input.value = '';
+      this.api.adjust(session.id, minutes, reasonText));
+    if (ok) this.closeAdjustModal();
   }
 
   async submitSetStart(time: string): Promise<void> {

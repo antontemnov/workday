@@ -418,58 +418,30 @@
   .removed { color: #f38ba8; }
 }
 
-// Inline manual-time control on the Time row
+// Compact trigger on the Time row that opens the Add-time modal
 .time-row {
-  .adjust-inline {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
+  .add-time-btn {
     margin-left: auto;
-  }
-
-  .adjust-input {
-    width: 36px;
-    background: #181825;
-    border: 1px solid #313244;
-    color: #cdd6f4;
-    padding: 1px 4px;
-    font-family: inherit;
-    font-size: 11px;
-    border-radius: 3px;
-    text-align: center;
-    -moz-appearance: textfield;
-
-    &::-webkit-inner-spin-button,
-    &::-webkit-outer-spin-button {
-      -webkit-appearance: none;
-      margin: 0;
-    }
-
-    &:focus {
-      outline: none;
-      border-color: #89b4fa;
-    }
-  }
-
-  .adjust-submit {
     background: transparent;
-    border: 1px solid #313244;
-    color: #a6adc8;
-    padding: 1px 6px;
-    border-radius: 3px;
+    border: 1px dashed #45475a;
+    color: #6c7086;
+    padding: 2px 8px;
+    border-radius: 10px;
     cursor: pointer;
     font-family: inherit;
-    font-size: 12px;
-    line-height: 1;
+    font-size: 10px;
+    line-height: 1.3;
+    letter-spacing: 0.3px;
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 
     &:hover:not(:disabled) {
       background: #1e3a2a;
       color: #a6e3a1;
       border-color: #a6e3a1;
+      border-style: solid;
     }
     &:disabled {
-      opacity: 0.3;
+      opacity: 0.35;
       cursor: default;
     }
   }
@@ -655,6 +627,11 @@
     color: #a6adc8;
     font-size: 11px;
 
+    .optional {
+      color: #6c7086;
+      font-weight: 400;
+    }
+
     input {
       display: block;
       width: 100%;
@@ -671,6 +648,41 @@
       &:focus {
         outline: none;
         border-color: #89b4fa;
+      }
+
+      // Hide native number spinners — the quick-picks row covers stepping.
+      &[type="number"] {
+        -moz-appearance: textfield;
+      }
+      &[type="number"]::-webkit-inner-spin-button,
+      &[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+    }
+  }
+
+  .quick-picks {
+    display: flex;
+    gap: 4px;
+    margin: -4px 0 10px 0;
+
+    button {
+      flex: 1;
+      background: #181825;
+      border: 1px solid #313244;
+      color: #a6adc8;
+      padding: 4px 0;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+      &:hover {
+        background: #313244;
+        color: #cdd6f4;
+        border-color: #45475a;
       }
     }
   }

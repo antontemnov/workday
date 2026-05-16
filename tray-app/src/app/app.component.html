@@ -110,15 +110,11 @@
             <span class="label">Time</span>
             <span class="value time">{{ formatDuration(s.effectiveDurationMs) }}</span>
             <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
-            <div class="adjust-inline" *ngIf="isViewingToday">
-              <input #adjMins type="number" min="1" max="480" placeholder="m"
-                     class="adjust-input"
-                     (keydown.enter)="submitAndClearInline(s, adjMins)"/>
-              <button class="adjust-submit"
-                      [disabled]="!adjMins.value || actionPending"
-                      (click)="submitAndClearInline(s, adjMins)"
-                      title="Add manual minutes">＋</button>
-            </div>
+            <button class="add-time-btn"
+                    *ngIf="isViewingToday"
+                    [disabled]="actionPending"
+                    (click)="openAdjustModal(s)"
+                    title="Add manual time">＋ add time</button>
           </div>
           <div class="row stamina-row">
             <span class="label">Stamina</span>
@@ -217,6 +213,38 @@
                 [disabled]="!startTime.value || actionPending"
                 (click)="submitSetStart(startTime.value)">
           Apply
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add-time modal -->
+  <div class="modal-backdrop" *ngIf="adjustModalSession" (click)="closeAdjustModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Add manual time</h3>
+      <div class="modal-sub">
+        {{ repoName(adjustModalSession.repo) }}
+        <span *ngIf="adjustModalSession.task"> · {{ adjustModalSession.task }}</span>
+      </div>
+      <label>Minutes
+        <input #adjMins type="number" min="1" max="480" placeholder="30" autofocus
+               (keydown.enter)="submitAdjust(adjMins.value, adjReason.value)" />
+      </label>
+      <div class="quick-picks">
+        <button type="button"
+                *ngFor="let q of adjustQuickPicks"
+                (click)="adjMins.value = q.toString(); adjMins.focus()">{{ q }}m</button>
+      </div>
+      <label>Reason <span class="optional">(optional)</span>
+        <input #adjReason type="text" placeholder="meeting / call / debug"
+               (keydown.enter)="submitAdjust(adjMins.value, adjReason.value)" />
+      </label>
+      <div class="modal-actions">
+        <button (click)="closeAdjustModal()">Cancel</button>
+        <button class="primary"
+                [disabled]="!adjMins.value || actionPending"
+                (click)="submitAdjust(adjMins.value, adjReason.value)">
+          Add
         </button>
       </div>
     </div>
