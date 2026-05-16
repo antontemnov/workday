@@ -102,8 +102,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   goPrevDay(): void {
-    const base = this.viewedDate ?? this.todayDate ?? this.data?.date;
-    if (!base) return;
+    const base = this.viewedDate ?? this.todayDate ?? this.data?.date ?? this.computeLocalToday();
     const target = this.findPrevDate(base);
     if (!target) return;
     this.navigateTo(target);
@@ -155,8 +154,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get hasPrevDay(): boolean {
-    const base = this.viewedDate ?? this.todayDate ?? this.data?.date;
-    return base != null && this.findPrevDate(base) !== null;
+    const base = this.viewedDate ?? this.todayDate ?? this.data?.date ?? this.computeLocalToday();
+    return this.findPrevDate(base) !== null;
   }
 
   get openSessions(): SessionDetail[] {
@@ -215,14 +214,22 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get formattedDate(): string {
-    // Prefer viewedDate so the header reflects the navigation target immediately,
-    // even while loading or when the daemon has no data for that day.
-    const date = this.viewedDate ?? this.data?.date;
-    if (!date) return '';
+    // Prefer viewedDate (navigation target). Fall back to data, then to local
+    // "today" so the header + nav stay visible on the Start screen too —
+    // letting the user browse past days without starting a new day.
+    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
     const [y, m, d] = date.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
+  }
+
+  private computeLocalToday(): string {
+    const d = new Date();
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
   }
 
   get dayStartIso(): string | null {
@@ -365,8 +372,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.daemonStarting = true;
     try {
       await this.api.startDaemon();
-      setTimeout(() => this.refresh(), 2000);
-      setTimeout(() => this.refresh(), 5000);
+      // Reload availableDates once the daemon is up — otherwise Prev/Next
+      // stay disabled because the initial getDays() call (before daemon was
+      // running) returned an empty list.
+      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 2000);
+      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 5000);
     } catch (e: unknown) {
       this.showToast(e instanceof Error ? e.message : 'Failed to start daemon');
     } finally {
