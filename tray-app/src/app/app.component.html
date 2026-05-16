@@ -133,7 +133,7 @@
                     [disabled]="actionPending"
                     (click)="openAdjustModal(s)"
                     title="Add manual time">＋ add time</button>
-            <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
+            <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ formatDurationHm(s.manualMinutes * 60000) }} manual</span>
           </div>
           <div class="row" *ngIf="s.pauseCount > 0">
             <span class="label">Pauses</span>
