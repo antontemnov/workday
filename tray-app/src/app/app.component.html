@@ -135,6 +135,10 @@
                     title="Add manual time">＋ add time</button>
             <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ s.manualMinutes }}m manual</span>
           </div>
+          <div class="row" *ngIf="s.pauseCount > 0">
+            <span class="label">Pauses</span>
+            <span class="value">{{ s.pauseCount }} ({{ formatDurationHm(s.totalPauseDurationMs) }} total)</span>
+          </div>
           <div class="row">
             <span class="label">Changes</span>
             <span class="value">
@@ -143,10 +147,6 @@
               <span class="added"> +{{ s.evidence.linesAdded }}</span>
               <span class="removed"> -{{ s.evidence.linesRemoved }}</span>
             </span>
-          </div>
-          <div class="row" *ngIf="s.pauseCount > 0">
-            <span class="label">Pauses</span>
-            <span class="value">{{ s.pauseCount }} ({{ formatDuration(s.totalPauseDurationMs) }} total)</span>
           </div>
         </div>
 
