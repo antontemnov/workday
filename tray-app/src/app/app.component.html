@@ -1,7 +1,6 @@
 <div class="app">
-  <!-- Header -->
+  <!-- Header — left/right edges align with the timeline bar below it. -->
   <header class="header">
-    <span class="header-slot left"></span>
     <div class="date-nav" *ngIf="formattedDate">
       <button class="nav-btn"
               (click)="goPrevDay()"
@@ -16,18 +15,16 @@
               [disabled]="isViewingToday"
               title="Next day with data">›</button>
     </div>
-    <span class="header-slot right">
-      <div class="weekday-grid"
-           *ngIf="data"
-           [title]="dayWeekdayLabel + ' · ' + data.dayType">
-        <span class="weekday-cell"
-              *ngFor="let c of weekdayCells; let i = index"
-              [class.active]="i === activeWeekdayCell"
-              [class.weekend]="c.weekend"
-              [attr.aria-current]="i === activeWeekdayCell ? 'date' : null"
-              [title]="c.full">{{ c.letter }}</span>
-      </div>
-    </span>
+    <div class="weekday-grid"
+         *ngIf="data"
+         [title]="dayWeekdayLabel + ' · ' + data.dayType">
+      <span class="weekday-cell"
+            *ngFor="let c of weekdayCells; let i = index"
+            [class.active]="i === activeWeekdayCell"
+            [class.weekend]="c.weekend"
+            [attr.aria-current]="i === activeWeekdayCell ? 'date' : null"
+            [title]="c.full">{{ c.letter }}</span>
+    </div>
   </header>
 
   <!-- Loading -->

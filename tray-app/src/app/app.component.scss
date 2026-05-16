@@ -17,24 +17,15 @@
   user-select: none;
 }
 
-// Header
+// Header — horizontal padding (40px) is chosen to align with the timeline
+// bar's edges below: 12px content padding + 24px edge-btn width + 4px gap.
+// Date-nav and weekday-grid sit flush with the bar's left/right edges.
 .header {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
-  padding: 10px 12px 8px 12px;
+  justify-content: space-between;
+  padding: 10px 40px 8px 40px;
   flex-shrink: 0;
-
-  .header-slot {
-    &.left {
-      display: flex;
-      justify-content: flex-start;
-    }
-    &.right {
-      display: flex;
-      justify-content: flex-end;
-    }
-  }
 
   .date-nav {
     display: flex;
