@@ -37,7 +37,7 @@ export class Daemon {
     this.config = loadConfig();
     this.secrets = loadSecrets();
 
-    this.ensureSingleInstance();
+    await this.ensureSingleInstance();
 
     this.currentDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     this.gitTracker = new GitTracker(this.config, this.secrets);
@@ -245,18 +245,39 @@ export class Daemon {
     return join(getDataDir(), PID_FILE_NAME);
   }
 
-  private ensureSingleInstance(): void {
+  private async ensureSingleInstance(): Promise<void> {
     const pidPath = this.getPidFilePath();
     if (!existsSync(pidPath)) return;
 
     const oldPid = parseInt(readFileSync(pidPath, 'utf-8').trim(), 10);
-    if (Daemon.isProcessRunning(oldPid)) {
+    if (!Daemon.isProcessRunning(oldPid)) {
+      // Stale PID file — old process is gone
+      unlinkSync(pidPath);
+      return;
+    }
+
+    // Process is alive — verify it actually serves HTTP. A daemon that hung
+    // before listen() (or crashed in a way that left the port closed) leaves
+    // the PID file behind and traps subsequent starts in a loop.
+    if (await this.isDaemonResponsive()) {
       console.error(`Daemon already running (PID ${oldPid})`);
       process.exit(1);
     }
 
-    // Stale PID file
-    unlinkSync(pidPath);
+    console.warn(`Found unresponsive daemon (PID ${oldPid}) — terminating it`);
+    try { process.kill(oldPid); } catch { /* already dead */ }
+    try { unlinkSync(pidPath); } catch { /* best effort */ }
+  }
+
+  private async isDaemonResponsive(): Promise<boolean> {
+    try {
+      const res = await fetch(`http://127.0.0.1:${this.config.apiPort}/api/status`, {
+        signal: AbortSignal.timeout(2000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   private static isProcessRunning(pid: number): boolean {
