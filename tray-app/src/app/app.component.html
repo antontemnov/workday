@@ -1,6 +1,18 @@
 <div class="app">
-  <!-- Header — left/right edges align with the timeline bar below it. -->
+  <!-- Header — weekday-grid in col 1, date-nav in col 2.
+       Order matters: with grid-auto-flow=row, placing date-nav first would
+       advance the cursor past col 1 and force weekday-grid into row 2. -->
   <header class="header">
+    <div class="weekday-grid"
+         *ngIf="data"
+         [title]="dayWeekdayLabel + ' · ' + data.dayType">
+      <span class="weekday-cell"
+            *ngFor="let c of weekdayCells; let i = index"
+            [class.active]="i === activeWeekdayCell"
+            [class.weekend]="c.weekend"
+            [attr.aria-current]="i === activeWeekdayCell ? 'date' : null"
+            [title]="c.full">{{ c.letter }}</span>
+    </div>
     <div class="date-nav" *ngIf="formattedDate">
       <button class="nav-btn"
               (click)="goPrevDay()"
@@ -14,16 +26,6 @@
               (click)="goNextDay()"
               [disabled]="isViewingToday"
               title="Next day with data">›</button>
-    </div>
-    <div class="weekday-grid"
-         *ngIf="data"
-         [title]="dayWeekdayLabel + ' · ' + data.dayType">
-      <span class="weekday-cell"
-            *ngFor="let c of weekdayCells; let i = index"
-            [class.active]="i === activeWeekdayCell"
-            [class.weekend]="c.weekend"
-            [attr.aria-current]="i === activeWeekdayCell ? 'date' : null"
-            [title]="c.full">{{ c.letter }}</span>
     </div>
   </header>
 
