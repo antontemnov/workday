@@ -8,11 +8,15 @@ use std::os::windows::process::CommandExt;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconEvent,
+    AppHandle,
     Manager,
     RunEvent,
     WindowEvent,
 };
 use tauri_plugin_updater::UpdaterExt;
+
+mod tray_icon;
+use tray_icon::TrayStatus;
 
 /// Set when the user clicks "Quit" in the tray context menu — signals the
 /// ExitRequested handler to leave the daemon running. Crash / OS shutdown
@@ -112,6 +116,20 @@ async fn start_daemon() -> Result<String, String> {
     Ok("Daemon starting...".to_string())
 }
 
+/// Update the tray icon's status dot and tooltip.
+/// `kind` is one of: "live" | "pending" | "idle" | "paused" | "none".
+/// `tooltip` defaults to "Workday" when empty.
+#[tauri::command]
+fn set_tray_status(app: AppHandle, kind: String, tooltip: Option<String>) -> Result<(), String> {
+    let status = TrayStatus::parse(&kind);
+    let icon = tray_icon::build(status)?;
+    let tray = app.tray_by_id("main").ok_or("tray not found")?;
+    tray.set_icon(Some(icon)).map_err(|e| e.to_string())?;
+    let tooltip_text = tooltip.unwrap_or_else(|| "Workday".to_string());
+    tray.set_tooltip(Some(&tooltip_text)).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Resolve workday home — WORKDAY_HOME env wins, else ~/.workday/.
 fn workday_home() -> Option<PathBuf> {
     if let Ok(h) = env::var("WORKDAY_HOME") {
@@ -190,7 +208,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, list_local_days, read_local_day])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, list_local_days, read_local_day, set_tray_status])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -214,6 +232,13 @@ pub fn run() {
 
             // Tray context menu
             let tray = app.tray_by_id("main").expect("tray not found");
+
+            // Replace the static "placeholder" icon from tauri.conf.json with
+            // the freshly rendered octocat silhouette (no dot yet — the
+            // frontend will call set_tray_status once data arrives).
+            if let Ok(icon) = tray_icon::build(TrayStatus::None) {
+                let _ = tray.set_icon(Some(icon));
+            }
 
             let show_item = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;

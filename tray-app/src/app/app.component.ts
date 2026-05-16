@@ -1,7 +1,10 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { invoke } from '@tauri-apps/api/core';
 import { WorkdayApiService } from './services/workday-api.service';
 import { TodayResponse, SessionDetail, ApiResponse, SensitivityLevel, SensitivityPill } from './models/workday.models';
+
+type TrayKind = 'live' | 'pending' | 'idle' | 'paused' | 'none';
 
 interface SensitivityPillOption {
   readonly key: SensitivityPill;
@@ -113,6 +116,43 @@ export class AppComponent implements OnInit, OnDestroy {
       this.error = res.error ?? 'Unknown error';
     }
     this.loading = false;
+    // Tray reflects today's state regardless of which date is being viewed.
+    if (this.isViewingToday) this.syncTrayStatus();
+  }
+
+  // Compute the most informative status across open sessions and push it to
+  // the Rust tray-icon command. Priority: any Live → live, else any Pending →
+  // pending, else any idle_timeout pause → idle, else any other pause →
+  // paused, else no open sessions → none.
+  private syncTrayStatus(): void {
+    const open = this.openSessions;
+    let kind: TrayKind = 'none';
+    let label = 'Workday';
+
+    if (open.length > 0) {
+      const live    = open.find(s => !s.paused && s.state === 'active');
+      const pending = open.find(s => !s.paused && s.state !== 'active');
+      const idle    = open.find(s => s.paused && s.pauseSource === 'idle_timeout');
+      const paused  = open.find(s => s.paused);
+
+      if (live) {
+        kind = 'live';
+        label = `Workday — ${this.repoName(live.repo)}${live.task ? ' · ' + live.task : ''}`;
+      } else if (pending) {
+        kind = 'pending';
+        label = `Workday — ${this.repoName(pending.repo)} (pending)`;
+      } else if (idle) {
+        kind = 'idle';
+        label = `Workday — idle (${this.repoName(idle.repo)})`;
+      } else if (paused) {
+        kind = 'paused';
+        label = `Workday — paused (${this.repoName(paused.repo)})`;
+      }
+    }
+
+    // Fire-and-forget — never block the refresh path on the tray update.
+    // Errors here are benign (e.g. when running in the browser preview).
+    void invoke('set_tray_status', { kind, tooltip: label }).catch(() => {});
   }
 
   get isViewingToday(): boolean {
