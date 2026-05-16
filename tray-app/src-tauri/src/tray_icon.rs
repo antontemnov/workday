@@ -23,15 +23,17 @@ impl TrayStatus {
     }
 
     fn dot_svg(self) -> &'static str {
+        // Use r##"..."## so the SVG attribute sequence `"#` (e.g. fill="#a6e3a1")
+        // doesn't terminate the raw string the way r#"..."# would.
         match self {
             TrayStatus::Live =>
-                r#"<circle cx="50" cy="50" r="10" fill="#a6e3a1" stroke="#1e1e2e" stroke-width="2"/>"#,
+                r##"<circle cx="50" cy="50" r="10" fill="#a6e3a1" stroke="#1e1e2e" stroke-width="2"/>"##,
             TrayStatus::Pending =>
-                r#"<circle cx="50" cy="50" r="10" fill="#f9e2af" stroke="#1e1e2e" stroke-width="2"/>"#,
+                r##"<circle cx="50" cy="50" r="10" fill="#f9e2af" stroke="#1e1e2e" stroke-width="2"/>"##,
             TrayStatus::Idle =>
-                r#"<circle cx="50" cy="50" r="10" fill="#fab387" stroke="#1e1e2e" stroke-width="2"/>"#,
+                r##"<circle cx="50" cy="50" r="10" fill="#fab387" stroke="#1e1e2e" stroke-width="2"/>"##,
             TrayStatus::Paused =>
-                r#"<circle cx="50" cy="50" r="9" fill="none" stroke="#6c7086" stroke-width="2.5"/>"#,
+                r##"<circle cx="50" cy="50" r="9" fill="none" stroke="#6c7086" stroke-width="2.5"/>"##,
             TrayStatus::None => "",
         }
     }
@@ -68,11 +70,29 @@ pub fn build(status: TrayStatus) -> Result<Image<'static>, String> {
         &mut pixmap.as_mut(),
     );
 
-    // Encode to PNG so we can hand Tauri's Image::from_bytes a self-describing
-    // buffer — avoids fragile assumptions about RGBA pre-multiplication and
-    // returns an owned Image<'static> in one step.
-    let png = pixmap
-        .encode_png()
-        .map_err(|e| format!("encode png: {}", e))?;
-    Image::from_bytes(&png).map_err(|e| format!("decode png: {}", e))
+    // tiny-skia produces premultiplied RGBA. Tauri's Image::new_owned expects
+    // straight (non-premultiplied) RGBA — convert before handing it over so
+    // semi-transparent edges (antialiased pixels) don't render darker.
+    let rgba = unpremultiply(pixmap.data());
+    Ok(Image::new_owned(rgba, SIZE, SIZE))
+}
+
+/// Premultiplied → straight RGBA. Both inputs and outputs are RGBA8.
+fn unpremultiply(premul: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(premul.len());
+    for chunk in premul.chunks_exact(4) {
+        let (r, g, b, a) = (chunk[0], chunk[1], chunk[2], chunk[3]);
+        if a == 0 {
+            out.extend_from_slice(&[0, 0, 0, 0]);
+        } else if a == 255 {
+            out.extend_from_slice(&[r, g, b, a]);
+        } else {
+            let af = a as f32 / 255.0;
+            out.push(((r as f32 / af).round().min(255.0)) as u8);
+            out.push(((g as f32 / af).round().min(255.0)) as u8);
+            out.push(((b as f32 / af).round().min(255.0)) as u8);
+            out.push(a);
+        }
+    }
+    out
 }
