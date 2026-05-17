@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { WorkdayApiService } from './workday-api.service';
+import { MockWorkdayApiService } from './mock-workday-api.service';
 import {
   ActiveInterval,
   ApiResponse,
@@ -13,6 +14,9 @@ import {
   SetStartResponse,
   DaysResponse,
   EXPECTED_API_VERSION,
+  MonthResponse,
+  SettingsResponse,
+  SettingsPatch,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -144,6 +148,37 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       // Outside Tauri webview (e.g. browser dev mode) — invoke is unavailable
       throw new Error('Cannot start daemon outside Tauri app');
     }
+  }
+
+  // ─── Stubs for endpoints not yet implemented on the daemon ───────────
+  // The Timesheets and Settings views need data we don't have a real
+  // endpoint for yet. Delegate to MockWorkdayApiService so the UI develops
+  // independent of backend. Replace each with a real fetch() call when
+  // the corresponding daemon route lands.
+
+  // TODO: replace with GET /api/month?year=YYYY&month=MM
+  override async getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>> {
+    return new MockWorkdayApiService().getMonth(year, month);
+  }
+
+  // TODO: replace with POST /api/confirm { date }
+  override async confirmDay(date: string): Promise<ApiResponse<unknown>> {
+    return new MockWorkdayApiService().confirmDay(date);
+  }
+
+  // TODO: replace with POST /api/push { from, to } that wraps runPush()
+  override async pushToTempo(from: string, to: string): Promise<ApiResponse<unknown>> {
+    return new MockWorkdayApiService().pushToTempo(from, to);
+  }
+
+  // TODO: replace with GET /api/settings (returns config + secretsMeta only)
+  override async getSettings(): Promise<ApiResponse<SettingsResponse>> {
+    return new MockWorkdayApiService().getSettings();
+  }
+
+  // TODO: replace with POST /api/settings (accepts SettingsPatch)
+  override async updateSettings(patch: SettingsPatch): Promise<ApiResponse<unknown>> {
+    return new MockWorkdayApiService().updateSettings(patch);
   }
 
   // ─── Disk fallback (no daemon) ──────────────────────────────────────

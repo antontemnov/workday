@@ -103,3 +103,60 @@ export interface SetStartResponse {
 export interface DaysResponse {
   readonly dates: readonly string[];
 }
+
+// ─── Timesheets ──────────────────────────────────────────────────────────
+
+// Mirrors src/core/types.ts DayStatus on the daemon side.
+export enum DayStatus {
+  Draft = 'draft',
+  Confirmed = 'confirmed',
+  Pushed = 'pushed',
+}
+
+export interface MonthDayTask {
+  readonly key: string;        // e.g. 'ATL-6781' or 'standup'
+  readonly ms: number;
+}
+
+export interface MonthDay {
+  readonly date: string;       // YYYY-MM-DD
+  readonly dayType: string;    // workday | weekend | holiday | overtime
+  readonly status: DayStatus;
+  readonly claimedMs: number;
+  readonly tasks: readonly MonthDayTask[];
+}
+
+export interface MonthResponse {
+  readonly year: number;
+  readonly month: number;      // 1-12
+  readonly days: readonly MonthDay[];
+}
+
+// ─── Settings ────────────────────────────────────────────────────────────
+
+// Subset of AppConfig the UI exposes — keeps the surface small for MVP.
+export interface SettingsConfigSubset {
+  readonly repos: readonly string[];
+  readonly schedule: { readonly start: number; readonly end: number };
+  readonly timezone: string;
+  readonly taskPattern: string;
+  readonly sensitivity: { readonly default: SensitivityLevel };
+}
+
+// GET /api/settings returns config + metadata about which secrets are set
+// (never the raw token values). Editing a token = POST a new value.
+export interface SettingsResponse {
+  readonly config: SettingsConfigSubset;
+  readonly secretsMeta: {
+    readonly jiraConfigured: boolean;
+    readonly tempoConfigured: boolean;
+  };
+}
+
+export interface SettingsPatch {
+  readonly config?: Partial<SettingsConfigSubset>;
+  readonly secrets?: {
+    readonly jiraToken?: string;
+    readonly tempoToken?: string;
+  };
+}

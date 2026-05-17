@@ -8,6 +8,9 @@ import {
   AdjustResponse,
   SetStartResponse,
   DaysResponse,
+  MonthResponse,
+  SettingsResponse,
+  SettingsPatch,
 } from '../models/workday.models';
 
 /**
@@ -29,4 +32,16 @@ export abstract class WorkdayApiService {
   abstract clearStart(): Promise<ApiResponse<SetStartResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
   abstract startDaemon(): Promise<void>;
+
+  // Timesheets view — per-month aggregated day summaries.
+  abstract getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>>;
+  // Mark a day as Confirmed (Draft → Confirmed). Pushed status is set by the
+  // push pipeline, not the user.
+  abstract confirmDay(date: string): Promise<ApiResponse<unknown>>;
+  // Trigger the Tempo push for a date range; daemon side wraps runPush().
+  abstract pushToTempo(from: string, to: string): Promise<ApiResponse<unknown>>;
+
+  // Settings view — config + secrets metadata. Token values are write-only.
+  abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;
+  abstract updateSettings(patch: SettingsPatch): Promise<ApiResponse<unknown>>;
 }

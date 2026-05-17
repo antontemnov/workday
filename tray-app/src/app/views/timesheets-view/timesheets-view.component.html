@@ -1,0 +1,74 @@
+<div class="content">
+  <!-- Two-row header: title + total + month-pager (row 1), action buttons (row 2).
+       Splitting into two rows leaves room for a third (or fourth) action button
+       without crowding the title or month-pager. -->
+  <div class="sheet-head">
+    <div class="sheet-head-row">
+      <div class="sheet-title">
+        <h2>Timesheets</h2>
+        <span class="sheet-total" *ngIf="!loading">
+          · <strong>{{ trackedTotal.toFixed(1) }}h</strong> tracked
+        </span>
+      </div>
+      <div class="month-pager">
+        <button class="nav-btn" (click)="prevMonth()" [disabled]="loading">‹</button>
+        <span class="label">{{ monthLabel }}</span>
+        <button class="nav-btn" (click)="nextMonth()" [disabled]="loading">›</button>
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" (click)="onExport()">Export</button>
+      <button class="btn primary"
+              [disabled]="pushDisabled"
+              [title]="readyToPushHours > 0 ? '' : 'No days are marked Ready'"
+              (click)="onPush()">
+        <ng-container *ngIf="readyToPushHours > 0; else nothingToPush">
+          Push to Tempo · {{ readyToPushHours.toFixed(1) }}h
+        </ng-container>
+        <ng-template #nothingToPush>Push to Tempo</ng-template>
+      </button>
+    </div>
+  </div>
+
+  <div class="status-msg" *ngIf="loading">Loading...</div>
+
+  <div class="sheet-grid" *ngIf="!loading">
+    <ng-container *ngFor="let week of weeks; let i = index">
+      <div class="week-sep" *ngIf="i > 0"></div>
+      <div class="sheet-row"
+           *ngFor="let row of week"
+           [class.today]="row.isToday"
+           [class.weekend]="row.isWeekend"
+           (click)="onRowClick(row)">
+        <div class="sheet-day">
+          <span class="num">{{ row.dayNum }}</span>
+          <span class="wd">{{ row.weekday }}</span>
+        </div>
+        <div class="sheet-tasks">
+          <ng-container *ngIf="row.tasks.length > 0; else noTasks">
+            <span class="t"
+                  *ngFor="let t of row.tasks"
+                  [class.blue]="t.tone === 'blue'"
+                  [class.green]="t.tone === 'green'"
+                  [class.peach]="t.tone === 'peach'"
+                  [class.mauve]="t.tone === 'mauve'"
+                  [class.teal]="t.tone === 'teal'">{{ t.key }}</span>
+          </ng-container>
+          <ng-template #noTasks><span class="dash">—</span></ng-template>
+        </div>
+        <div class="sheet-hours">
+          <ng-container *ngIf="row.hours > 0 || row.tasks.length > 0; else dashHours">
+            {{ row.hours.toFixed(1) }}<span class="unit">h</span>
+          </ng-container>
+          <ng-template #dashHours><span class="dash">—</span></ng-template>
+        </div>
+        <div class="sheet-status"
+             [class.pushed]="row.status === 'pushed'"
+             [class.confirmed]="row.status === 'confirmed'"
+             [class.draft]="row.status === 'draft'">
+          {{ statusLabel(row.status) }}
+        </div>
+      </div>
+    </ng-container>
+  </div>
+</div>

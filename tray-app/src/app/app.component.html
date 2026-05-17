@@ -1,226 +1,76 @@
 <div class="app">
-  <!-- Header — weekday-grid in col 1, date-nav in col 2.
-       Order matters: with grid-auto-flow=row, placing date-nav first would
-       advance the cursor past col 1 and force weekday-grid into row 2. -->
+  <!-- Header: weekday-grid (left) · date (centre) · view-switcher (right).
+       Three-column grid keeps the date perfectly centred regardless of the
+       side-pill widths. Date click returns to today when viewing a past day. -->
   <header class="header">
-    <div class="weekday-grid"
+    <div class="pill-grid weekday-grid"
          *ngIf="data"
          [title]="dayWeekdayLabel + ' · ' + data.dayType">
-      <span class="weekday-cell"
+      <span class="pill-cell weekday-cell"
             *ngFor="let c of weekdayCells; let i = index"
             [class.active]="i === activeWeekdayCell"
             [class.weekend]="c.weekend"
             [attr.aria-current]="i === activeWeekdayCell ? 'date' : null"
             [title]="c.full">{{ c.letter }}</span>
     </div>
-    <div class="date-nav" *ngIf="formattedDate">
-      <button class="nav-btn"
-              (click)="goPrevDay()"
-              [disabled]="!hasPrevDay"
-              title="Previous day with data">‹</button>
-      <span class="date"
-            [class.clickable]="!isViewingToday"
-            (click)="goToday()"
-            [title]="isViewingToday ? '' : 'Back to today'">{{ formattedDate }}</span>
-      <button class="nav-btn"
-              (click)="goNextDay()"
-              [disabled]="isViewingToday"
-              title="Next day with data">›</button>
+    <span class="date-current"
+          *ngIf="formattedDate"
+          [class.past]="!isViewingToday"
+          (click)="goToday()"
+          [title]="isViewingToday ? '' : 'Back to today'">{{ formattedDate }}</span>
+    <div class="pill-grid view-switcher">
+      <button class="pill-cell view-btn"
+              [class.active]="activeView === 'day'"
+              (click)="setView('day')"
+              title="Day">
+        <svg viewBox="0 0 16 16">
+          <circle cx="8" cy="8" r="6"/>
+          <path d="M8 4v4l2.5 2.5"/>
+        </svg>
+      </button>
+      <button class="pill-cell view-btn"
+              [class.active]="activeView === 'sheet'"
+              (click)="setView('sheet')"
+              title="Timesheets">
+        <svg viewBox="0 0 16 16">
+          <rect x="2.5" y="3" width="11" height="10" rx="1.2"/>
+          <path d="M2.5 6.5h11M6 3v10"/>
+        </svg>
+      </button>
+      <button class="pill-cell view-btn"
+              [class.active]="activeView === 'set'"
+              (click)="setView('set')"
+              title="Settings">
+        <svg viewBox="0 0 16 16">
+          <circle cx="8" cy="8" r="2.2"/>
+          <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>
+        </svg>
+      </button>
     </div>
   </header>
 
-  <!-- Loading -->
-  <div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
+  <!-- View body: Day / Timesheets / Settings -->
+  <ng-container [ngSwitch]="activeView">
+    <app-day-view *ngSwitchCase="'day'"
+      [data]="data"
+      [loading]="loading"
+      [error]="error"
+      [isViewingToday]="isViewingToday"
+      [actionPending]="actionPending"
+      [daemonStarting]="daemonStarting"
+      [currentTimeMs]="currentTimeMs"
+      [sensitivityPills]="sensitivityPills"
+      (pillSelected)="onPillSelected($event)"
+      (addTimeRequested)="openAdjustModal($event)"
+      (setStartRequested)="setStartModalOpen = true"
+      (endDayRequested)="endDayModalOpen = true"
+      (startDaemonRequested)="startDaemon()" />
 
-  <!-- Daemon not running: Start button (only when on "today" view) -->
-  <div class="start-screen" *ngIf="error && !loading && isViewingToday">
-    <button class="start-btn"
-            (click)="startDaemon()"
-            [disabled]="daemonStarting">
-      {{ daemonStarting ? '...' : 'Start' }}
-    </button>
-    <div class="start-hint">Launch the workday daemon</div>
-  </div>
+    <app-timesheets-view *ngSwitchCase="'sheet'"
+      (daySelected)="onDaySelected($event)" />
 
-  <!-- No data for past day -->
-  <div class="status-msg empty-day" *ngIf="error && !loading && !isViewingToday">
-    No data for this day
-  </div>
-
-  <!-- Content -->
-  <div class="content" *ngIf="data && !error">
-    <!-- Day timeline -->
-    <section class="timeline" *ngIf="data.activeIntervals.length || dayStartIso">
-      <div class="timeline-row">
-        <div class="timeline-bar">
-          <div class="timeline-segment"
-               *ngFor="let iv of data.activeIntervals"
-               [class.closed]="isSessionClosed(iv.sessionId)"
-               [class.highlight]="hoveredSessionId === iv.sessionId"
-               [style.left.%]="timeToPercent(iv.from)"
-               [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
-               [style.background-color]="sessionColor(iv.sessionId)"
-               [style.--seg-color]="sessionColor(iv.sessionId)"
-               (mouseenter)="hoveredSessionId = iv.sessionId"
-               (mouseleave)="hoveredSessionId = null">
-          </div>
-          <div class="timeline-now"
-               *ngIf="isViewingToday && currentTimePercent !== null"
-               [style.left.%]="currentTimePercent"
-               title="Now">
-          </div>
-          <div class="timeline-daystart"
-               *ngIf="dayStartPercent !== null"
-               [style.left.%]="dayStartPercent">
-            <span class="timeline-daystart-label"
-                  [style.transform]="dayStartLabelTransform">{{ dayStartLabel }}</span>
-          </div>
-          <div class="timeline-dayend"
-               *ngIf="lastActivityPercent !== null"
-               [style.left.%]="lastActivityPercent">
-            <span class="timeline-dayend-label"
-                  [style.transform]="lastActivityLabelTransform">{{ lastActivityLabel }}</span>
-          </div>
-        </div>
-        <button class="timeline-edge-btn start"
-                *ngIf="isViewingToday && hasSessions"
-                (click)="setStartModalOpen = true"
-                [disabled]="actionPending"
-                aria-label="Set day start time"
-                title="Set day start time">
-          <span class="edge-glyph">⇤</span>
-        </button>
-        <button class="timeline-edge-btn end"
-                *ngIf="isViewingToday && hasSessions"
-                (click)="endDayModalOpen = true"
-                [disabled]="actionPending"
-                aria-label="End workday"
-                title="End workday — close all sessions and stop the daemon">
-          <span class="edge-glyph">⏻</span>
-        </button>
-      </div>
-      <div class="timeline-stats">
-        <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
-        <span class="dot-sep" *ngIf="totalPauseMs > 0">&middot;</span>
-        <span class="idle-line" *ngIf="totalPauseMs > 0">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
-      </div>
-    </section>
-
-    <!-- Active sessions -->
-    <section class="sessions" *ngIf="openSessions.length > 0">
-      <h2>Active <span class="count">({{ openSessions.length }})</span></h2>
-      <div class="session-card"
-           *ngFor="let s of openSessions"
-           [class.highlight]="hoveredSessionId === s.id"
-           [style.--repo-color]="sessionColor(s.id)"
-           (mouseenter)="hoveredSessionId = s.id"
-           (mouseleave)="hoveredSessionId = null">
-        <span class="session-color-bar" [style.background-color]="sessionColor(s.id)"></span>
-        <div class="session-header">
-          <span class="repo">{{ repoName(s.repo) }}</span>
-          <span class="badge status-badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
-        </div>
-        <div class="session-details">
-          <div class="row">
-            <span class="label">Task</span>
-            <span class="value">{{ s.task ?? '—' }}</span>
-            <span class="label ml">Branch</span>
-            <span class="value branch" [title]="s.branch">{{ s.branch }}</span>
-          </div>
-          <div class="row time-row">
-            <span class="label">Time</span>
-            <span class="value time">{{ formatDuration(s.effectiveDurationMs) }}</span>
-            <button class="add-time-btn"
-                    *ngIf="isViewingToday"
-                    [disabled]="actionPending"
-                    (click)="openAdjustModal(s)"
-                    title="Add manual time">＋ add time</button>
-            <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ formatDurationHm(s.manualMinutes * 60000) }} manual</span>
-          </div>
-          <div class="row" *ngIf="s.pauseCount > 0">
-            <span class="label">Pauses</span>
-            <span class="value">{{ s.pauseCount }} ({{ formatDurationHm(s.totalPauseDurationMs) }} total)</span>
-          </div>
-          <div class="row">
-            <span class="label">Changes</span>
-            <span class="value">
-              {{ s.evidence.commits }} commits
-              <span *ngIf="s.evidence.filesChanged"> &middot; {{ s.evidence.filesChanged }} files</span>
-              <span class="added"> +{{ s.evidence.linesAdded }}</span>
-              <span class="removed"> -{{ s.evidence.linesRemoved }}</span>
-            </span>
-          </div>
-        </div>
-
-        <!-- Settings block: stamina + sensitivity, separated from the info block above. -->
-        <div class="session-controls">
-          <div class="row stamina-row">
-            <span class="label">Stamina</span>
-            <ng-container *ngIf="!isAlwaysOn(s); else alwaysOnTpl">
-              <div class="stamina-bar">
-                <div class="stamina-tick low"></div>
-                <div class="stamina-tick mid"></div>
-                <div class="stamina-fill"
-                     [style.width.%]="staminaPercent(s.normalizedScore)"
-                     [style.backgroundColor]="staminaColor(s.normalizedScore)">
-                </div>
-              </div>
-              <span class="stamina-pct">{{ staminaPercent(s.normalizedScore) }}%</span>
-            </ng-container>
-            <ng-template #alwaysOnTpl>
-              <div class="stamina-bar always-on">
-                <div class="stamina-fill always-on-fill"></div>
-              </div>
-              <span class="stamina-infinity" title="Always-on — no idle timeout">&infin;</span>
-            </ng-template>
-          </div>
-          <div class="row sensitivity-row" *ngIf="isViewingToday">
-            <span class="label">Mode</span>
-            <div class="sensitivity-scale">
-              <button class="pill"
-                      *ngFor="let p of sensitivityPills"
-                      [class.active]="activePill(s) === p.key"
-                      [class.pause-pill]="p.key === 'pause'"
-                      [class.low-pill]="p.key === 'low'"
-                      [class.normal-pill]="p.key === 'normal'"
-                      [class.patient-pill]="p.key === 'patient'"
-                      [class.alwayson-pill]="p.key === 'always_on'"
-                      [disabled]="actionPending"
-                      [title]="p.title"
-                      (click)="selectPill(s, p.key)">
-                {{ p.label }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Closed sessions -->
-    <section class="sessions closed" *ngIf="closedSessions.length > 0">
-      <h2>Closed <span class="count">({{ closedSessions.length }})</span></h2>
-      <div class="closed-row"
-           *ngFor="let s of closedSessions"
-           [class.highlight]="hoveredSessionId === s.id"
-           [style.--repo-color]="sessionColor(s.id)"
-           (mouseenter)="hoveredSessionId = s.id"
-           (mouseleave)="hoveredSessionId = null">
-        <span class="closed-color-bar"></span>
-        <span class="repo">{{ repoName(s.repo) }}</span>
-        <span class="task">{{ s.task ?? '—' }}</span>
-        <span class="interval">{{ sessionInterval(s) }}</span>
-        <span class="dur">{{ formatDuration(s.effectiveDurationMs) }}</span>
-        <span class="reason-badge"
-              [class]="'reason-badge ' + closedReasonClass(s.closedBy)"
-              [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
-      </div>
-    </section>
-
-    <!-- No sessions -->
-    <div class="status-msg" *ngIf="data.sessions.length === 0">
-      No sessions yet. Waiting for git activity...
-    </div>
-  </div>
+    <app-settings-view *ngSwitchCase="'set'" />
+  </ng-container>
 
   <!-- Toast -->
   <div class="toast error" *ngIf="actionError" (click)="dismissToast()">
@@ -233,7 +83,7 @@
       <h3>Set day start</h3>
       <div class="modal-sub">Override when the working day begins</div>
       <label>Time
-        <input #startTime type="time" [value]="dayStartLabel || '09:00'" />
+        <input #startTime type="time" [value]="dayStartLabelForModal || '09:00'" />
       </label>
       <div class="modal-actions">
         <button (click)="setStartModalOpen = false">Cancel</button>
@@ -275,7 +125,7 @@
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>Add manual time</h3>
       <div class="modal-sub">
-        {{ repoName(adjustModalSession.repo) }}
+        {{ adjustModalSession.repo.split('/').pop() }}
         <span *ngIf="adjustModalSession.task"> · {{ adjustModalSession.task }}</span>
       </div>
       <label>Minutes

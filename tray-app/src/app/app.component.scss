@@ -17,886 +17,126 @@
   user-select: none;
 }
 
-// Header — three-column grid keeps the date-nav perfectly centred regardless
-// of weekday-grid width. Horizontal padding matches the content padding below
-// so the weekday-grid lines up with the timeline edge controls (end / start)
-// that now live on the bar's right side.
+// ─── Header ─────────────────────────────────────────────────────────────
+// Three-column grid: weekday-grid (left) · date (centre) · view-switcher
+// (right). The two outer pills frame the centred date symmetrically.
 .header {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   padding: 10px 12px 8px 12px;
   flex-shrink: 0;
-
-  .date-nav {
-    grid-column: 2;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .weekday-grid {
-    grid-column: 1;
-    justify-self: start;
-  }
-
-  .date {
-    color: #cdd6f4;
-    font-size: 12px;
-    text-align: center;
-    letter-spacing: 0.3px;
-
-    &.clickable {
-      cursor: pointer;
-      text-decoration: underline dotted #6c7086;
-      text-underline-offset: 3px;
-
-      &:hover {
-        color: #ffffff;
-        text-decoration-color: #cdd6f4;
-      }
-    }
-  }
-
-  .nav-btn {
-    background: transparent;
-    border: none;
-    color: #a6adc8;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 16px;
-    line-height: 1;
-    padding: 2px 6px;
-    border-radius: 3px;
-    transition: background 0.15s ease, color 0.15s ease;
-
-    &:hover:not(:disabled) {
-      background: #313244;
-      color: #cdd6f4;
-    }
-    &:disabled {
-      opacity: 0.25;
-      cursor: default;
-    }
-  }
 }
 
-.empty-day {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-// Content (scrollable)
-.content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 12px 12px 12px;
-}
-
-// Badges
-.badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 3px;
-  text-transform: uppercase;
-
-  &.day-type {
-    background: #313244;
-    color: #a6adc8;
-
-    &.weekend  { background: #3a3520; color: #f9e2af; }
-    &.holiday  { background: #3a2c20; color: #fab387; }
-    &.overtime { background: #2c2a3a; color: #cba6f7; }
-  }
-}
-
-// Open-session status pill. Softer than the rectangular "history stamps" on
-// closed rows — sentence case, capsule shape, faint tinted background.
-// A small leading dot reinforces the live/idle/paused state.
-.status-badge {
+// Shared "header pill" primitive — used by both weekday-grid and view-switcher.
+// Identical container chrome, identical cell sizing → the two siblings read
+// as a single visual family framing the date.
+.pill-grid {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0.15px;
-  padding: 2px 8px 2px 7px;
-  border-radius: 10px;
-  background: rgba(108, 112, 134, 0.14);
-  color: #a6adc8;
-  line-height: 1.3;
-
-  &::before {
-    content: '';
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: currentColor;
-    flex-shrink: 0;
-  }
-
-  &.status-live {
-    background: rgba(166, 227, 161, 0.14);
-    color: #a6e3a1;
-
-    &::before {
-      // Subtle breathing pulse — only on live, the most "alive" state.
-      animation: status-pulse 1.6s ease-in-out infinite;
-    }
-  }
-  &.status-pending  { background: rgba(249, 226, 175, 0.14); color: #f9e2af; }
-  &.status-idle     { background: rgba(250, 179, 135, 0.14); color: #fab387; }
-  &.status-paused   { background: rgba(243, 139, 168, 0.14); color: #f38ba8; }
-  &.status-switched { background: rgba(116, 199, 236, 0.14); color: #74c7ec; }
-  &.status-away     { background: rgba(180, 190, 254, 0.14); color: #b4befe; }
-}
-
-@keyframes status-pulse {
-  0%, 100% { opacity: 1;   transform: scale(1);   }
-  50%      { opacity: 0.5; transform: scale(0.7); }
-}
-
-// Week-day grid in the header — 7 small cells (Mon..Sun) with the active
-// day highlighted. Weekend cells get a faint warm tint even when inactive,
-// so the weekly rhythm is visible at a glance.
-.weekday-grid {
-  display: inline-flex;
   gap: 2px;
   padding: 2px;
   border-radius: 4px;
   background: rgba(17, 17, 27, 0.6);
   border: 1px solid #313244;
+  height: 18px;
 }
 
-.weekday-cell {
+.pill-cell {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 14px;
   height: 14px;
+  border-radius: 2px;
+  line-height: 1;
+  color: #45475a;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+// Weekday cells (Mon..Sun, single letter, weekend tint).
+.weekday-grid {
+  grid-column: 1;
+  justify-self: start;
+}
+
+.weekday-cell {
   font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0;
-  color: #45475a;
-  border-radius: 2px;
   font-family: inherit;
-  line-height: 1;
   cursor: default;
-  transition: color 0.2s ease, background 0.2s ease;
 
-  &.weekend:not(.active) {
-    color: #585b70;
-  }
+  &.weekend:not(.active) { color: #585b70; }
 
   &.active {
     color: #1e1e2e;
     background: #cdd6f4;
     font-weight: 700;
   }
-
   &.active.weekend {
     background: #f9e2af;
     color: #1e1e2e;
   }
 }
 
-// Start screen
-.start-screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
+// Centre column: read-only date, click-to-today on past days.
+.date-current {
+  grid-column: 2;
+  justify-self: center;
+  color: #cdd6f4;
+  letter-spacing: 0.3px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: 12px;
 
-.start-btn {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  border: 3px solid #89b4fa;
-  background: transparent;
-  color: #89b4fa;
-  font-family: inherit;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover:not(:disabled) {
-    background: rgba(137, 180, 250, 0.1);
-    transform: scale(1.05);
-  }
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-}
-
-.start-hint {
-  color: #6c7086;
-  font-size: 11px;
-}
-
-// Day timeline
-.timeline {
-  margin: 22px 0 14px 0;
-
-  // Flex row: [start glyph] [bar] [end glyph]. Edge controls are flat icon
-  // buttons, no chrome by default — they only colour up on hover.
-  .timeline-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-bottom: 6px;
-  }
-
-  .timeline-bar {
-    flex: 1;
-    height: 30px;
-    background: #11111b;
-    border: 1px solid #313244;
-    border-radius: 4px;
-    position: relative;
-    overflow: visible;       // labels and now-marker bleed outside the bar
-  }
-
-  .timeline-edge-btn {
-    flex-shrink: 0;
-    width: 24px;
-    height: 30px;
-    background: transparent;
-    border: none;
-    color: #585b70;
-    font-family: inherit;
-    font-size: 14px;
-    line-height: 1;
-    border-radius: 4px;
+  &.past {
     cursor: pointer;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    text-decoration: underline dotted #6c7086;
+    text-underline-offset: 3px;
 
-    .edge-glyph {
-      display: inline-block;
-      transition: transform 0.15s ease;
-    }
-
-    &:disabled {
-      opacity: 0.25;
-      cursor: default;
-    }
-
-    &.start:hover:not(:disabled) {
-      color: #89b4fa;
-      background: rgba(137, 180, 250, 0.08);
-      .edge-glyph { transform: translateX(-1px); }
-    }
-
-    &.end:hover:not(:disabled) {
-      color: #f38ba8;
-      background: rgba(243, 139, 168, 0.08);
-      .edge-glyph { transform: scale(1.08); }
-    }
-  }
-
-  .timeline-segment {
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    border-radius: 3px;
-    min-width: 6px;
-    cursor: default;
-    // Use a CSS var so highlight can glow in the segment's own colour.
-    --seg-color: #cdd6f4;
-    transition: box-shadow 0.18s ease, opacity 0.18s ease, filter 0.18s ease, transform 0.18s ease;
-
-    &.closed {
-      opacity: 0.55;
-    }
-
-    &.highlight {
-      opacity: 1;
-      z-index: 2;
-      box-shadow:
-        0 0 0 1px var(--seg-color),
-        0 0 14px 0 color-mix(in srgb, var(--seg-color) 65%, transparent);
-      filter: saturate(1.2) brightness(1.05);
-      transform: translateY(-1px);
-    }
-  }
-
-  // Live "now" indicator — thin pulsing line, today view only.
-  .timeline-now {
-    position: absolute;
-    top: 2px;
-    bottom: 2px;
-    width: 1px;
-    background: #cdd6f4;
-    z-index: 4;
-    pointer-events: none;
-    opacity: 0.65;
-
-    &::before {
-      content: '';
-      position: absolute;
-      top: -3px;
-      left: -2px;
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: #cdd6f4;
-      box-shadow: 0 0 6px rgba(205, 214, 244, 0.6);
-      animation: now-pulse 1.8s ease-in-out infinite;
-    }
-  }
-
-  @keyframes now-pulse {
-    0%, 100% { opacity: 0.55; transform: scale(0.85); }
-    50%      { opacity: 1;    transform: scale(1.15); }
-  }
-
-  // Time markers (day start / last activity). Slim line + a label chip
-  // that floats over the bar so it stays readable on top of segments.
-  .timeline-daystart,
-  .timeline-dayend {
-    position: absolute;
-    width: 1px;
-    background: #cdd6f4;
-    z-index: 3;
-    pointer-events: none;
-
-    &::after {           // small tick triangle pointing toward the bar
-      content: '';
-      position: absolute;
-      left: 50%;
-      width: 0;
-      height: 0;
-      transform: translateX(-50%);
-      border-left: 3px solid transparent;
-      border-right: 3px solid transparent;
-    }
-  }
-
-  .timeline-daystart {
-    top: -7px;
-    bottom: -2px;
-
-    &::after {
-      top: -4px;
-      border-top: 4px solid #cdd6f4;
-    }
-
-    .timeline-daystart-label {
-      position: absolute;
-      top: -16px;
-      left: 0;
-      font-size: 9px;
-      color: #cdd6f4;
-      letter-spacing: 0.4px;
-      white-space: nowrap;
-      padding: 1px 4px;
-      background: #1e1e2e;
-      border-radius: 3px;
-      font-variant-numeric: tabular-nums;
-    }
-  }
-
-  .timeline-dayend {
-    top: -2px;
-    bottom: -7px;
-
-    &::after {
-      bottom: -4px;
-      border-bottom: 4px solid #cdd6f4;
-    }
-
-    .timeline-dayend-label {
-      position: absolute;
-      bottom: -16px;
-      left: 0;
-      font-size: 9px;
-      color: #cdd6f4;
-      letter-spacing: 0.4px;
-      white-space: nowrap;
-      padding: 1px 4px;
-      background: #1e1e2e;
-      border-radius: 3px;
-      font-variant-numeric: tabular-nums;
-    }
-  }
-
-  // Stats row sits just under the bar, left-aligned and small — no longer
-  // visually anchors the timeline. The bar now starts at the content's left
-  // edge, so stats line up with it without any extra padding.
-  .timeline-stats {
-    display: flex;
-    flex-direction: row;
-    align-items: baseline;
-    gap: 6px;
-    margin-top: 16px;
-    font-size: 10px;
-    letter-spacing: 0.3px;
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-    text-transform: uppercase;
-
-    strong {
-      font-weight: 600;
-      text-transform: none;
-      font-size: 11px;
-      letter-spacing: 0;
-    }
-
-    .active-line {
-      color: #6c7086;
-      strong { color: #a6e3a1; }
-    }
-
-    .idle-line {
-      color: #6c7086;
-      strong { color: #bac2de; }
-    }
-
-    .dot-sep {
-      color: #45475a;
+    &:hover {
+      color: #ffffff;
+      text-decoration-color: #cdd6f4;
     }
   }
 }
 
-// Sessions
-.sessions {
-  margin-bottom: 12px;
-
-  h2 {
-    margin: 0 0 8px 0;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #bac2de;
-    letter-spacing: 0.5px;
-
-    .count {
-      font-weight: 400;
-      color: #6c7086;
-    }
-  }
+// Right column: view-switcher (Day / Timesheets / Settings).
+.view-switcher {
+  grid-column: 3;
+  justify-self: end;
 }
 
-.session-card {
-  --repo-color: #cdd6f4;
-  background: #181825;
-  border: 1px solid #313244;
-  border-radius: 6px;
-  padding: 8px 10px 8px 14px;
-  margin-bottom: 6px;
-  position: relative;
-  overflow: hidden;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-
-  // Bidirectional hover: card highlight echoes the segment glow on the timeline,
-  // so the link between "this session" and "those bars" is visible from both sides.
-  &.highlight {
-    border-color: var(--repo-color);
-    box-shadow: 0 0 14px 0 color-mix(in srgb, var(--repo-color) 28%, transparent);
-  }
-
-  .session-color-bar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    transition: width 0.18s ease, box-shadow 0.18s ease;
-  }
-
-  &.highlight .session-color-bar {
-    width: 5px;
-    box-shadow: 0 0 8px 0 var(--repo-color);
-  }
-}
-
-.session-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  position: relative;
-
-  .repo {
-    font-weight: 700;
-    color: #cdd6f4;
-  }
-
-  // Status badge anchors the right edge of the header — no more star clutter,
-  // and the badge is the strongest signal of "what is this session doing".
-  .status-badge {
-    margin-left: auto;
-  }
-}
-
-.icon-btn {
+.view-btn {
   background: transparent;
   border: none;
-  color: #a6adc8;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  line-height: 1;
-  font-family: inherit;
-
-  &:hover:not(:disabled) {
-    background: #313244;
-    color: #cdd6f4;
-  }
-  &:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-}
-
-.session-details {
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    line-height: 1.8;
-    min-width: 0;          // lets the branch ellipsis kick in inside flex
-  }
-
-  .label {
-    color: #6c7086;
-    min-width: 60px;
-    font-size: 11px;
-    flex-shrink: 0;
-  }
-
-  .value {
-    color: #bac2de;
-    min-width: 0;
-  }
-
-  .ml {
-    margin-left: 12px;
-  }
-
-  // Branch path: clip with ellipsis instead of overflowing. The native title
-  // tooltip on the element reveals the full name on hover.
-  .branch {
-    color: #6c7086;
-    font-size: 11px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .time {
-    color: #cdd6f4;
-    font-weight: 600;
-  }
-
-  .manual {
-    color: #cba6f7;
-    font-size: 11px;
-  }
-
-  .added { color: #a6e3a1; }
-  .removed { color: #f38ba8; }
-}
-
-// Settings block — stamina + sensitivity, visually separated from the info block.
-// A 1-pixel rule sits above the block as a quiet section break.
-.session-controls {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #2a2b3c;
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    line-height: 1.8;
-  }
-
-  .label {
-    color: #6c7086;
-    min-width: 60px;
-    font-size: 11px;
-    flex-shrink: 0;
-  }
-}
-
-// Compact trigger on the Time row that opens the Add-time modal.
-// Sits right after the time value (under the Branch column), not flush-right.
-.time-row {
-  .add-time-btn {
-    margin-left: 8px;
-    background: transparent;
-    border: 1px dashed #45475a;
-    color: #6c7086;
-    padding: 2px 8px;
-    border-radius: 10px;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 10px;
-    line-height: 1.3;
-    letter-spacing: 0.3px;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-
-    &:hover:not(:disabled) {
-      background: #1e3a2a;
-      color: #a6e3a1;
-      border-color: #a6e3a1;
-      border-style: solid;
-    }
-    &:disabled {
-      opacity: 0.35;
-      cursor: default;
-    }
-  }
-
-  .manual {
-    margin-left: auto;       // manual marker — pushed to the right edge
-  }
-}
-
-// Stamina bar (formerly Intensity). Stretches across the row so it matches
-// the width of the Mode pills below; the percent column has fixed width
-// so a 3-digit value (100%) doesn't squeeze the bar.
-.stamina-row {
-  .stamina-bar {
-    flex: 1;
-    height: 4px;
-    background: #313244;
-    border-radius: 2px;
-    overflow: hidden;
-    position: relative;
-  }
-
-  // Tiny tick marks at the colour thresholds (30% → yellow, 60% → green).
-  // Faint by default; subtle hint about the bar's internal logic.
-  .stamina-tick {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: rgba(108, 112, 134, 0.45);
-    z-index: 1;
-    pointer-events: none;
-
-    &.low { left: 30%; }
-    &.mid { left: 60%; }
-  }
-
-  .stamina-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.5s ease, background-color 0.5s ease;
-    position: relative;
-    z-index: 2;
-  }
-
-  .stamina-pct {
-    font-size: 11px;
-    color: #6c7086;
-    width: 32px;             // fixed so 100% still fits without nudging the bar
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  // Always-on variant: bar shimmers with the accent colour instead of a number.
-  .stamina-bar.always-on {
-    background: rgba(137, 180, 250, 0.12);
-  }
-  .stamina-fill.always-on-fill {
-    width: 100%;
-    background: linear-gradient(
-      90deg,
-      rgba(137, 180, 250, 0.4) 0%,
-      rgba(137, 180, 250, 0.9) 50%,
-      rgba(137, 180, 250, 0.4) 100%
-    );
-    background-size: 200% 100%;
-    animation: alwayson-shimmer 3s linear infinite;
-  }
-
-  @keyframes alwayson-shimmer {
-    0%   { background-position: 100% 0; }
-    100% { background-position: -100% 0; }
-  }
-
-  .stamina-infinity {
-    color: #89b4fa;
-    font-size: 14px;
-    font-weight: 700;
-    line-height: 1;
-    width: 32px;
-    text-align: right;
-  }
-}
-
-// Sensitivity scale (5 pills: Pause | Low | Normal | Patient | Always-on).
-// Pills flex-grow to equal widths so the row aligns with the stamina bar
-// above (which is also flex: 1 with a fixed-width % column on the right).
-.sensitivity-row {
-  .sensitivity-scale {
-    display: flex;
-    flex: 1;
-    gap: 3px;
-    flex-wrap: nowrap;
-  }
-
-  .pill {
-    flex: 1;
-    text-align: center;
-    background: #181825;
-    border: 1px solid #313244;
-    color: #6c7086;
-    font-family: inherit;
-    font-size: 10px;
-    padding: 3px 4px;
-    border-radius: 10px;
-    cursor: pointer;
-    line-height: 1;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-
-    &:hover:not(:disabled):not(.active) {
-      background: #313244;
-      color: #cdd6f4;
-    }
-
-    &.active {
-      font-weight: 600;
-    }
-
-    // Per-pill colour palette (cold → warm gradient with explicit poles).
-    // Inactive pills hint their colour on hover; active pills wear it fully.
-    &.pause-pill {
-      &:hover:not(:disabled):not(.active) { color: #f38ba8; }
-      &.active { background: #3a2020; color: #f38ba8; border-color: #f38ba8; }
-    }
-    &.low-pill {
-      &:hover:not(:disabled):not(.active) { color: #f9e2af; }
-      &.active { background: #3a3520; color: #f9e2af; border-color: #f9e2af; }
-    }
-    &.normal-pill {
-      &:hover:not(:disabled):not(.active) { color: #a6e3a1; }
-      &.active { background: #1e3a2a; color: #a6e3a1; border-color: #a6e3a1; }
-    }
-    &.patient-pill {
-      &:hover:not(:disabled):not(.active) { color: #89b4fa; }
-      &.active { background: #20283a; color: #89b4fa; border-color: #89b4fa; }
-    }
-    &.alwayson-pill {
-      &:hover:not(:disabled):not(.active) { color: #cba6f7; }
-      &.active { background: #2c2a3a; color: #cba6f7; border-color: #cba6f7; }
-    }
-
-    &:disabled {
-      opacity: 0.35;
-      cursor: default;
-    }
-  }
-}
-
-// Closed sessions — compact row with a thin coloured rail and an aligned
-// columnar layout: repo · task · interval · duration · reason-badge.
-.sessions.closed {
-  .closed-row {
-    --repo-color: #6c7086;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    line-height: 1.6;
-    color: #6c7086;
-    font-size: 11px;
-    padding: 4px 8px 4px 0;
-    border-radius: 4px;
-    background: rgba(24, 24, 37, 0.5);
-    margin-bottom: 3px;
-    transition: background 0.15s ease;
-    font-variant-numeric: tabular-nums;
-
-    &.highlight {
-      background: rgba(24, 24, 37, 0.9);
-    }
-
-    .closed-color-bar {
-      width: 3px;
-      align-self: stretch;
-      background: var(--repo-color);
-      opacity: 0.7;
-      border-radius: 2px 0 0 2px;
-      flex-shrink: 0;
-    }
-
-    .repo {
-      min-width: 110px;
-      color: #a6adc8;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-    .task {
-      min-width: 80px;
-      color: #bac2de;
-      flex-shrink: 0;
-    }
-    .interval {
-      min-width: 110px;
-      color: #6c7086;
-      flex-shrink: 0;
-    }
-    .dur {
-      min-width: 60px;
-      color: #cdd6f4;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-    .reason-badge {
-      margin-left: auto;
-      font-size: 9px;
-      font-weight: 600;
-      letter-spacing: 0.4px;
-      text-transform: uppercase;
-      padding: 2px 6px;
-      border-radius: 3px;
-      background: #2a2a3c;
-      color: #6c7086;
-      flex-shrink: 0;
-
-      &.reason-idle      { background: rgba(250, 179, 135, 0.12); color: #fab387; }
-      &.reason-dayend    { background: rgba(203, 166, 247, 0.12); color: #cba6f7; }
-      &.reason-switched  { background: rgba(116, 199, 236, 0.12); color: #74c7ec; }
-      &.reason-manual    { background: rgba(166, 173, 200, 0.12); color: #a6adc8; }
-      &.reason-stopped   { background: rgba(108, 112, 134, 0.18); color: #a6adc8; }
-      &.reason-other     { background: #2a2a3c; color: #6c7086; }
-    }
-  }
-}
-
-// Status messages
-.status-msg {
   color: #6c7086;
-  text-align: center;
-  padding: 40px 0;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
 
-  &.error {
-    color: #f38ba8;
+  svg {
+    width: 10px;
+    height: 10px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &:hover { color: #bac2de; background: #313244; }
+
+  &.active {
+    color: #1e1e2e;
+    background: #cdd6f4;
+
+    svg { stroke-width: 1.9; }
   }
 }
 
-// Modals
+// ─── Modals ─────────────────────────────────────────────────────────────
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -958,10 +198,7 @@
         border-color: #89b4fa;
       }
 
-      // Hide native number spinners — the quick-picks row covers stepping.
-      &[type="number"] {
-        -moz-appearance: textfield;
-      }
+      &[type="number"] { -moz-appearance: textfield; }
       &[type="number"]::-webkit-inner-spin-button,
       &[type="number"]::-webkit-outer-spin-button {
         -webkit-appearance: none;
@@ -1011,32 +248,24 @@
       font-family: inherit;
       font-size: 11px;
 
-      &:hover:not(:disabled) {
-        background: #45475a;
-      }
+      &:hover:not(:disabled) { background: #45475a; }
       &.primary {
         background: #89b4fa;
         color: #1e1e2e;
         font-weight: 600;
-        &:hover:not(:disabled) {
-          background: #74a3f8;
-        }
+        &:hover:not(:disabled) { background: #74a3f8; }
       }
       &.ghost {
         background: transparent;
         color: #f38ba8;
         border: 1px solid #3a2020;
-        &:hover:not(:disabled) {
-          background: #3a2020;
-        }
+        &:hover:not(:disabled) { background: #3a2020; }
       }
       &.danger {
         background: #f38ba8;
         color: #1e1e2e;
         font-weight: 600;
-        &:hover:not(:disabled) {
-          background: #eb6f93;
-        }
+        &:hover:not(:disabled) { background: #eb6f93; }
       }
       &:disabled {
         opacity: 0.35;
@@ -1046,7 +275,7 @@
   }
 }
 
-// Toast
+// ─── Toast ──────────────────────────────────────────────────────────────
 .toast {
   position: fixed;
   bottom: 12px;
@@ -1064,16 +293,4 @@
     color: #f38ba8;
     border: 1px solid #f38ba8;
   }
-}
-
-// Scrollbar
-.content::-webkit-scrollbar {
-  width: 4px;
-}
-.content::-webkit-scrollbar-track {
-  background: transparent;
-}
-.content::-webkit-scrollbar-thumb {
-  background: #313244;
-  border-radius: 2px;
 }

@@ -1,0 +1,175 @@
+<div class="content">
+  <div class="settings-head">
+    <h2>Settings</h2>
+    <button class="btn primary"
+            [disabled]="!hasChanges || saving"
+            (click)="save()">
+      {{ saving ? 'Saving...' : 'Save' }}
+    </button>
+  </div>
+
+  <div class="status-msg" *ngIf="loading">Loading...</div>
+
+  <ng-container *ngIf="!loading && draftConfig && settings">
+    <!-- Repositories -->
+    <div class="settings-section">
+      <h3>Repositories <span class="sub">tracked git roots</span></h3>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Tracked repos</span>
+          <span class="hint">Sessions open per repo independently.</span>
+        </div>
+        <div class="right repo-cluster">
+          <span class="repo-pill" *ngFor="let r of draftConfig.repos; let i = index">
+            <span class="dot" [style.background]="repoDot(i)"></span>{{ repoName(r) }}
+            <span class="x" (click)="removeRepo(r)" title="Remove">×</span>
+          </span>
+          <button class="btn small">+ add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="settings-section">
+      <h3>Schedule</h3>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Day boundary</span>
+          <span class="hint">Hour when the working day rolls over (24h).</span>
+        </div>
+        <div class="right">
+          <input class="input-mini"
+                 type="time"
+                 [value]="dayBoundaryLabel"
+                 (change)="onDayBoundaryChange($any($event.target).value)" />
+        </div>
+      </div>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Timezone</span>
+          <span class="hint">All timestamps are computed in this zone.</span>
+        </div>
+        <div class="right">
+          <span class="readonly">{{ draftConfig.timezone }}</span>
+        </div>
+      </div>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Task pattern</span>
+          <span class="hint">Regex used to extract task IDs from branches.</span>
+        </div>
+        <div class="right">
+          <input class="input-mini wide"
+                 type="text"
+                 [value]="draftConfig.taskPattern"
+                 (input)="onTaskPatternChange($any($event.target).value)" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Defaults -->
+    <div class="settings-section">
+      <h3>Defaults</h3>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Default sensitivity</span>
+          <span class="hint">Applied to new sessions.</span>
+        </div>
+        <div class="right">
+          <div class="seg">
+            <button *ngFor="let s of sensitivityOptions"
+                    [class.active]="isSensitivityActive(s.key)"
+                    (click)="selectSensitivity(s.key)">
+              {{ s.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Auto-start with OS</span>
+          <span class="hint">Launch the daemon on login.</span>
+        </div>
+        <div class="right">
+          <div class="toggle" [class.on]="autoStartWithOs" (click)="autoStartWithOs = !autoStartWithOs"></div>
+        </div>
+      </div>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Notify on idle timeout</span>
+          <span class="hint">Toast when a session is auto-paused.</span>
+        </div>
+        <div class="right">
+          <div class="toggle" [class.on]="notifyOnIdle" (click)="notifyOnIdle = !notifyOnIdle"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Integrations -->
+    <div class="settings-section">
+      <h3>Integrations <span class="sub">API tokens · stored in <code>~/.workday/secrets.json</code></span></h3>
+
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Jira API token</span>
+          <span class="hint">Used for Jira issue resolution.</span>
+        </div>
+        <div class="right">
+          <div class="token-field" [class.configured]="settings.secretsMeta.jiraConfigured">
+            <span class="dot" [title]="settings.secretsMeta.jiraConfigured ? 'Configured' : 'Not set'"></span>
+            <ng-container *ngIf="jiraTokenDraft === null; else jiraEdit">
+              <input class="input-token" type="password" value="••••••••••••" disabled />
+              <button class="token-eye" (click)="startEditJira()" title="Replace token">edit</button>
+            </ng-container>
+            <ng-template #jiraEdit>
+              <input class="input-token edit"
+                     type="password"
+                     placeholder="paste new token"
+                     [(ngModel)]="jiraTokenDraft"
+                     autofocus />
+              <button class="token-eye" (click)="cancelEditJira()" title="Cancel">cancel</button>
+            </ng-template>
+          </div>
+        </div>
+      </div>
+
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Tempo API token</span>
+          <span class="hint">Used to push worklogs to Tempo.</span>
+        </div>
+        <div class="right">
+          <div class="token-field" [class.configured]="settings.secretsMeta.tempoConfigured">
+            <span class="dot" [title]="settings.secretsMeta.tempoConfigured ? 'Configured' : 'Not set'"></span>
+            <ng-container *ngIf="tempoTokenDraft === null; else tempoEdit">
+              <input class="input-token" type="password" value="••••••••••••" disabled />
+              <button class="token-eye" (click)="startEditTempo()" title="Replace token">edit</button>
+            </ng-container>
+            <ng-template #tempoEdit>
+              <input class="input-token edit"
+                     type="password"
+                     placeholder="paste new token"
+                     [(ngModel)]="tempoTokenDraft"
+                     autofocus />
+              <button class="token-eye" (click)="cancelEditTempo()" title="Cancel">cancel</button>
+            </ng-template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <div class="settings-section">
+      <h3 class="danger">Danger zone</h3>
+      <div class="opt-row danger-row">
+        <div class="left">
+          <span class="name">Reset today</span>
+          <span class="hint">Clear all open sessions for the current day.</span>
+        </div>
+        <div class="right">
+          <button class="btn ghost" (click)="resetToday()">Reset</button>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+</div>

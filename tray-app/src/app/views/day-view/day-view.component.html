@@ -1,0 +1,192 @@
+<!-- Loading -->
+<div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
+
+<!-- Daemon not running: Start button (only when on "today" view) -->
+<div class="start-screen" *ngIf="error && !loading && isViewingToday">
+  <button class="start-btn"
+          (click)="startDaemonRequested.emit()"
+          [disabled]="daemonStarting">
+    {{ daemonStarting ? '...' : 'Start' }}
+  </button>
+  <div class="start-hint">Launch the workday daemon</div>
+</div>
+
+<!-- No data for past day -->
+<div class="status-msg empty-day" *ngIf="error && !loading && !isViewingToday">
+  No data for this day
+</div>
+
+<!-- Content -->
+<div class="content" *ngIf="data && !error">
+  <!-- Day timeline -->
+  <section class="timeline" *ngIf="data.activeIntervals.length || dayStartIso">
+    <div class="timeline-row">
+      <div class="timeline-bar">
+        <div class="timeline-segment"
+             *ngFor="let iv of data.activeIntervals"
+             [class.closed]="isSessionClosed(iv.sessionId)"
+             [class.highlight]="hoveredSessionId === iv.sessionId"
+             [style.left.%]="timeToPercent(iv.from)"
+             [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
+             [style.background-color]="sessionColor(iv.sessionId)"
+             [style.--seg-color]="sessionColor(iv.sessionId)"
+             (mouseenter)="hoveredSessionId = iv.sessionId"
+             (mouseleave)="hoveredSessionId = null">
+        </div>
+        <div class="timeline-now"
+             *ngIf="isViewingToday && currentTimePercent !== null"
+             [style.left.%]="currentTimePercent"
+             title="Now">
+        </div>
+        <div class="timeline-daystart"
+             *ngIf="dayStartPercent !== null"
+             [style.left.%]="dayStartPercent">
+          <span class="timeline-daystart-label"
+                [style.transform]="dayStartLabelTransform">{{ dayStartLabel }}</span>
+        </div>
+        <div class="timeline-dayend"
+             *ngIf="lastActivityPercent !== null"
+             [style.left.%]="lastActivityPercent">
+          <span class="timeline-dayend-label"
+                [style.transform]="lastActivityLabelTransform">{{ lastActivityLabel }}</span>
+        </div>
+      </div>
+      <button class="timeline-edge-btn start"
+              *ngIf="isViewingToday && hasSessions"
+              (click)="setStartRequested.emit()"
+              [disabled]="actionPending"
+              aria-label="Set day start time"
+              title="Set day start time">
+        <span class="edge-glyph">⇤</span>
+      </button>
+      <button class="timeline-edge-btn end"
+              *ngIf="isViewingToday && hasSessions"
+              (click)="endDayRequested.emit()"
+              [disabled]="actionPending"
+              aria-label="End workday"
+              title="End workday — close all sessions and stop the daemon">
+        <span class="edge-glyph">⏻</span>
+      </button>
+    </div>
+    <div class="timeline-stats">
+      <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
+      <span class="dot-sep" *ngIf="totalPauseMs > 0">&middot;</span>
+      <span class="idle-line" *ngIf="totalPauseMs > 0">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
+    </div>
+  </section>
+
+  <!-- Active sessions -->
+  <section class="sessions" *ngIf="openSessions.length > 0">
+    <h2>Active <span class="count">({{ openSessions.length }})</span></h2>
+    <div class="session-card"
+         *ngFor="let s of openSessions"
+         [class.highlight]="hoveredSessionId === s.id"
+         [style.--repo-color]="sessionColor(s.id)"
+         (mouseenter)="hoveredSessionId = s.id"
+         (mouseleave)="hoveredSessionId = null">
+      <span class="session-color-bar" [style.background-color]="sessionColor(s.id)"></span>
+      <div class="session-header">
+        <span class="repo">{{ repoName(s.repo) }}</span>
+        <span class="badge status-badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
+      </div>
+      <div class="session-details">
+        <div class="row">
+          <span class="label">Task</span>
+          <span class="value">{{ s.task ?? '—' }}</span>
+          <span class="label ml">Branch</span>
+          <span class="value branch" [title]="s.branch">{{ s.branch }}</span>
+        </div>
+        <div class="row time-row">
+          <span class="label">Time</span>
+          <span class="value time">{{ formatDuration(s.effectiveDurationMs) }}</span>
+          <button class="add-time-btn"
+                  *ngIf="isViewingToday"
+                  [disabled]="actionPending"
+                  (click)="addTimeRequested.emit(s)"
+                  title="Add manual time">＋ add time</button>
+          <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ formatDurationHm(s.manualMinutes * 60000) }} manual</span>
+        </div>
+        <div class="row" *ngIf="s.pauseCount > 0">
+          <span class="label">Pauses</span>
+          <span class="value">{{ s.pauseCount }} ({{ formatDurationHm(s.totalPauseDurationMs) }} total)</span>
+        </div>
+        <div class="row">
+          <span class="label">Changes</span>
+          <span class="value">
+            {{ s.evidence.commits }} commits
+            <span *ngIf="s.evidence.filesChanged"> &middot; {{ s.evidence.filesChanged }} files</span>
+            <span class="added"> +{{ s.evidence.linesAdded }}</span>
+            <span class="removed"> -{{ s.evidence.linesRemoved }}</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Settings block: stamina + sensitivity, separated from the info block above. -->
+      <div class="session-controls">
+        <div class="row stamina-row">
+          <span class="label">Stamina</span>
+          <ng-container *ngIf="!isAlwaysOn(s); else alwaysOnTpl">
+            <div class="stamina-bar">
+              <div class="stamina-tick low"></div>
+              <div class="stamina-tick mid"></div>
+              <div class="stamina-fill"
+                   [style.width.%]="staminaPercent(s.normalizedScore)"
+                   [style.backgroundColor]="staminaColor(s.normalizedScore)">
+              </div>
+            </div>
+            <span class="stamina-pct">{{ staminaPercent(s.normalizedScore) }}%</span>
+          </ng-container>
+          <ng-template #alwaysOnTpl>
+            <div class="stamina-bar always-on">
+              <div class="stamina-fill always-on-fill"></div>
+            </div>
+            <span class="stamina-infinity" title="Always-on — no idle timeout">&infin;</span>
+          </ng-template>
+        </div>
+        <div class="row sensitivity-row" *ngIf="isViewingToday">
+          <span class="label">Mode</span>
+          <div class="sensitivity-scale">
+            <button class="pill"
+                    *ngFor="let p of sensitivityPills"
+                    [class.active]="activePill(s) === p.key"
+                    [class.pause-pill]="p.key === 'pause'"
+                    [class.low-pill]="p.key === 'low'"
+                    [class.normal-pill]="p.key === 'normal'"
+                    [class.patient-pill]="p.key === 'patient'"
+                    [class.alwayson-pill]="p.key === 'always_on'"
+                    [disabled]="actionPending"
+                    [title]="p.title"
+                    (click)="onPillClick(s, p.key)">
+              {{ p.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Closed sessions -->
+  <section class="sessions closed" *ngIf="closedSessions.length > 0">
+    <h2>Closed <span class="count">({{ closedSessions.length }})</span></h2>
+    <div class="closed-row"
+         *ngFor="let s of closedSessions"
+         [class.highlight]="hoveredSessionId === s.id"
+         [style.--repo-color]="sessionColor(s.id)"
+         (mouseenter)="hoveredSessionId = s.id"
+         (mouseleave)="hoveredSessionId = null">
+      <span class="closed-color-bar"></span>
+      <span class="repo">{{ repoName(s.repo) }}</span>
+      <span class="task">{{ s.task ?? '—' }}</span>
+      <span class="interval">{{ sessionInterval(s) }}</span>
+      <span class="dur">{{ formatDuration(s.effectiveDurationMs) }}</span>
+      <span class="reason-badge"
+            [class]="'reason-badge ' + closedReasonClass(s.closedBy)"
+            [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
+    </div>
+  </section>
+
+  <!-- No sessions -->
+  <div class="status-msg" *ngIf="data.sessions.length === 0">
+    No sessions yet. Waiting for git activity...
+  </div>
+</div>

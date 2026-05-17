@@ -2,9 +2,19 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { WorkdayApiService } from './services/workday-api.service';
-import { TodayResponse, SessionDetail, ApiResponse, SensitivityLevel, SensitivityPill } from './models/workday.models';
+import {
+  TodayResponse,
+  SessionDetail,
+  ApiResponse,
+  SensitivityLevel,
+  SensitivityPill,
+} from './models/workday.models';
+import { DayViewComponent } from './views/day-view/day-view.component';
+import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
+import { SettingsViewComponent } from './views/settings-view/settings-view.component';
 
 type TrayKind = 'live' | 'pending' | 'idle' | 'paused' | 'none';
+type ActiveView = 'day' | 'sheet' | 'set';
 
 interface SensitivityPillOption {
   readonly key: SensitivityPill;
@@ -15,17 +25,15 @@ interface SensitivityPillOption {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, DayViewComponent, TimesheetsViewComponent, SettingsViewComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
 export class AppComponent implements OnInit, OnDestroy {
-  // Stable palette, stepped by session order within the day.
-  private static readonly SESSION_COLOR_PALETTE: readonly string[] = [
-    '#89b4fa', '#f38ba8', '#a6e3a1', '#fab387', '#cba6f7',
-    '#f9e2af', '#94e2d5', '#f5c2e7', '#74c7ec', '#eba0ac',
-  ];
+  // ─── View routing (signal-style state via plain field for now) ─────────
+  activeView: ActiveView = 'day';
 
+  // ─── Data / lifecycle state ────────────────────────────────────────────
   data: TodayResponse | null = null;
   error: string | null = null;
   loading = true;
@@ -39,39 +47,34 @@ export class AppComponent implements OnInit, OnDestroy {
     { key: SensitivityLevel.AlwaysOn,     label: 'Always-on', title: 'Never auto-paused by idle timeout' },
   ];
 
-  // UI state
+  // Modal state (cross-cutting, triggered by DayView events)
   setStartModalOpen = false;
   endDayModalOpen = false;
   adjustModalSession: SessionDetail | null = null;
   readonly adjustQuickPicks: readonly number[] = [15, 30, 45, 60, 90];
+
+  // Toast + action gate
   actionError: string | null = null;
   actionPending = false;
-  hoveredSessionId: string | null = null;
 
-  // Day navigation: null = viewing today (live), otherwise a YYYY-MM-DD past date.
+  // Day navigation: null = viewing today, otherwise a YYYY-MM-DD past date.
   viewedDate: string | null = null;
-  // Latest known "today" date from the daemon — used to clamp the Next button.
   private todayDate: string | null = null;
-  // Past days (with sessions), descending. Drives Prev/Next so navigation only
-  // lands on days with real data instead of stepping through empty calendar days.
   private availableDates: string[] = [];
-  // True once getDays() has returned at least once — keeps refresh() from
-  // retrying the list call on every poll after a successful load.
   private navLoaded = false;
+
+  // Live ticker — advances the "now" cursor between polls.
+  currentTimeMs: number = Date.now();
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Used by lastActivity getters to advance the live marker between polls.
-  currentTimeMs: number = Date.now();
 
   constructor(private api: WorkdayApiService) {}
 
   ngOnInit(): void {
     void this.refreshAvailableDates();
     this.refresh();
-    // Polling and live ticks only make sense for today.
     this.pollTimer = setInterval(() => {
       if (this.isViewingToday) this.refresh();
     }, 10_000);
@@ -80,18 +83,18 @@ export class AppComponent implements OnInit, OnDestroy {
     }, 30_000);
   }
 
+  ngOnDestroy(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.tickTimer) clearInterval(this.tickTimer);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+  }
+
   private async refreshAvailableDates(): Promise<void> {
     const res = await this.api.getDays();
     if (res.ok && res.data) {
       this.availableDates = [...res.data.dates];
       this.navLoaded = true;
     }
-  }
-
-  ngOnDestroy(): void {
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    if (this.tickTimer) clearInterval(this.tickTimer);
-    if (this.toastTimer) clearTimeout(this.toastTimer);
   }
 
   async refresh(): Promise<void> {
@@ -103,12 +106,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.data = res.data;
       this.error = null;
       if (!date) this.todayDate = res.data.date;
-      // Keep navigation list in sync when a day first gains sessions.
       if (res.data.sessions.length > 0 && !this.availableDates.includes(res.data.date)) {
         this.availableDates = [res.data.date, ...this.availableDates].sort().reverse();
       }
-      // Lazy-load the nav list on the first successful response — covers the
-      // case where ngOnInit fired getDays() before the daemon was reachable.
       if (!this.navLoaded) {
         void this.refreshAvailableDates();
       }
@@ -116,14 +116,94 @@ export class AppComponent implements OnInit, OnDestroy {
       this.error = res.error ?? 'Unknown error';
     }
     this.loading = false;
-    // Tray reflects today's state regardless of which date is being viewed.
     if (this.isViewingToday) this.syncTrayStatus();
   }
 
-  // Compute the most informative status across open sessions and push it to
-  // the Rust tray-icon command. Priority: any Live → live, else any Pending →
-  // pending, else any idle_timeout pause → idle, else any other pause →
-  // paused, else no open sessions → none.
+  // ─── View switching ─────────────────────────────────────────────────────
+
+  setView(v: ActiveView): void {
+    this.activeView = v;
+  }
+
+  // Timesheets click on a day row → switch to Day view for that date.
+  onDaySelected(date: string): void {
+    this.viewedDate = date;
+    this.activeView = 'day';
+    this.data = null;
+    this.error = null;
+    this.loading = true;
+    void this.refresh();
+  }
+
+  // DayView mode pill click → existing pause / sensitivity action.
+  async onPillSelected(e: { session: SessionDetail; pill: SensitivityPill }): Promise<void> {
+    if (e.pill === 'pause') {
+      await this.runAction(() => this.api.pause(e.session.repo));
+    } else {
+      await this.runAction(() => this.api.sensitivity(e.pill as SensitivityLevel, e.session.repo));
+    }
+  }
+
+  // ─── Header: weekday grid + date display ───────────────────────────────
+
+  /** Full weekday label — shown as the tooltip on the day-grid cell. */
+  get dayWeekdayLabel(): string {
+    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
+    const [y, m, d] = date.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'long' });
+  }
+
+  /** Week-day grid (Mon..Sun). Highlights the active cell for the currently viewed date. */
+  readonly weekdayCells: ReadonlyArray<{ letter: string; full: string; idx: number; weekend: boolean }> = [
+    { letter: 'M', full: 'Monday',    idx: 1, weekend: false },
+    { letter: 'T', full: 'Tuesday',   idx: 2, weekend: false },
+    { letter: 'W', full: 'Wednesday', idx: 3, weekend: false },
+    { letter: 'T', full: 'Thursday',  idx: 4, weekend: false },
+    { letter: 'F', full: 'Friday',    idx: 5, weekend: false },
+    { letter: 'S', full: 'Saturday',  idx: 6, weekend: true  },
+    { letter: 'S', full: 'Sunday',    idx: 0, weekend: true  },
+  ];
+
+  get activeWeekdayCell(): number {
+    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
+    const [y, m, d] = date.split('-').map(Number);
+    const dow = new Date(y, m - 1, d).getDay();
+    return this.weekdayCells.findIndex(c => c.idx === dow);
+  }
+
+  get formattedDate(): string {
+    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
+    const [y, m, d] = date.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+  }
+
+  get isViewingToday(): boolean {
+    return this.viewedDate === null;
+  }
+
+  goToday(): void {
+    if (this.isViewingToday) return;
+    this.navigateTo(null);
+    void this.refreshAvailableDates();
+  }
+
+  private navigateTo(date: string | null): void {
+    this.viewedDate = date;
+    this.data = null;
+    this.error = null;
+    this.loading = true;
+    void this.refresh();
+  }
+
+  private computeLocalToday(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // ─── Tray icon sync ────────────────────────────────────────────────────
+
   private syncTrayStatus(): void {
     const open = this.openSessions;
     let kind: TrayKind = 'none';
@@ -150,384 +230,18 @@ export class AppComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Fire-and-forget — never block the refresh path on the tray update.
-    // Errors here are benign (e.g. when running in the browser preview).
     void invoke('set_tray_status', { kind, tooltip: label }).catch(() => {});
   }
 
-  get isViewingToday(): boolean {
-    return this.viewedDate === null;
-  }
-
-  goPrevDay(): void {
-    const base = this.viewedDate ?? this.todayDate ?? this.data?.date ?? this.computeLocalToday();
-    const target = this.findPrevDate(base);
-    if (!target) return;
-    this.navigateTo(target);
-  }
-
-  goNextDay(): void {
-    if (this.isViewingToday) return;
-    const base = this.viewedDate;
-    if (!base) return;
-    const target = this.findNextDate(base);
-    // No later past day, or we'd land on/after today → back to live view.
-    if (!target || (this.todayDate && target >= this.todayDate)) {
-      this.navigateTo(null);
-      return;
-    }
-    this.navigateTo(target);
-  }
-
-  goToday(): void {
-    if (this.isViewingToday) return;
-    this.navigateTo(null);
-    void this.refreshAvailableDates();
-  }
-
-  private navigateTo(date: string | null): void {
-    this.viewedDate = date;
-    // Clear stale data so the header/badges/timeline don't reflect the previous day.
-    this.data = null;
-    this.error = null;
-    this.loading = true;
-    void this.refresh();
-  }
-
-  private findPrevDate(from: string): string | null {
-    // availableDates is sorted descending — first match < from is the closest earlier day.
-    for (const d of this.availableDates) {
-      if (d < from) return d;
-    }
-    return null;
-  }
-
-  private findNextDate(from: string): string | null {
-    // Walk from oldest upward to find the closest day > from.
-    for (let i = this.availableDates.length - 1; i >= 0; i--) {
-      const d = this.availableDates[i];
-      if (d > from) return d;
-    }
-    return null;
-  }
-
-  get hasPrevDay(): boolean {
-    const base = this.viewedDate ?? this.todayDate ?? this.data?.date ?? this.computeLocalToday();
-    return this.findPrevDate(base) !== null;
-  }
-
-  get openSessions(): SessionDetail[] {
+  private get openSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => !s.closedBy) ?? [];
   }
 
-  get closedSessions(): SessionDetail[] {
-    return this.data?.sessions.filter(s => s.closedBy) ?? [];
-  }
-
-  get scheduleWindowMs(): number {
-    if (!this.data?.schedule) return 0;
-    const { start, end } = this.data.schedule;
-    const hours = end <= start ? (24 - start + end) : (end - start);
-    return hours * 3_600_000;
-  }
-
-  timeToPercent(isoTimestamp: string): number {
-    if (!this.data?.schedule) return 0;
-    const windowMs = this.scheduleWindowMs;
-    if (windowMs === 0) return 0;
-    const ts = new Date(isoTimestamp).getTime();
-    const offset = ts - this.getScheduleStartMs();
-    return Math.max(0, Math.min(100, (offset / windowMs) * 100));
-  }
-
-  get totalActiveMs(): number {
-    if (!this.data?.activeIntervals) return 0;
-    return this.data.activeIntervals.reduce((sum, iv) =>
-      sum + (new Date(iv.to).getTime() - new Date(iv.from).getTime()), 0);
-  }
-
-  get totalPauseMs(): number {
-    if (!this.data) return 0;
-    if (typeof this.data.downtimeMs === 'number') return this.data.downtimeMs;
-    // Fallback for older daemons: union active intervals, subtract from span.
-    return this.computeIdleFromIntervals();
-  }
-
-  private computeIdleFromIntervals(): number {
-    const intervals = this.data?.activeIntervals;
-    if (!intervals || intervals.length === 0) return 0;
-    const sorted = intervals
-      .map(iv => ({ from: new Date(iv.from).getTime(), to: new Date(iv.to).getTime() }))
-      .sort((a, b) => a.from - b.from);
-    const merged: Array<{ from: number; to: number }> = [{ ...sorted[0] }];
-    for (let i = 1; i < sorted.length; i++) {
-      const last = merged[merged.length - 1];
-      const curr = sorted[i];
-      if (curr.from <= last.to) last.to = Math.max(last.to, curr.to);
-      else merged.push({ ...curr });
-    }
-    const span = merged[merged.length - 1].to - merged[0].from;
-    const work = merged.reduce((sum, iv) => sum + (iv.to - iv.from), 0);
-    return span - work;
-  }
-
-  /** Full weekday label (Saturday/Sunday/Monday...) — shown as the tooltip on the day-grid cell. */
-  get dayWeekdayLabel(): string {
-    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
-    const [y, m, d] = date.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'long' });
-  }
-
-  /** Week-day grid (Mon..Sun). Highlights the active cell for the currently viewed date. */
-  readonly weekdayCells: ReadonlyArray<{ letter: string; full: string; idx: number; weekend: boolean }> = [
-    { letter: 'M', full: 'Monday',    idx: 1, weekend: false },
-    { letter: 'T', full: 'Tuesday',   idx: 2, weekend: false },
-    { letter: 'W', full: 'Wednesday', idx: 3, weekend: false },
-    { letter: 'T', full: 'Thursday',  idx: 4, weekend: false },
-    { letter: 'F', full: 'Friday',    idx: 5, weekend: false },
-    { letter: 'S', full: 'Saturday',  idx: 6, weekend: true  },
-    { letter: 'S', full: 'Sunday',    idx: 0, weekend: true  },
-  ];
-
-  /** 0..6 from weekdayCells where idx matches today's getDay() for the viewed date. */
-  get activeWeekdayCell(): number {
-    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
-    const [y, m, d] = date.split('-').map(Number);
-    const dow = new Date(y, m - 1, d).getDay();
-    return this.weekdayCells.findIndex(c => c.idx === dow);
-  }
-
-  /** Compact duration without seconds — used for timeline stats. */
-  formatDurationHm(ms: number): string {
-    const totalMinutes = Math.floor(ms / 60_000);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
-    return `${minutes}m`;
-  }
-
-  get formattedDate(): string {
-    // Prefer viewedDate (navigation target). Fall back to data, then to local
-    // "today" so the header + nav stay visible on the Start screen too —
-    // letting the user browse past days without starting a new day.
-    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
-    const [y, m, d] = date.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'long', year: 'numeric',
-    });
-  }
-
-  private computeLocalToday(): string {
-    const d = new Date();
-    const yy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yy}-${mm}-${dd}`;
-  }
-
-  get dayStartIso(): string | null {
-    if (!this.data) return null;
-    if (this.data.dayStartedAt) return this.data.dayStartedAt;
-    const firstActivated = this.data.sessions.find(s => !!s.activatedAt)?.activatedAt;
-    if (firstActivated) return firstActivated;
-    return this.data.sessions[0]?.startedAt ?? null;
-  }
-
-  get dayStartLabel(): string {
-    const iso = this.dayStartIso;
-    if (!iso) return '';
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-
-  get dayStartPercent(): number | null {
-    const iso = this.dayStartIso;
-    return iso ? this.timeToPercent(iso) : null;
-  }
-
-  // Keep the label inside the bar's horizontal bounds.
-  get dayStartLabelTransform(): string {
-    const p = this.dayStartPercent;
-    if (p === null) return 'translateX(-50%)';
-    if (p < 10) return 'translateX(0)';
-    if (p > 90) return 'translateX(-100%)';
-    return 'translateX(-50%)';
-  }
-
-  // Latest activity timestamp: live `now` if any session is actively running,
-  // otherwise the most recent interval `to` (frozen at pause start or session close).
-  get lastActivityIso(): string | null {
-    if (!this.data?.activeIntervals.length) return null;
-
-    const hasLiveSession = this.openSessions.some(s => !s.paused && s.activatedAt !== null);
-    if (hasLiveSession) return new Date(this.currentTimeMs).toISOString();
-
-    let maxTo = 0;
-    for (const iv of this.data.activeIntervals) {
-      const t = new Date(iv.to).getTime();
-      if (t > maxTo) maxTo = t;
-    }
-    return maxTo > 0 ? new Date(maxTo).toISOString() : null;
-  }
-
-  get lastActivityLabel(): string {
-    const iso = this.lastActivityIso;
-    if (!iso) return '';
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-
-  get lastActivityPercent(): number | null {
-    const iso = this.lastActivityIso;
-    return iso ? this.timeToPercent(iso) : null;
-  }
-
-  get lastActivityLabelTransform(): string {
-    const p = this.lastActivityPercent;
-    if (p === null) return 'translateX(-50%)';
-    if (p < 10) return 'translateX(0)';
-    if (p > 90) return 'translateX(-100%)';
-    return 'translateX(-50%)';
-  }
-
-  // Live "now" cursor on the timeline. Only meaningful on the today view.
-  get currentTimePercent(): number | null {
-    if (!this.isViewingToday || !this.data?.schedule) return null;
-    const windowMs = this.scheduleWindowMs;
-    if (windowMs === 0) return null;
-    const offset = this.currentTimeMs - this.getScheduleStartMs();
-    if (offset < 0 || offset > windowMs) return null;
-    return (offset / windowMs) * 100;
-  }
-
-  sessionColor(sessionId: string): string {
-    const session = this.data?.sessions.find(s => s.id === sessionId);
-    if (!session) return '#6c7086';
-    // Index into the sorted list of unique repos in this day — guarantees
-    // each repo gets a distinct slot (no hash collisions) and stays stable
-    // across session reorderings as long as the repo set doesn't change.
-    const idx = this.uniqueReposSorted.indexOf(session.repo);
-    if (idx < 0) return '#6c7086';
-    const palette = AppComponent.SESSION_COLOR_PALETTE;
-    return palette[idx % palette.length];
-  }
-
-  private get uniqueReposSorted(): readonly string[] {
-    if (!this.data) return [];
-    const set = new Set<string>();
-    for (const s of this.data.sessions) set.add(s.repo);
-    return [...set].sort();
-  }
-
-  isSessionClosed(sessionId: string): boolean {
-    return this.data?.sessions.find(s => s.id === sessionId)?.closedBy != null;
-  }
-
-  private getScheduleStartMs(): number {
-    if (!this.data) return 0;
-    const [y, m, d] = this.data.date.split('-').map(Number);
-    return new Date(y, m - 1, d, this.data.schedule.start, 0, 0).getTime();
-  }
-
-  get hasSessions(): boolean {
-    return (this.data?.sessions.length ?? 0) > 0;
-  }
-
-  get hasManualStart(): boolean {
-    return !!this.data?.manualStart;
-  }
-
-  formatDuration(ms: number): string {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
-    if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
-    return `${seconds}s`;
-  }
-
-  repoName(repoPath: string): string {
+  private repoName(repoPath: string): string {
     return repoPath.split('/').pop() ?? repoPath;
   }
 
-  staminaColor(normalizedScore: number): string {
-    if (normalizedScore >= 0.6) return '#a6e3a1';
-    if (normalizedScore >= 0.3) return '#f9e2af';
-    return '#f38ba8';
-  }
-
-  staminaPercent(normalizedScore: number): number {
-    return Math.round(Math.max(0, Math.min(1, normalizedScore)) * 100);
-  }
-
-  /** Pill key currently active for the session — Pause if paused, else its sensitivity. */
-  activePill(s: SessionDetail): SensitivityPill {
-    return s.paused ? 'pause' : s.sensitivity;
-  }
-
-  isAlwaysOn(s: SessionDetail): boolean {
-    return !s.paused && s.sensitivity === SensitivityLevel.AlwaysOn;
-  }
-
-  statusClass(s: SessionDetail): string {
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'status-idle';
-        case 'superseded':   return 'status-switched';
-        case 'teams_away':   return 'status-away';
-        case 'manual':       return 'status-paused';
-        default:             return 'status-paused';
-      }
-    }
-    return s.state === 'active' ? 'status-live' : 'status-pending';
-  }
-
-  statusLabel(s: SessionDetail): string {
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'Idle';
-        case 'superseded':   return 'Switched';
-        case 'teams_away':   return 'Away';
-        case 'manual':       return 'Paused';
-        default:             return 'Paused';
-      }
-    }
-    return s.state === 'active' ? 'Live' : 'Pending';
-  }
-
-  // ─── Actions ──────────────────────────────────────────────────────────
-
-  async startDaemon(): Promise<void> {
-    this.daemonStarting = true;
-    try {
-      await this.api.startDaemon();
-      // Reload availableDates once the daemon is up — otherwise Prev/Next
-      // stay disabled because the initial getDays() call (before daemon was
-      // running) returned an empty list.
-      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 2000);
-      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 5000);
-    } catch (e: unknown) {
-      this.showToast(e instanceof Error ? e.message : 'Failed to start daemon');
-    } finally {
-      this.daemonStarting = false;
-    }
-  }
-
-  /**
-   * Pill click on the session scale.
-   * - 'pause' → manual pause for this repo (existing /api/pause behaviour).
-   * - sensitivity level → set per-repo sensitivity; the daemon side effect closes any open manual pause.
-   * Clicking the already-active pill is a no-op.
-   */
-  async selectPill(session: SessionDetail, pill: SensitivityPill): Promise<void> {
-    if (pill === this.activePill(session)) return;
-    if (pill === 'pause') {
-      await this.runAction(() => this.api.pause(session.repo));
-    } else {
-      await this.runAction(() => this.api.sensitivity(pill, session.repo));
-    }
-  }
+  // ─── Modal flow ────────────────────────────────────────────────────────
 
   openAdjustModal(session: SessionDetail): void {
     this.adjustModalSession = session;
@@ -537,14 +251,26 @@ export class AppComponent implements OnInit, OnDestroy {
     this.adjustModalSession = null;
   }
 
+  get hasManualStart(): boolean {
+    return !!this.data?.manualStart;
+  }
+
+  /** dayStartLabel re-derived from data for the set-start modal seed value. */
+  get dayStartLabelForModal(): string {
+    const iso = this.data?.dayStartedAt ?? this.data?.sessions.find(s => !!s.activatedAt)?.activatedAt
+              ?? this.data?.sessions[0]?.startedAt ?? null;
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
   async submitAdjust(minutesStr: string, reason: string): Promise<void> {
     const session = this.adjustModalSession;
     if (!session) return;
     const minutes = parseInt(minutesStr, 10);
     if (!Number.isFinite(minutes) || minutes <= 0) return;
     const reasonText = reason?.trim() || 'manual via tray';
-    const ok = await this.runAction(() =>
-      this.api.adjust(session.id, minutes, reasonText));
+    const ok = await this.runAction(() => this.api.adjust(session.id, minutes, reasonText));
     if (ok) this.closeAdjustModal();
   }
 
@@ -558,53 +284,27 @@ export class AppComponent implements OnInit, OnDestroy {
     if (ok) this.setStartModalOpen = false;
   }
 
-  // End workday: close all sessions + stop the daemon. After this the tray
-  // falls back to the Start screen since /api/today will refuse to connect.
   async confirmEndDay(): Promise<void> {
     const ok = await this.runAction(() => this.api.stop());
     if (ok) this.endDayModalOpen = false;
   }
 
-  private formatHm(iso: string): string {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
+  // ─── Daemon lifecycle ──────────────────────────────────────────────────
 
-  /** Closed session interval shown in the Closed list: "09:18 → 12:35". */
-  sessionInterval(s: SessionDetail): string {
-    return `${this.formatHm(s.startedAt)} → ${this.formatHm(s.lastSeenAt)}`;
-  }
-
-  /** Human label for the close-reason badge — keeps the badge short and readable. */
-  closedReasonLabel(closedBy: string | null): string {
-    switch ((closedBy ?? '').toLowerCase()) {
-      case 'idle_timeout': return 'Idle';
-      case 'day_boundary': return 'Day end';
-      case 'superseded':   return 'Switched';
-      case 'manual':
-      case 'user':         return 'Manual';
-      case 'stopped':      return 'Stopped';
-      default:             return closedBy ?? '—';
+  async startDaemon(): Promise<void> {
+    this.daemonStarting = true;
+    try {
+      await this.api.startDaemon();
+      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 2000);
+      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 5000);
+    } catch (e: unknown) {
+      this.showToast(e instanceof Error ? e.message : 'Failed to start daemon');
+    } finally {
+      this.daemonStarting = false;
     }
   }
 
-  /** Returns a CSS class for the close-reason badge that picks its colour. */
-  closedReasonClass(closedBy: string | null): string {
-    switch ((closedBy ?? '').toLowerCase()) {
-      case 'idle_timeout': return 'reason-idle';
-      case 'day_boundary': return 'reason-dayend';
-      case 'superseded':   return 'reason-switched';
-      case 'manual':
-      case 'user':         return 'reason-manual';
-      case 'stopped':      return 'reason-stopped';
-      default:             return 'reason-other';
-    }
-  }
-
-  dismissToast(): void {
-    this.actionError = null;
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-  }
+  // ─── Action gate ───────────────────────────────────────────────────────
 
   private async runAction<T>(fn: () => Promise<ApiResponse<T>>): Promise<boolean> {
     if (this.actionPending) return false;
@@ -621,6 +321,11 @@ export class AppComponent implements OnInit, OnDestroy {
     } finally {
       this.actionPending = false;
     }
+  }
+
+  dismissToast(): void {
+    this.actionError = null;
+    if (this.toastTimer) clearTimeout(this.toastTimer);
   }
 
   private showToast(msg: string): void {
