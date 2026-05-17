@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getDataDir, computeWorkingDate } from './core/config.js';
+import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig } from './core/config.js';
 import { readDailyLog, writeDailyLog, getOpenPause } from './core/daily-log.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
@@ -9,7 +9,7 @@ import { ActivityEvaluator } from './core/activity-evaluator.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { AppConfig, Secrets } from './core/types.js';
+import type { AppConfig, Secrets, ScheduleConfig } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import { PID_FILE_NAME, CRASH_RECOVERY_LOOKBACK_DAYS } from './core/constants.js';
 
@@ -75,6 +75,9 @@ export class Daemon {
       getCurrentDate: () => this.currentDate,
       onBudgetFreed: () => { this.budgetExhaustedLogged = false; },
       forceTick: () => this.pollTick(),
+      applyConfigUpdate: (patch) => this.applyConfigUpdate(patch),
+      addRepo: (path) => this.addRepo(path),
+      removeRepo: (path) => this.removeRepo(path),
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();
@@ -109,6 +112,74 @@ export class Daemon {
       console.log(`  Schedule: ${this.config.schedule.start}:00 — ${this.config.schedule.end}:00`);
       console.log(`  Date: ${this.currentDate}`);
     }
+  }
+
+  // ─── Hot-apply config changes ─────────────────────────────────────────
+
+  /**
+   * Apply a config patch to the running daemon without restart.
+   * Serializes with the poll loop via tickQueue — config.repos cannot be
+   * mutated while gitTracker.pollAll() iterates over it.
+   */
+  public applyConfigUpdate(patch: Partial<AppConfig>): Promise<void> {
+    this.tickQueue = this.tickQueue.then(() => this.applyConfigUpdateBody(patch));
+    return this.tickQueue;
+  }
+
+  private applyConfigUpdateBody(patch: Partial<AppConfig>): void {
+    // repos
+    if (patch.repos && !arraysEqual(patch.repos, this.config.repos)) {
+      const added = patch.repos.filter(r => !this.config.repos.includes(r));
+      const removed = this.config.repos.filter(r => !patch.repos!.includes(r));
+      for (const repoPath of removed) {
+        const repoName = basename(repoPath);
+        this.sessionTracker.closeSessionsForRepo(repoName);
+        this.gitTracker.removeRepo(repoPath);
+      }
+      for (const repoPath of added) this.gitTracker.addRepo(repoPath);
+      (this.config as { repos: readonly string[] }).repos = [...patch.repos];
+    }
+
+    // taskPattern
+    if (patch.taskPattern !== undefined && patch.taskPattern !== this.config.taskPattern) {
+      this.gitTracker.setTaskPattern(patch.taskPattern);
+      (this.config as { taskPattern: string }).taskPattern = patch.taskPattern;
+    }
+
+    // schedule
+    if (patch.schedule) {
+      (this.config as { schedule: ScheduleConfig }).schedule = { ...this.config.schedule, ...patch.schedule };
+      // Re-check day boundary in case the new end-hour crosses now.
+      const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
+      if (newDate !== this.currentDate) this.checkDayBoundary();
+    }
+
+    // timezone
+    if (patch.timezone !== undefined && patch.timezone !== this.config.timezone) {
+      (this.config as { timezone: string }).timezone = patch.timezone;
+      const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
+      if (newDate !== this.currentDate) this.checkDayBoundary();
+    }
+
+    // sensitivity.default — delegate so manual pauses get auto-resumed
+    if (patch.sensitivity?.default && patch.sensitivity.default !== this.config.sensitivity.default) {
+      this.sessionTracker.setSensitivity(patch.sensitivity.default);
+    }
+  }
+
+  public async addRepo(repoPath: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.config.repos.includes(repoPath)) return { ok: false, error: 'Already added' };
+    await this.applyConfigUpdate({ repos: [...this.config.repos, repoPath] });
+    writeConfig(this.config);
+    return { ok: true };
+  }
+
+  public async removeRepo(repoPath: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.config.repos.includes(repoPath)) return { ok: false, error: 'Not in list' };
+    if (this.config.repos.length === 1) return { ok: false, error: 'Cannot remove last repo' };
+    await this.applyConfigUpdate({ repos: this.config.repos.filter(r => r !== repoPath) });
+    writeConfig(this.config);
+    return { ok: true };
   }
 
   public async stop(): Promise<void> {
@@ -329,6 +400,12 @@ export class Daemon {
       this.removePidFile();
     });
   }
+}
+
+function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // ─── Entry point (direct execution / background mode) ────────────────────

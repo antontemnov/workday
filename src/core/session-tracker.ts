@@ -159,6 +159,17 @@ export class SessionTracker {
     this.pruneEmptySessions();
   }
 
+  /** Close open sessions for a specific repo (used when the repo is removed). */
+  public closeSessionsForRepo(repoName: string): void {
+    const now = new Date().toISOString();
+    for (const session of this.dailyLog.sessions) {
+      if (session.repo === repoName && !session.closedBy) {
+        this.closeSession(session, ClosedBy.ManualStop, now);
+      }
+    }
+    this.pruneEmptySessions();
+  }
+
   /**
    * Drop sessions that never reached ACTIVE (no activatedAt).
    * Called from all shutdown / recovery paths before flushing.

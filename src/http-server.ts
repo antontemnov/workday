@@ -1,4 +1,6 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import { existsSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import type { SessionTracker } from './core/session-tracker.js';
 import {
   computeEffectiveDuration,
@@ -14,7 +16,14 @@ import {
   getOpenPause,
   listAvailableDates,
 } from './core/daily-log.js';
-import { computeWorkingDate, buildTimestamp } from './core/config.js';
+import {
+  computeWorkingDate,
+  buildTimestamp,
+  buildPatchedConfig,
+  writeConfig,
+  writeSecrets,
+  loadSecrets,
+} from './core/config.js';
 import { MAX_BODY_BYTES, API_VERSION } from './core/constants.js';
 import type {
   AppConfig,
@@ -31,6 +40,9 @@ import type {
   SetStartResponse,
   DaysResponse,
   Session,
+  Secrets,
+  SettingsResponse,
+  AddRepoResponse,
 } from './core/types.js';
 import { SensitivityLevel } from './core/types.js';
 
@@ -47,6 +59,12 @@ export interface HttpServerDeps {
    * the scheduled poll interval.
    */
   readonly forceTick: () => Promise<void>;
+  /** Hot-apply config patch (serialized through tickQueue inside Daemon). */
+  readonly applyConfigUpdate: (patch: Partial<AppConfig>) => Promise<void>;
+  /** Add a repo to the tracked list (persists config.json on success). */
+  readonly addRepo: (path: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Remove a repo (closes its open sessions, persists config.json). */
+  readonly removeRepo: (path: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export class HttpServer {
@@ -141,6 +159,21 @@ export class HttpServer {
         this.sendJson(res, 200, response);
         setImmediate(() => void this.deps.stopCallback());
         return;
+      }
+      if (method === 'GET' && path === '/api/settings') {
+        return this.sendJson(res, 200, this.handleGetSettings());
+      }
+      if (method === 'POST' && path === '/api/settings') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handlePostSettings(body));
+      }
+      if (method === 'POST' && path === '/api/repo') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleAddRepo(body));
+      }
+      if (method === 'POST' && path === '/api/repo/remove') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleRemoveRepo(body));
       }
 
       this.sendJson(res, 404, { ok: false, error: 'Not found' });
@@ -338,6 +371,101 @@ export class HttpServer {
     // Re-run evaluator so budget state settles before the next read.
     await this.deps.forceTick();
     return response;
+  }
+
+  // ─── Settings ────────────────────────────────────────────────────
+
+  private handleGetSettings(): ApiResponse<SettingsResponse> {
+    const c = this.deps.config;
+    let jiraConfigured = false;
+    let tempoConfigured = false;
+    try {
+      const s = loadSecrets();
+      jiraConfigured = !!s.Jira_Token && s.Jira_Token.trim().length > 0;
+      tempoConfigured = !!s.Tempo_Token && s.Tempo_Token.trim().length > 0;
+    } catch { /* secrets missing → both false */ }
+
+    return {
+      ok: true,
+      data: {
+        config: {
+          repos: [...c.repos],
+          schedule: { start: c.schedule.start, end: c.schedule.end },
+          timezone: c.timezone,
+          taskPattern: c.taskPattern,
+          sensitivity: {
+            default: c.sensitivity.default,
+            perRepo: { ...c.sensitivity.perRepo },
+          },
+        },
+        secretsMeta: { jiraConfigured, tempoConfigured },
+      },
+    };
+  }
+
+  private async handlePostSettings(body: Record<string, unknown>): Promise<ApiResponse<SettingsResponse>> {
+    const patch = body as {
+      config?: Partial<AppConfig>;
+      secrets?: { jiraToken?: string; tempoToken?: string };
+    };
+
+    if (patch.config) {
+      const forbidden = ['apiPort', 'session', 'report', 'workDays', 'holidays', 'genericBranches'];
+      for (const f of forbidden) {
+        if (f in patch.config) {
+          return { ok: false, error: `Field "${f}" cannot be changed via API` };
+        }
+      }
+      try {
+        const merged = buildPatchedConfig(this.deps.config, patch.config);
+        await this.deps.applyConfigUpdate(patch.config);
+        writeConfig(merged);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    if (patch.secrets) {
+      try {
+        let current: Secrets;
+        try { current = loadSecrets(); }
+        catch {
+          current = { Developer: '', Jira_Email: '', Jira_BaseUrl: '', Jira_Token: '', Tempo_Token: '' };
+        }
+        const next: Secrets = {
+          ...current,
+          ...(patch.secrets.jiraToken !== undefined ? { Jira_Token: patch.secrets.jiraToken } : {}),
+          ...(patch.secrets.tempoToken !== undefined ? { Tempo_Token: patch.secrets.tempoToken } : {}),
+        };
+        writeSecrets(next);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    await this.deps.forceTick();
+    return this.handleGetSettings();
+  }
+
+  private async handleAddRepo(body: Record<string, unknown>): Promise<ApiResponse<AddRepoResponse>> {
+    const path = typeof body.path === 'string' ? body.path.trim() : '';
+    if (!path) return { ok: false, error: 'Missing path' };
+    if (!isAbsolute(path)) return { ok: false, error: 'Path must be absolute' };
+    if (!existsSync(path)) return { ok: false, error: `Directory not found: ${path}` };
+    if (!existsSync(join(path, '.git'))) return { ok: false, error: `Not a git repository: ${path}` };
+    if (this.deps.config.repos.includes(path)) return { ok: false, error: 'Already added' };
+
+    const r = await this.deps.addRepo(path);
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, data: { repos: [...this.deps.config.repos] } };
+  }
+
+  private async handleRemoveRepo(body: Record<string, unknown>): Promise<ApiResponse<AddRepoResponse>> {
+    const path = typeof body.path === 'string' ? body.path : '';
+    if (!path) return { ok: false, error: 'Missing path' };
+    const r = await this.deps.removeRepo(path);
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, data: { repos: [...this.deps.config.repos] } };
   }
 
   private handleDay(date: string | null): ApiResponse<TodayResponse> {

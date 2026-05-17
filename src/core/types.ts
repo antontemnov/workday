@@ -381,6 +381,32 @@ export interface DaysResponse {
   readonly dates: readonly string[];
 }
 
+// ─── Settings ───────────────────────────────────────────────────────────
+
+/** Subset of AppConfig exposed via GET /api/settings (UI-editable surface). */
+export interface SettingsConfigSubset {
+  readonly repos: readonly string[];
+  readonly schedule: { readonly start: number; readonly end: number };
+  readonly timezone: string;
+  readonly taskPattern: string;
+  readonly sensitivity: {
+    readonly default: SensitivityLevel;
+    readonly perRepo: Readonly<Record<string, SensitivityLevel>>;
+  };
+}
+
+export interface SettingsResponse {
+  readonly config: SettingsConfigSubset;
+  readonly secretsMeta: {
+    readonly jiraConfigured: boolean;
+    readonly tempoConfigured: boolean;
+  };
+}
+
+export interface AddRepoResponse {
+  readonly repos: readonly string[];
+}
+
 // ─── Report & Push ──────────────────────────────────────────────────────
 
 export interface TaskDayReport {

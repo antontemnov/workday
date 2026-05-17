@@ -207,6 +207,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, list_local_days, read_local_day, set_tray_status])
         .setup(|app| {

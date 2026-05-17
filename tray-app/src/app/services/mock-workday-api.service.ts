@@ -14,6 +14,7 @@ import {
   DayStatus,
   SettingsResponse,
   SettingsPatch,
+  AddRepoResponse,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -21,6 +22,15 @@ import {
 // flag in app.config.ts (?mock=1) — never wired in production builds.
 @Injectable()
 export class MockWorkdayApiService extends WorkdayApiService {
+
+  // Mutable so addRepo/removeRepo feels real in mock mode.
+  private mockRepos: string[] = ['D:/work/atlas-frontend', 'D:/work/appone-backend'];
+  private mockSensitivity: SensitivityLevel = SensitivityLevel.Normal;
+  private mockJiraConfigured = true;
+  private mockTempoConfigured = true;
+  private mockSchedule: { start: number; end: number } = { start: 9, end: 4 };
+  private mockTimezone = 'Europe/Moscow';
+  private mockTaskPattern = 'ATL-\\d+';
 
   private readonly today = (() => {
     const d = new Date();
@@ -271,20 +281,51 @@ export class MockWorkdayApiService extends WorkdayApiService {
       ok: true,
       data: {
         config: {
-          repos: ['D:/work/atlas-frontend', 'D:/work/appone-backend'],
-          schedule: { start: 9, end: 4 },
-          timezone: 'Europe/Moscow',
-          taskPattern: 'ATL-\\d+',
-          sensitivity: { default: SensitivityLevel.Normal },
+          repos: [...this.mockRepos],
+          schedule: { ...this.mockSchedule },
+          timezone: this.mockTimezone,
+          taskPattern: this.mockTaskPattern,
+          sensitivity: { default: this.mockSensitivity },
         },
-        secretsMeta: { jiraConfigured: true, tempoConfigured: true },
+        secretsMeta: { jiraConfigured: this.mockJiraConfigured, tempoConfigured: this.mockTempoConfigured },
       },
     };
   }
 
-  async updateSettings(_patch: SettingsPatch): Promise<ApiResponse<unknown>> {
+  async updateSettings(patch: SettingsPatch): Promise<ApiResponse<unknown>> {
     await delay(200);
+    if (patch.config) {
+      if (patch.config.repos) this.mockRepos = [...patch.config.repos];
+      if (patch.config.schedule) this.mockSchedule = { ...this.mockSchedule, ...patch.config.schedule };
+      if (patch.config.timezone) this.mockTimezone = patch.config.timezone;
+      if (patch.config.taskPattern !== undefined) this.mockTaskPattern = patch.config.taskPattern;
+      if (patch.config.sensitivity?.default) this.mockSensitivity = patch.config.sensitivity.default;
+    }
+    if (patch.secrets) {
+      if (patch.secrets.jiraToken !== undefined) {
+        this.mockJiraConfigured = patch.secrets.jiraToken.trim() !== '';
+      }
+      if (patch.secrets.tempoToken !== undefined) {
+        this.mockTempoConfigured = patch.secrets.tempoToken.trim() !== '';
+      }
+    }
     return { ok: true, data: {} };
+  }
+
+  async addRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {
+    await delay(150);
+    if (!path) return { ok: false, error: 'Missing path' };
+    if (this.mockRepos.includes(path)) return { ok: false, error: 'Already added' };
+    this.mockRepos.push(path);
+    return { ok: true, data: { repos: [...this.mockRepos] } };
+  }
+
+  async removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {
+    await delay(150);
+    if (!this.mockRepos.includes(path)) return { ok: false, error: 'Not in list' };
+    if (this.mockRepos.length === 1) return { ok: false, error: 'Cannot remove last repo' };
+    this.mockRepos = this.mockRepos.filter(r => r !== path);
+    return { ok: true, data: { repos: [...this.mockRepos] } };
   }
 }
 

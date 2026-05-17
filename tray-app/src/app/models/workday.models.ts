@@ -140,7 +140,10 @@ export interface SettingsConfigSubset {
   readonly schedule: { readonly start: number; readonly end: number };
   readonly timezone: string;
   readonly taskPattern: string;
-  readonly sensitivity: { readonly default: SensitivityLevel };
+  readonly sensitivity: {
+    readonly default: SensitivityLevel;
+    readonly perRepo?: Readonly<Record<string, SensitivityLevel>>;
+  };
 }
 
 // GET /api/settings returns config + metadata about which secrets are set
@@ -159,4 +162,9 @@ export interface SettingsPatch {
     readonly jiraToken?: string;
     readonly tempoToken?: string;
   };
+}
+
+// POST /api/repo and /api/repo/remove both return the new repos list.
+export interface AddRepoResponse {
+  readonly repos: readonly string[];
 }

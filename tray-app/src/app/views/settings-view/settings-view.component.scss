@@ -37,6 +37,35 @@
   }
 }
 
+// Inline save status — never takes layout space when idle.
+.save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #6c7086;
+  transition: opacity 0.2s;
+  user-select: none;
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: transparent;
+  }
+
+  &.idle  { visibility: hidden; }
+  &.saving .dot { background: #f9e2af; animation: indicator-pulse 1s ease-in-out infinite; }
+  &.saved  .dot { background: #a6e3a1; }
+  &.error        { color: #f38ba8; cursor: pointer; }
+  &.error  .dot { background: #f38ba8; }
+}
+
+@keyframes indicator-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
 // Shared button — duplicated per component scoping.
 .btn {
   background: #313244;
@@ -276,6 +305,18 @@
       background: #a6e3a1;
     }
   }
+
+  &.disabled {
+    opacity: 0.35;
+    pointer-events: none;
+  }
+}
+
+// Token edit row: input + ✓ + ×
+.token-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 // ─── Segmented control ──────────────────────────────────────────────────

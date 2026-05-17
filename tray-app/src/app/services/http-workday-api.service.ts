@@ -17,6 +17,7 @@ import {
   MonthResponse,
   SettingsResponse,
   SettingsPatch,
+  AddRepoResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -171,14 +172,20 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return new MockWorkdayApiService().pushToTempo(from, to);
   }
 
-  // TODO: replace with GET /api/settings (returns config + secretsMeta only)
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {
-    return new MockWorkdayApiService().getSettings();
+    return this.get<SettingsResponse>('/api/settings');
   }
 
-  // TODO: replace with POST /api/settings (accepts SettingsPatch)
   override async updateSettings(patch: SettingsPatch): Promise<ApiResponse<unknown>> {
-    return new MockWorkdayApiService().updateSettings(patch);
+    return this.post('/api/settings', patch as unknown as Record<string, unknown>);
+  }
+
+  override async addRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {
+    return this.post<AddRepoResponse>('/api/repo', { path });
+  }
+
+  override async removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {
+    return this.post<AddRepoResponse>('/api/repo/remove', { path });
   }
 
   // ─── Disk fallback (no daemon) ──────────────────────────────────────

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.4.22"
+version = "0.4.24"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -26,6 +26,7 @@ tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["rt"] }
 # SVG rendering for the dynamic tray icon (status dot composited on the
 # octocat silhouette). resvg is pure-Rust, no native deps.

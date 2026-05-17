@@ -1,16 +1,15 @@
 <div class="content">
   <div class="settings-head">
     <h2>Settings</h2>
-    <button class="btn primary"
-            [disabled]="!hasChanges || saving"
-            (click)="save()">
-      {{ saving ? 'Saving...' : 'Save' }}
-    </button>
+    <span class="save-indicator" [ngClass]="indicatorState" (click)="retrySave()">
+      <span class="dot"></span>
+      <span class="lbl">{{ indicatorLabel }}</span>
+    </span>
   </div>
 
   <div class="status-msg" *ngIf="loading">Loading...</div>
 
-  <ng-container *ngIf="!loading && draftConfig && settings">
+  <ng-container *ngIf="!loading && settings">
     <!-- Repositories -->
     <div class="settings-section">
       <h3>Repositories <span class="sub">tracked git roots</span></h3>
@@ -20,11 +19,11 @@
           <span class="hint">Sessions open per repo independently.</span>
         </div>
         <div class="right repo-cluster">
-          <span class="repo-pill" *ngFor="let r of draftConfig.repos; let i = index">
+          <span class="repo-pill" *ngFor="let r of settings.config.repos; let i = index">
             <span class="dot" [style.background]="repoDot(i)"></span>{{ repoName(r) }}
             <span class="x" (click)="removeRepo(r)" title="Remove">×</span>
           </span>
-          <button class="btn small">+ add</button>
+          <button class="btn small" (click)="addRepo()">+ add</button>
         </div>
       </div>
     </div>
@@ -50,7 +49,7 @@
           <span class="hint">All timestamps are computed in this zone.</span>
         </div>
         <div class="right">
-          <span class="readonly">{{ draftConfig.timezone }}</span>
+          <span class="readonly">{{ settings.config.timezone }}</span>
         </div>
       </div>
       <div class="opt-row">
@@ -61,7 +60,7 @@
         <div class="right">
           <input class="input-mini wide"
                  type="text"
-                 [value]="draftConfig.taskPattern"
+                 [value]="settings.config.taskPattern"
                  (input)="onTaskPatternChange($any($event.target).value)" />
         </div>
       </div>
@@ -91,7 +90,7 @@
           <span class="hint">Launch the daemon on login.</span>
         </div>
         <div class="right">
-          <div class="toggle" [class.on]="autoStartWithOs" (click)="autoStartWithOs = !autoStartWithOs"></div>
+          <div class="toggle disabled" [class.on]="autoStartWithOs" title="Not implemented yet"></div>
         </div>
       </div>
       <div class="opt-row">
@@ -100,7 +99,7 @@
           <span class="hint">Toast when a session is auto-paused.</span>
         </div>
         <div class="right">
-          <div class="toggle" [class.on]="notifyOnIdle" (click)="notifyOnIdle = !notifyOnIdle"></div>
+          <div class="toggle disabled" [class.on]="notifyOnIdle" title="Not implemented yet"></div>
         </div>
       </div>
     </div>
@@ -122,12 +121,17 @@
               <button class="token-eye" (click)="startEditJira()" title="Replace token">edit</button>
             </ng-container>
             <ng-template #jiraEdit>
-              <input class="input-token edit"
-                     type="password"
-                     placeholder="paste new token"
-                     [(ngModel)]="jiraTokenDraft"
-                     autofocus />
-              <button class="token-eye" (click)="cancelEditJira()" title="Cancel">cancel</button>
+              <div class="token-edit">
+                <input class="input-token edit"
+                       type="password"
+                       placeholder="paste new token"
+                       [(ngModel)]="jiraTokenDraft"
+                       (keydown.enter)="saveJiraToken()"
+                       (keydown.escape)="cancelEditJira()"
+                       autofocus />
+                <button class="btn small primary" (click)="saveJiraToken()" title="Save">✓</button>
+                <button class="btn small ghost" (click)="cancelEditJira()" title="Cancel">×</button>
+              </div>
             </ng-template>
           </div>
         </div>
@@ -146,28 +150,19 @@
               <button class="token-eye" (click)="startEditTempo()" title="Replace token">edit</button>
             </ng-container>
             <ng-template #tempoEdit>
-              <input class="input-token edit"
-                     type="password"
-                     placeholder="paste new token"
-                     [(ngModel)]="tempoTokenDraft"
-                     autofocus />
-              <button class="token-eye" (click)="cancelEditTempo()" title="Cancel">cancel</button>
+              <div class="token-edit">
+                <input class="input-token edit"
+                       type="password"
+                       placeholder="paste new token"
+                       [(ngModel)]="tempoTokenDraft"
+                       (keydown.enter)="saveTempoToken()"
+                       (keydown.escape)="cancelEditTempo()"
+                       autofocus />
+                <button class="btn small primary" (click)="saveTempoToken()" title="Save">✓</button>
+                <button class="btn small ghost" (click)="cancelEditTempo()" title="Cancel">×</button>
+              </div>
             </ng-template>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Danger zone -->
-    <div class="settings-section">
-      <h3 class="danger">Danger zone</h3>
-      <div class="opt-row danger-row">
-        <div class="left">
-          <span class="name">Reset today</span>
-          <span class="hint">Clear all open sessions for the current day.</span>
-        </div>
-        <div class="right">
-          <button class="btn ghost" (click)="resetToday()">Reset</button>
         </div>
       </div>
     </div>

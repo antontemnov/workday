@@ -11,6 +11,7 @@ import {
   MonthResponse,
   SettingsResponse,
   SettingsPatch,
+  AddRepoResponse,
 } from '../models/workday.models';
 
 /**
@@ -44,4 +45,7 @@ export abstract class WorkdayApiService {
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;
   abstract updateSettings(patch: SettingsPatch): Promise<ApiResponse<unknown>>;
+  // Repo list edits — separate endpoints so the daemon can validate paths.
+  abstract addRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
+  abstract removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
 }

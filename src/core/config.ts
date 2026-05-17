@@ -49,7 +49,7 @@ function isValidTimezone(tz: string): boolean {
   }
 }
 
-function validateConfig(config: AppConfig): void {
+export function validateConfig(config: AppConfig): void {
   if (!config.repos || config.repos.length === 0) {
     throw new Error('config.json: repos must be a non-empty array');
   }
@@ -158,6 +158,32 @@ export function writeConfig(config: AppConfig): void {
   const tmpPath = configPath + TMP_EXTENSION;
   writeFileSync(tmpPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
   renameSync(tmpPath, configPath);
+}
+
+/** Atomic write of secrets.json — tmp + rename. */
+export function writeSecrets(secrets: Secrets): void {
+  const secretsPath = join(WORKDAY_HOME, SECRETS_FILE_NAME);
+  const tmpPath = secretsPath + TMP_EXTENSION;
+  writeFileSync(tmpPath, JSON.stringify(secrets, null, 2) + '\n', 'utf-8');
+  renameSync(tmpPath, secretsPath);
+}
+
+/**
+ * Merge a partial config patch onto current config, then validate.
+ * Throws on validation failure — caller is expected to map to 400.
+ */
+export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>): AppConfig {
+  const merged: AppConfig = {
+    ...current,
+    ...patch,
+    schedule: { ...current.schedule, ...(patch.schedule ?? {}) },
+    sensitivity: {
+      default: patch.sensitivity?.default ?? current.sensitivity.default,
+      perRepo: patch.sensitivity?.perRepo ?? current.sensitivity.perRepo,
+    },
+  };
+  validateConfig(merged);
+  return merged;
 }
 
 /** Resolve sensitivity for a repo (perRepo override → default). repo is either path or basename. */

@@ -33,7 +33,7 @@ export class GitTracker {
   private readonly config: AppConfig;
   private readonly developer: string;
   private readonly gitClient: GitClient;
-  private readonly reflogParser: ReflogParser;
+  private reflogParser: ReflogParser;
   private readonly repoStates: Map<string, RepoTracker> = new Map();
   // Resolved default-branch ref (e.g. "origin/master" or "master"). null = no
   // ref resolved → merge-base advancement disabled for this repo, evidence
@@ -77,6 +77,26 @@ export class GitTracker {
   /** Get current state for a repo */
   public getRepoState(repoPath: string): RepoTracker | undefined {
     return this.repoStates.get(repoPath);
+  }
+
+  /**
+   * Register a repo for tracking. No-op in the body — pollAll iterates over
+   * current `config.repos` (mutated by Daemon.applyConfigUpdate) and lazy-inits
+   * per-repo state on first poll via getOrCreateRepoState.
+   */
+  public addRepo(_repoPath: string): void {
+    // intentional no-op — symmetry + future hook point
+  }
+
+  /** Drop per-repo state so the repo is fully forgotten. */
+  public removeRepo(repoPath: string): void {
+    this.repoStates.delete(repoPath);
+    this.defaultBranchRefCache.delete(repoPath);
+  }
+
+  /** Rebuild reflog parser when taskPattern changes. */
+  public setTaskPattern(pattern: string): void {
+    this.reflogParser = new ReflogParser(pattern);
   }
 
   /**
