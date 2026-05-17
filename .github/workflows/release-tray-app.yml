@@ -66,6 +66,10 @@ jobs:
         working-directory: tray-app
         run: npm ci
 
+      - name: Sync Cargo.lock with Cargo.toml versions
+        working-directory: tray-app/src-tauri
+        run: cargo update -p tauri
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
