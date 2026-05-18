@@ -37,7 +37,12 @@ export class ReflogParser {
       if (isNaN(ts)) continue;
 
       let type: ReflogEntryType;
-      if (action.startsWith('commit')) {
+      if (action.startsWith('rebase')) {
+        // Catches "rebase (start|pick|finish): ..." and "rebase -i (start): ..."
+        // — checked before 'commit' since rebase picks also produce commits but
+        // we want to treat the whole sequence as a single rebase event.
+        type = 'rebase';
+      } else if (action.startsWith('commit')) {
         type = 'commit';
       } else if (action.startsWith('checkout')) {
         type = 'checkout';

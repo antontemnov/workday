@@ -128,6 +128,12 @@ export interface Session {
   // `git diff baseSha` / `git rev-list baseSha..HEAD` — what a PR would
   // show. Null until the first poll fills it in.
   baseSha: string | null;
+  // Merge-base against the resolved default branch at session start.
+  // When it advances on a later tick (rebase / pull --rebase / merge from
+  // upstream), updateSessionTick re-anchors baseSha to currentHead so
+  // upstream commits don't inflate evidence. Null when no default branch
+  // could be resolved or before the first poll.
+  mergeBaseSha: string | null;
 }
 
 // ─── Signals ─────────────────────────────────────────────────────────────
@@ -206,7 +212,7 @@ export interface GitDelta {
 
 // ─── Reflog ──────────────────────────────────────────────────────────────
 
-export type ReflogEntryType = 'commit' | 'checkout' | 'reset' | 'other';
+export type ReflogEntryType = 'commit' | 'checkout' | 'reset' | 'rebase' | 'other';
 
 export interface ReflogEntry {
   readonly ts: number;

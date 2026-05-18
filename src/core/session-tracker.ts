@@ -64,6 +64,7 @@ export class SessionTracker {
       if (session.evidence.linesRemoved === undefined) session.evidence.linesRemoved = 0;
       if (session.evidence.filesChanged === undefined) session.evidence.filesChanged = 0;
       if (session.baseSha === undefined) session.baseSha = null;
+      if (session.mergeBaseSha === undefined) session.mergeBaseSha = null;
     }
   }
 
@@ -464,6 +465,9 @@ export class SessionTracker {
       // baseline. If no prior session is found, the first poll will fill it from
       // currentHead — see updateSessionTick.
       baseSha: this.findPriorBaseSha(repo, task),
+      // Filled on the first poll from result.mergeBaseSha; advancement on a
+      // later tick triggers a re-anchor (see updateSessionTick).
+      mergeBaseSha: null,
     };
     this.dailyLog.sessions.push(session);
     return session;
@@ -531,7 +535,14 @@ export class SessionTracker {
    * First tick: anchor baseSha at currentHead — evidence measures what changed
    * inside this session, not the whole feature branch vs master. For continued
    * work on the same task today, findPriorBaseSha already carried the original
-   * anchor over, so we don't overwrite it here.
+   * anchor over, so we don't overwrite it here. mergeBaseSha is captured for
+   * advance detection on later ticks.
+   *
+   * Re-anchor on rebase/upstream merge: when the default-branch merge-base
+   * advances or a rebase reflog entry appears, baseSha is reset to currentHead
+   * so the inrush of upstream commits isn't counted as today's work. Note:
+   * evidenceSnapshot for this tick was computed against the stale baseSha and
+   * is intentionally discarded.
    *
    * Subsequent ticks: overwrite evidence from the snapshot.
    *
@@ -545,6 +556,17 @@ export class SessionTracker {
 
     if (session.baseSha === null) {
       session.baseSha = result.currentHead;
+      session.mergeBaseSha = result.mergeBaseSha;
+      return;
+    }
+
+    if (this.shouldReAnchor(session, result)) {
+      session.baseSha = result.currentHead;
+      session.mergeBaseSha = result.mergeBaseSha;
+      session.evidence.commits = 0;
+      session.evidence.linesAdded = 0;
+      session.evidence.linesRemoved = 0;
+      session.evidence.filesChanged = 0;
       return;
     }
 
@@ -562,6 +584,27 @@ export class SessionTracker {
     session.evidence.linesRemoved = 0;
     session.evidence.filesChanged = 0;
     session.baseSha = result.currentHead;
+    session.mergeBaseSha = result.mergeBaseSha;
+  }
+
+  /**
+   * True when this tick should re-anchor baseSha to currentHead.
+   * Two triggers:
+   * - Merge-base advanced — develop got pulled into the branch (rebase,
+   *   pull --rebase, merge from upstream). Authoritative snapshot test.
+   * - New rebase reflog entry — backup signal for cases where merge-base
+   *   isn't resolved (no default branch configured / detected). Captures
+   *   `rebase (start|pick|finish)` entries the parser now classifies.
+   */
+  private shouldReAnchor(session: Session, result: PollResult): boolean {
+    const mergeBaseAdvanced =
+      result.mergeBaseSha !== null &&
+      session.mergeBaseSha !== null &&
+      result.mergeBaseSha !== session.mergeBaseSha;
+
+    if (mergeBaseAdvanced) return true;
+
+    return result.newReflogEntries.some(e => e.type === 'rebase');
   }
 
   // ─── Private: signals ──────────────────────────────────────────────────
