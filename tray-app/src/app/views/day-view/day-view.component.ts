@@ -280,28 +280,39 @@ export class DayViewComponent {
     return s.state === 'active' ? 'Live' : 'Pending';
   }
 
-  // Reason badge for the Closed list.
+  // Reason badge for the Closed list. Labels stay short so the row layout
+  // doesn't break at the default tray window width.
   closedReasonLabel(closedBy: string | null): string {
     switch ((closedBy ?? '').toLowerCase()) {
-      case 'idle_timeout': return 'Idle';
-      case 'day_boundary': return 'Day end';
-      case 'superseded':   return 'Switched';
+      case 'checkout_other_task': return 'Switched';
+      case 'day_boundary':        return 'Day end';
+      case 'daemon_stop':
+      case 'stopped':             return 'Stopped';
+      case 'daemon_crash':        return 'Crashed';
+      case 'manual_stop':
       case 'manual':
-      case 'user':         return 'Manual';
-      case 'stopped':      return 'Stopped';
-      default:             return closedBy ?? '—';
+      case 'user':                return 'Manual';
+      case 'budget_exhausted':    return 'Budget';
+      case 'idle_timeout':        return 'Idle';
+      case 'superseded':          return 'Switched';
+      default:                    return closedBy ?? '—';
     }
   }
 
   closedReasonClass(closedBy: string | null): string {
     switch ((closedBy ?? '').toLowerCase()) {
-      case 'idle_timeout': return 'reason-idle';
-      case 'day_boundary': return 'reason-dayend';
-      case 'superseded':   return 'reason-switched';
+      case 'checkout_other_task': return 'reason-switched';
+      case 'day_boundary':        return 'reason-dayend';
+      case 'daemon_stop':
+      case 'stopped':
+      case 'daemon_crash':        return 'reason-stopped';
+      case 'manual_stop':
       case 'manual':
-      case 'user':         return 'reason-manual';
-      case 'stopped':      return 'reason-stopped';
-      default:             return 'reason-other';
+      case 'user':                return 'reason-manual';
+      case 'budget_exhausted':    return 'reason-dayend';
+      case 'idle_timeout':        return 'reason-idle';
+      case 'superseded':          return 'reason-switched';
+      default:                    return 'reason-other';
     }
   }
 
