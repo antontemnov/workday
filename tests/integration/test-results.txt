@@ -1,14 +1,14 @@
 === Workday Day-1 Fixes Integration Tests ===
-Date: 2026-03-02T21:06:39.863Z
-Platform: win32
+Date: 2026-06-11T22:37:54.260Z
+Platform: linux
 
 [PASS] Test 1: Reflog parsing via GitClient (Fix 1: format escaping)
   [+] GitClient reflog output is non-empty: 210 chars
-  [+] Reflog contains HEAD@{ timestamp } format: HEAD@{2026-03-03 01:05:40 +0400} commit: ATL-9999 add feature
-HEAD@{2026-03-03 0
+  [+] Reflog contains HEAD@{ timestamp } format: HEAD@{2026-06-11 22:36:56 +0000} commit: ATL-9999 add feature
+HEAD@{2026-06-11 2
   [+] Parsed entries exist: 3 entries
   [+] Commit entries found (>= 2: init + feature): 2 commits
-  [+] Commit timestamps are valid (> 0, not NaN): 2026-03-02T21:05:31.000Z, 2026-03-02T21:05:40.000Z
+  [+] Commit timestamps are valid (> 0, not NaN): 2026-06-11T22:36:56.000Z, 2026-06-11T22:36:56.000Z
   [+] Checkout entry found (branch switch in setup): 1 checkouts
   [+] Feature commit message contains task key: commit: ATL-9999 add feature
   [+] Task extracted from commit message: task = ATL-9999
@@ -28,9 +28,9 @@ HEAD@{2026-03-03 0
 
 [PASS] Test 4: activatedAt field (Fix 4: startedAt preserved, activatedAt set on promotion)
   [+] Alpha session exists and is open: found
-  [+] activatedAt is not null: activatedAt = 2026-03-02T21:05:57.487Z
-  [+] activatedAt !== startedAt (different timestamps): activatedAt=2026-03-02T21:05:57.487Z, startedAt=2026-03-02T21:05:47.468Z
-  [+] activatedAt > startedAt (promoted later): diff = 10019ms
+  [+] activatedAt is not null: activatedAt = 2026-06-11T22:37:11.715Z
+  [+] activatedAt !== startedAt (different timestamps): activatedAt=2026-06-11T22:37:11.715Z, startedAt=2026-06-11T22:36:56.658Z
+  [+] activatedAt > startedAt (promoted later): diff = 15057ms
   [+] state === "active": state = active
 
 [PASS] Test 5: Untracked in signal delta (Fix 5: delta.untracked field)

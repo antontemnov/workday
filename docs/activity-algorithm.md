@@ -28,8 +28,13 @@ git activity (diff dynamics, commits) and decays linearly each poll tick.
 When score reaches 0 → auto-pause. When activity resumes on a paused session → auto-resume.
 
 Key design goals:
-- **Adaptive timeout**: heavy coders get shorter timeout (15 min), light coders get longer (45 min)
-- **Cross-repo awareness**: only one repo can hold attention at a time
+- **Predictable stamina**: every gain is small and tied to observable work — a single
+  keystroke buys a fixed small leash, only sustained frequency and volume fill the bar,
+  and reaching 100% is intentionally hard
+- **No pause noise**: any touch guarantees a multi-minute leash (touch floor),
+  never "1 line = 1 minute"
+- **Cross-repo awareness**: only one repo can hold attention at a time; leadership
+  follows a short attention window, independent of how full the bars are
 - **Time-unit independence**: algorithm works correctly regardless of `diffPollSeconds` value
 
 ---
@@ -41,11 +46,22 @@ Tick-based values are derived at `ActivityEvaluator` construction time.
 
 ### Source constants (time-based)
 
+The repo's **sensitivity** sets a single knob — the max timeout / stamina ceiling
+(`SENSITIVITY_TIMEOUTS`). The touch floor is *derived* from it
+(`× STAMINA_FLOOR_RATIO = 1/6`), there is no separate min constant:
+
+| Sensitivity | max (ceiling) | derived touch floor |
+|-------------|---------------|---------------------|
+| `low` | 15 min | 2.5 min |
+| `normal` (default) | 45 min | 7.5 min |
+| `patient` | 90 min | 15 min |
+| `always_on` | 45 min (idle timeout ignored) | 7.5 min |
+
 | Constant | Value | Unit | Description |
 |----------|-------|------|-------------|
-| `MIN_TIMEOUT_MINUTES` | 15 | min | Minimum auto-pause timeout (for heavy work) |
-| `MAX_TIMEOUT_MINUTES` | 45 | min | Maximum auto-pause timeout (for light work) |
-| `EMA_WINDOW_MINUTES` | 10 | min | EMA smoothing window (how fast EMA reacts) |
+| `STAMINA_FLOOR_RATIO` | 1/6 | — | Touch floor as a fraction of the ceiling |
+| `EMA_WINDOW_MINUTES` | 10 | min | Frequency EMA smoothing window |
+| `ATTENTION_WINDOW_MINUTES` | 2 | min | Attention EMA window (cross-repo leadership) |
 | `COMMIT_BONUS_SECONDS` | 150 | sec | Extra score from a commit (in timeout equivalent) |
 
 ### Derived constants (tick-based)
@@ -55,23 +71,24 @@ All computed from `diffPollSeconds` (config value, default 30):
 ```
 tickSeconds = config.session.diffPollSeconds
 
-MIN_TIMEOUT_TICKS  = MIN_TIMEOUT_MINUTES * 60 / tickSeconds
-MAX_TIMEOUT_TICKS  = MAX_TIMEOUT_MINUTES * 60 / tickSeconds
-EMA_WINDOW_TICKS   = EMA_WINDOW_MINUTES * 60 / tickSeconds
-EMA_ALPHA          = 1 / EMA_WINDOW_TICKS
-COMMIT_BONUS       = COMMIT_BONUS_SECONDS / tickSeconds
+MAX_TICKS           = sensitivity.max * 60 / tickSeconds
+FLOOR_TICKS         = MAX_TICKS * STAMINA_FLOOR_RATIO
+EMA_ALPHA           = 1 / (EMA_WINDOW_MINUTES * 60 / tickSeconds)
+ATTENTION_ALPHA     = 1 / (ATTENTION_WINDOW_MINUTES * 60 / tickSeconds)
+COMMIT_BONUS        = COMMIT_BONUS_SECONDS / tickSeconds
+LINES_PER_GAIN_TICK = STAMINA_LINES_PER_MINUTE * tickSeconds / 60   // 5 at 30s
 ```
 
-### Derivation table for different `diffPollSeconds`
+### Derivation table for different `diffPollSeconds` (normal sensitivity)
 
-| Config | MIN_TICKS | MAX_TICKS | EMA_ALPHA | COMMIT_BONUS |
-|--------|-----------|-----------|-----------|--------------|
-| 15s    | 60        | 180       | ~0.025    | 10           |
-| 30s    | 30        | 90        | ~0.05     | 5            |
-| 45s    | 20        | 60        | ~0.075    | ~3           |
-| 60s    | 15        | 45        | ~0.10     | ~3           |
+| Config | MAX_TICKS | FLOOR_TICKS | EMA_ALPHA | ATTENTION_ALPHA | COMMIT_BONUS |
+|--------|-----------|-------------|-----------|-----------------|--------------|
+| 15s    | 180       | 30          | ~0.025    | 0.125           | 10           |
+| 30s    | 90        | 15          | ~0.05     | 0.25            | 5            |
+| 45s    | 60        | 10          | ~0.075    | 0.375           | ~3           |
+| 60s    | 45        | 7.5         | ~0.10     | 0.5             | ~3           |
 
-The timeout range [15, 45] minutes is preserved regardless of tick duration.
+The timeout range [7.5, 45] minutes is preserved regardless of tick duration.
 
 ---
 
@@ -132,116 +149,99 @@ With the 10-minute window, EMA retains memory through short breaks:
 
 ---
 
-## 4. Adaptive Max Score <a name="adaptive-max"></a>
+## 4. Stamina Score Model <a name="adaptive-max"></a>
 
-The core mechanism: **the score ceiling adapts based on work intensity**.
-
-### Formula
-
-```
-dynamicMaxScore = MAX_TIMEOUT_TICKS - (MAX_TIMEOUT_TICKS - MIN_TIMEOUT_TICKS) × min(1.0, intensityEMA)
-```
-
-No normalization constant needed — EMA with binary input naturally reaches 1.0
-for heavy coders and stays low for light coders.
-
-### Mapping (with diffPollSeconds=30)
-
-| EMA | dynamicMaxScore (ticks) | Timeout equivalent |
-|-----|------------------------|--------------------|
-| 0.00 | 90 | 45 min |
-| 0.05 | 87 | 43.5 min |
-| 0.12 | 83 | 41.5 min |
-| 0.22 | 77 | 38.5 min |
-| 0.33 | 70 | 35 min |
-| 0.50 | 60 | 30 min |
-| 0.75 | 45 | 22.5 min |
-| 1.00 | 30 | 15 min |
-
-### Activity points
-
-Each dynamics event gives points proportional to the adaptive max,
-scaled by delta magnitude (see §5):
-
-```
-ACTIVITY_RATIO = 0.5
-magnitudeBonus = 1 + min(1, log2(1 + |addedDelta| + |removedDelta|) / MAGNITUDE_SCALE) × 0.5
-activityPoints = dynamicMaxScore × ACTIVITY_RATIO × magnitudeBonus
-```
-
-`magnitudeBonus` ranges from ×1.0 (no changes / commit-only) to ×1.5 (128+ lines).
-This means heavy changes fill the score buffer faster, but the buffer SIZE (dynamicMaxScore)
-is determined solely by EMA (frequency of activity).
-
-| EMA | dynamicMax | activityPoints (1 line) | activityPoints (30 lines) |
-|-----|-----------|------------------------|--------------------------|
-| 1.00 | 30 | 15.5 | 20.3 |
-| 0.33 | 70 | 36.2 | 47.3 |
-| 0.12 | 83 | 42.9 | 56.1 |
-| 0.00 | 90 | 46.5 | 60.8 |
+The score is a **stamina buffer**: ticks remaining until auto-pause, and the
+value behind the Stamina bar (`normalizedScore = score / MAX_TICKS`). The
+ceiling is fixed at `MAX_TICKS`; what varies is how fast the buffer fills —
+small, explicit gains tied to observable work.
 
 ### Score update per tick
 
 ```
-1. if (hasDynamics):  score += activityPoints  (with magnitudeBonus)
-2. if (hasCommit):    score += COMMIT_BONUS
-3. score = min(score, dynamicMaxScore)    // cap at adaptive ceiling
-4. score = max(0, score - BASE_DECAY)     // BASE_DECAY = 1 per tick always
-5. if (score == 0): → AutoPause decision
+if (hasActivity):                          // dynamics or commit
+  1. score = max(score, MAX_TICKS × STAMINA_FLOOR_RATIO)              // touch floor
+  2. score += min(1, intensityEMA) × FREQUENCY_GAIN_MAX               // frequency gain
+  3. score += min(VOLUME_GAIN_MAX, deltaMagnitude / LINES_PER_GAIN_TICK)  // volume gain
+  4. if (hasCommit): score += COMMIT_BONUS
+  5. score = min(score, MAX_TICKS)                                    // fixed ceiling
+
+6. score = max(0, score - BASE_DECAY)      // always, BASE_DECAY = 1 per tick
+7. if (score == 0): → AutoPause decision
 ```
 
-Note: BASE_DECAY is always 1 per tick. The adaptation happens through dynamicMaxScore
-and activityPoints, not through variable decay rates. This keeps the model simple.
+### Touch floor
+
+Any active tick lifts the score to at least `MAX_TICKS × STAMINA_FLOOR_RATIO`
+(Normal: 45 / 6 = **7.5 min**, ~17% of the bar). Two guarantees at once:
+
+- a single keystroke can't jump the bar to half (old algorithm: one tick = ~52%)
+- a single keystroke still buys a multi-minute leash — never "1 line = 1 minute
+  to pause", so light work doesn't generate pause noise
+
+### Frequency gain
+
+`min(1, EMA) × FREQUENCY_GAIN_MAX` (max +2/tick) — rewards a sustained stream
+of updates. With decay −1/tick, frequency alone outpaces decay once EMA > 0.5,
+which takes ~7 minutes of tick-after-tick activity. Sporadic edits (EMA ≪ 0.5)
+never climb on frequency alone — they hover at the floor.
+
+### Volume gain
+
+`min(VOLUME_GAIN_MAX, lines / LINES_PER_GAIN_TICK)` — linear in lines changed
+within the tick, capped:
+
+| Lines changed in tick | Volume gain | Net vs decay (−1) |
+|----------------------|------------|--------------------|
+| 1 | +0.2 | negative |
+| 5 | +1.0 | breakeven |
+| 10 | +2.0 | +1 |
+| 15 | +3.0 | +2 |
+| 20+ | +4.0 (cap) | +3 |
+
+The cap means a bulk paste of a generated file is worth at most +4 — filling
+the bar always requires *sustained* activity, never a single event.
+
+### Time to fill the bar (Normal sensitivity, 30s ticks)
+
+| Work pattern | Bar behavior |
+|--------------|--------------|
+| Single touch | jumps to ~17%, decays, pause ~7.5 min later |
+| Sporadic 1-line edits every few minutes | hovers at ~17%, never climbs |
+| Update every tick, 1–3 lines | saturates in ~40 min of continuity |
+| Every tick, ~10 lines | saturates in ~15 min |
+| Every tick, 20+ lines (cap) | saturates in ~9 min — still not instant |
+
+Note the flip side: a full bar means a 45-minute leash after the last edit.
+That's the unified-scale semantics — stamina *is* the auto-pause countdown,
+and a full bar is earned only by genuinely intense work.
 
 ---
 
-## 5. Magnitude Enrichment <a name="magnitude"></a>
+## 5. Volume Component <a name="magnitude"></a>
 
-Delta magnitude (lines changed) affects **activity points**, not EMA.
+Delta magnitude (lines changed) feeds the **volume gain**, not EMA.
 EMA tracks frequency of activity (binary: active or not).
-Magnitude tracks intensity of each activity event (how many lines changed).
+Volume tracks intensity of each activity event (how many lines changed).
 
 ### Design: separation of concerns
 
-| Metric | Determines | Question it answers |
-|--------|-----------|---------------------|
-| EMA (binary) | dynamicMaxScore (buffer size) | "How often does the developer produce changes?" |
-| Magnitude | activityPoints (buffer fill speed) | "How big are the changes when they happen?" |
+| Metric | Contribution | Question it answers |
+|--------|-------------|---------------------|
+| EMA (binary) | frequency gain (max +2/tick) | "How often does the developer produce changes?" |
+| Magnitude | volume gain (max +4/tick) | "How big are the changes when they happen?" |
 
-This separation avoids the need for an EMA normalization constant (the removed `EMA_SATURATION`).
-EMA with binary input naturally reaches 1.0 for every-tick activity.
+Both feed the same stamina buffer additively, so the bar reflects *frequency ×
+volume* — exactly the intuition "how intensely is this repo being worked on".
 
-### Formula
+### Why linear with a cap (not log)?
 
-```
-magnitudeBonus = 1 + min(1, log2(1 + |addedDelta| + |removedDelta|) / MAGNITUDE_SCALE) × 0.5
-
-MAGNITUDE_SCALE = 7  // log2(128) ≈ 7 → 127+ lines = max bonus
-
-activityPoints = dynamicMaxScore × ACTIVITY_RATIO × magnitudeBonus
-```
-
-### Magnitude bonus mapping
-
-| Lines changed | log2(1+n)/7 | magnitudeBonus | Effect |
-|---------------|-------------|----------------|--------|
-| 0 (commit only) | 0 | ×1.00 | Base points only |
-| 1 | 0.14 | ×1.07 | Minimal extra |
-| 3 | 0.29 | ×1.14 | Light edit |
-| 7 | 0.43 | ×1.21 | Moderate edit |
-| 15 | 0.57 | ×1.29 | Active coding |
-| 30 | 0.71 | ×1.36 | Heavy coding |
-| 63 | 0.86 | ×1.43 | Very heavy |
-| 127+ | 1.00 | ×1.50 | Maximum (capped) |
-
-### Effect
-
-Magnitude bonus ×1.0–×1.5 means heavy changes fill the score buffer up to 50% faster.
-This matters for score accumulation speed, not for the timeout ceiling:
-
-- Developer changing 127+ lines per tick fills the buffer 50% faster
-- But the buffer SIZE is the same (determined by EMA alone)
-- Practical effect: fewer ticks needed to reach the score cap after a break
+The previous model used a logarithmic bonus (`log2(1+n)/7`, capped at ×1.5)
+on top of a huge per-tick base (50% of the ceiling). Result: 1 line and 1000
+lines were nearly indistinguishable, and any two active ticks saturated the
+bar. The linear-with-cap volume gain makes the difference between 2 lines
+(+0.4) and 15 lines (+3) visible, while the cap (20+ lines) prevents bulk
+pastes from cheating the bar.
 
 ---
 
@@ -250,50 +250,46 @@ This matters for score accumulation speed, not for the timeout ceiling:
 ### Principle
 
 **Only one session can be the "leader" (actively tracking time) at any moment.**
-The leader is determined by comparing **normalized scores** across all sessions.
-No special counters or thresholds needed — the existing score mechanism handles everything.
-
-### Normalized score
-
-```
-normalizedScore = score / dynamicMaxScore    // 0.0 .. 1.0
-```
-
-This puts all sessions on the same scale regardless of their adaptive timeout.
-A heavy coder's score of 30/30 (1.0) and a light coder's 80/90 (0.89) are
-now directly comparable.
+The leader is determined by a dedicated **attention EMA** (2-minute window, binary
+input like the frequency EMA) with takeover hysteresis — *not* by the stamina
+score. Stamina is slow and hard to fill by design, so comparing stamina would
+delay a repo handover by 5–10 minutes; attention follows the developer within
+~2 minutes regardless of how full the bars are.
 
 ### Mechanism
 
 ```
 Each processAllTicks() call:
-  1. Compute scores for ALL sessions (except manually paused)
-  2. For each session: normalizedScore = score / dynamicMaxScore
-  3. The session with the HIGHEST normalizedScore = leader
-  4. All other sessions with score > 0: paused (PauseSource.Superseded)
-  5. Sessions with score == 0: paused (PauseSource.IdleTimeout)
+  1. Update score and attention EMA for ALL sessions (except manually paused)
+  2. Candidates = sessions with score > 0
+  3. The current leader keeps the lead until a challenger's attention exceeds
+     it by more than ATTENTION_ALPHA (= one isolated touch's contribution)
+  4. Without a defending leader: highest attention wins
+     (normalizedScore as tiebreak)
+  5. All other sessions with score > 0: paused (PauseSource.Superseded)
+  6. Sessions with score == 0: paused (PauseSource.IdleTimeout)
 
 Important: non-leader sessions are NOT frozen in the evaluator.
   Their scores continue to update (accumulate on activity, decay on idle).
   This allows them to compete and overtake the current leader.
 ```
 
-### Why normalized?
+### Why hysteresis?
 
-Raw scores have different scales: a new session (dynamicMax=90) gets 46 points
-from one dynamics, while a heavy coder's session (dynamicMax=30) caps at 30.
-Raw comparison would give instant false switches.
+A single active tick bumps attention by exactly `ATTENTION_ALPHA` (0.25 at 30s
+ticks). The takeover margin is the same value, so **one stray save can never
+steal leadership by construction** — even if the current leader has been idle
+for a while. A genuine switch (old repo idle, new repo active tick after tick)
+crosses the margin within ~4–5 ticks (~2 min at 30s polls).
 
-With normalization:
-- One stray dynamics in B: normalizedB = 46/87 = 0.53 vs normalizedA = 30/30 = 1.0 → A wins
-- Two consecutive dynamics in B: normalizedB = 87/87 = 1.0 vs normalizedA = 28/30 = 0.93 → B wins
-- Return to A: normalizedA = 30/30 = 1.0 vs normalizedB = 85/87 = 0.98 → A wins back instantly
+When both repos sit idle, attention EMAs decay proportionally, so their order —
+and the leader — stays stable (no flapping).
 
 ### Multiple repos with activity (same tick)
 
-If two repos both have dynamics in the same tick:
-- The one with the higher normalized score is the leader
-- Ties (equal normalized): both stay active (extremely rare edge case, same task anyway)
+If two repos both have dynamics in the same tick, both attention EMAs grow
+equally and the hysteresis keeps the current leader (rare edge case — usually
+the frontend/backend of the same task anyway).
 
 ### PauseSource
 
@@ -306,15 +302,14 @@ enum PauseSource {
 }
 ```
 
-### Key difference from previous AttentionSteal
+### Key difference from previous designs
 
-| | Old: AttentionSteal | New: Leadership |
-|---|---|---|
-| Detection | Separate counter (consecutiveActiveTicks) | Existing score |
-| Threshold | Fixed (4 ticks / 2 min) | Organic (normalized score crossover) |
-| False positives | Rebase could trigger | Stray dynamics doesn't win (norm < 1.0) |
-| Complexity | Extra state per session | No extra state |
-| Rebalance | Hard threshold, binary | Gradual, natural |
+| | AttentionSteal (v0) | Normalized score (v1) | Attention EMA (v2, current) |
+|---|---|---|---|
+| Detection | consecutiveActiveTicks counter | stamina score crossover | dedicated 2-min EMA |
+| Handover speed | 2 min (hard threshold) | fast only because one tick gave 50% of the bar | ~2 min, independent of bar fullness |
+| Stray-touch immunity | threshold-based | norm < leader's norm | impossible by construction (margin = one touch) |
+| Stability when idle | — | decays from higher value | proportional decay, order preserved |
 
 ---
 
@@ -338,7 +333,7 @@ enum PauseSource {
 
 States:
 - **Pending**: session exists, evaluator computes score, time is NOT tracked.
-  `startedAt` is not yet set. Promotion requires score > 0 AND highest normalizedScore.
+  `startedAt` is not yet set. Promotion requires score > 0 AND leadership.
 - **Active**: session was or is the leader, time IS tracked.
   `startedAt` is set at the moment of Pending → Active promotion.
   May be paused (Superseded/IdleTimeout) but remains Active.
@@ -363,7 +358,7 @@ No time tracking until the session becomes the leader.
 ```
 Happens when:
   1. score > 0 (at least one activity event occurred)
-  2. normalizedScore is the highest among all sessions
+  2. the session is the leader (attention EMA, see §6)
 
   startedAt = now
   state = Active
@@ -375,20 +370,20 @@ even if it's the only session. This prevents promoting "empty" sessions.
 
 For single-repo setups: first dynamics → score > 0 → only session → leader → Active.
 For multi-repo: session may stay Pending while another session leads, accumulating
-score until it overtakes.
+attention until it takes over.
 
 ### Normal operation (Active session)
 
 ```
 Each tick:
-  1. Update EMA (binary: activity=1, idle=0)
-  2. Compute dynamicMaxScore
-  3. Add activity points if any (with magnitude bonus)
-  4. Apply decay (BASE_DECAY = 1)
-  5. Compare normalized scores across all sessions
-  6. If still leader → continue tracking time
-  7. If score == 0 → IdleTimeout pause
-  8. If another session has higher normalized score → Superseded pause
+  1. Update frequency EMA and attention EMA (binary: activity=1, idle=0)
+  2. On activity: touch floor, frequency gain, volume gain, commit bonus,
+     cap at MAX_TICKS
+  3. Apply decay (BASE_DECAY = 1)
+  4. Pick the leader (attention EMA with takeover hysteresis, §6)
+  5. If still leader → continue tracking time
+  6. If score == 0 → IdleTimeout pause
+  7. If a challenger took over → Superseded pause
 ```
 
 ### Auto-pause: IdleTimeout (score == 0)
@@ -403,15 +398,15 @@ On IdleTimeout (Active session, score reached 0):
 ### Auto-pause: Superseded (lost leadership)
 
 ```
-On Superseded (Active session, another session has higher normalized score):
+On Superseded (Active session, another session took over the attention lead):
   Pause record: PauseSource.Superseded
   Evaluator continues processing (score updates, EMA updates)
   Score may still be > 0 — session can compete and reclaim leadership
-  Resume: when normalized score becomes highest again → close pause
+  Resume: when its attention crosses the takeover margin again → close pause
 ```
 
 **Key: Superseded sessions are NOT frozen.** Their evaluator state keeps updating.
-They can regain leadership by accumulating higher normalized score.
+They can regain leadership by drawing the developer's attention back.
 
 ### Auto-resume
 
@@ -420,7 +415,7 @@ When a paused Active session becomes the leader again:
   Close the Pause record (set `to` timestamp)
   Session resumes tracking time
 
-This happens naturally through normalized score comparison.
+This happens naturally through the attention comparison.
 Also: dynamics/commit on a manually paused session → auto-resume (forgot to resume).
 ```
 
@@ -443,8 +438,8 @@ workday resume:
   SessionTracker resumes sending sessions to ActivityEvaluator
   Evaluator continues from frozen state (score, EMA preserved)
   The frozen score serves as a natural grace period:
-    - Heavy coder (score=30): 15 min to start coding
-    - Light coder (score=80): 40 min to start coding
+    whatever stamina was left at pause time (up to 45 min for a full bar)
+    is the time available to start coding again
   No special resume logic needed in the evaluator
 ```
 
@@ -478,38 +473,31 @@ Developer attention is a finite resource, like water in a glass.
 
 ### The metaphor
 
+The stamina glasses fill and drain independently; **attention** (who is being
+poured into right now) decides who tracks time:
+
 ```
-Both sessions have scores updating simultaneously.
-Leadership is determined by who has more water (normalized):
+Repo A (Active):  [████████░░]  attention≈1.0   "leader, tracking time"
+Repo B (Pending): [░░░░░░░░░░]  attention=0     "accumulating, not tracking"
 
-Repo A (Active):  [████████░░]  norm=0.93   "leader, tracking time"
-Repo B (Pending): [░░░░░░░░░░]  norm=0.00   "accumulating, not tracking"
+Developer switches to B (A goes idle, B active every tick):
 
-Developer switches to B:
-
-Tick 1:  B dynamics → B norm=0.53, A norm=0.97 → A still leads
-         B stays Pending (score accumulating, not yet leader)
-Tick 2:  B dynamics → B norm=1.00, A norm=0.93 → B wins!
+Tick 1:  B att=0.25 vs A att=0.75+0.25 margin → A still leads
+Tick 2:  B att=0.44 vs A att=0.56+0.25       → A still leads
+Tick 4:  B att=0.68 vs A att=0.32+0.25=0.57  → B takes over!
          B: Pending → Active (startedAt = now, time tracking begins)
          A: Active → paused (Superseded)
 
-Repo A (paused):  [████████░░]  norm=0.90 (decaying, competing)
-Repo B (Active):  [██████████]  norm=1.00   "leader, tracking time"
-
-Developer returns to A:
-
-Tick N:  A dynamics → A norm=1.00, B norm=0.95 → A wins!
-         A: pause closed (resumes tracking)
-         B: Active → paused (Superseded)
+Developer returns to A: symmetric, A reclaims within ~4 ticks.
 ```
 
 ### Why not explicit transfer?
 
 We considered: "repo B gains → repo A loses (zero-sum budget)".
 
-The leadership model is simpler: both glasses exist independently,
-the fuller one (normalized) gets to track time. No transfer, no redistribution.
-Natural competition through score accumulation and decay.
+The leadership model is simpler: both glasses exist independently, and the
+attention EMA decides who tracks time. No transfer, no redistribution —
+natural competition through activity and decay.
 
 ---
 
@@ -551,143 +539,102 @@ All examples use `diffPollSeconds=30` (1 tick = 30 seconds).
 ### Scenario A: Heavy coding session, then lunch
 
 ```
-Developer writes code with dynamics nearly every tick for 2 hours.
+Developer writes code with dynamics nearly every tick for 2 hours (10–15 lines/tick).
 
-Phase 1: Working (ticks 0-240, 2 hours)
-  EMA → ~1.0 (binary input, activity every tick)
-  dynamicMaxScore = 30 ticks (15 min)
-  activityPoints = 15 × magnitudeBonus (~1.3 for typical edits) ≈ 19.5
-  Score: capped at 30
+Phase 1: Working
+  EMA → ~1.0 within ~10 min (binary input, activity every tick)
+  Per-tick gain ≈ 2 (frequency) + 2–3 (volume) − 1 (decay) → net +3..4
+  Score: from the 15-tick floor to the 90-tick cap in ~20-25 min, then capped
 
-Phase 2: Lunch break starts
-  Tick 241: no dynamics, score = 30 - 1 = 29
-  Tick 242: no dynamics, score = 28
-  ...
-  Tick 270: no dynamics, score = 1
-  Tick 271: score = 0 → AutoPause (IdleTimeout)
-
-  Time from last activity to pause: 30 ticks × 30s = 15 min ✓
+Phase 2: Lunch break starts (bar was full)
+  Decay 1/tick from 90 → score = 0 after 90 ticks
+  AutoPause (IdleTimeout) 45 min after the last edit —
+  a full bar is the maximum leash, earned only by sustained intense work
 
 Phase 3: Return from lunch (1 hour later)
   EMA during pause: 1.0 × (1-0.05)^120 ≈ 0.002 (fully decayed)
-  Tick 391: dynamics → AutoResume
-  dynamicMaxScore ≈ 90 (EMA≈0, fresh start with generous timeout)
-  score ≈ 46.5 (activityPoints = 90 × 0.5 × magnitudeBonus)
-
-  Pause logged: 15 min after last activity to resume = ~1 hour pause
+  First dynamics → AutoResume, score = floor 15 (+ small gains) ≈ 7.5 min leash
+  The bar rebuilds as the stream of edits resumes
 ```
 
 ### Scenario B: Light coding (1 line every 15 min)
 
 ```
 Developer reads code and makes occasional small changes.
-Gap between dynamics: 30 ticks (15 min).
+Gap between dynamics: 30 ticks (15 min) — longer than the 15-tick floor.
 
-Steady state:
-  EMA → ~0.05 (very low, binary input every 30th tick)
-  dynamicMaxScore = 87 ticks (43.5 min)
-  activityPoints = 87 × 0.5 × 1.07 (1 line magnitude) ≈ 46.5
+Each touch:
+  score = floor 15 (+ ~0.3 gains) → decays to 0 in ~15 ticks
+  → IdleTimeout ~7.5 min after the touch
+  → auto-resume at the next touch
 
-Score trajectory:
-  Tick 0:  dynamics → score = 46.5
-  Tick 1-29: decay → score = 46.5 - 29 = 17.5
-  Tick 30: dynamics → score = 17.5 + 46.5 = 64.0, cap 87 → 64.0
-  Tick 31-59: decay → score = 64.0 - 29 = 35.0
-  Tick 60: dynamics → score = 35.0 + 46.5 = 81.5
-  Tick 61-89: decay → score = 81.5 - 29 = 52.5
-  Tick 90: dynamics → score = 52.5 + 46.5 = 99.0, cap 87 → 87.0
-  ...converges at dynamicMaxScore (87)
-
-  Score never reaches 0 during normal operation ✓
-
-After final dynamics (stopping work):
-  Score ≈ 80-87, decay at 1/tick
-  Timeout: 80-87 ticks = 40-43 min ✓ (within [15,45] range)
+With Normal sensitivity this style logs ~7.5 min per touch with pauses
+between. That's by design: 15 idle minutes between one-line edits are
+mostly not work. If for this repo they ARE work (research-heavy code),
+switch the repo to Patient: floor = 90/6 = 15 min — every gap up to
+15 min is then covered, and the session stays continuous.
 ```
 
-### Scenario C: Cross-repo switch (normalized score leadership)
+### Scenario C: Cross-repo switch (attention leadership)
 
 ```
 Two repos: atlas-frontend (A), appone-backend (B).
 
-12:00  Working in A. Score_A=30, EMA_A≈1.0, dynamicMax_A=30.
-12:05  Open B, start coding.
+12:00  Working in A. attention_A ≈ 1.0, bar at ~60%.
+12:05  Switch to B, start coding (A goes idle).
 
-12:05:00  Tick 1: B dynamics. B score=46.5, dynamicMax=87, norm=0.53.
-          A: no activity. score=29, norm=0.97.
-          A(0.97) > B(0.53) → A is still leader ✓
+Tick 1: B att = 0.25 vs A att 0.75 + 0.25 margin → A still leads ✓
+Tick 2: B att = 0.44 vs A att 0.56 + 0.25       → A still leads
+Tick 4: B att = 0.68 vs A att 0.32 + 0.25 = 0.57 → B takes leadership!
+        (~2 min after the switch)
+        B: Pending → Active (startedAt = now)
+        A: Pause { source: "superseded" }, score keeps decaying (not frozen)
 
-12:05:30  Tick 2: B dynamics. B score=87(cap), norm=1.00.
-          A: score=28, norm=0.93.
-          B(1.00) > A(0.93) → B takes leadership!
-          A: Pause { from: "12:05:30", to: null, source: "superseded" }
-          A score continues decaying (NOT frozen, evaluator still sees it)
-
-12:05:30 - 12:30  B is the leader. A is paused but still scored.
-
-12:30  Return to A. Dynamics in A.
-       A score was decaying: ≈0 (50 ticks of decay). dynamics → +activityPoints.
-       A: EMA decayed during pause, dynamicMax ≈ 80. activityPoints ≈ 42.
-       A score = 42, norm = 42/80 = 0.53.
-       B: no dynamics. score ≈ 40 (decaying from 87), norm = 40/87 = 0.46.
-       A(0.53) > B(0.46) → A reclaims leadership!
-       A pause closed: { from: "12:05:30", to: "12:30:00" }
-
-12:30+  A is the leader again. B decays → IdleTimeout eventually.
+12:30  Return to A → symmetric: A reclaims within ~4 ticks,
+       A pause closed, B → Superseded → decays → IdleTimeout eventually.
 
 Result:
-  A logged: 12:00-12:05:30 active, 12:05:30-12:30 paused(superseded), 12:30+ active
-  B logged: startedAt=12:05:30 (promoted from Pending), 12:05:30-12:30 active, 12:30+ paused
-  Overlap: 0 sec (B was Pending until it became leader, A was paused from that moment)
+  A logged: 12:00-12:07 active, 12:07-12:32 paused(superseded), 12:32+ active
+  B logged: startedAt=12:07 (promoted from Pending), active until 12:32
+  Overlap: 0 sec
 ```
 
 ### Scenario D: Stray touch in inactive repo
 
 ```
-Developer is actively working in repo A (leader, score=30, norm=1.0).
+Developer is actively working in repo A (leader, attention ≈ 1.0).
 Accidentally saves a file in repo B.
 
 Tick 0: dynamics in B (1 line)
-  B: score = 46.5, dynamicMax = 87, norm = 0.53
-  A: score = 29, norm = 0.97
-  A(0.97) > B(0.53) → A is still leader
-  B stays Pending (not promoted — A has higher normalizedScore)
+  B: score = floor 15 (bar ~17%), attention = 0.25
+  A: attention ≈ 1.0 → challenger needs > 1.25 — impossible
+  A stays leader; B stays Pending
+
+Even if A had been idle for a few minutes, a single touch bumps attention
+by exactly the takeover margin — it can never exceed it. Stray saves are
+structurally unable to steal leadership.
 
 No more activity in B:
-  B score decays: 46.5 → 45.5 → ... → 0 at tick 47
-  B closed as Pending on score=0 or checkout
-
-Result: stray save didn't steal leadership from A.
-Session B remained Pending → excluded from report.
+  B score decays: 15 → 14 → ... → 0 at tick ~15
+  B closed as Pending on score=0 or checkout → excluded from report
 ```
 
 ### Scenario E: Commit then continue coding
 
 ```
-Developer is coding, commits, then continues.
-
-Tick N:   dynamics (last edit before commit)
-  Score: ~30 (heavy coder, EMA≈1.0)
+Developer is coding (bar ~50%, score ≈ 45), commits, then continues.
 
 Tick N+1: git add . && git commit
   git diff --numstat: 0/0 (clean tree)
-  delta: addedDelta = 0-50 = -50 → hasDynamics = TRUE
+  delta: addedDelta = 0-50 = -50 → hasDynamics = TRUE (|delta| = 50 → volume +4)
   reflog: new commit → hasCommit = TRUE
 
-  Score: 30 + ~20 (activityPoints with magnitude) + 5 (COMMIT_BONUS) = ~55, cap 30 → 30
-  (Still at cap, no penalty from commit)
+  Score: 45 + 2 (frequency) + 4 (volume) + 5 (COMMIT_BONUS) − 1 ≈ 55
+  Commit visibly tops up the bar, never drops it.
 
-Tick N+2: start coding again → dynamics
-  diff: +3/+1, delta: +3/+1 → hasDynamics = TRUE
-  Score: 30 + 15 = 45, cap 30 → 30
-
-Tick N+2 (alternative: no new coding):
-  diff: 0/0, delta: 0/0 → hasDynamics = FALSE
-  Score: 30 - 1 = 29
-  Normal decay begins
-
-Conclusion: commit itself is an activity signal (double boost). Score doesn't drop.
-Transition is seamless whether developer continues or stops.
+Tick N+2 (no new coding yet):
+  diff: 0/0 → hasDynamics = FALSE → normal decay, score 54
+  Plenty of leash to think about the next step.
 ```
 
 ### Scenario F: Autopause disabled (reading/thinking)
@@ -704,33 +651,25 @@ Developer returns from lunch, wants to read code for a while.
        Sessions remain active. Time is logged.
 
 14:30  Developer starts coding → dynamics appear
-       Score: 0 + activityPoints
+       Score: floor + gains, bar rebuilds
        workday autopause on → re-enable normal behavior
 ```
 
-### Scenario G: Very slow coder with 60s poll interval
+### Scenario G: 60s poll interval (time-unit independence)
 
 ```
-diffPollSeconds = 60. Developer makes changes every 15 min.
+diffPollSeconds = 60, Normal sensitivity.
 
 Derived constants:
-  MIN_TIMEOUT_TICKS = 15 * 60 / 60 = 15 ticks
-  MAX_TIMEOUT_TICKS = 45 * 60 / 60 = 45 ticks
-  EMA_ALPHA = 1 / (10 * 60 / 60) = 1/10 = 0.10
-  ATTENTION_STEAL_TICKS = 120 / 60 = 2 ticks
+  MAX_TICKS = 45 * 60 / 60 = 45 ticks
+  FLOOR_TICKS = 45 / 6 = 7.5 ticks (= 7.5 min, same as with 30s polls ✓)
+  EMA_ALPHA = 1/10 = 0.10
+  ATTENTION_ALPHA = 1/2 = 0.5
 
-Gap between dynamics: 15 ticks (15 min at 60s/tick).
-
-Steady-state EMA: α / (1 - (1-α)^15) = 0.10 / (1 - 0.90^15) ≈ 0.13
-dynamicMaxScore = 45 - 30 × 0.13 = 41.1 ticks
-activityPoints = 41.1 × 0.5 × 1.07 (small change) ≈ 22.0
-
-Score after dynamics: +22.0
-After 15 idle ticks: 22.0 - 15 = 7.0 (survives the gap ✓)
-
-After stopping (final dynamics):
-  Score ≈ 35-41 → timeout = 35-41 ticks × 60s = 35-41 min ✓
-  Within [15, 45] range ✓
+A touch buys the same 7.5 minutes; the ceiling is the same 45 minutes;
+filling the bar requires the same lines-per-minute intensity (the volume
+divisor is per tick, and ticks are twice as long). All time guarantees
+are preserved regardless of tick duration.
 ```
 
 ---
@@ -771,11 +710,15 @@ C: Pending → Pending → Active (became leader)
 
 ### Rebase / merge dynamics
 
-A rebase can generate large diff dynamics (100+ lines) that are not real development.
-Currently handled by existing classification (reflog type = 'other').
+A rebase can generate large diff dynamics (100+ lines) that are not real
+development. The volume cap (`VOLUME_GAIN_MAX` = 4) limits the stamina impact
+of any single burst to a few ticks.
 
-Future improvement: detect `.git/rebase-merge/` directory and suppress dynamics
-during rebase. Not part of current algorithm.
+Evidence counters (commits / lines on the session) are rebase-stable by
+construction: they're computed against the *fresh* merge-base with the default
+branch each tick, with a baseline-delta per session (see session-tracker).
+Squash, amend, drop, and cherry-pick don't corrupt them either — commits are
+accumulated from positive jumps of the branch commit count only.
 
 ### Session in Pending state
 
@@ -801,18 +744,19 @@ Pending sessions are closed by:
 | `diffPollSeconds` | 30 | Polling interval. Algorithm adapts to any value. |
 | `idleTimeoutMinutes` | 20 | NOT used directly by adaptive algorithm. Kept for future simple-mode fallback. |
 
-### Algorithm constants (hardcoded in ActivityEvaluator)
+### Algorithm constants (hardcoded in constants.ts)
 
 | Constant | Value | Rationale |
 |----------|-------|-----------|
-| `MIN_TIMEOUT_MINUTES` | 15 | Minimum practical work session detection |
-| `MAX_TIMEOUT_MINUTES` | 45 | Maximum patience for very slow but steady coding |
-| `EMA_WINDOW_MINUTES` | 10 | Memory of ~15 min, forgets after ~30 min idle |
-| `ACTIVITY_RATIO` | 0.5 | One dynamics = 50% of timeout window (before magnitude bonus) |
-| `MAGNITUDE_SCALE` | 7 | log2(128): 127+ lines/tick = maximum magnitude bonus (×1.5) |
-| `MAGNITUDE_BONUS_MAX` | 0.5 | Max extra multiplier for large changes (activityPoints × 1.0–1.5) |
+| `SENSITIVITY_TIMEOUTS` | low 15 / normal 45 / patient 90 / always_on 45 min | The single per-level knob: stamina ceiling = max leash |
+| `STAMINA_FLOOR_RATIO` | 1/6 | Touch floor = ceiling / 6 (Normal: 7.5 min) — no pause noise, no bar jump |
+| `EMA_WINDOW_MINUTES` | 10 | Frequency memory of ~15 min, forgets after ~30 min idle |
+| `ATTENTION_WINDOW_MINUTES` | 2 | Leadership follows the developer within ~2 min |
+| `FREQUENCY_GAIN_MAX` | 2 | A sustained every-tick stream outpaces decay on its own |
+| `STAMINA_LINES_PER_MINUTE` | 10 | 10 lines/min = +1 score per tick; breakeven at 5 lines per 30s tick |
+| `VOLUME_GAIN_MAX` | 4 | Bulk pastes capped — filling the bar requires sustained activity |
 | `COMMIT_BONUS_SECONDS` | 150 | Commit adds ~2.5 min of buffer |
-| `BASE_DECAY` | 1 | Always 1 per tick (adaptation via maxScore, not decay rate) |
+| `BASE_DECAY` | 1 | Always 1 per tick |
 
 ### Contract (TypeScript)
 
@@ -826,19 +770,20 @@ interface ActivitySignals {
 interface TickInput {
   readonly sessionId: string;
   readonly signals: ActivitySignals;
-  readonly autoPauseDisabled: boolean;
+  readonly maxTicks: number;            // sensitivity ceiling in ticks
+  readonly ignoreIdleTimeout: boolean;  // always_on
   // Note: manually paused sessions are NOT sent to evaluator at all (full freeze)
 }
 
 interface EvaluatorResult {
   readonly scores: Map<string, SessionScore>;
-  readonly leaderId: string | null;  // session with highest normalized score, null if all scores=0
+  readonly leaderId: string | null;  // attention leader (see §6), null if all scores=0
 }
 
 interface SessionScore {
   readonly score: number;
-  readonly maxScore: number;
-  readonly normalizedScore: number;  // score / maxScore (0..1)
+  readonly maxScore: number;         // = maxTicks
+  readonly normalizedScore: number;  // score / maxScore (0..1) — the Stamina bar
   readonly ema: number;
   readonly isIdleTimeout: boolean;   // score == 0
 }

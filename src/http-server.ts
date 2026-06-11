@@ -272,7 +272,7 @@ export class HttpServer {
 
     tracker.setSensitivity(rawLevel, repo);
     tracker.flush();
-    // Re-run evaluator so the new (minTicks, maxTicks) take effect immediately.
+    // Re-run evaluator so the new maxTicks takes effect immediately.
     await this.deps.forceTick();
 
     return {

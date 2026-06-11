@@ -204,15 +204,13 @@ export function getConfiguredDefaultBranchName(config: AppConfig, repoPath: stri
     ?? config.defaultBranch;
 }
 
-/** Resolve (minTicks, maxTicks, ignoreIdleTimeout) for evaluator from sensitivity. */
+/** Resolve (maxTicks, ignoreIdleTimeout) for evaluator from sensitivity. */
 export function resolveSensitivityTicks(
   level: SensitivityLevel,
   pollSeconds: number,
-): { minTicks: number; maxTicks: number; ignoreIdleTimeout: boolean } {
-  const t = SENSITIVITY_TIMEOUTS[level];
+): { maxTicks: number; ignoreIdleTimeout: boolean } {
   return {
-    minTicks: t.min * 60 / pollSeconds,
-    maxTicks: t.max * 60 / pollSeconds,
+    maxTicks: SENSITIVITY_TIMEOUTS[level] * 60 / pollSeconds,
     ignoreIdleTimeout: level === SensitivityLevel.AlwaysOn,
   };
 }

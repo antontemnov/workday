@@ -124,16 +124,33 @@ export interface Session {
   pauses: Pause[];
   manualAdjustments: ManualAdjustment[];
   // Commit SHA captured at session open (or copied from a prior session
-  // on the same repo+task today). Evidence is computed each tick as
-  // `git diff baseSha` / `git rev-list baseSha..HEAD` — what a PR would
-  // show. Null until the first poll fills it in.
+  // on the same repo+task today). Only used as the evidence base on repos
+  // where no default branch resolves (fallback mode): evidence is then
+  // `git diff baseSha` / `git rev-list baseSha..HEAD`. Null until the
+  // first poll fills it in.
   baseSha: string | null;
-  // Merge-base against the resolved default branch at session start.
-  // When it advances on a later tick (rebase / pull --rebase / merge from
-  // upstream), updateSessionTick re-anchors baseSha to currentHead so
-  // upstream commits don't inflate evidence. Null when no default branch
-  // could be resolved or before the first poll.
+  // Merge-base against the resolved default branch as of the last tick.
+  // Informational — evidence is computed against the *fresh* merge-base
+  // each tick, so rebases / upstream pulls can't inflate it.
   mergeBaseSha: string | null;
+  // Branch totals (diff vs merge-base) captured at session open, or
+  // inherited from a prior session on the same repo+task today. Evidence
+  // lines/files = current branch totals − this baseline; stable across
+  // rebases because both sides move together. Ratcheted down when totals
+  // drop below it (own work merged upstream / dropped). Null until the
+  // first merge-base tick.
+  evidenceBaseline: EvidenceBaseline | null;
+  // Branch commit count (`rev-list merge-base..HEAD`) seen on the previous
+  // tick. evidence.commits accumulates only positive jumps of this counter,
+  // so squash / drop / amend / rebase never erase already-counted commits.
+  lastBranchCommits: number | null;
+}
+
+// Mutable — ratcheted down in place when branch totals drop below it.
+export interface EvidenceBaseline {
+  linesAdded: number;
+  linesRemoved: number;
+  filesChanged: number;
 }
 
 // ─── Signals ─────────────────────────────────────────────────────────────
@@ -231,15 +248,14 @@ export interface RawGitOutput {
   // Populated only when baseSha is passed to GitClient.fetchRepoState().
   readonly diffSinceBase?: string;
   readonly commitsSinceBase?: string;
-  // Populated only when defaultBranchRef is passed to GitClient.fetchRepoState().
-  // SHA of `git merge-base HEAD <ref>` — the point where feature branch diverges.
-  readonly mergeBase?: string;
 }
 
 /**
- * Evidence snapshot vs baseSha — what a PR/MR diff would show.
- * Computed each tick from `git diff <baseSha> --numstat` and
- * `git rev-list <baseSha>..HEAD --count`. Overwrites session.evidence.
+ * Branch totals vs an evidence base — what a PR/MR diff would show.
+ * Computed each tick from `git diff <base> --numstat` and
+ * `git rev-list <base>..HEAD --count`. The base is the fresh merge-base
+ * with the default branch (preferred, rebase-stable) or the session's
+ * sticky baseSha (fallback) — see PollResult.evidenceBasis.
  */
 export interface EvidenceSnapshot {
   readonly commits: number;
@@ -247,6 +263,11 @@ export interface EvidenceSnapshot {
   readonly linesRemoved: number;
   readonly filesChanged: number;
 }
+
+// How the evidence snapshot was computed: vs the fresh merge-base with the
+// default branch (rebase-stable branch totals), or vs the sticky session
+// baseSha (fallback when no default branch resolves).
+export type EvidenceBasis = 'merge_base' | 'base_sha';
 
 export interface PollResult {
   readonly repoPath: string;
@@ -256,12 +277,13 @@ export interface PollResult {
   readonly delta: GitDelta;
   readonly newReflogEntries: ReflogEntry[];
   readonly currentHead: string;
-  // null when baseSha for this repo wasn't known at poll time — first tick
-  // after openSession resets it via SessionTracker.captureBaseSha().
+  // null when no evidence base was available at poll time (no merge-base
+  // resolved AND no session baseSha known yet).
   readonly evidenceSnapshot: EvidenceSnapshot | null;
-  // Merge-base against the resolved default branch. SessionTracker uses this
-  // to "advance" session.baseSha after rebases / upstream pulls so chunks of
-  // master/main don't inflate the evidence counter.
+  // null when evidenceSnapshot is null.
+  readonly evidenceBasis: EvidenceBasis | null;
+  // Fresh `merge-base(HEAD, default branch)` for this tick. Null when no
+  // default branch resolves.
   readonly mergeBaseSha: string | null;
 }
 
@@ -486,7 +508,6 @@ export interface ActivitySignals {
 export interface TickInput {
   readonly sessionId: string;
   readonly signals: ActivitySignals;
-  readonly minTicks: number;
   readonly maxTicks: number;
   readonly ignoreIdleTimeout: boolean;
 }

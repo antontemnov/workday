@@ -21,16 +21,14 @@ export class GitClient {
    * Execute batched git command for a single repo.
    * Always: branch name, current HEAD SHA, working-tree diff, untracked status, reflog.
    * When baseSha is provided: also a diff and commit count vs that base — used
-   * for PR-equivalent evidence stats on the open session.
-   * When defaultBranchRef is provided: also `merge-base HEAD <ref>` — SessionTracker
-   * advances session.baseSha to this on subsequent ticks so rebases don't inflate
-   * the counter with upstream commits.
+   * for PR-equivalent evidence stats on the open session. The caller passes the
+   * fresh merge-base with the default branch here when available (rebase-stable),
+   * falling back to the session's sticky baseSha.
    * ~80–120ms per repo.
    */
   public async fetchRepoState(
     repoPath: string,
     baseSha?: string,
-    defaultBranchRef?: string,
   ): Promise<RawGitOutput> {
     if (!existsSync(repoPath)) {
       throw new Error(`Repo path not found: ${repoPath}`);
@@ -61,18 +59,11 @@ export class GitClient {
       );
     }
 
-    if (defaultBranchRef) {
-      parts.push(
-        `echo ${GIT_BATCH_SEPARATOR}`,
-        `git -C "${repoPath}" merge-base HEAD ${defaultBranchRef}`,
-      );
-    }
-
     const cmd = parts.join(' && ');
 
     try {
       const { stdout } = await execAsync(cmd, { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true });
-      return GitClient.parseSections(stdout, baseSha !== undefined, defaultBranchRef !== undefined);
+      return GitClient.parseSections(stdout, baseSha !== undefined);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -82,13 +73,32 @@ export class GitClient {
       }
 
       // baseSha can become invalid after a hard reset / force-push — fall back
-      // to a baseless fetch (but keep defaultBranchRef so SessionTracker can
-      // recapture from merge-base on the next tick).
+      // to a baseless fetch; the next tick recaptures a base.
       if (baseSha && (message.includes('unknown revision') || message.includes('bad revision'))) {
-        return this.fetchRepoState(repoPath, undefined, defaultBranchRef);
+        return this.fetchRepoState(repoPath, undefined);
       }
 
       throw new Error(`Git command failed for ${repoPath}: ${message}`);
+    }
+  }
+
+  /**
+   * `git merge-base HEAD <ref>` — the point where the current branch diverges
+   * from the default branch. Null when histories are unrelated, the ref is
+   * gone, or git is busy. Resolved fresh every tick so evidence diffs never
+   * run against a stale merge-base (the staleness was exactly what inflated
+   * line counts after rebases).
+   */
+  public async getMergeBase(repoPath: string, ref: string): Promise<string | null> {
+    try {
+      const { stdout } = await execAsync(`git -C "${repoPath}" merge-base HEAD ${ref}`, {
+        maxBuffer: GIT_MAX_BUFFER_BYTES,
+        windowsHide: true,
+      });
+      const sha = stdout.trim();
+      return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+    } catch {
+      return null;
     }
   }
 
@@ -125,7 +135,7 @@ export class GitClient {
     }
   }
 
-  private static parseSections(raw: string, withBase: boolean, withMergeBase: boolean): RawGitOutput {
+  private static parseSections(raw: string, withBase: boolean): RawGitOutput {
     const normalized = raw.replace(/\r\n/g, '\n');
     // Windows echo may add trailing space: "---WORKDAY-SEP--- \n"
     const sections = normalized.split(new RegExp(GIT_BATCH_SEPARATOR + '\\s*\\n'));
@@ -133,7 +143,6 @@ export class GitClient {
     let idx = 5; // fixed: branch, head, diff, status, reflog
     const diffSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
     const commitsSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
-    const mergeBase = withMergeBase ? (sections[idx++] ?? '').trim() : undefined;
 
     return {
       branch: (sections[0] ?? '').trim(),
@@ -143,7 +152,6 @@ export class GitClient {
       reflog: (sections[4] ?? '').trim(),
       diffSinceBase,
       commitsSinceBase,
-      mergeBase: mergeBase && /^[0-9a-f]{40}$/.test(mergeBase) ? mergeBase : undefined,
     };
   }
 }

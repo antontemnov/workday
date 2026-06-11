@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
-import type { AppConfig, DailyLog, Session, PollResult, TickInput, EvaluatorResult, ActivitySignals } from './types.js';
+import type { AppConfig, DailyLog, Session, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot } from './types.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -65,6 +65,8 @@ export class SessionTracker {
       if (session.evidence.filesChanged === undefined) session.evidence.filesChanged = 0;
       if (session.baseSha === undefined) session.baseSha = null;
       if (session.mergeBaseSha === undefined) session.mergeBaseSha = null;
+      if (session.evidenceBaseline === undefined) session.evidenceBaseline = null;
+      if (session.lastBranchCommits === undefined) session.lastBranchCommits = null;
     }
   }
 
@@ -318,12 +320,11 @@ export class SessionTracker {
         : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
 
       const level = getSensitivityForRepo(this.config, session.repo);
-      const { minTicks, maxTicks, ignoreIdleTimeout } = resolveSensitivityTicks(level, pollSeconds);
+      const { maxTicks, ignoreIdleTimeout } = resolveSensitivityTicks(level, pollSeconds);
 
       ticks.push({
         sessionId: session.id,
         signals,
-        minTicks,
         maxTicks,
         ignoreIdleTimeout,
       });
@@ -448,6 +449,11 @@ export class SessionTracker {
   }
 
   private openSession(repo: string, task: string | null, branch: string, now: string): Session {
+    // Continued work on the same repo+task today inherits the evidence
+    // baseline and counters, so the day's numbers keep accumulating across
+    // close/reopen. If no prior session is found, the first poll captures
+    // a fresh baseline — see updateSessionTick.
+    const prior = this.findPriorTaskSession(repo, task);
     const session: Session = {
       id: generateSessionId(),
       repo,
@@ -461,24 +467,25 @@ export class SessionTracker {
       evidence: createEmptyEvidence(),
       pauses: [],
       manualAdjustments: [],
-      // Continued work on the same repo+task today should keep the PR-equivalent
-      // baseline. If no prior session is found, the first poll will fill it from
-      // currentHead — see updateSessionTick.
-      baseSha: this.findPriorBaseSha(repo, task),
-      // Filled on the first poll from result.mergeBaseSha; advancement on a
-      // later tick triggers a re-anchor (see updateSessionTick).
+      baseSha: prior?.baseSha ?? null,
       mergeBaseSha: null,
+      evidenceBaseline: prior?.evidenceBaseline ? { ...prior.evidenceBaseline } : null,
+      lastBranchCommits: prior?.lastBranchCommits ?? null,
     };
+    if (prior) {
+      // Commit accumulator continues from where the prior session stopped.
+      session.evidence.commits = prior.evidence.commits;
+    }
     this.dailyLog.sessions.push(session);
     return session;
   }
 
-  /** Most-recent baseSha among today's sessions on the same (repo, task). */
-  private findPriorBaseSha(repo: string, task: string | null): string | null {
+  /** Most-recent session today on the same (repo, task) with a captured evidence base. */
+  private findPriorTaskSession(repo: string, task: string | null): Session | null {
     if (!task) return null;
     for (let i = this.dailyLog.sessions.length - 1; i >= 0; i--) {
       const s = this.dailyLog.sessions[i];
-      if (s.repo === repo && s.task === task && s.baseSha) return s.baseSha;
+      if (s.repo === repo && s.task === task && (s.baseSha || s.evidenceBaseline)) return s;
     }
     return null;
   }
@@ -532,41 +539,37 @@ export class SessionTracker {
   /**
    * Apply one poll tick.
    *
-   * First tick: anchor baseSha at currentHead — evidence measures what changed
-   * inside this session, not the whole feature branch vs master. For continued
-   * work on the same task today, findPriorBaseSha already carried the original
-   * anchor over, so we don't overwrite it here. mergeBaseSha is captured for
-   * advance detection on later ticks.
+   * Merge-base mode (default branch resolved): evidenceSnapshot holds branch
+   * totals vs the *fresh* merge-base — rebase-stable by construction. Lines
+   * and files are the delta vs the baseline captured at session open; commits
+   * accumulate only positive jumps of the branch commit count, so squash /
+   * drop / amend / rebase never erase already-counted work. No re-anchoring,
+   * no zeroing.
    *
-   * Re-anchor on rebase/upstream merge: when the default-branch merge-base
-   * advances or a rebase reflog entry appears, baseSha is reset to currentHead
-   * so the inrush of upstream commits isn't counted as today's work. Note:
-   * evidenceSnapshot for this tick was computed against the stale baseSha and
-   * is intentionally discarded.
-   *
-   * Subsequent ticks: overwrite evidence from the snapshot.
-   *
-   * Bad-revision fallback (baseSha became unreachable after force-push /
-   * hard reset / rebase that dropped the anchor commit): snapshot is null
-   * even though baseSha was passed. Zero evidence and re-anchor at currentHead
-   * so the next tick starts fresh from here.
+   * Fallback mode (no default branch): sticky baseSha anchored at session
+   * start, evidence overwritten from the snapshot each tick, re-anchor +
+   * zero on rebase reflog entries or when baseSha becomes unreachable
+   * (force-push / hard reset) — the pre-merge-base behavior.
    */
   private updateSessionTick(session: Session, result: PollResult, now: string): void {
     session.lastSeenAt = now;
 
-    if (session.baseSha === null) {
-      session.baseSha = result.currentHead;
-      session.mergeBaseSha = result.mergeBaseSha;
+    if (result.evidenceBasis === 'merge_base' && result.evidenceSnapshot !== null) {
+      this.applyMergeBaseEvidence(session, result.evidenceSnapshot, result);
       return;
     }
 
-    if (this.shouldReAnchor(session, result)) {
+    if (session.baseSha === null) {
       session.baseSha = result.currentHead;
-      session.mergeBaseSha = result.mergeBaseSha;
+      return;
+    }
+
+    if (result.newReflogEntries.some(e => e.type === 'rebase')) {
+      // Rebase without a resolvable merge-base — the stale anchor would count
+      // upstream commits as today's work. Re-anchor and start over.
+      session.baseSha = result.currentHead;
+      this.zeroLineEvidence(session);
       session.evidence.commits = 0;
-      session.evidence.linesAdded = 0;
-      session.evidence.linesRemoved = 0;
-      session.evidence.filesChanged = 0;
       return;
     }
 
@@ -579,32 +582,53 @@ export class SessionTracker {
     }
 
     // baseSha invalidated — zero out and re-anchor at HEAD.
+    this.zeroLineEvidence(session);
     session.evidence.commits = 0;
-    session.evidence.linesAdded = 0;
-    session.evidence.linesRemoved = 0;
-    session.evidence.filesChanged = 0;
     session.baseSha = result.currentHead;
-    session.mergeBaseSha = result.mergeBaseSha;
   }
 
   /**
-   * True when this tick should re-anchor baseSha to currentHead.
-   * Two triggers:
-   * - Merge-base advanced — develop got pulled into the branch (rebase,
-   *   pull --rebase, merge from upstream). Authoritative snapshot test.
-   * - New rebase reflog entry — backup signal for cases where merge-base
-   *   isn't resolved (no default branch configured / detected). Captures
-   *   `rebase (start|pick|finish)` entries the parser now classifies.
+   * Merge-base evidence: baseline-delta for lines/files, positive-jump
+   * accumulator for commits.
+   *
+   * The baseline ratchets down when branch totals drop below it (own work
+   * merged upstream, dropped commits) so evidence never goes negative and
+   * subsequent work is counted from the new, lower base.
    */
-  private shouldReAnchor(session: Session, result: PollResult): boolean {
-    const mergeBaseAdvanced =
-      result.mergeBaseSha !== null &&
-      session.mergeBaseSha !== null &&
-      result.mergeBaseSha !== session.mergeBaseSha;
+  private applyMergeBaseEvidence(session: Session, snap: EvidenceSnapshot, result: PollResult): void {
+    let base = session.evidenceBaseline;
+    if (base === null) {
+      base = {
+        linesAdded: snap.linesAdded,
+        linesRemoved: snap.linesRemoved,
+        filesChanged: snap.filesChanged,
+      };
+      session.evidenceBaseline = base;
+    } else {
+      base.linesAdded = Math.min(base.linesAdded, snap.linesAdded);
+      base.linesRemoved = Math.min(base.linesRemoved, snap.linesRemoved);
+      base.filesChanged = Math.min(base.filesChanged, snap.filesChanged);
+    }
+    session.evidence.linesAdded = snap.linesAdded - base.linesAdded;
+    session.evidence.linesRemoved = snap.linesRemoved - base.linesRemoved;
+    session.evidence.filesChanged = snap.filesChanged - base.filesChanged;
 
-    if (mergeBaseAdvanced) return true;
+    if (session.lastBranchCommits !== null && snap.commits > session.lastBranchCommits) {
+      session.evidence.commits += snap.commits - session.lastBranchCommits;
+    }
+    session.lastBranchCommits = snap.commits;
 
-    return result.newReflogEntries.some(e => e.type === 'rebase');
+    session.mergeBaseSha = result.mergeBaseSha;
+    // Sticky anchor kept for ticks where merge-base resolution fails.
+    if (session.baseSha === null) {
+      session.baseSha = result.currentHead;
+    }
+  }
+
+  private zeroLineEvidence(session: Session): void {
+    session.evidence.linesAdded = 0;
+    session.evidence.linesRemoved = 0;
+    session.evidence.filesChanged = 0;
   }
 
   // ─── Private: signals ──────────────────────────────────────────────────

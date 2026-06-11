@@ -7,6 +7,7 @@ import type {
   ReflogEntry,
   RepoTracker,
   EvidenceSnapshot,
+  EvidenceBasis,
 } from '../core/types.js';
 import { RepoState } from '../core/types.js';
 import { extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
@@ -106,11 +107,16 @@ export class GitTracker {
   private async pollRepo(repoPath: string, baseSha: string | null): Promise<PollResult | null> {
     const now = Date.now();
     const defaultBranchRef = await this.resolveDefaultBranchRef(repoPath);
-    const raw = await this.gitClient.fetchRepoState(
-      repoPath,
-      baseSha ?? undefined,
-      defaultBranchRef ?? undefined,
-    );
+
+    // Evidence base: fresh merge-base with the default branch (rebase-stable
+    // branch totals — resolved every tick on purpose), falling back to the
+    // session's sticky baseSha when no default branch is available.
+    const mergeBaseSha = defaultBranchRef
+      ? await this.gitClient.getMergeBase(repoPath, defaultBranchRef)
+      : null;
+    const evidenceBase = mergeBaseSha ?? baseSha ?? undefined;
+
+    const raw = await this.gitClient.fetchRepoState(repoPath, evidenceBase);
 
     // Detached HEAD shows as commit SHA (7-40 hex chars); skip to avoid disrupting sessions
     if (raw.branch === 'HEAD' || /^[0-9a-f]{7,40}$/.test(raw.branch)) {
@@ -149,9 +155,10 @@ export class GitTracker {
     // Determine repo state based on signals
     this.updateRepoState(state, task, delta, newEntries);
 
-    // PR-equivalent evidence snapshot (only when baseSha was supplied AND
-    // git accepted it — fetchRepoState transparently drops it on bad-ref).
+    // PR-equivalent evidence snapshot (only when an evidence base was supplied
+    // AND git accepted it — fetchRepoState transparently drops it on bad-ref).
     let evidenceSnapshot: EvidenceSnapshot | null = null;
+    let evidenceBasis: EvidenceBasis | null = null;
     if (raw.diffSinceBase !== undefined && raw.commitsSinceBase !== undefined) {
       const { added, removed, fileCount } = SnapshotParser.parseDiffNumstatTotals(raw.diffSinceBase);
       const commits = parseInt(raw.commitsSinceBase, 10);
@@ -161,6 +168,7 @@ export class GitTracker {
         linesRemoved: removed,
         filesChanged: fileCount,
       };
+      evidenceBasis = mergeBaseSha !== null ? 'merge_base' : 'base_sha';
     }
 
     return {
@@ -172,7 +180,8 @@ export class GitTracker {
       newReflogEntries: newEntries,
       currentHead: raw.currentHead,
       evidenceSnapshot,
-      mergeBaseSha: raw.mergeBase ?? null,
+      evidenceBasis,
+      mergeBaseSha,
     };
   }
 

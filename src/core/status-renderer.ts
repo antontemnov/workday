@@ -101,6 +101,7 @@ export class StatusRenderer {
           const manualMin = computeManualMinutes(session);
           const manualStr = manualMin > 0 ? ` ${MAGENTA}+ ${manualMin}m manual${RESET}` : '';
           const ema = sessionScore?.ema ?? 0;
+          const normalizedScore = sessionScore?.normalizedScore ?? 0;
 
           // Status badge + dot indicator
           let badge: string;
@@ -125,13 +126,14 @@ export class StatusRenderer {
           const sinceTime = formatTime(new Date(sinceTs).getTime(), this.ctx.timezone);
           lines.push(`${L('Time')}${dur}${manualStr}${''.padEnd(Math.max(0, COL1 - dur.length))}${R('since')}${sinceTime}`);
 
-          // Intensity bar (EMA) with autopause countdown
+          // Stamina bar (normalizedScore — same value as the tray app) with
+          // activity frequency (EMA) and autopause countdown alongside.
           const rawScore = sessionScore?.score ?? 0;
           const showAutopause = !isPaused && session.state === 'active' && rawScore > 0;
           const autoPauseStr = showAutopause
             ? `   ${DIM}auto-pause${RESET} ${formatDuration(rawScore * this.ctx.pollSeconds * 1000)}`
             : '';
-          lines.push(`${L('Stamina')}${renderBar(ema, BAR_WIDTH)}${autoPauseStr}`);
+          lines.push(`${L('Stamina')}${renderBar(normalizedScore, BAR_WIDTH)} ${DIM}freq ${ema.toFixed(2)}${RESET}${autoPauseStr}`);
 
           // Evidence: GitHub-style stats
           const ev = session.evidence;

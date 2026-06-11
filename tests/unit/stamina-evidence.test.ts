@@ -1,0 +1,367 @@
+/**
+ * Unit tests for the stamina (ActivityEvaluator) scoring model and the
+ * merge-base + baseline-delta evidence tracking in SessionTracker.
+ *
+ * Run: npx tsx tests/unit/stamina-evidence.test.ts
+ *
+ * Pure in-memory — no git repos, no daemon, no disk writes (flush is never
+ * called on the SessionTracker).
+ */
+import assert from 'node:assert/strict';
+import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
+import { SessionTracker } from '../../src/core/session-tracker.js';
+import type {
+  AppConfig,
+  PollResult,
+  EvidenceSnapshot,
+  SessionScore,
+  ReflogEntry,
+} from '../../src/core/types.js';
+
+const POLL_SECONDS = 30;
+// Normal sensitivity at 30s ticks: ceiling 45 min, touch floor = 90/6 = 15 ticks (7.5 min)
+const MAX_TICKS = 90;
+
+let passed = 0;
+let failed = 0;
+
+function test(name: string, fn: () => void): void {
+  try {
+    fn();
+    passed++;
+    console.log(`  PASS ${name}`);
+  } catch (err) {
+    failed++;
+    console.error(`  FAIL ${name}`);
+    console.error(`       ${(err as Error).message}`);
+  }
+}
+
+// ─── Evaluator helpers ───────────────────────────────────────────────────
+
+interface TickSpec {
+  dyn?: boolean;
+  commit?: boolean;
+  lines?: number;
+}
+
+function runTicks(evaluator: ActivityEvaluator, id: string, specs: readonly TickSpec[]): SessionScore {
+  let last: SessionScore | undefined;
+  for (const spec of specs) {
+    const result = evaluator.processAllTicks([{
+      sessionId: id,
+      signals: {
+        hasDynamics: spec.dyn ?? false,
+        hasCommit: spec.commit ?? false,
+        deltaMagnitude: spec.lines ?? 0,
+      },
+      maxTicks: MAX_TICKS,
+      ignoreIdleTimeout: false,
+    }]);
+    last = result.scores.get(id);
+  }
+  return last!;
+}
+
+function repeat(spec: TickSpec, n: number): TickSpec[] {
+  return Array.from({ length: n }, () => ({ ...spec }));
+}
+
+// ─── Stamina scoring ─────────────────────────────────────────────────────
+
+console.log('Stamina (ActivityEvaluator)');
+
+test('single 1-line touch lands near the floor, not half the bar', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  const s = runTicks(ev, 'a', [{ dyn: true, lines: 1 }]);
+  // floor 15 + tiny frequency/volume gains − decay ≈ 14.3 of 90
+  assert.ok(s.normalizedScore > 0.1 && s.normalizedScore < 0.2,
+    `normalized = ${s.normalizedScore.toFixed(3)}, expected ~0.16`);
+});
+
+test('floor guarantees a multi-minute leash after one touch (no 1-line = 1-minute noise)', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  let s = runTicks(ev, 'a', [{ dyn: true, lines: 1 }]);
+  let idleTicks = 0;
+  while (!s.isIdleTimeout && idleTicks < 100) {
+    s = runTicks(ev, 'a', [{}]);
+    idleTicks++;
+  }
+  // floor = 0.5 × 30 ticks → ~14 idle ticks ≈ 7 min before auto-pause
+  assert.ok(idleTicks >= 12 && idleTicks <= 17, `idle ticks to pause = ${idleTicks}, expected ~14`);
+});
+
+test('two bulk-paste ticks no longer saturate the bar (old algorithm hit 100%)', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  const s = runTicks(ev, 'a', repeat({ dyn: true, lines: 1000 }, 2));
+  assert.ok(s.normalizedScore < 0.3, `normalized = ${s.normalizedScore.toFixed(3)}, expected < 0.3`);
+});
+
+test('sporadic light edits hover at the floor and never climb', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  // 1-line touch every 6th tick for 60 ticks
+  const specs: TickSpec[] = [];
+  for (let i = 0; i < 60; i++) {
+    specs.push(i % 6 === 0 ? { dyn: true, lines: 1 } : {});
+  }
+  const s = runTicks(ev, 'a', specs);
+  assert.ok(s.normalizedScore < 0.25, `normalized = ${s.normalizedScore.toFixed(3)}, expected < 0.25`);
+  assert.ok(s.score > 0, 'must not idle-timeout while touches keep arriving');
+});
+
+test('relentless every-tick stream of small edits saturates, but only after ~40 min', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  const at20 = runTicks(ev, 'a', repeat({ dyn: true, lines: 2 }, 20));
+  assert.ok(at20.normalizedScore < 0.5, `at 10 min: ${at20.normalizedScore.toFixed(3)}, expected < 0.5`);
+  const at80 = runTicks(ev, 'a', repeat({ dyn: true, lines: 2 }, 60));
+  assert.ok(at80.normalizedScore >= 0.9, `at 40 min: ${at80.normalizedScore.toFixed(3)}, expected >= 0.9`);
+});
+
+test('high volume (15 lines/tick) fills the bar in ~15 min, not instantly', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  const at15 = runTicks(ev, 'a', repeat({ dyn: true, lines: 15 }, 15));
+  assert.ok(at15.normalizedScore < 0.8, `at 7.5 min: ${at15.normalizedScore.toFixed(3)}, expected < 0.8`);
+  const at30 = runTicks(ev, 'a', repeat({ dyn: true, lines: 15 }, 15));
+  assert.ok(at30.normalizedScore >= 0.95, `at 15 min: ${at30.normalizedScore.toFixed(3)}, expected >= 0.95`);
+});
+
+test('commit adds its bonus on top of the floor', () => {
+  const evCommit = new ActivityEvaluator(POLL_SECONDS);
+  const withCommit = runTicks(evCommit, 'a', [{ dyn: true, commit: true, lines: 1 }]);
+  const evPlain = new ActivityEvaluator(POLL_SECONDS);
+  const plain = runTicks(evPlain, 'a', [{ dyn: true, lines: 1 }]);
+  const bonusTicks = 150 / POLL_SECONDS;
+  assert.ok(Math.abs((withCommit.score - plain.score) - bonusTicks) < 0.001,
+    `commit bonus = ${(withCommit.score - plain.score).toFixed(2)}, expected ${bonusTicks}`);
+});
+
+test('score is capped at maxTicks regardless of intensity', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  const s = runTicks(ev, 'a', repeat({ dyn: true, commit: true, lines: 10000 }, 200));
+  assert.ok(s.score <= MAX_TICKS, `score = ${s.score}, expected <= ${MAX_TICKS}`);
+  assert.ok(s.normalizedScore <= 1, `normalized = ${s.normalizedScore}`);
+});
+
+// ─── Leadership (attention EMA) ──────────────────────────────────────────
+
+console.log('\nLeadership (attention EMA with takeover hysteresis)');
+
+function tickPair(
+  ev: ActivityEvaluator,
+  aSpec: TickSpec,
+  bSpec: TickSpec,
+): string | null {
+  const result = ev.processAllTicks([
+    {
+      sessionId: 'A',
+      signals: { hasDynamics: aSpec.dyn ?? false, hasCommit: aSpec.commit ?? false, deltaMagnitude: aSpec.lines ?? 0 },
+      maxTicks: MAX_TICKS, ignoreIdleTimeout: false,
+    },
+    {
+      sessionId: 'B',
+      signals: { hasDynamics: bSpec.dyn ?? false, hasCommit: bSpec.commit ?? false, deltaMagnitude: bSpec.lines ?? 0 },
+      maxTicks: MAX_TICKS, ignoreIdleTimeout: false,
+    },
+  ]);
+  return result.leaderId;
+}
+
+test('a single stray touch in another repo never steals leadership', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  // A works for 10 ticks, B silent
+  for (let i = 0; i < 10; i++) tickPair(ev, { dyn: true, lines: 5 }, {});
+  // stray save in B while A keeps working
+  assert.equal(tickPair(ev, { dyn: true, lines: 5 }, { dyn: true, lines: 1 }), 'A');
+  // stray save in B while A pauses to think for 3 ticks
+  tickPair(ev, {}, {});
+  tickPair(ev, {}, {});
+  assert.equal(tickPair(ev, {}, { dyn: true, lines: 1 }), 'A');
+});
+
+test('a real switch hands leadership over within ~5 ticks (2.5 min)', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  // A works long enough to fill the bar substantially
+  for (let i = 0; i < 40; i++) tickPair(ev, { dyn: true, lines: 15 }, {});
+  // developer fully switches to B
+  let switchedAt = -1;
+  for (let i = 1; i <= 10; i++) {
+    if (tickPair(ev, {}, { dyn: true, lines: 5 }) === 'B') { switchedAt = i; break; }
+  }
+  assert.ok(switchedAt > 1 && switchedAt <= 5, `leadership switched at tick ${switchedAt}, expected 2..5`);
+});
+
+test('leader keeps the lead while both repos are idle', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  for (let i = 0; i < 10; i++) tickPair(ev, { dyn: true, lines: 5 }, {});
+  tickPair(ev, {}, { dyn: true, lines: 1 }); // stray B touch
+  for (let i = 0; i < 8; i++) {
+    assert.equal(tickPair(ev, {}, {}), 'A', `leader flapped on idle tick ${i}`);
+  }
+});
+
+// ─── Evidence tracking ───────────────────────────────────────────────────
+
+console.log('\nEvidence (SessionTracker, merge-base + baseline-delta)');
+
+const config = {
+  repos: ['/tmp/repoA'],
+  schedule: { start: 10, end: 4 },
+  timezone: 'UTC',
+  taskPattern: 'ATL-\\d+',
+  genericBranches: [],
+  session: {
+    diffPollSeconds: POLL_SECONDS,
+    signalDeduplicationSeconds: 300,
+    dayBoundaryCheckSeconds: 60,
+    reflogCount: 20,
+  },
+  report: { roundingMinutes: 15 },
+  workDays: [1, 2, 3, 4, 5, 6, 7],
+  holidays: [],
+  sensitivity: { default: 'normal', perRepo: {} },
+} as unknown as AppConfig;
+
+interface PollSpec {
+  task?: string | null;
+  snap?: EvidenceSnapshot | null;
+  basis?: 'merge_base' | 'base_sha' | null;
+  mergeBase?: string | null;
+  head?: string;
+  reflog?: ReflogEntry[];
+}
+
+function poll(spec: PollSpec): PollResult {
+  return {
+    repoPath: '/tmp/repoA',
+    branch: 'feature/dev/ATL-1',
+    task: spec.task === undefined ? 'ATL-1' : spec.task,
+    snapshot: {
+      branch: 'feature/dev/ATL-1',
+      trackedLines: { added: 0, removed: 0 },
+      trackedFileCount: 0,
+      untrackedCount: 0,
+      timestamp: Date.now(),
+    },
+    delta: { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false },
+    newReflogEntries: spec.reflog ?? [],
+    currentHead: spec.head ?? 'head1',
+    evidenceSnapshot: spec.snap ?? null,
+    evidenceBasis: spec.snap ? (spec.basis ?? 'merge_base') : null,
+    mergeBaseSha: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
+  };
+}
+
+function snap(commits: number, added: number, removed: number, files: number): EvidenceSnapshot {
+  return { commits, linesAdded: added, linesRemoved: removed, filesChanged: files };
+}
+
+function openEvidence(tracker: SessionTracker) {
+  const session = tracker.getOpenSessions()[0];
+  assert.ok(session, 'expected an open session');
+  return session.evidence;
+}
+
+test('first tick anchors the baseline — pre-existing branch totals are not counted', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  const ev = openEvidence(tracker);
+  assert.deepEqual(
+    [ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged],
+    [0, 0, 0, 0],
+    `evidence = ${JSON.stringify(ev)}`,
+  );
+});
+
+test('work grows evidence as branch totals move past the baseline', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
+  const ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [2, 50, 10, 2]);
+});
+
+test('rebase: merge-base advances, totals stay — evidence survives intact', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
+  // rebase onto newer master: new merge-base, rewritten commits, same branch diff
+  tracker.processPollResult(poll({
+    snap: snap(5, 150, 20, 7),
+    mergeBase: 'mb2',
+    head: 'head-rebased',
+    reflog: [{ ts: Date.now(), type: 'rebase', message: 'rebase (finish)' }],
+  }));
+  const ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [2, 50, 10, 2],
+    `evidence after rebase = ${JSON.stringify(ev)}`);
+});
+
+test('squash in Rider: commit count drop is ignored, next commit counts again', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) })); // commits evidence = 2
+  tracker.processPollResult(poll({ snap: snap(1, 150, 20, 7) })); // squash 5 → 1
+  assert.equal(openEvidence(tracker).commits, 2, 'squash must not erase counted commits');
+  tracker.processPollResult(poll({ snap: snap(2, 160, 20, 7) })); // one new commit
+  assert.equal(openEvidence(tracker).commits, 3, 'commits after squash must keep counting');
+});
+
+test('own work merged upstream: baseline ratchets down, counters restart from zero', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
+  // PR squash-merged into master; rebase leaves only fresh work on the branch
+  tracker.processPollResult(poll({ snap: snap(0, 20, 5, 3), mergeBase: 'mb3' }));
+  const ev = openEvidence(tracker);
+  assert.deepEqual([ev.linesAdded, ev.linesRemoved, ev.filesChanged], [0, 0, 0]);
+  assert.equal(ev.commits, 2, 'already-counted commits stay');
+  // new work counts from the lowered baseline
+  tracker.processPollResult(poll({ snap: snap(1, 50, 5, 4), mergeBase: 'mb3' }));
+  assert.equal(openEvidence(tracker).linesAdded, 30);
+  assert.equal(openEvidence(tracker).commits, 3);
+});
+
+test('amend does not double-count (branch commit count unchanged)', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(0, 0, 0, 0) }));
+  tracker.processPollResult(poll({ snap: snap(1, 30, 0, 2) }));
+  assert.equal(openEvidence(tracker).commits, 1);
+  tracker.processPollResult(poll({ snap: snap(1, 35, 0, 2), head: 'head-amended' }));
+  assert.equal(openEvidence(tracker).commits, 1, 'amend rewrites the tip, count stays 1');
+});
+
+test('reopening the same task later today inherits baseline and counters', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) })); // commits 2, +50
+  tracker.processPollResult(poll({ task: null, snap: null }));    // checkout away → close
+  assert.equal(tracker.getOpenSessions().length, 0);
+  tracker.processPollResult(poll({ snap: snap(6, 160, 25, 8) })); // back on the task
+  const ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [3, 60, 15, 3],
+    `evidence after reopen = ${JSON.stringify(ev)}`);
+});
+
+test('fallback mode (no default branch): snapshot applied as-is, rebase re-anchors and zeroes', () => {
+  const tracker = new SessionTracker(config);
+  // first tick: anchor baseSha, snapshot not yet available
+  tracker.processPollResult(poll({ snap: null, basis: null, mergeBase: null }));
+  tracker.processPollResult(poll({ snap: snap(2, 40, 5, 2), basis: 'base_sha', mergeBase: null }));
+  let ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded], [2, 40]);
+  tracker.processPollResult(poll({
+    snap: snap(9, 400, 50, 20), // stale anchor counts upstream churn after rebase…
+    basis: 'base_sha',
+    mergeBase: null,
+    head: 'head-rebased',
+    reflog: [{ ts: Date.now(), type: 'rebase', message: 'rebase (finish)' }],
+  }));
+  ev = openEvidence(tracker);
+  // …so the legacy path re-anchors and zeroes instead of showing unreal numbers
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [0, 0, 0, 0]);
+});
+
+// ─── Summary ─────────────────────────────────────────────────────────────
+
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed > 0 ? 1 : 0);

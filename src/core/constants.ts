@@ -49,24 +49,43 @@ export const MS_PER_MINUTE = 60_000;
 // ─── Activity Evaluator algorithm constants ─────────────────────────────
 /** Smoothing window for activity frequency */
 export const EMA_WINDOW_MINUTES = 10;
-/** Fraction of max score awarded per active tick */
-export const ACTIVITY_RATIO = 0.5;
-/** log2 divisor; ~128 changed lines = full bonus */
-export const MAGNITUDE_SCALE = 7;
-/** Max extra multiplier on dynamics contribution */
-export const MAGNITUDE_BONUS_MAX = 0.5;
+/**
+ * Smoothing window for the attention EMA that drives cross-repo leadership.
+ * Short on purpose: leadership must follow the developer within ~2 minutes
+ * of switching repos, independent of how full the stamina bars are.
+ */
+export const ATTENTION_WINDOW_MINUTES = 2;
+/**
+ * Touch floor: any active tick lifts score to at least this fraction of the
+ * sensitivity max timeout (Low: 2.5 min, Normal: 7.5 min, Patient: 15 min).
+ * Guards against pause noise from single keystrokes without jumping the bar.
+ */
+export const STAMINA_FLOOR_RATIO = 1 / 6;
+/** Score per active tick at full activity frequency (EMA = 1) */
+export const FREQUENCY_GAIN_MAX = 2;
+/**
+ * Lines changed per minute worth +1 score per tick (5 lines per 30s tick).
+ * Converted to a per-tick divisor at evaluator construction so the
+ * lines-per-minute intensity needed to fill the bar doesn't depend on
+ * diffPollSeconds.
+ */
+export const STAMINA_LINES_PER_MINUTE = 10;
+/** Cap on the volume contribution per tick (reached at 20 changed lines at 30s ticks) */
+export const VOLUME_GAIN_MAX = 4;
 /** "Free" score on commit (in seconds, converted to ticks) */
 export const COMMIT_BONUS_SECONDS = 150;
 /** Constant per-tick score drain */
 export const BASE_DECAY = 1;
 
-// ─── Sensitivity → (min, max) timeout in minutes ─────────────────────────
-// AlwaysOn uses Normal numbers but isIdleTimeout is ignored at apply stage.
+// ─── Sensitivity → max timeout (stamina ceiling) in minutes ──────────────
+// The single knob per level: the score ceiling. The touch floor is derived
+// from it via STAMINA_FLOOR_RATIO — no separate min constant.
+// AlwaysOn uses the Normal number but isIdleTimeout is ignored at apply stage.
 export const SENSITIVITY_TIMEOUTS = {
-  low:       { min: 10, max: 15 },
-  normal:    { min: 15, max: 45 },
-  patient:   { min: 30, max: 90 },
-  always_on: { min: 15, max: 45 },
+  low:       15,
+  normal:    45,
+  patient:   90,
+  always_on: 45,
 } as const;
 
 export const DEFAULT_SENSITIVITY = 'normal';

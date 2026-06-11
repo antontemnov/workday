@@ -41,9 +41,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
   readonly sensitivityPills: readonly SensitivityPillOption[] = [
     { key: 'pause',                       label: 'Pause',     title: 'Pause this session' },
-    { key: SensitivityLevel.Low,          label: 'Low',       title: 'Short timeout — pauses quickly (10–15 min)' },
-    { key: SensitivityLevel.Normal,       label: 'Normal',    title: 'Default behaviour (15–45 min)' },
-    { key: SensitivityLevel.Patient,      label: 'Patient',   title: 'Tolerant — long timeout (30–90 min)' },
+    { key: SensitivityLevel.Low,          label: 'Low',       title: 'Short leash — any change buys ~2.5 min, intense work up to 15 min' },
+    { key: SensitivityLevel.Normal,       label: 'Normal',    title: 'Default — any change buys ~7.5 min, intense work up to 45 min' },
+    { key: SensitivityLevel.Patient,      label: 'Patient',   title: 'Tolerant — any change buys ~15 min, intense work up to 90 min' },
     { key: SensitivityLevel.AlwaysOn,     label: 'Always-on', title: 'Never auto-paused by idle timeout' },
   ];
 
