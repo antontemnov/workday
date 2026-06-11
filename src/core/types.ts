@@ -522,5 +522,6 @@ export interface SessionScore {
   readonly maxScore: number;
   readonly normalizedScore: number; // score / maxScore (0..1)
   readonly ema: number;
+  readonly etaTicks: number; // ticks until auto-pause with no further activity
   readonly isIdleTimeout: boolean; // score == 0
 }

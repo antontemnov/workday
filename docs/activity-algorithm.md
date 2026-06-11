@@ -33,6 +33,9 @@ Key design goals:
   and reaching 100% is intentionally hard
 - **No pause noise**: any touch guarantees a multi-minute leash (touch floor),
   never "1 line = 1 minute"
+- **Behavior-change pause detection**: drain is asymmetric — the denser the
+  recent work, the faster the buffer cools after an abrupt stop (full Normal
+  bar fades in ~15 min, not 45)
 - **Cross-repo awareness**: only one repo can hold attention at a time; leadership
   follows a short attention window, independent of how full the bars are
 - **Time-unit independence**: algorithm works correctly regardless of `diffPollSeconds` value
@@ -63,6 +66,7 @@ The repo's **sensitivity** sets a single knob — the max timeout / stamina ceil
 | `EMA_WINDOW_MINUTES` | 10 | min | Frequency EMA smoothing window |
 | `ATTENTION_WINDOW_MINUTES` | 2 | min | Attention EMA window (cross-repo leadership) |
 | `COMMIT_BONUS_SECONDS` | 150 | sec | Extra score from a commit (in timeout equivalent) |
+| `DECAY_BOOST` | 4 | — | Extra drain per idle tick × EMA (asymmetric fade) |
 
 ### Derived constants (tick-based)
 
@@ -166,7 +170,8 @@ if (hasActivity):                          // dynamics or commit
   4. if (hasCommit): score += COMMIT_BONUS
   5. score = min(score, MAX_TICKS)                                    // fixed ceiling
 
-6. score = max(0, score - BASE_DECAY)      // always, BASE_DECAY = 1 per tick
+6. decay = hasActivity ? 1 : 1 + DECAY_BOOST × min(1, intensityEMA)
+   score = max(0, score - decay)           // asymmetric fade, see below
 7. if (score == 0): → AutoPause decision
 ```
 
@@ -202,19 +207,33 @@ within the tick, capped:
 The cap means a bulk paste of a generated file is worth at most +4 — filling
 the bar always requires *sustained* activity, never a single event.
 
+### Asymmetric fade (pause detection)
+
+Filling is slow and earned; draining is **behavior-change detection**. On idle
+ticks the drain is `1 + DECAY_BOOST × EMA`: the denser the recent activity,
+the faster the buffer cools once it stops. An abrupt silence after tick-after-tick
+coding is the strongest pause signal there is — and the EMA itself cools during
+the silence, so the drain relaxes back to 1/tick over ~10 minutes.
+
+| State at stop (Normal) | Time to auto-pause |
+|------------------------|--------------------|
+| Full bar, EMA ≈ 1 (intense streak) | ~15 min |
+| Half bar, EMA ≈ 0.5 (moderate work) | ~10 min |
+| Floor after a single touch, EMA ≈ 0 | ~6.5 min |
+| Patient, full bar, EMA ≈ 1 | ~45 min (lunch is caught) |
+
+Since drain is no longer constant, the auto-pause countdown is reported as
+`etaTicks` (simulated fade), not as the raw score.
+
 ### Time to fill the bar (Normal sensitivity, 30s ticks)
 
 | Work pattern | Bar behavior |
 |--------------|--------------|
-| Single touch | jumps to ~17%, decays, pause ~7.5 min later |
+| Single touch | jumps to ~17%, fades, pause ~6.5 min later |
 | Sporadic 1-line edits every few minutes | hovers at ~17%, never climbs |
 | Update every tick, 1–3 lines | saturates in ~40 min of continuity |
 | Every tick, ~10 lines | saturates in ~15 min |
 | Every tick, 20+ lines (cap) | saturates in ~9 min — still not instant |
-
-Note the flip side: a full bar means a 45-minute leash after the last edit.
-That's the unified-scale semantics — stamina *is* the auto-pause countdown,
-and a full bar is earned only by genuinely intense work.
 
 ---
 
@@ -379,7 +398,7 @@ Each tick:
   1. Update frequency EMA and attention EMA (binary: activity=1, idle=0)
   2. On activity: touch floor, frequency gain, volume gain, commit bonus,
      cap at MAX_TICKS
-  3. Apply decay (BASE_DECAY = 1)
+  3. Apply decay (1 on active ticks; 1 + DECAY_BOOST × EMA on idle ticks)
   4. Pick the leader (attention EMA with takeover hysteresis, §6)
   5. If still leader → continue tracking time
   6. If score == 0 → IdleTimeout pause
@@ -438,8 +457,8 @@ workday resume:
   SessionTracker resumes sending sessions to ActivityEvaluator
   Evaluator continues from frozen state (score, EMA preserved)
   The frozen score serves as a natural grace period:
-    whatever stamina was left at pause time (up to 45 min for a full bar)
-    is the time available to start coding again
+    whatever stamina was left at pause time is the budget to start coding
+    again (the frozen EMA also resumes, so the fade speed is preserved)
   No special resume logic needed in the evaluator
 ```
 
@@ -546,10 +565,11 @@ Phase 1: Working
   Per-tick gain ≈ 2 (frequency) + 2–3 (volume) − 1 (decay) → net +3..4
   Score: from the 15-tick floor to the 90-tick cap in ~20-25 min, then capped
 
-Phase 2: Lunch break starts (bar was full)
-  Decay 1/tick from 90 → score = 0 after 90 ticks
-  AutoPause (IdleTimeout) 45 min after the last edit —
-  a full bar is the maximum leash, earned only by sustained intense work
+Phase 2: Lunch break starts (bar was full, EMA ≈ 1)
+  Asymmetric fade: drain = 1 + 4×EMA ≈ 5/tick at first, relaxing as EMA cools
+  Score 90 → 0 in ~30 ticks
+  AutoPause (IdleTimeout) ~15 min after the last edit —
+  an abrupt stop after dense work is the clearest pause signal
 
 Phase 3: Return from lunch (1 hour later)
   EMA during pause: 1.0 × (1-0.05)^120 ≈ 0.002 (fully decayed)
@@ -756,7 +776,8 @@ Pending sessions are closed by:
 | `STAMINA_LINES_PER_MINUTE` | 10 | 10 lines/min = +1 score per tick; breakeven at 5 lines per 30s tick |
 | `VOLUME_GAIN_MAX` | 4 | Bulk pastes capped — filling the bar requires sustained activity |
 | `COMMIT_BONUS_SECONDS` | 150 | Commit adds ~2.5 min of buffer |
-| `BASE_DECAY` | 1 | Always 1 per tick |
+| `BASE_DECAY` | 1 | Drain on active ticks |
+| `DECAY_BOOST` | 4 | Idle drain = 1 + 4×EMA — dense coders cool down fast (full Normal bar ≈ 15 min) |
 
 ### Contract (TypeScript)
 
@@ -785,6 +806,7 @@ interface SessionScore {
   readonly maxScore: number;         // = maxTicks
   readonly normalizedScore: number;  // score / maxScore (0..1) — the Stamina bar
   readonly ema: number;
+  readonly etaTicks: number;         // ticks to auto-pause (simulated asymmetric fade)
   readonly isIdleTimeout: boolean;   // score == 0
 }
 

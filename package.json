@@ -1,6 +1,6 @@
 {
   "name": "workday-daemon",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Lightweight activity tracker & timesheet tool",
   "type": "module",
   "bin": {
@@ -17,7 +17,7 @@
     "build": "tsc",
     "start": "node dist/daemon.js",
     "cli": "tsx src/cli.ts",
-    "test": "tsx tests/unit/stamina-evidence.test.ts",
+    "test": "tsx tests/unit/stamina-evidence.test.ts && tsx tests/integration/evidence-rebase.test.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

@@ -87,8 +87,69 @@ test('floor guarantees a multi-minute leash after one touch (no 1-line = 1-minut
     s = runTicks(ev, 'a', [{}]);
     idleTicks++;
   }
-  // floor = 0.5 × 30 ticks → ~14 idle ticks ≈ 7 min before auto-pause
-  assert.ok(idleTicks >= 12 && idleTicks <= 17, `idle ticks to pause = ${idleTicks}, expected ~14`);
+  // floor 15 ticks, EMA near zero so decay ≈ 1 → ~13 idle ticks ≈ 6.5 min
+  assert.ok(idleTicks >= 11 && idleTicks <= 16, `idle ticks to pause = ${idleTicks}, expected ~13`);
+});
+
+test('asymmetric decay: a full bar after intense work drains in ~15 min, not 45', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  let s = runTicks(ev, 'a', repeat({ dyn: true, lines: 20 }, 60)); // EMA → 1, bar full
+  assert.ok(s.normalizedScore >= 0.98, `precondition: bar full, got ${s.normalizedScore.toFixed(3)}`);
+  let idleTicks = 0;
+  while (!s.isIdleTimeout && idleTicks < 200) {
+    s = runTicks(ev, 'a', [{}]);
+    idleTicks++;
+  }
+  // decay = 1 + 4×EMA while EMA cools → ~30 ticks ≈ 15 min (plain decay would be 90)
+  assert.ok(idleTicks >= 25 && idleTicks <= 40, `idle ticks to pause = ${idleTicks}, expected ~30`);
+});
+
+test('asymmetric decay: moderate work (mid bar) fades in ~10 min', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  // ~12 min of continuous 10-line ticks → mid bar, EMA ~0.7
+  let s = runTicks(ev, 'a', repeat({ dyn: true, lines: 10 }, 25));
+  assert.ok(s.normalizedScore > 0.4 && s.normalizedScore < 0.8,
+    `precondition: mid bar, got ${s.normalizedScore.toFixed(3)}`);
+  let idleTicks = 0;
+  while (!s.isIdleTimeout && idleTicks < 100) {
+    s = runTicks(ev, 'a', [{}]);
+    idleTicks++;
+  }
+  assert.ok(idleTicks >= 12 && idleTicks <= 28, `idle ticks to pause = ${idleTicks}, expected ~20`);
+});
+
+test('Patient: full bar after intense work still catches a lunch break (~45 min)', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  const patientMax = 180; // 90 min at 30s ticks
+  const tickOnce = (dyn: boolean): SessionScore => ev.processAllTicks([{
+    sessionId: 'p',
+    signals: { hasDynamics: dyn, hasCommit: false, deltaMagnitude: dyn ? 20 : 0 },
+    maxTicks: patientMax,
+    ignoreIdleTimeout: false,
+  }]).scores.get('p')!;
+  let s!: SessionScore;
+  for (let i = 0; i < 120; i++) s = tickOnce(true); // fill the bar, EMA → 1
+  assert.ok(s.score > patientMax * 0.95, `precondition: bar full, got ${s.score}`);
+  let idleTicks = 0;
+  while (!s.isIdleTimeout && idleTicks < 400) {
+    s = tickOnce(false);
+    idleTicks++;
+  }
+  // ~85-100 ticks ≈ 45 min: lunch (60 min) is detected, unlike a fixed 90-min fade
+  assert.ok(idleTicks >= 70 && idleTicks <= 120, `idle ticks to pause = ${idleTicks}, expected ~90`);
+});
+
+test('etaTicks matches the actual ticks-to-pause under asymmetric decay', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  let s = runTicks(ev, 'a', repeat({ dyn: true, lines: 20 }, 60));
+  const predicted = s.etaTicks;
+  let idleTicks = 0;
+  while (!s.isIdleTimeout && idleTicks < 200) {
+    s = runTicks(ev, 'a', [{}]);
+    idleTicks++;
+  }
+  assert.ok(Math.abs(predicted - idleTicks) <= 1,
+    `etaTicks = ${predicted}, actual = ${idleTicks}`);
 });
 
 test('two bulk-paste ticks no longer saturate the bar (old algorithm hit 100%)', () => {
@@ -192,11 +253,38 @@ test('a real switch hands leadership over within ~5 ticks (2.5 min)', () => {
 
 test('leader keeps the lead while both repos are idle', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
-  for (let i = 0; i < 10; i++) tickPair(ev, { dyn: true, lines: 5 }, {});
+  // enough work that A's score survives 9 idle ticks of asymmetric decay
+  for (let i = 0; i < 20; i++) tickPair(ev, { dyn: true, lines: 10 }, {});
   tickPair(ev, {}, { dyn: true, lines: 1 }); // stray B touch
   for (let i = 0; i < 8; i++) {
     assert.equal(tickPair(ev, {}, {}), 'A', `leader flapped on idle tick ${i}`);
   }
+});
+
+test('mixed sensitivities: Patient and Normal compete on equal terms', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  const tickMixed = (aDyn: boolean, bDyn: boolean): string | null => ev.processAllTicks([
+    { sessionId: 'A', signals: { hasDynamics: aDyn, hasCommit: false, deltaMagnitude: aDyn ? 5 : 0 },
+      maxTicks: 180, ignoreIdleTimeout: false }, // Patient
+    { sessionId: 'B', signals: { hasDynamics: bDyn, hasCommit: false, deltaMagnitude: bDyn ? 5 : 0 },
+      maxTicks: MAX_TICKS, ignoreIdleTimeout: false }, // Normal
+  ]).leaderId;
+  // Patient repo works → leads
+  for (let i = 0; i < 10; i++) tickMixed(true, false);
+  assert.equal(tickMixed(true, false), 'A');
+  // genuine switch to the Normal repo → takes over within ~5 ticks despite
+  // Patient's much larger score buffer (attention is sensitivity-agnostic)
+  let switchedAt = -1;
+  for (let i = 1; i <= 10; i++) {
+    if (tickMixed(false, true) === 'B') { switchedAt = i; break; }
+  }
+  assert.ok(switchedAt > 1 && switchedAt <= 5, `switched at tick ${switchedAt}, expected 2..5`);
+  // and back, symmetric
+  let backAt = -1;
+  for (let i = 1; i <= 10; i++) {
+    if (tickMixed(true, false) === 'A') { backAt = i; break; }
+  }
+  assert.ok(backAt > 1 && backAt <= 5, `switched back at tick ${backAt}, expected 2..5`);
 });
 
 // ─── Evidence tracking ───────────────────────────────────────────────────

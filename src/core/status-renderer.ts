@@ -128,10 +128,13 @@ export class StatusRenderer {
 
           // Stamina bar (normalizedScore — same value as the tray app) with
           // activity frequency (EMA) and autopause countdown alongside.
+          // Countdown uses etaTicks: with asymmetric decay the raw score no
+          // longer equals ticks-to-pause.
           const rawScore = sessionScore?.score ?? 0;
+          const etaTicks = sessionScore?.etaTicks ?? 0;
           const showAutopause = !isPaused && session.state === 'active' && rawScore > 0;
           const autoPauseStr = showAutopause
-            ? `   ${DIM}auto-pause${RESET} ${formatDuration(rawScore * this.ctx.pollSeconds * 1000)}`
+            ? `   ${DIM}auto-pause${RESET} ${formatDuration(etaTicks * this.ctx.pollSeconds * 1000)}`
             : '';
           lines.push(`${L('Stamina')}${renderBar(normalizedScore, BAR_WIDTH)} ${DIM}freq ${ema.toFixed(2)}${RESET}${autoPauseStr}`);
 

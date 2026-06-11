@@ -76,6 +76,14 @@ export const VOLUME_GAIN_MAX = 4;
 export const COMMIT_BONUS_SECONDS = 150;
 /** Constant per-tick score drain */
 export const BASE_DECAY = 1;
+/**
+ * Extra drain per idle tick, scaled by the frequency EMA: decay = BASE_DECAY +
+ * DECAY_BOOST × EMA. A dense coder who stops abruptly cools down fast (full
+ * Normal bar → pause in ~15 min instead of 45), while sporadic workers keep
+ * the plain 1/tick fade. Restores the v1 "sudden stop after intense work is
+ * a pause" detection philosophy on top of the v2 fill model.
+ */
+export const DECAY_BOOST = 4;
 
 // ─── Sensitivity → max timeout (stamina ceiling) in minutes ──────────────
 // The single knob per level: the score ceiling. The touch floor is derived

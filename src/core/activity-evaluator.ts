@@ -8,6 +8,7 @@ import {
   VOLUME_GAIN_MAX,
   COMMIT_BONUS_SECONDS,
   BASE_DECAY,
+  DECAY_BOOST,
 } from './constants.js';
 
 interface SessionState {
@@ -54,8 +55,12 @@ export class ActivityEvaluator {
    *    tick-normalized), capped at VOLUME_GAIN_MAX, so a bulk paste can't fill
    *    the bar in one tick.
    * 5. Commit bonus — instant COMMIT_BONUS_SECONDS / diffPollSeconds ticks
-   * 6. Cap score at maxTicks (fixed ceiling), then decay by BASE_DECAY per tick
-   * 7. score == 0 → idle timeout → eligible for auto-pause (unless ignoreIdleTimeout)
+   * 6. Cap score at maxTicks (fixed ceiling)
+   * 7. Decay — BASE_DECAY on active ticks; on idle ticks BASE_DECAY +
+   *    DECAY_BOOST × EMA (asymmetric fade: the denser the recent work, the
+   *    faster the buffer cools once activity stops — a full Normal bar drains
+   *    in ~15 min after an abrupt stop, not 45)
+   * 8. score == 0 → idle timeout → eligible for auto-pause (unless ignoreIdleTimeout)
    *
    * Leadership is driven by a separate short-window attention EMA (~2 min),
    * not by the stamina score — see pickLeader. This keeps repo handover fast
@@ -97,8 +102,11 @@ export class ActivityEvaluator {
         st.score = Math.min(st.score, tick.maxTicks);
       }
 
-      // 7. Decay
-      st.score = Math.max(0, st.score - BASE_DECAY);
+      // 7. Decay — asymmetric: idle ticks after dense work drain faster
+      const decay = hasActivity
+        ? BASE_DECAY
+        : BASE_DECAY + DECAY_BOOST * Math.min(1, st.ema);
+      st.score = Math.max(0, st.score - decay);
 
       // Build result for this session
       const normalizedScore = tick.maxTicks > 0 ? st.score / tick.maxTicks : 0;
@@ -107,6 +115,7 @@ export class ActivityEvaluator {
         maxScore: tick.maxTicks,
         normalizedScore,
         ema: st.ema,
+        etaTicks: this.estimateIdleTicks(st),
         isIdleTimeout: st.score === 0 && !tick.ignoreIdleTimeout,
       });
     }
@@ -148,6 +157,24 @@ export class ActivityEvaluator {
       }
     }
     return best;
+  }
+
+  /**
+   * Ticks until score hits 0 with no further activity. With asymmetric decay
+   * this is no longer score/BASE_DECAY — simulate the fade (EMA cools too,
+   * so the drain slows over time). Bounded by the score itself (decay ≥ 1),
+   * i.e. at most maxTicks iterations.
+   */
+  private estimateIdleTicks(st: SessionState): number {
+    let score = st.score;
+    let ema = st.ema;
+    let ticks = 0;
+    while (score > 0) {
+      ema *= 1 - this.emaAlpha;
+      score -= BASE_DECAY + DECAY_BOOST * Math.min(1, ema);
+      ticks++;
+    }
+    return ticks;
   }
 
   /** Remove session state on close */
