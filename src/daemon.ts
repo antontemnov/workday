@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig } from './core/config.js';
@@ -6,12 +7,18 @@ import { readDailyLog, writeDailyLog, getOpenPause } from './core/daily-log.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
+import { UpdateManager } from './core/update-manager.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { AppConfig, Secrets, ScheduleConfig } from './core/types.js';
+import type { AppConfig, Secrets, ScheduleConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
-import { PID_FILE_NAME, CRASH_RECOVERY_LOOKBACK_DAYS } from './core/constants.js';
+import {
+  PID_FILE_NAME,
+  CRASH_RECOVERY_LOOKBACK_DAYS,
+  UPDATE_CHECK_INTERVAL_HOURS,
+  UPDATE_CHECK_JITTER_MINUTES,
+} from './core/constants.js';
 
 export class Daemon {
   private config!: AppConfig;
@@ -23,6 +30,11 @@ export class Daemon {
   private statusRenderer: StatusRenderer | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private dayBoundaryTimer: ReturnType<typeof setInterval> | null = null;
+  private updateTimer: ReturnType<typeof setTimeout> | null = null;
+  private updateManager: UpdateManager = new UpdateManager();
+  // Version installed on disk and waiting for a quiet window to restart into.
+  private pendingRestartVersion: string | null = null;
+  private updateInFlight: boolean = false;
   private currentDate: string = '';
   private running: boolean = false;
   private foreground: boolean = false;
@@ -78,6 +90,9 @@ export class Daemon {
       applyConfigUpdate: (patch) => this.applyConfigUpdate(patch),
       addRepo: (path) => this.addRepo(path),
       removeRepo: (path) => this.removeRepo(path),
+      getVersion: () => this.updateManager.getCurrentVersion(),
+      checkUpdate: () => this.updateManager.checkForUpdate(),
+      applyUpdate: () => this.applyUpdateNow(),
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();
@@ -102,6 +117,7 @@ export class Daemon {
     this.pollTimer = setInterval(() => void this.pollTick(), pollMs);
     const boundaryMs = this.config.session.dayBoundaryCheckSeconds * 1000;
     this.dayBoundaryTimer = setInterval(() => this.checkDayBoundary(), boundaryMs);
+    this.scheduleUpdateCheck(true);
 
     if (!this.foreground) {
       console.log(`Daemon started (PID ${process.pid})`);
@@ -187,6 +203,7 @@ export class Daemon {
 
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.dayBoundaryTimer) clearInterval(this.dayBoundaryTimer);
+    if (this.updateTimer) clearTimeout(this.updateTimer);
 
     // Final poll to capture last-moment activity before shutdown
     await this.pollTick();
@@ -262,6 +279,111 @@ export class Daemon {
     }
   }
 
+  // ─── Self-update ───────────────────────────────────────────────────────
+  //
+  // Order is sacred: install new version → verify on disk → only then
+  // restart. The daemon never stops itself before the replacement is
+  // confirmed; a failed npm install leaves the old version running.
+
+  private restarting: boolean = false;
+
+  /** First check ~1h after start, then every UPDATE_CHECK_INTERVAL_HOURS. */
+  private scheduleUpdateCheck(initial: boolean): void {
+    const jitterMs = Math.random() * UPDATE_CHECK_JITTER_MINUTES * 60_000;
+    const baseMs = (initial ? 1 : UPDATE_CHECK_INTERVAL_HOURS) * 3_600_000;
+    this.updateTimer = setTimeout(() => void this.runScheduledUpdateCheck(), baseMs + jitterMs);
+  }
+
+  private async runScheduledUpdateCheck(): Promise<void> {
+    try {
+      if (this.pendingRestartVersion === null && !this.updateInFlight) {
+        this.updateInFlight = true;
+        try {
+          const check = await this.updateManager.checkForUpdate();
+          if (check.updateAvailable) {
+            console.log(`[update] ${check.current} → ${check.latest}: installing...`);
+            await this.updateManager.installVersion(check.latest);
+            this.pendingRestartVersion = check.latest;
+            console.log(`[update] v${check.latest} installed — restart at the next quiet window`);
+          }
+        } finally {
+          this.updateInFlight = false;
+        }
+      }
+      this.maybeRestartIntoUpdate();
+    } catch (err) {
+      console.warn(`[update] check failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      if (this.running && !this.restarting) this.scheduleUpdateCheck(false);
+    }
+  }
+
+  /**
+   * Quiet-window gate: a pending update restarts the daemon only when no
+   * open session is actively worked on (all paused or none open). Re-tested
+   * on every day-boundary timer tick, so the restart lands within ~1 min of
+   * the workspace going quiet — and the nightly boundary is a guaranteed slot.
+   */
+  private maybeRestartIntoUpdate(): void {
+    if (this.pendingRestartVersion === null || this.restarting) return;
+    if (this.sessionTracker.hasActiveWork()) return;
+    void this.selfRestart(this.pendingRestartVersion);
+  }
+
+  /**
+   * Immediate update path for POST /api/update/apply (tray button).
+   * Skips the quiet window — the user asked for it explicitly.
+   */
+  public async applyUpdateNow(): Promise<UpdateApplyResponse> {
+    if (this.restarting) {
+      return { updating: true, target: this.pendingRestartVersion ?? '', message: 'Restart already in progress' };
+    }
+    if (this.pendingRestartVersion !== null) {
+      const v = this.pendingRestartVersion;
+      setTimeout(() => void this.selfRestart(v), 500);
+      return { updating: true, target: v, message: `v${v} already installed — daemon restarting` };
+    }
+    if (this.updateInFlight) {
+      return { updating: true, target: '', message: 'Update check already in progress' };
+    }
+
+    this.updateInFlight = true;
+    try {
+      const check = await this.updateManager.checkForUpdate();
+      if (!check.updateAvailable) {
+        return { updating: false, target: check.current, message: `Already up to date (v${check.current})` };
+      }
+      await this.updateManager.installVersion(check.latest);
+      this.pendingRestartVersion = check.latest;
+      // Respond first; restart a beat later so the HTTP response flushes.
+      setTimeout(() => void this.selfRestart(check.latest), 500);
+      return { updating: true, target: check.latest, message: `Installed v${check.latest} — daemon restarting` };
+    } finally {
+      this.updateInFlight = false;
+    }
+  }
+
+  /**
+   * Graceful swap: full stop (final poll, flush, port released, PID file
+   * removed), then respawn this same script path — npm has already replaced
+   * its content with the new version — and exit.
+   */
+  private async selfRestart(targetVersion: string): Promise<void> {
+    if (this.restarting) return;
+    this.restarting = true;
+    console.log(`[update] restarting into v${targetVersion}...`);
+
+    await this.stop();
+
+    const script = fileURLToPath(import.meta.url);
+    const child = spawn(process.execPath, [...process.execArgv, script], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    process.exit(0);
+  }
+
   // ─── Crash recovery ────────────────────────────────────────────────────
 
   /** Scan recent daily logs for orphaned sessions (cross-day crash) */
@@ -293,6 +415,10 @@ export class Daemon {
   // ─── Day boundary ─────────────────────────────────────────────────────
 
   private checkDayBoundary(): void {
+    // Piggyback on the 60s boundary timer: pending updates wait here for a
+    // quiet window instead of having their own restart poller.
+    this.maybeRestartIntoUpdate();
+
     const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     if (newDate === this.currentDate) return;
 

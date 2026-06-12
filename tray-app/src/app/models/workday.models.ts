@@ -154,6 +154,19 @@ export interface SettingsResponse {
     readonly jiraConfigured: boolean;
     readonly tempoConfigured: boolean;
   };
+  readonly daemonVersion?: string;
+}
+
+export interface UpdateCheckResponse {
+  readonly current: string;
+  readonly latest: string;
+  readonly updateAvailable: boolean;
+}
+
+export interface UpdateApplyResponse {
+  readonly updating: boolean;
+  readonly target: string;
+  readonly message: string;
 }
 
 export interface SettingsPatch {

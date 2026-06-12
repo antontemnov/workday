@@ -24,6 +24,17 @@ use tray_icon::TrayStatus;
 /// the daemon as before.
 static MANUAL_QUIT: AtomicBool = AtomicBool::new(false);
 
+/// Set right before the updater downloads/installs a tray update. On Windows
+/// the updater kills the process to run the installer; on other platforms we
+/// call restart() ourselves. Either way the exit must NOT stop the daemon —
+/// the tray is coming right back.
+static SELF_UPDATING: AtomicBool = AtomicBool::new(false);
+
+/// How often the running tray re-checks for its own updates. The old
+/// launch-only check meant a tray that lives for weeks never updated.
+const APP_UPDATE_CHECK_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(6 * 60 * 60);
+
 /// Build a PATH that includes standard Node.js/npm locations.
 /// GUI apps on Windows don't inherit the full user PATH.
 fn enriched_path() -> String {
@@ -89,24 +100,32 @@ fn shell_spawn(command: &str, path: &str) {
 async fn upgrade_daemon() -> Result<String, String> {
     let path = enriched_path();
 
-    // Stop old daemon
-    let _ = shell_run("workday stop", &path);
-
-    // Install latest version
-    let output = shell_run("npm install -g workday-daemon", &path)
+    // Install FIRST. If npm fails the running daemon is left untouched —
+    // the old order (stop → install → start) left the daemon dead when
+    // the install failed mid-way.
+    let output = shell_run("npm install -g workday-daemon@latest", &path)
         .map_err(|e| format!("Failed to run npm: {}", e))?;
 
     if !output.status.success() {
         return Err(format!(
-            "npm install failed: {}",
+            "npm install failed (daemon left running): {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
 
-    // Start updated daemon
+    // Only now swap the process: stop old, start new.
+    let _ = shell_run("workday stop", &path);
     shell_spawn("workday start", &path);
 
     Ok("Daemon upgraded and restarted".to_string())
+}
+
+/// Frontend-triggered tray self-update check (e.g. when the daemon's API
+/// version is ahead of this app). Same flow as the periodic check.
+#[tauri::command]
+async fn check_app_update(app: AppHandle) -> Result<String, String> {
+    check_for_updates(app).await.map_err(|e| e.to_string())?;
+    Ok("Update check finished".to_string())
 }
 
 #[tauri::command]
@@ -209,7 +228,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, list_local_days, read_local_day, set_tray_status])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, list_local_days, read_local_day, set_tray_status])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -219,11 +238,21 @@ pub fn run() {
                 )?;
             }
 
-            // Check for UI updates in background (non-blocking)
+            // Check for UI updates in background (non-blocking): once at
+            // launch, then periodically — the tray lives for weeks, a
+            // launch-only check would never fire again.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = check_for_updates(handle).await {
                     eprintln!("workday: update check failed: {}", e);
+                }
+            });
+            let periodic_handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(APP_UPDATE_CHECK_INTERVAL);
+                let h = periodic_handle.clone();
+                if let Err(e) = tauri::async_runtime::block_on(check_for_updates(h)) {
+                    eprintln!("workday: periodic update check failed: {}", e);
                 }
             });
 
@@ -291,10 +320,10 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|_handle, event| {
-        // Manual Quit sets MANUAL_QUIT and skips the stop — the daemon stays
+        // Manual Quit and self-update exits skip the stop — the daemon stays
         // alive across tray restarts. Crash / OS shutdown still stop it.
         if let RunEvent::ExitRequested { .. } = event {
-            if !MANUAL_QUIT.load(Ordering::Relaxed) {
+            if !MANUAL_QUIT.load(Ordering::Relaxed) && !SELF_UPDATING.load(Ordering::Relaxed) {
                 stop_daemon();
             }
         }
@@ -312,18 +341,35 @@ async fn check_for_updates(handle: tauri::AppHandle) -> Result<(), Box<dyn std::
                 update.version
             );
 
+            // The updater exit (Windows: installer kills the process;
+            // elsewhere: our restart() below) must not stop the daemon.
+            SELF_UPDATING.store(true, Ordering::Relaxed);
+
             // Download and install silently
             let mut downloaded: u64 = 0;
-            update
+            let install_result = update
                 .download_and_install(
                     |chunk, _total| {
                         downloaded += chunk as u64;
                     },
                     || {
-                        eprintln!("workday: update downloaded, will apply on next restart");
+                        eprintln!("workday: update downloaded and staged");
                     },
                 )
-                .await?;
+                .await;
+            if let Err(e) = install_result {
+                // Failed mid-download — this process is staying alive, so
+                // exits must go back to stopping the daemon as usual.
+                SELF_UPDATING.store(false, Ordering::Relaxed);
+                return Err(e.into());
+            }
+
+            // On Windows download_and_install never returns (the installer
+            // relaunches the app). Elsewhere the update applies on restart —
+            // do it now: the tray is a background app, a silent relaunch is
+            // invisible to the user.
+            eprintln!("workday: update installed, restarting app");
+            handle.restart();
         }
         Ok(None) => {
             eprintln!("workday: app is up to date");

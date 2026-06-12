@@ -15,6 +15,8 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  UpdateCheckResponse,
+  UpdateApplyResponse,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -326,6 +328,16 @@ export class MockWorkdayApiService extends WorkdayApiService {
     if (this.mockRepos.length === 1) return { ok: false, error: 'Cannot remove last repo' };
     this.mockRepos = this.mockRepos.filter(r => r !== path);
     return { ok: true, data: { repos: [...this.mockRepos] } };
+  }
+
+  async checkDaemonUpdate(): Promise<ApiResponse<UpdateCheckResponse>> {
+    await delay(600);
+    return { ok: true, data: { current: '0.6.0', latest: '0.6.1', updateAvailable: true } };
+  }
+
+  async applyDaemonUpdate(): Promise<ApiResponse<UpdateApplyResponse>> {
+    await delay(1200);
+    return { ok: true, data: { updating: true, target: '0.6.1', message: 'Installed v0.6.1 — daemon restarting' } };
   }
 }
 

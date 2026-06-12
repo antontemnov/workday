@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { spawn, execSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getWorkdayHome, getPackageRoot, getDataDir, buildTimestamp } from './core/config.js';
+import { UpdateManager } from './core/update-manager.js';
 import {
   CONFIG_FILE_NAME,
   SECRETS_FILE_NAME,
@@ -193,54 +194,38 @@ function printSessionDetail(s: SessionDetail, index?: number): void {
 
 // ─── Auto-update ─────────────────────────────────────────────────────────
 
-const NPM_PACKAGE_NAME = 'workday-daemon';
-const UPDATE_CHECK_TIMEOUT_MS = 3000;
-const NPM_INSTALL_TIMEOUT_MS = 30000;
-
 function getCurrentVersion(): string {
   const pkgPath = join(getPackageRoot(), 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
   return pkg.version;
 }
 
-function isNewerVersion(latest: string, current: string): boolean {
-  const l = latest.split('.').map(Number);
-  const c = current.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (l[i] > c[i]) return true;
-    if (l[i] < c[i]) return false;
-  }
-  return false;
-}
-
+/**
+ * Pre-spawn update: install (pinned) → verify → only then spawn. Runs only
+ * when no daemon is alive — a running daemon owns its own update cycle.
+ * Any failure falls through to starting the currently installed version.
+ */
 async function autoUpdate(): Promise<void> {
   try {
-    const current = getCurrentVersion();
-    const res = await fetch(`https://registry.npmjs.org/${NPM_PACKAGE_NAME}/latest`, {
-      signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
-    });
-    if (!res.ok) return;
+    const updater = new UpdateManager();
+    const check = await updater.checkForUpdate();
+    if (!check.updateAvailable) return;
 
-    const data = await res.json() as { version: string };
-    if (!isNewerVersion(data.version, current)) return;
-
-    console.log(`Updating ${NPM_PACKAGE_NAME} ${current} → ${data.version}...`);
-    execSync(`npm install -g ${NPM_PACKAGE_NAME}@latest`, {
-      stdio: 'ignore',
-      timeout: NPM_INSTALL_TIMEOUT_MS,
-    });
-    console.log(`Updated to ${data.version}`);
-  } catch {
-    // Network error, timeout, npm failure — silently skip
+    console.log(`Updating workday-daemon ${check.current} → ${check.latest}...`);
+    await updater.installVersion(check.latest);
+    console.log(`Updated to ${check.latest}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`Update skipped (${message}) — starting installed version.`);
   }
 }
 
 // ─── Command handlers ───────────────────────────────────────────────────
 
 async function handleStart(): Promise<void> {
-  await autoUpdate();
-
-  // Check if already running
+  // Check if already running — never npm-install over a live daemon: the
+  // old code would keep running while looking "updated". The daemon checks
+  // for updates itself and restarts in a quiet window.
   const check = await apiGet<StatusResponse>('/api/status');
   if (check.ok) {
     console.log('Daemon is already running.');
@@ -248,6 +233,7 @@ async function handleStart(): Promise<void> {
     return;
   }
 
+  await autoUpdate();
   spawnBackground();
 
   // Poll for HTTP readiness

@@ -5,6 +5,7 @@ import { WorkdayApiService } from '../../services/workday-api.service';
 import { SensitivityLevel, SettingsConfigSubset, SettingsPatch, SettingsResponse } from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
+type UpdateState = 'idle' | 'checking' | 'available' | 'applying' | 'restarting' | 'done' | 'error';
 
 interface PendingPatch {
   config?: Partial<SettingsConfigSubset>;
@@ -39,6 +40,12 @@ export class SettingsViewComponent implements OnInit, OnDestroy {
   autoStartWithOs = true;
   notifyOnIdle = false;
 
+  // Daemon update flow (the "Check updates" button)
+  updateState: UpdateState = 'idle';
+  updateLabel = '';
+  private updateTarget: string | null = null;
+  private updatePollTimer: number | null = null;
+
   private pending: PendingPatch = {};
   private debounceTimer: number | null = null;
   private inFlight = false;
@@ -54,6 +61,84 @@ export class SettingsViewComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
     if (this.savedFlashTimer !== null) window.clearTimeout(this.savedFlashTimer);
+    if (this.updatePollTimer !== null) window.clearInterval(this.updatePollTimer);
+  }
+
+  // ─── Daemon updates ─────────────────────────────────────────────────────
+
+  get daemonVersionLabel(): string {
+    return this.settings?.daemonVersion ? `v${this.settings.daemonVersion}` : 'unknown';
+  }
+
+  get updateBusy(): boolean {
+    return this.updateState === 'checking' || this.updateState === 'applying' || this.updateState === 'restarting';
+  }
+
+  async checkUpdates(): Promise<void> {
+    if (this.updateBusy) return;
+    this.updateState = 'checking';
+    this.updateLabel = 'Checking npm registry...';
+    const res = await this.api.checkDaemonUpdate();
+    if (!res.ok || !res.data) {
+      this.updateState = 'error';
+      this.updateLabel = res.error ?? 'Update check failed';
+      return;
+    }
+    if (res.data.updateAvailable) {
+      this.updateState = 'available';
+      this.updateTarget = res.data.latest;
+      this.updateLabel = `v${res.data.latest} available`;
+    } else {
+      this.updateState = 'done';
+      this.updateLabel = `Up to date (v${res.data.current})`;
+    }
+  }
+
+  async applyUpdate(): Promise<void> {
+    if (this.updateBusy || this.updateTarget === null) return;
+    this.updateState = 'applying';
+    this.updateLabel = `Installing v${this.updateTarget}...`;
+    const res = await this.api.applyDaemonUpdate();
+    if (!res.ok || !res.data) {
+      this.updateState = 'error';
+      this.updateLabel = res.error ?? 'Update failed';
+      return;
+    }
+    if (!res.data.updating) {
+      this.updateState = 'done';
+      this.updateLabel = res.data.message;
+      return;
+    }
+    // Daemon restarts itself now — poll settings until the new version answers.
+    this.updateState = 'restarting';
+    this.updateLabel = 'Daemon restarting...';
+    this.watchRestart(res.data.target);
+  }
+
+  private watchRestart(target: string): void {
+    const startedAt = Date.now();
+    if (this.updatePollTimer !== null) window.clearInterval(this.updatePollTimer);
+    this.updatePollTimer = window.setInterval(async () => {
+      const res = await this.api.getSettings();
+      if (res.ok && res.data?.daemonVersion === target) {
+        this.stopRestartWatch();
+        this.settings = res.data;
+        this.updateState = 'done';
+        this.updateTarget = null;
+        this.updateLabel = `Updated to v${target}`;
+      } else if (Date.now() - startedAt > 60_000) {
+        this.stopRestartWatch();
+        this.updateState = 'error';
+        this.updateLabel = 'Daemon did not come back in 60s — check `workday status`';
+      }
+    }, 2_000);
+  }
+
+  private stopRestartWatch(): void {
+    if (this.updatePollTimer !== null) {
+      window.clearInterval(this.updatePollTimer);
+      this.updatePollTimer = null;
+    }
   }
 
   // ─── Optimistic field setters ──────────────────────────────────────────

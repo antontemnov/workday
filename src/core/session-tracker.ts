@@ -440,6 +440,14 @@ export class SessionTracker {
     return getOpenPause(session) !== null;
   }
 
+  /**
+   * True when someone is plausibly mid-work: at least one open, unpaused
+   * session. Used as the quiet-window gate for self-update restarts.
+   */
+  public hasActiveWork(): boolean {
+    return this.getOpenSessions().some(s => !this.hasOpenPause(s));
+  }
+
   // ─── Private: session lifecycle ────────────────────────────────────────
 
   private findOpenSession(repo: string): Session | null {

@@ -12,7 +12,24 @@ export const DAEMON_SCRIPT_JS = 'daemon.js';
 
 // ─── HTTP API ──────────────────────────────────────────────────────────
 export const DEFAULT_API_PORT = 9213;
+// Bump ONLY on breaking API changes (additive endpoints/fields don't count).
+// Release ritual for a bump: ship the tray release first, let live trays
+// pick it up (they re-check every 6h), THEN npm-publish the daemon —
+// a tray with the old exact-match check meeting a newer apiVersion would
+// reinstall-loop the daemon.
 export const API_VERSION = 6;
+
+// ─── Auto-update ────────────────────────────────────────────────────────
+export const NPM_PACKAGE_NAME = 'workday-daemon';
+export const NPM_REGISTRY_LATEST_URL = `https://registry.npmjs.org/${NPM_PACKAGE_NAME}/latest`;
+/** Registry check timeout — fail fast, the next scheduled check will retry */
+export const UPDATE_CHECK_TIMEOUT_MS = 5_000;
+/** npm install -g can be slow on cold cache / slow network — be generous */
+export const NPM_INSTALL_TIMEOUT_MS = 180_000;
+/** Daemon checks the registry this often (~2-4 times per working day) */
+export const UPDATE_CHECK_INTERVAL_HOURS = 6;
+/** Random startup delay before the first scheduled check (thundering-herd hygiene) */
+export const UPDATE_CHECK_JITTER_MINUTES = 10;
 
 // ─── File locking ──────────────────────────────────────────────────────
 export const LOCK_EXTENSION = '.lock';

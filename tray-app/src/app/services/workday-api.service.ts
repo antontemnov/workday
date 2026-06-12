@@ -12,6 +12,8 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  UpdateCheckResponse,
+  UpdateApplyResponse,
 } from '../models/workday.models';
 
 /**
@@ -48,4 +50,8 @@ export abstract class WorkdayApiService {
   // Repo list edits — separate endpoints so the daemon can validate paths.
   abstract addRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
   abstract removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
+
+  // Daemon updates — check npm registry / install + restart the daemon.
+  abstract checkDaemonUpdate(): Promise<ApiResponse<UpdateCheckResponse>>;
+  abstract applyDaemonUpdate(): Promise<ApiResponse<UpdateApplyResponse>>;
 }

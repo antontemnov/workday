@@ -344,3 +344,16 @@
     }
   }
 }
+
+// ─── Updates section ────────────────────────────────────────────────────
+
+.version-tag {
+  color: #6c7086;
+  font-size: 10px;
+  font-weight: normal;
+  margin-left: 4px;
+}
+
+.hint.update-error {
+  color: #f38ba8;
+}

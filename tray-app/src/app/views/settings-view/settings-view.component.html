@@ -104,6 +104,32 @@
       </div>
     </div>
 
+    <!-- Updates -->
+    <div class="settings-section">
+      <h3>Updates</h3>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Daemon <span class="version-tag">{{ daemonVersionLabel }}</span></span>
+          <span class="hint" [ngClass]="{'update-error': updateState === 'error'}">
+            {{ updateLabel || 'Background tracker · updates itself twice a day' }}
+          </span>
+        </div>
+        <div class="right">
+          <button class="btn small"
+                  *ngIf="updateState !== 'available'"
+                  [disabled]="updateBusy"
+                  (click)="checkUpdates()">
+            {{ updateBusy ? 'Working...' : 'Check updates' }}
+          </button>
+          <button class="btn small primary"
+                  *ngIf="updateState === 'available'"
+                  (click)="applyUpdate()">
+            Update now
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Integrations -->
     <div class="settings-section">
       <h3>Integrations <span class="sub">API tokens · stored in <code>~/.workday/secrets.json</code></span></h3>

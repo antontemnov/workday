@@ -43,6 +43,8 @@ import type {
   Secrets,
   SettingsResponse,
   AddRepoResponse,
+  UpdateCheckResponse,
+  UpdateApplyResponse,
 } from './core/types.js';
 import { SensitivityLevel } from './core/types.js';
 
@@ -65,6 +67,12 @@ export interface HttpServerDeps {
   readonly addRepo: (path: string) => Promise<{ ok: boolean; error?: string }>;
   /** Remove a repo (closes its open sessions, persists config.json). */
   readonly removeRepo: (path: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Installed daemon version (from package.json on disk). */
+  readonly getVersion: () => string;
+  /** Ask npm registry whether a newer daemon exists. */
+  readonly checkUpdate: () => Promise<UpdateCheckResponse>;
+  /** Install latest + graceful self-restart (skips the quiet window). */
+  readonly applyUpdate: () => Promise<UpdateApplyResponse>;
 }
 
 export class HttpServer {
@@ -175,6 +183,24 @@ export class HttpServer {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleRemoveRepo(body));
       }
+      if (method === 'GET' && path === '/api/update/check') {
+        try {
+          const data = await this.deps.checkUpdate();
+          return this.sendJson(res, 200, { ok: true, data });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return this.sendJson(res, 200, { ok: false, error: `Update check failed: ${message}` });
+        }
+      }
+      if (method === 'POST' && path === '/api/update/apply') {
+        try {
+          const data = await this.deps.applyUpdate();
+          return this.sendJson(res, 200, { ok: true, data });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return this.sendJson(res, 200, { ok: false, error: `Update failed: ${message}` });
+        }
+      }
 
       this.sendJson(res, 404, { ok: false, error: 'Not found' });
     } catch (err) {
@@ -195,6 +221,7 @@ export class HttpServer {
       data: {
         running: true,
         pid: process.pid,
+        version: this.deps.getVersion(),
         date: this.deps.getCurrentDate(),
         uptime: Math.floor((Date.now() - this.deps.getStartedAt()) / 1000),
         openSessions: summaries,
@@ -399,6 +426,7 @@ export class HttpServer {
           },
         },
         secretsMeta: { jiraConfigured, tempoConfigured },
+        daemonVersion: this.deps.getVersion(),
       },
     };
   }

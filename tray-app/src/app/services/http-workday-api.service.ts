@@ -18,6 +18,8 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  UpdateCheckResponse,
+  UpdateApplyResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -29,17 +31,43 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   private upgradeError: string | null = null;
 
+  // Cooldown between automatic repair attempts. Every API response carries
+  // apiVersion, so without a cooldown a persistent mismatch retriggers on
+  // each 10s poll — the old code restarted the daemon in a loop, closing
+  // the day's sessions every cycle.
+  private static readonly MISMATCH_RETRY_MS = 10 * 60 * 1000;
+  private lastMismatchActionAt = 0;
+
+  /**
+   * Direction-aware version gate:
+   * - daemon BEHIND the app → upgrade the daemon (it predates self-update);
+   * - daemon AHEAD of the app → the tray is stale: trigger the app's own
+   *   updater, never "upgrade" the daemon — npm would reinstall the same
+   *   (new) version and the mismatch would persist forever.
+   */
   private checkApiVersion(response: ApiResponse<unknown>): ApiResponse<unknown> {
-    if (response.ok && response.apiVersion !== undefined && response.apiVersion !== EXPECTED_API_VERSION) {
-      if (!this.upgrading) {
-        this.upgradeDaemon();
-      }
-      const msg = this.upgradeError
-        ? `Daemon upgrade failed: ${this.upgradeError}`
-        : 'Updating daemon to match app version...';
-      return { ok: false, error: msg };
+    if (!response.ok || response.apiVersion === undefined || response.apiVersion === EXPECTED_API_VERSION) {
+      return response;
     }
-    return response;
+
+    const daemonIsBehind = response.apiVersion < EXPECTED_API_VERSION;
+    const now = Date.now();
+    if (!this.upgrading && now - this.lastMismatchActionAt > HttpWorkdayApiService.MISMATCH_RETRY_MS) {
+      this.lastMismatchActionAt = now;
+      if (daemonIsBehind) {
+        void this.upgradeDaemon();
+      } else {
+        // Fire the tray's own updater; harmless when already up to date.
+        void invoke('check_app_update').catch(() => {});
+      }
+    }
+
+    const msg = daemonIsBehind
+      ? (this.upgradeError
+          ? `Daemon upgrade failed: ${this.upgradeError}`
+          : 'Updating daemon to match app version...')
+      : 'Workday app is older than the daemon — checking for app updates...';
+    return { ok: false, error: msg };
   }
 
   private async upgradeDaemon(): Promise<void> {
@@ -186,6 +214,16 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {
     return this.post<AddRepoResponse>('/api/repo/remove', { path });
+  }
+
+  // ─── Daemon updates ──────────────────────────────────────────────────
+
+  override async checkDaemonUpdate(): Promise<ApiResponse<UpdateCheckResponse>> {
+    return this.get<UpdateCheckResponse>('/api/update/check');
+  }
+
+  override async applyDaemonUpdate(): Promise<ApiResponse<UpdateApplyResponse>> {
+    return this.post<UpdateApplyResponse>('/api/update/apply');
   }
 
   // ─── Disk fallback (no daemon) ──────────────────────────────────────
