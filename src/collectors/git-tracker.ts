@@ -14,6 +14,7 @@ import { extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
 import { SnapshotParser } from './snapshot-parser.js';  // static methods only
+import { buildChurnFiles } from './churn-scanner.js';
 
 /**
  * Final fallback list when no config and no `origin/HEAD` are available.
@@ -133,8 +134,23 @@ export class GitTracker {
 
     const state = this.getOrCreateRepoState(repoPath);
 
+    // Churn sources: per-file evidence diff (sees committed + staged +
+    // worktree; falls back to the plain worktree diff when no base yet)
+    // and untracked files (invisible to any git diff — read from disk).
+    const evidenceDiff = raw.diffSinceBase !== undefined
+      ? SnapshotParser.parseDiffNumstatFiles(raw.diffSinceBase)
+      : null;
+    const churnSource = evidenceDiff ?? SnapshotParser.parseDiffNumstatFiles(raw.diffNumstat);
+    const untrackedPaths = SnapshotParser.parseUntrackedList(raw.untrackedFiles);
+    const churnFiles = await buildChurnFiles(
+      repoPath,
+      churnSource.files,
+      untrackedPaths,
+      state.previousSnapshot?.churnFiles ?? null,
+    );
+
     // Parse snapshot and compute delta
-    const snapshot = SnapshotParser.parseSnapshot(raw, now);
+    const snapshot = SnapshotParser.parseSnapshot(raw, now, churnFiles);
     const delta = SnapshotParser.computeDelta(state.previousSnapshot, snapshot);
 
     // Parse reflog, filter to new entries only
@@ -159,14 +175,13 @@ export class GitTracker {
     // AND git accepted it — fetchRepoState transparently drops it on bad-ref).
     let evidenceSnapshot: EvidenceSnapshot | null = null;
     let evidenceBasis: EvidenceBasis | null = null;
-    if (raw.diffSinceBase !== undefined && raw.commitsSinceBase !== undefined) {
-      const { added, removed, fileCount } = SnapshotParser.parseDiffNumstatTotals(raw.diffSinceBase);
+    if (evidenceDiff !== null && raw.commitsSinceBase !== undefined) {
       const commits = parseInt(raw.commitsSinceBase, 10);
       evidenceSnapshot = {
         commits: Number.isFinite(commits) ? commits : 0,
-        linesAdded: added,
-        linesRemoved: removed,
-        filesChanged: fileCount,
+        linesAdded: evidenceDiff.totals.added,
+        linesRemoved: evidenceDiff.totals.removed,
+        filesChanged: evidenceDiff.totals.fileCount,
       };
       evidenceBasis = mergeBaseSha !== null ? 'merge_base' : 'base_sha';
     }

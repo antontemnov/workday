@@ -102,11 +102,17 @@ export class ActivityEvaluator {
         st.score = Math.min(st.score, tick.maxTicks);
       }
 
-      // 7. Decay — asymmetric: idle ticks after dense work drain faster
-      const decay = hasActivity
-        ? BASE_DECAY
-        : BASE_DECAY + DECAY_BOOST * Math.min(1, st.ema);
-      st.score = Math.max(0, st.score - decay);
+      // 7. Decay — asymmetric: idle ticks after dense work drain faster, but
+      //    the boost only eats the earned part above the floor. Below the
+      //    floor the fade is always 1/tick, so the "any touch buys
+      //    floor-minutes" guarantee holds at any EMA.
+      const floorTicks = tick.maxTicks * STAMINA_FLOOR_RATIO;
+      if (!hasActivity && st.score > floorTicks) {
+        const boosted = BASE_DECAY + DECAY_BOOST * Math.min(1, st.ema);
+        st.score = Math.max(floorTicks, st.score - boosted);
+      } else {
+        st.score = Math.max(0, st.score - BASE_DECAY);
+      }
 
       // Build result for this session
       const normalizedScore = tick.maxTicks > 0 ? st.score / tick.maxTicks : 0;
@@ -115,7 +121,7 @@ export class ActivityEvaluator {
         maxScore: tick.maxTicks,
         normalizedScore,
         ema: st.ema,
-        etaTicks: this.estimateIdleTicks(st),
+        etaTicks: this.estimateIdleTicks(st, floorTicks),
         isIdleTimeout: st.score === 0 && !tick.ignoreIdleTimeout,
       });
     }
@@ -162,16 +168,18 @@ export class ActivityEvaluator {
   /**
    * Ticks until score hits 0 with no further activity. With asymmetric decay
    * this is no longer score/BASE_DECAY — simulate the fade (EMA cools too,
-   * so the drain slows over time). Bounded by the score itself (decay ≥ 1),
-   * i.e. at most maxTicks iterations.
+   * and the boost stops at the floor). Bounded by the score itself
+   * (decay ≥ 1), i.e. at most maxTicks iterations.
    */
-  private estimateIdleTicks(st: SessionState): number {
+  private estimateIdleTicks(st: SessionState, floorTicks: number): number {
     let score = st.score;
     let ema = st.ema;
     let ticks = 0;
     while (score > 0) {
       ema *= 1 - this.emaAlpha;
-      score -= BASE_DECAY + DECAY_BOOST * Math.min(1, ema);
+      score = score > floorTicks
+        ? Math.max(floorTicks, score - (BASE_DECAY + DECAY_BOOST * Math.min(1, ema)))
+        : score - BASE_DECAY;
       ticks++;
     }
     return ticks;

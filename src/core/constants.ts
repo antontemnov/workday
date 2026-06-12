@@ -72,6 +72,15 @@ export const FREQUENCY_GAIN_MAX = 2;
 export const STAMINA_LINES_PER_MINUTE = 10;
 /** Cap on the volume contribution per tick (reached at 20 changed lines at 30s ticks) */
 export const VOLUME_GAIN_MAX = 4;
+/**
+ * Line-equivalent granted per file whose content changed while its diff
+ * numbers stayed flat (rewrite-in-place: lines already differed from the
+ * base, so numstat can't see the churn). Detected via content hashing.
+ */
+export const IN_PLACE_CHURN_LINES = 8;
+/** Churn scanner caps: don't read/hash absurd working sets */
+export const CHURN_MAX_FILES = 100;
+export const CHURN_MAX_FILE_BYTES = 2 * 1024 * 1024;
 /** "Free" score on commit (in seconds, converted to ticks) */
 export const COMMIT_BONUS_SECONDS = 150;
 /** Constant per-tick score drain */

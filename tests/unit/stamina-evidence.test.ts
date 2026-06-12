@@ -10,12 +10,15 @@
 import assert from 'node:assert/strict';
 import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
+import { SnapshotParser } from '../../src/collectors/snapshot-parser.js';
 import type {
   AppConfig,
   PollResult,
   EvidenceSnapshot,
   SessionScore,
   ReflogEntry,
+  GitSnapshot,
+  ChurnFile,
 } from '../../src/core/types.js';
 
 const POLL_SECONDS = 30;
@@ -104,7 +107,7 @@ test('asymmetric decay: a full bar after intense work drains in ~15 min, not 45'
   assert.ok(idleTicks >= 25 && idleTicks <= 40, `idle ticks to pause = ${idleTicks}, expected ~30`);
 });
 
-test('asymmetric decay: moderate work (mid bar) fades in ~10 min', () => {
+test('asymmetric decay: moderate work (mid bar) fades in ~14 min', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   // ~12 min of continuous 10-line ticks → mid bar, EMA ~0.7
   let s = runTicks(ev, 'a', repeat({ dyn: true, lines: 10 }, 25));
@@ -115,7 +118,24 @@ test('asymmetric decay: moderate work (mid bar) fades in ~10 min', () => {
     s = runTicks(ev, 'a', [{}]);
     idleTicks++;
   }
-  assert.ok(idleTicks >= 12 && idleTicks <= 28, `idle ticks to pause = ${idleTicks}, expected ~20`);
+  assert.ok(idleTicks >= 15 && idleTicks <= 32, `idle ticks to pause = ${idleTicks}, expected ~28`);
+});
+
+test('floor is shielded from the decay boost: leash never collapses at high EMA', () => {
+  const ev = new ActivityEvaluator(POLL_SECONDS);
+  // long intense run → EMA ≈ 1, then a stop and a single touch near the floor:
+  // the old behavior drained 5/tick from the floor → pause in ~2 min
+  runTicks(ev, 'a', repeat({ dyn: true, lines: 20 }, 40));
+  let s = runTicks(ev, 'a', repeat({}, 60)); // fade out completely
+  assert.ok(s.isIdleTimeout, 'precondition: faded to pause');
+  s = runTicks(ev, 'a', [{ dyn: true, lines: 1 }]); // single touch, EMA still warm
+  let idleTicks = 0;
+  while (!s.isIdleTimeout && idleTicks < 100) {
+    s = runTicks(ev, 'a', [{}]);
+    idleTicks++;
+  }
+  // below the floor decay is always 1/tick → ≥ ~14 ticks (7 min) guaranteed
+  assert.ok(idleTicks >= 13, `idle ticks to pause = ${idleTicks}, expected >= 13 (~7 min)`);
 });
 
 test('Patient: full bar after intense work still catches a lunch break (~45 min)', () => {
@@ -287,6 +307,61 @@ test('mixed sensitivities: Patient and Normal compete on equal terms', () => {
   assert.ok(backAt > 1 && backAt <= 5, `switched back at tick ${backAt}, expected 2..5`);
 });
 
+// ─── Churn magnitude (SnapshotParser.computeDelta) ──────────────────────
+
+console.log('\nChurn magnitude (per-file deltas + content hashes + untracked)');
+
+function churnSnap(files: Record<string, [number, number, string | null]>): GitSnapshot {
+  const churnFiles = new Map<string, ChurnFile>(
+    Object.entries(files).map(([p, [added, removed, hash]]) => [p, { added, removed, hash }]),
+  );
+  return {
+    branch: 'b',
+    trackedLines: { added: 0, removed: 0 },
+    trackedFileCount: 0,
+    untrackedCount: 0,
+    timestamp: 0,
+    churnFiles,
+  };
+}
+
+test('rewrite-in-place: flat numbers + changed hash → IN_PLACE_CHURN_LINES', () => {
+  const prev = churnSnap({ 'src/a.ts': [10, 5, 'h1'] });
+  const cur = churnSnap({ 'src/a.ts': [10, 5, 'h2'] });
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 8);
+  assert.equal(d.hasDynamics, true, 'in-place churn must count as activity');
+});
+
+test('cross-file movement is not netted out (totals would cancel)', () => {
+  const prev = churnSnap({ 'a.ts': [40, 0, null], 'b.ts': [10, 0, null] });
+  const cur = churnSnap({ 'a.ts': [10, 0, null], 'b.ts': [42, 0, null] });
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 62); // |40-10| + |42-10|; totals delta is just +2
+});
+
+test('a brand-new file counts whole (agent dumping hundreds of lines)', () => {
+  const prev = churnSnap({});
+  const cur = churnSnap({ 'new-module.ts': [300, 0, 'h'] });
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 300);
+});
+
+test('flat file with same hash contributes nothing', () => {
+  const prev = churnSnap({ 'a.ts': [10, 5, 'h1'] });
+  const cur = churnSnap({ 'a.ts': [10, 5, 'h1'] });
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 0);
+  assert.equal(d.hasDynamics, false);
+});
+
+test('a file leaving the diff counts its last size (revert / re-anchor)', () => {
+  const prev = churnSnap({ 'a.ts': [25, 5, null] });
+  const cur = churnSnap({});
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 30);
+});
+
 // ─── Evidence tracking ───────────────────────────────────────────────────
 
 console.log('\nEvidence (SessionTracker, merge-base + baseline-delta)');
@@ -329,8 +404,9 @@ function poll(spec: PollSpec): PollResult {
       trackedFileCount: 0,
       untrackedCount: 0,
       timestamp: Date.now(),
+      churnFiles: new Map(),
     },
-    delta: { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false },
+    delta: { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 },
     newReflogEntries: spec.reflog ?? [],
     currentHead: spec.head ?? 'head1',
     evidenceSnapshot: spec.snap ?? null,

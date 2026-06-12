@@ -44,6 +44,8 @@ export class GitClient {
       `git -C "${repoPath}" status --porcelain`,
       `echo ${GIT_BATCH_SEPARATOR}`,
       `git -C "${repoPath}" reflog -${this.reflogCount} --date=iso --format="%gd %gs"`,
+      `echo ${GIT_BATCH_SEPARATOR}`,
+      `git -C "${repoPath}" ls-files --others --exclude-standard`,
     ];
 
     if (baseSha) {
@@ -140,7 +142,7 @@ export class GitClient {
     // Windows echo may add trailing space: "---WORKDAY-SEP--- \n"
     const sections = normalized.split(new RegExp(GIT_BATCH_SEPARATOR + '\\s*\\n'));
 
-    let idx = 5; // fixed: branch, head, diff, status, reflog
+    let idx = 6; // fixed: branch, head, diff, status, reflog, untracked
     const diffSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
     const commitsSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
 
@@ -150,6 +152,7 @@ export class GitClient {
       diffNumstat: (sections[2] ?? '').trim(),
       statusPorcelain: (sections[3] ?? '').trim(),
       reflog: (sections[4] ?? '').trim(),
+      untrackedFiles: (sections[5] ?? '').trim(),
       diffSinceBase,
       commitsSinceBase,
     };

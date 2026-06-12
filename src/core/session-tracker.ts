@@ -315,7 +315,7 @@ export class SessionTracker {
         ? {
             hasDynamics: poll.delta.hasDynamics,
             hasCommit: poll.newReflogEntries.some(e => e.type === 'commit'),
-            deltaMagnitude: Math.abs(poll.delta.addedDelta) + Math.abs(poll.delta.removedDelta),
+            deltaMagnitude: poll.delta.magnitude,
           }
         : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
 

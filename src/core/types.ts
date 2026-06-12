@@ -218,6 +218,19 @@ export interface GitSnapshot {
   readonly trackedFileCount: number;
   readonly untrackedCount: number;
   readonly timestamp: number;
+  // Per-file churn state used to measure real activity volume between ticks.
+  // Sourced from the evidence diff (committed + staged + worktree vs the
+  // fresh merge-base) plus untracked files read from disk — the plain
+  // worktree numstat is blind to committed chunks and brand-new files.
+  readonly churnFiles: ReadonlyMap<string, ChurnFile>;
+}
+
+// Per-file diff numbers + content fingerprint. hash is null when the file
+// wasn't hashed this tick (numbers moved — no need) or couldn't be read.
+export interface ChurnFile {
+  readonly added: number;
+  readonly removed: number;
+  readonly hash: string | null;
 }
 
 export interface GitDelta {
@@ -225,6 +238,10 @@ export interface GitDelta {
   readonly removedDelta: number;
   readonly untrackedDelta: number;
   readonly hasDynamics: boolean;
+  // Line-equivalent of real churn this tick: per-file |Δadded|+|Δremoved|
+  // (cross-file netting impossible), files entering the diff count whole,
+  // flat files with a changed content hash count IN_PLACE_CHURN_LINES.
+  readonly magnitude: number;
 }
 
 // ─── Reflog ──────────────────────────────────────────────────────────────
@@ -245,6 +262,8 @@ export interface RawGitOutput {
   readonly diffNumstat: string;
   readonly statusPorcelain: string;
   readonly reflog: string;
+  // `git ls-files --others --exclude-standard` — untracked files, one per line.
+  readonly untrackedFiles: string;
   // Populated only when baseSha is passed to GitClient.fetchRepoState().
   readonly diffSinceBase?: string;
   readonly commitsSinceBase?: string;
@@ -502,7 +521,7 @@ export interface PushResponse {
 export interface ActivitySignals {
   readonly hasDynamics: boolean;
   readonly hasCommit: boolean;
-  readonly deltaMagnitude: number; // |addedDelta| + |removedDelta|
+  readonly deltaMagnitude: number; // per-file churn line-equivalent (GitDelta.magnitude)
 }
 
 export interface TickInput {

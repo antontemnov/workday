@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { GitTracker } from '../../src/collectors/git-tracker.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
-import type { AppConfig, Secrets } from '../../src/core/types.js';
+import type { AppConfig, PollResult, Secrets } from '../../src/core/types.js';
 
 const TEST_DIR = join(tmpdir(), `workday-evidence-test-${randomBytes(4).toString('hex')}`);
 const REPO = join(TEST_DIR, 'repo');
@@ -81,10 +81,11 @@ async function main(): Promise<void> {
   const gitTracker = new GitTracker(config, secrets);
   const sessions = new SessionTracker(config);
 
-  const tick = async (): Promise<void> => {
+  const tick = async (): Promise<PollResult | undefined> => {
     const baseShas = sessions.getBaseShasPerRepoPath(config.repos);
     const results = await gitTracker.pollAll(baseShas);
     for (const r of results) sessions.processPollResult(r);
+    return results[0];
   };
 
   const evidence = () => {
@@ -156,6 +157,43 @@ async function main(): Promise<void> {
     const ev = evidence();
     assert.equal(ev.linesAdded, 65, `linesAdded = ${ev.linesAdded}`);
     assert.equal(ev.commits, 3, `commits = ${ev.commits}`);
+  });
+
+  // ── Agent-style activity: churn magnitude from real git state ─────────
+
+  const quiet = await tick(); // settle: no changes, flat files get hashed
+  check('quiet tick produces no dynamics', () => {
+    assert.equal(quiet?.delta.hasDynamics, false, `magnitude = ${quiet?.delta.magnitude}`);
+  });
+
+  // Brand-new untracked file with hundreds of lines (invisible to git diff)
+  writeFileSync(join(REPO, 'generated.ts'), 'new line\n'.repeat(240));
+  const newFileTick = await tick();
+  check('new untracked file counts whole into magnitude', () => {
+    assert.ok((newFileTick?.delta.magnitude ?? 0) >= 240,
+      `magnitude = ${newFileTick?.delta.magnitude}, expected >= 240`);
+  });
+
+  // Commit it agent-style: lines never pass through the dirty-numstat phase
+  git('add .');
+  git('commit -m "ATL-1 generated module"');
+  await tick(); // commit tick (file moves untracked → branch diff)
+  await tick(); // settle so flat files are hashed again
+
+  // Rewrite-in-place: same line count in an already-modified file —
+  // numstat vs any base shows zero movement, only the content hash sees it
+  writeFileSync(join(REPO, 'generated.ts'), 'rewritten!\n'.repeat(240));
+  const inPlaceTick = await tick();
+  check('rewrite-in-place is detected via content hash', () => {
+    assert.ok((inPlaceTick?.delta.magnitude ?? 0) >= 8,
+      `magnitude = ${inPlaceTick?.delta.magnitude}, expected >= 8`);
+    assert.equal(inPlaceTick?.delta.hasDynamics, true);
+  });
+
+  check('committed new file lines reached the evidence counters', () => {
+    const ev = evidence();
+    assert.equal(ev.commits, 4, `commits = ${ev.commits}`);
+    assert.ok(ev.linesAdded >= 300, `linesAdded = ${ev.linesAdded}, expected >= 300`);
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -35,7 +35,8 @@ Key design goals:
   never "1 line = 1 minute"
 - **Behavior-change pause detection**: drain is asymmetric — the denser the
   recent work, the faster the buffer cools after an abrupt stop (full Normal
-  bar fades in ~15 min, not 45)
+  bar fades in ~19 min, not 45), but the boost never breaches the touch floor —
+  the floor minutes are guaranteed at any EMA
 - **Cross-repo awareness**: only one repo can hold attention at a time; leadership
   follows a short attention window, independent of how full the bars are
 - **Time-unit independence**: algorithm works correctly regardless of `diffPollSeconds` value
@@ -66,7 +67,10 @@ The repo's **sensitivity** sets a single knob — the max timeout / stamina ceil
 | `EMA_WINDOW_MINUTES` | 10 | min | Frequency EMA smoothing window |
 | `ATTENTION_WINDOW_MINUTES` | 2 | min | Attention EMA window (cross-repo leadership) |
 | `COMMIT_BONUS_SECONDS` | 150 | sec | Extra score from a commit (in timeout equivalent) |
-| `DECAY_BOOST` | 4 | — | Extra drain per idle tick × EMA (asymmetric fade) |
+| `DECAY_BOOST` | 4 | — | Extra drain per idle tick × EMA (asymmetric fade, never breaches the floor) |
+| `IN_PLACE_CHURN_LINES` | 8 | lines | Line-equivalent per file rewritten in place (flat diff numbers, changed content hash) |
+| `CHURN_MAX_FILES` | 100 | files | Churn scanner cap: max files read/hashed per tick |
+| `CHURN_MAX_FILE_BYTES` | 2 MB | bytes | Churn scanner cap: oversized files skipped (binaries too) |
 
 ### Derived constants (tick-based)
 
@@ -170,8 +174,12 @@ if (hasActivity):                          // dynamics or commit
   4. if (hasCommit): score += COMMIT_BONUS
   5. score = min(score, MAX_TICKS)                                    // fixed ceiling
 
-6. decay = hasActivity ? 1 : 1 + DECAY_BOOST × min(1, intensityEMA)
-   score = max(0, score - decay)           // asymmetric fade, see below
+6. floor = MAX_TICKS × STAMINA_FLOOR_RATIO
+   if (!hasActivity AND score > floor):
+     score = max(floor, score - (1 + DECAY_BOOST × min(1, intensityEMA)))
+     // asymmetric fade — the boost never breaches the floor, see below
+   else:
+     score = max(0, score - 1)             // active tick, or at/below the floor
 7. if (score == 0): → AutoPause decision
 ```
 
@@ -210,17 +218,25 @@ the bar always requires *sustained* activity, never a single event.
 ### Asymmetric fade (pause detection)
 
 Filling is slow and earned; draining is **behavior-change detection**. On idle
-ticks the drain is `1 + DECAY_BOOST × EMA`: the denser the recent activity,
-the faster the buffer cools once it stops. An abrupt silence after tick-after-tick
-coding is the strongest pause signal there is — and the EMA itself cools during
-the silence, so the drain relaxes back to 1/tick over ~10 minutes.
+ticks **above the touch floor** the drain is `1 + DECAY_BOOST × EMA`: the denser
+the recent activity, the faster the buffer cools once it stops. An abrupt silence
+after tick-after-tick coding is the strongest pause signal there is — and the EMA
+itself cools during the silence, so the drain relaxes back to 1/tick over ~10 minutes.
+
+The boost is **shielded by the floor**: within one idle segment it can drain the
+score down to the floor but never through it, and at/below the floor the drain
+is always a plain 1/tick. So the guarantee "any touch buys the floor minutes
+(Normal: 7.5 min) before a pause" holds at *any* EMA. Without the shield a hot
+EMA (≈1) drained a floor-level bar in ~2 minutes, which produced a storm of
+pauses in real use whenever an intense stream went quiet for a moment.
 
 | State at stop (Normal) | Time to auto-pause |
 |------------------------|--------------------|
-| Full bar, EMA ≈ 1 (intense streak) | ~15 min |
-| Half bar, EMA ≈ 0.5 (moderate work) | ~10 min |
-| Floor after a single touch, EMA ≈ 0 | ~6.5 min |
-| Patient, full bar, EMA ≈ 1 | ~45 min (lunch is caught) |
+| Full bar, EMA ≈ 1 (intense streak) | ~19 min (fast segment to the floor ~11–12 min + floor segment 7.5 min) |
+| Half bar, EMA ≈ 0.5 (moderate work) | ~14 min |
+| Floor-level bar, EMA ≈ 1 (hot stream just started) | ~7.5 min (floor shield; was ~2 min) |
+| Floor after a single touch, EMA ≈ 0 | ~7 min |
+| Patient, full bar, EMA ≈ 1 | ~53 min (lunch is caught) |
 
 Since drain is no longer constant, the auto-pause countdown is reported as
 `etaTicks` (simulated fade), not as the raw score.
@@ -229,19 +245,60 @@ Since drain is no longer constant, the auto-pause countdown is reported as
 
 | Work pattern | Bar behavior |
 |--------------|--------------|
-| Single touch | jumps to ~17%, fades, pause ~6.5 min later |
+| Single touch | jumps to ~17%, fades, pause ~7 min later |
 | Sporadic 1-line edits every few minutes | hovers at ~17%, never climbs |
 | Update every tick, 1–3 lines | saturates in ~40 min of continuity |
 | Every tick, ~10 lines | saturates in ~15 min |
-| Every tick, 20+ lines (cap) | saturates in ~9 min — still not instant |
+| Every tick, 20+ churn line-equivalents (cap) — typed, agent-rewritten or committed | saturates in ~9 min — still not instant |
 
 ---
 
 ## 5. Volume Component <a name="magnitude"></a>
 
-Delta magnitude (lines changed) feeds the **volume gain**, not EMA.
+Delta magnitude (line-equivalents churned) feeds the **volume gain**, not EMA.
 EMA tracks frequency of activity (binary: active or not).
-Volume tracks intensity of each activity event (how many lines changed).
+Volume tracks intensity of each activity event (how much churn happened).
+
+### Churn source: per-file, three layers
+
+`deltaMagnitude` is a per-file **churn** estimate in line-equivalents, never a
+difference of summed totals:
+
+1. **Per-file diff churn** — `|Δadded| + |Δremoved|` per file over the
+   *evidence diff* (committed + staged + worktree vs the fresh merge-base;
+   falls back to the plain worktree diff when no base exists). Because the
+   diff is anchored at the merge-base, chunks that are committed immediately
+   stay visible, and movement between files can't net out. A file *entering*
+   the churn map counts whole; a file *leaving* counts its last known size
+   (revert / re-anchor).
+2. **Untracked files** — brand-new files are invisible to any git diff, so
+   they're listed via `git ls-files --others --exclude-standard` (added to
+   the same git batch) and read from disk: their line count is their "added".
+   An agent dumping a 300-line new file registers 300 line-equivalents
+   immediately. Binary and oversized (> `CHURN_MAX_FILE_BYTES` = 2 MB) files
+   are skipped; the whole scan is capped at `CHURN_MAX_FILES` = 100 files
+   per tick.
+3. **Rewrite-in-place detection** — a file whose diff numbers are flat
+   between ticks but whose content hash changed (the lines already differed
+   from the base, so numstat can't see the rewrite) contributes
+   `IN_PLACE_CHURN_LINES` = 8 line-equivalents. Hashes are computed only for
+   flat files, so the cost is low; detection lags one tick the first time a
+   file goes flat.
+
+The gain formula in the evaluator is unchanged:
+`min(VOLUME_GAIN_MAX, deltaMagnitude / LINES_PER_GAIN_TICK)` — at most +4 per
+30s tick, reached at 20 churn line-equivalents.
+
+### Why per-file churn, not netted totals?
+
+The previous source was `|Δadded| + |Δremoved|` of the *summed worktree
+numstat* between ticks. Netting totals was blind to: (a) rewrites of
+already-modified lines (the numstat numbers don't move), (b) cross-file
+movement (one file's +20 cancels another's −20), (c) untracked files (no
+diff at all), (d) chunks committed immediately (they leave the worktree
+diff). In practice an agent rewriting big pieces and committing each step
+registered ~0 volume — the bar hovered near the floor during heavy
+machine-speed work.
 
 ### Design: separation of concerns
 
@@ -398,7 +455,8 @@ Each tick:
   1. Update frequency EMA and attention EMA (binary: activity=1, idle=0)
   2. On activity: touch floor, frequency gain, volume gain, commit bonus,
      cap at MAX_TICKS
-  3. Apply decay (1 on active ticks; 1 + DECAY_BOOST × EMA on idle ticks)
+  3. Apply decay (1 on active ticks; 1 + DECAY_BOOST × EMA on idle ticks
+     above the floor — never through the floor; 1/tick at/below it)
   4. Pick the leader (attention EMA with takeover hysteresis, §6)
   5. If still leader → continue tracking time
   6. If score == 0 → IdleTimeout pause
@@ -564,11 +622,15 @@ Phase 1: Working
   EMA → ~1.0 within ~10 min (binary input, activity every tick)
   Per-tick gain ≈ 2 (frequency) + 2–3 (volume) − 1 (decay) → net +3..4
   Score: from the 15-tick floor to the 90-tick cap in ~20-25 min, then capped
+  (Agent-driven work behaves the same: per-file churn counts big rewrites,
+  new files and immediately committed steps, so a Claude Code session
+  saturates the bar just as fast as hand-typing.)
 
 Phase 2: Lunch break starts (bar was full, EMA ≈ 1)
-  Asymmetric fade: drain = 1 + 4×EMA ≈ 5/tick at first, relaxing as EMA cools
-  Score 90 → 0 in ~30 ticks
-  AutoPause (IdleTimeout) ~15 min after the last edit —
+  Asymmetric fade: drain = 1 + 4×EMA ≈ 5/tick at first, relaxing as EMA
+  cools and stopping at the floor (below it: always 1/tick)
+  Score 90 → floor 15 in ~23 ticks, → 0 in ~38 ticks total
+  AutoPause (IdleTimeout) ~19 min after the last edit —
   an abrupt stop after dense work is the clearest pause signal
 
 Phase 3: Return from lunch (1 hour later)
@@ -645,15 +707,16 @@ No more activity in B:
 Developer is coding (bar ~50%, score ≈ 45), commits, then continues.
 
 Tick N+1: git add . && git commit
-  git diff --numstat: 0/0 (clean tree)
-  delta: addedDelta = 0-50 = -50 → hasDynamics = TRUE (|delta| = 50 → volume +4)
+  Worktree diff: 0/0 (clean tree) → worktree totals swing → hasDynamics = TRUE
+  Evidence diff (vs merge-base) is unchanged by the commit →
+  per-file churn magnitude ≈ 0 (committing is not new churn)
   reflog: new commit → hasCommit = TRUE
 
-  Score: 45 + 2 (frequency) + 4 (volume) + 5 (COMMIT_BONUS) − 1 ≈ 55
+  Score: 45 + 2 (frequency) + 0 (volume) + 5 (COMMIT_BONUS) − 1 ≈ 51
   Commit visibly tops up the bar, never drops it.
 
 Tick N+2 (no new coding yet):
-  diff: 0/0 → hasDynamics = FALSE → normal decay, score 54
+  no churn, no totals movement → hasDynamics = FALSE → normal decay, score 50
   Plenty of leash to think about the next step.
 ```
 
@@ -775,9 +838,12 @@ Pending sessions are closed by:
 | `FREQUENCY_GAIN_MAX` | 2 | A sustained every-tick stream outpaces decay on its own |
 | `STAMINA_LINES_PER_MINUTE` | 10 | 10 lines/min = +1 score per tick; breakeven at 5 lines per 30s tick |
 | `VOLUME_GAIN_MAX` | 4 | Bulk pastes capped — filling the bar requires sustained activity |
+| `IN_PLACE_CHURN_LINES` | 8 | Line-equivalent for a file rewritten in place (flat numstat, changed content hash) |
+| `CHURN_MAX_FILES` | 100 | Churn scan cap per tick (file reads/hashes) |
+| `CHURN_MAX_FILE_BYTES` | 2 MB | Oversized/binary files contribute no churn |
 | `COMMIT_BONUS_SECONDS` | 150 | Commit adds ~2.5 min of buffer |
-| `BASE_DECAY` | 1 | Drain on active ticks |
-| `DECAY_BOOST` | 4 | Idle drain = 1 + 4×EMA — dense coders cool down fast (full Normal bar ≈ 15 min) |
+| `BASE_DECAY` | 1 | Drain on active ticks and at/below the floor |
+| `DECAY_BOOST` | 4 | Idle drain above the floor = 1 + 4×EMA, never through the floor — dense coders cool down fast (full Normal bar ≈ 19 min) |
 
 ### Contract (TypeScript)
 
@@ -785,7 +851,8 @@ Pending sessions are closed by:
 interface ActivitySignals {
   readonly hasDynamics: boolean;
   readonly hasCommit: boolean;
-  readonly deltaMagnitude: number;  // |addedDelta| + |removedDelta|
+  readonly deltaMagnitude: number;  // per-file churn line-equivalents
+                                    // (evidence diff + untracked + in-place, see §5)
 }
 
 interface TickInput {
