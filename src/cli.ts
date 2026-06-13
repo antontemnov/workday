@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getWorkdayHome, getPackageRoot, getDataDir, buildTimestamp } from './core/config.js';
+import { loadConfig, loadSecrets, getWorkdayHome, getPackageRoot, getDataDir, buildTimestamp, computeWorkingDate } from './core/config.js';
 import { UpdateManager } from './core/update-manager.js';
 import {
   CONFIG_FILE_NAME,
@@ -14,6 +14,7 @@ import {
   DAEMON_START_MAX_ATTEMPTS,
   DAEMON_START_POLL_MS,
   MS_PER_MINUTE,
+  DEFAULT_MANUAL_ACTIVITY,
 } from './core/constants.js';
 import {
   readDailyLog,
@@ -30,6 +31,12 @@ import {
   computeActiveIntervals,
   computeDaySummary,
   resolveUiDayStart,
+  addManualEntry,
+  editManualEntry,
+  findManualEntry,
+  resolveManualEntryTarget,
+  computeTotalManualEntryMs,
+  createEmptyLog,
 } from './core/daily-log.js';
 import type {
   ApiResponse,
@@ -46,6 +53,9 @@ import type {
   TaskDayReport,
   PushPlanEntry,
   ReportResponse,
+  ManualEntry,
+  ManualEntryResponse,
+  ActivityTypesResponse,
 } from './core/types.js';
 import { SensitivityLevel } from './core/types.js';
 
@@ -162,12 +172,25 @@ function printTodayData(data: TodayResponse): void {
 
   if (data.sessions.length === 0) {
     console.log('No sessions.');
-    return;
+  } else {
+    console.log('');
+    for (let i = 0; i < data.sessions.length; i++) {
+      printSessionDetail(data.sessions[i], i + 1);
+    }
   }
 
-  console.log('');
-  for (let i = 0; i < data.sessions.length; i++) {
-    printSessionDetail(data.sessions[i], i + 1);
+  if (data.manualEntries.length > 0) {
+    console.log('');
+    console.log('Manual entries:');
+    printManualEntries(data.manualEntries);
+  }
+}
+
+function printManualEntries(entries: readonly ManualEntry[]): void {
+  if (entries.length === 0) { console.log('No manual entries.'); return; }
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    console.log(`  #${i + 1} ${e.id}  ${e.task}  ${e.minutes}m  ${e.activity}  "${e.description}"`);
   }
 }
 
@@ -468,6 +491,167 @@ function handleSetStartOffline(date: string, time: string): void {
   console.log(`Budget: ${formatDuration(computeBudgetMs(log, config))} | Remaining: ${formatDuration(getRemainingBudgetMs(log, config))}`);
 }
 
+// ─── Manual entries ──────────────────────────────────────────────────────
+
+async function handleLog(args: string[]): Promise<void> {
+  // workday log <task> <minutes> "<description>" [--activity <type>] [--date YYYY-MM-DD]
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const actIdx = cmdArgs.indexOf('--activity');
+  let activity = DEFAULT_MANUAL_ACTIVITY;
+  if (actIdx !== -1) {
+    activity = cmdArgs[actIdx + 1] ?? DEFAULT_MANUAL_ACTIVITY;
+    cmdArgs = [...cmdArgs.slice(0, actIdx), ...cmdArgs.slice(actIdx + 2)];
+  }
+
+  const task = cmdArgs[0];
+  const minutesStr = cmdArgs[1];
+  const description = cmdArgs.slice(2).join(' ');
+
+  if (!task || !minutesStr || !description) {
+    console.log('Usage: workday log <task> <minutes> "<description>" [--activity <type>] [--date YYYY-MM-DD]');
+    return;
+  }
+  const minutes = parseInt(minutesStr, 10);
+  if (isNaN(minutes) || minutes <= 0) {
+    console.log('Minutes must be a positive number');
+    return;
+  }
+
+  if (date) {
+    handleLogOffline(date, task, minutes, description, activity);
+    return;
+  }
+
+  const result = await apiPost<ManualEntryResponse>('/api/manual-entry', { task, minutes, description, activity });
+  if (!result.ok) { console.log(result.error); return; }
+  const d = result.data!;
+  console.log(`Logged ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
+  console.log(`Total manual: ${d.totalManualMinutes}m | Remaining budget: ${formatDuration(d.remainingBudgetMs)}`);
+}
+
+function handleLogOffline(date: string, task: string, minutes: number, description: string, activity: string): void {
+  const config = loadConfig();
+  const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
+  if (date > today) {
+    console.log(`Cannot log on a future date (${date} > ${today})`);
+    return;
+  }
+  // Manual entry is standalone — create the day log if it doesn't exist yet.
+  const log = readDailyLog(date) ?? createEmptyLog(date, config);
+  try {
+    const entry = addManualEntry(log, { task, minutes, description, activity }, config);
+    writeDailyLog(log);
+    console.log(`Logged ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
+    console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m | Remaining budget: ${formatDuration(getRemainingBudgetMs(log, config))}`);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function handleLogEdit(args: string[]): Promise<void> {
+  // workday log-edit <#index|id> [--minutes N] [--desc "..."] [--activity X] [--date D]
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const target = cmdArgs[0];
+  if (!target) {
+    console.log('Usage: workday log-edit <#index|id> [--minutes N] [--desc "..."] [--activity X] [--date D]');
+    return;
+  }
+
+  const patch: { minutes?: number; description?: string; activity?: string } = {};
+  const minStr = parseArgValue(cmdArgs, '--minutes');
+  if (minStr !== null) {
+    const m = parseInt(minStr, 10);
+    if (isNaN(m) || m <= 0) { console.log('Minutes must be positive'); return; }
+    patch.minutes = m;
+  }
+  const desc = parseArgValue(cmdArgs, '--desc');
+  if (desc !== null) patch.description = desc;
+  const act = parseArgValue(cmdArgs, '--activity');
+  if (act !== null) patch.activity = act;
+
+  if (patch.minutes === undefined && patch.description === undefined && patch.activity === undefined) {
+    console.log('Nothing to change. Provide --minutes, --desc, or --activity.');
+    return;
+  }
+
+  if (date) {
+    handleLogEditOffline(date, target, patch);
+    return;
+  }
+
+  const result = await apiPost<ManualEntryResponse>('/api/manual-entry/update', { target, ...patch });
+  if (!result.ok) { console.log(result.error); return; }
+  const d = result.data!;
+  console.log(`Updated ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
+  console.log(`Total manual: ${d.totalManualMinutes}m | Remaining budget: ${formatDuration(d.remainingBudgetMs)}`);
+}
+
+function handleLogEditOffline(date: string, target: string, patch: { minutes?: number; description?: string; activity?: string }): void {
+  const config = loadConfig();
+  const log = readDailyLog(date);
+  if (!log) { console.log(`No data for ${date}`); return; }
+  const entry = resolveManualEntryTarget(log, target);
+  if (!entry) { console.log(`Manual entry not found: ${target}`); return; }
+  try {
+    editManualEntry(log, entry.id, patch, config);
+    writeDailyLog(log);
+    const after = findManualEntry(log, entry.id)!;
+    console.log(`Updated ${after.task} on ${date}: ${after.minutes}m ${after.activity} — "${after.description}"`);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function handleLogList(args: string[]): Promise<void> {
+  const date = parseArgValue(args, '--date');
+  let entries: readonly ManualEntry[] = [];
+  if (date) {
+    const log = readDailyLog(date);
+    if (!log) { console.log(`No data for ${date}`); return; }
+    entries = log.manualEntries ?? [];
+  } else {
+    const result = await apiGet<TodayResponse>('/api/today');
+    if (!result.ok) { console.log(result.error); return; }
+    entries = result.data!.manualEntries ?? [];
+  }
+  printManualEntries(entries);
+}
+
+async function handleActivities(): Promise<void> {
+  const result = await apiGet<ActivityTypesResponse>('/api/activity-types');
+  let data: ActivityTypesResponse;
+  if (result.ok && result.data) {
+    data = result.data;
+  } else {
+    // Daemon down — resolve directly from cache / Tempo.
+    try {
+      const { resolveActivityTypes } = await import('./push/activity-types.js');
+      data = await resolveActivityTypes(loadSecrets());
+    } catch (err) {
+      console.log(result.error ?? (err instanceof Error ? err.message : String(err)));
+      return;
+    }
+  }
+  console.log(`Activity types (${data.key})${data.fromCache ? '' : '  [fallback — configure Tempo token for the live list]'}:`);
+  for (const a of data.activities) {
+    console.log(`  ${a.value.padEnd(30)} ${a.name}`);
+  }
+}
+
 async function handleDay(args: string[]): Promise<void> {
   const date = args[0];
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -523,6 +707,7 @@ async function handleDay(args: string[]): Promise<void> {
     dayType: log.dayType,
     status: log.status,
     sessions,
+    manualEntries: log.manualEntries ?? [],
     totalEffectiveMs,
     signalCount: log.signals.length,
     budgetMs: computeBudgetMs(log, config),
@@ -829,6 +1014,18 @@ async function main(): Promise<void> {
     case 'day':
       await handleDay(args.slice(1));
       break;
+    case 'log':
+      await handleLog(args.slice(1));
+      break;
+    case 'log-edit':
+      await handleLogEdit(args.slice(1));
+      break;
+    case 'log-list':
+      await handleLogList(args.slice(1));
+      break;
+    case 'activities':
+      await handleActivities();
+      break;
     case 'tempo':
       await handleTempo(args.slice(1));
       break;
@@ -862,6 +1059,11 @@ Usage:
   workday adjust <target> +<N> "<reason>" --date DATE  Add manual time (past day)
   workday set-start HH:MM                              Set day start earlier (today)
   workday set-start HH:MM --date DATE                  Set day start earlier (past day)
+  workday log <task> <min> "<desc>" [--activity T]     Log manual time (today)
+  workday log <task> <min> "<desc>" --date DATE        Log manual time (past day)
+  workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry
+  workday log-list [--date DATE]                       List manual entries
+  workday activities                                   Show Tempo activity types
   workday tempo                                        Show report (1st of month → today)
   workday tempo --from DATE --to DATE                  Report for a custom range
   workday tempo --file report.json                     Save report to JSON file

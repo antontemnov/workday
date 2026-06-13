@@ -8,14 +8,18 @@ import {
   computeManualMinutes,
   computeBudgetMs,
   computeTotalClaimedMs,
+  computeTotalManualEntryMs,
   getRemainingBudgetMs,
   computeActiveIntervals,
   computeDaySummary,
   resolveUiDayStart,
   readDailyLog,
   getOpenPause,
+  findManualEntry,
+  resolveManualEntryTarget,
   listAvailableDates,
 } from './core/daily-log.js';
+import { resolveActivityTypes } from './push/activity-types.js';
 import {
   computeWorkingDate,
   buildTimestamp,
@@ -24,7 +28,7 @@ import {
   writeSecrets,
   loadSecrets,
 } from './core/config.js';
-import { MAX_BODY_BYTES, API_VERSION } from './core/constants.js';
+import { MAX_BODY_BYTES, API_VERSION, MS_PER_MINUTE, DEFAULT_MANUAL_ACTIVITY } from './core/constants.js';
 import type {
   AppConfig,
   ApiResponse,
@@ -38,6 +42,8 @@ import type {
   SensitivityResponse,
   AdjustResponse,
   SetStartResponse,
+  ManualEntryResponse,
+  ActivityTypesResponse,
   DaysResponse,
   Session,
   Secrets,
@@ -155,6 +161,17 @@ export class HttpServer {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleSetStart(body));
       }
+      if (method === 'POST' && path === '/api/manual-entry') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleAddManualEntry(body));
+      }
+      if (method === 'POST' && path === '/api/manual-entry/update') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleUpdateManualEntry(body));
+      }
+      if (method === 'GET' && path === '/api/activity-types') {
+        return this.sendJson(res, 200, await this.handleActivityTypes());
+      }
       if (method === 'GET' && path === '/api/day') {
         const date = url.searchParams.get('date');
         return this.sendJson(res, 200, this.handleDay(date));
@@ -253,6 +270,7 @@ export class HttpServer {
         dayType: log.dayType,
         status: log.status,
         sessions,
+        manualEntries: log.manualEntries ?? [],
         totalEffectiveMs,
         signalCount: log.signals.length,
         budgetMs: computeBudgetMs(log, config),
@@ -398,6 +416,91 @@ export class HttpServer {
     // Re-run evaluator so budget state settles before the next read.
     await this.deps.forceTick();
     return response;
+  }
+
+  // ─── Manual entries ──────────────────────────────────────────────
+
+  private async handleAddManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
+    const task = typeof body.task === 'string' ? body.task : '';
+    const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
+    const description = typeof body.description === 'string' ? body.description : '';
+    const activity = typeof body.activity === 'string' && body.activity.trim()
+      ? body.activity
+      : DEFAULT_MANUAL_ACTIVITY;
+
+    if (!task) return { ok: false, error: 'Missing task' };
+    if (!description) return { ok: false, error: 'Missing description' };
+
+    const tracker = this.deps.sessionTracker;
+    const result = tracker.addManualEntry({ task, minutes, description, activity });
+    if (!result.ok || !result.entry) {
+      return { ok: false, error: result.error };
+    }
+    tracker.flush();
+
+    const log = tracker.getDailyLog();
+    const entry = result.entry;
+    const response: ApiResponse<ManualEntryResponse> = {
+      ok: true,
+      data: {
+        id: entry.id,
+        task: entry.task,
+        minutes: entry.minutes,
+        description: entry.description,
+        activity: entry.activity,
+        totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
+        remainingBudgetMs: getRemainingBudgetMs(log, this.deps.config),
+      },
+    };
+    // Manual time counts toward budget — settle exhaustion before next read.
+    await this.deps.forceTick();
+    return response;
+  }
+
+  private async handleUpdateManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
+    const target = typeof body.target === 'string' ? body.target
+      : (typeof body.id === 'string' ? body.id : '');
+    if (!target) return { ok: false, error: 'Missing target (manual entry #index or id)' };
+
+    const patch: { minutes?: number; description?: string; activity?: string } = {};
+    if (typeof body.minutes === 'number') patch.minutes = body.minutes;
+    if (typeof body.description === 'string') patch.description = body.description;
+    if (typeof body.activity === 'string') patch.activity = body.activity;
+
+    const tracker = this.deps.sessionTracker;
+    const found = resolveManualEntryTarget(tracker.getDailyLog(), target);
+    if (!found) return { ok: false, error: `Manual entry not found: ${target}` };
+    const result = tracker.editManualEntry(found.id, patch);
+    if (!result.ok) return { ok: false, error: result.error };
+    tracker.flush();
+
+    const log = tracker.getDailyLog();
+    const entry = findManualEntry(log, found.id);
+    if (!entry) return { ok: false, error: 'Manual entry not found after update' };
+    const response: ApiResponse<ManualEntryResponse> = {
+      ok: true,
+      data: {
+        id: entry.id,
+        task: entry.task,
+        minutes: entry.minutes,
+        description: entry.description,
+        activity: entry.activity,
+        totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
+        remainingBudgetMs: getRemainingBudgetMs(log, this.deps.config),
+      },
+    };
+    await this.deps.forceTick();
+    return response;
+  }
+
+  private async handleActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
+    try {
+      const secrets = loadSecrets();
+      const data = await resolveActivityTypes(secrets);
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   // ─── Settings ────────────────────────────────────────────────────
@@ -549,6 +652,7 @@ export class HttpServer {
         dayType: log.dayType,
         status: log.status,
         sessions,
+        manualEntries: log.manualEntries ?? [],
         totalEffectiveMs,
         signalCount: log.signals.length,
         budgetMs: computeBudgetMs(log, config),

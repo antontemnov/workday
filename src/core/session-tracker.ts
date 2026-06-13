@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
-import type { AppConfig, DailyLog, Session, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot } from './types.js';
+import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot } from './types.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -9,6 +9,8 @@ import {
   addSignal,
   isBudgetExhausted,
   addManualAdjustment,
+  addManualEntry,
+  editManualEntry,
   setDayManualStart,
   resolveSessionTarget,
   computeManualMinutes,
@@ -53,6 +55,9 @@ export class SessionTracker {
     // Normalize old logs that lack new fields
     if (this.dailyLog.dayStartedAt === undefined) {
       (this.dailyLog as DailyLog).dayStartedAt = null;
+    }
+    if (!this.dailyLog.manualEntries) {
+      this.dailyLog.manualEntries = [];
     }
 
     // Normalize old sessions that lack new fields
@@ -250,6 +255,26 @@ export class SessionTracker {
   public setManualDayStart(isoTimestamp: string | null): { ok: boolean; error?: string } {
     try {
       setDayManualStart(this.dailyLog, isoTimestamp, this.config);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Add a manual entry to today's log */
+  public addManualEntry(input: { task: string; minutes: number; description: string; activity: string }): { ok: boolean; error?: string; entry?: ManualEntry } {
+    try {
+      const entry = addManualEntry(this.dailyLog, input, this.config);
+      return { ok: true, entry };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Edit a manual entry in today's log */
+  public editManualEntry(id: string, patch: { minutes?: number; description?: string; activity?: string }): { ok: boolean; error?: string } {
+    try {
+      editManualEntry(this.dailyLog, id, patch, this.config);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

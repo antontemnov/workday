@@ -1,4 +1,4 @@
-import { TEMPO_BASE_URL, TEMPO_RATE_LIMIT_MS } from '../core/constants.js';
+import { TEMPO_BASE_URL, TEMPO_RATE_LIMIT_MS, ACTIVITY_ATTRIBUTE_KEY, DEFAULT_ACTIVITY } from '../core/constants.js';
 import type { TempoWorklog } from '../core/types.js';
 
 interface CreateWorklogParams {
@@ -6,6 +6,14 @@ interface CreateWorklogParams {
   readonly authorAccountId: string;
   readonly timeSpentSeconds: number;
   readonly startDate: string;
+}
+
+export interface TempoWorkAttribute {
+  readonly key: string;
+  readonly name: string;
+  readonly type: string;                              // e.g. STATIC_LIST, ACCOUNT
+  readonly values?: readonly string[];               // present for STATIC_LIST
+  readonly names?: Readonly<Record<string, string>>; // value → display label
 }
 
 export class TempoClient {
@@ -88,6 +96,14 @@ export class TempoClient {
     return allWorklogs;
   }
 
+  /** Fetch all work attributes (e.g. _Activity_ STATIC_LIST values). */
+  public async getWorkAttributes(): Promise<TempoWorkAttribute[]> {
+    const response = await this.request('GET', '/4/work-attributes?limit=100') as {
+      results?: TempoWorkAttribute[];
+    };
+    return response.results ?? [];
+  }
+
   /** Create a new worklog */
   public async createWorklog(params: CreateWorklogParams): Promise<{ tempoWorklogId: number }> {
     const body: Record<string, unknown> = {
@@ -96,7 +112,7 @@ export class TempoClient {
       timeSpentSeconds: params.timeSpentSeconds,
       startDate: params.startDate,
       startTime: '09:00:00',
-      attributes: [{ key: '_Activity_', value: 'Development' }],
+      attributes: [{ key: ACTIVITY_ATTRIBUTE_KEY, value: DEFAULT_ACTIVITY }],
     };
     return this.request('POST', '/4/worklogs', body) as Promise<{ tempoWorklogId: number }>;
   }
@@ -109,7 +125,7 @@ export class TempoClient {
       timeSpentSeconds: params.timeSpentSeconds,
       startDate: params.startDate,
       startTime: '09:00:00',
-      attributes: [{ key: '_Activity_', value: 'Development' }],
+      attributes: [{ key: ACTIVITY_ATTRIBUTE_KEY, value: DEFAULT_ACTIVITY }],
     };
     return this.request('PUT', `/4/worklogs/${worklogId}`, body) as Promise<{ tempoWorklogId: number }>;
   }

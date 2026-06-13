@@ -42,6 +42,33 @@ export const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 // ─── Budget / Manual adjustment ─────────────────────────────────────────
 export const MAX_ADJUSTMENT_MINUTES = 480;
 
+// ─── Manual entry / Activity types ──────────────────────────────────────
+export const ACTIVITY_ATTRIBUTE_KEY = '_Activity_';
+export const DEFAULT_ACTIVITY = 'Development';        // sessions (value == name)
+export const DEFAULT_MANUAL_ACTIVITY = 'Other';       // manual entry, when unspecified
+export const WORK_ATTRIBUTES_CACHE_FILE = 'work-attributes-cache.json';
+// Fallback _Activity_ values (value/name) used only when no Tempo token /
+// fetch fails. Mirrors the live instance — refreshed into cache on first
+// successful GET /4/work-attributes.
+export const FALLBACK_ACTIVITIES: ReadonlyArray<{ readonly value: string; readonly name: string }> = [
+  { value: 'AutomationPerformanceTesting', name: 'Automation/Performance Testing' },
+  { value: 'Bugfixing', name: 'Bugfixing' },
+  { value: 'CodeReview', name: 'Code Review' },
+  { value: 'CodeReviewFixes', name: 'Code Review Fixes' },
+  { value: 'DesignAnalysis', name: 'Design/Analysis' },
+  { value: 'Development', name: 'Development' },
+  { value: 'EnvironmentSetup', name: 'Environment Setup' },
+  { value: 'Estimation', name: 'Estimation' },
+  { value: 'IntegrationTesting', name: 'Integration Testing' },
+  { value: 'Merge', name: 'Merge' },
+  { value: 'Other', name: 'Other' },
+  { value: "QAlead'sactivities", name: "QA lead's activities" },
+  { value: 'PM', name: 'PM' },
+  { value: 'TechnicalControl', name: 'Technical Control' },
+  { value: 'Testing', name: 'Testing' },
+  { value: 'TestReview', name: 'Test Review' },
+];
+
 // ─── Push / Tempo ───────────────────────────────────────────────────────
 export const ISSUE_CACHE_FILE = 'issue-cache.json';
 export const PUSH_LOG_FILE = 'push-log.json';

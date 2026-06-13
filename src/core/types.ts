@@ -99,6 +99,19 @@ export interface ManualAdjustment {
   readonly addedAt: string;     // ISO timestamp
 }
 
+// ─── Manual Entry ─────────────────────────────────────────────────────────
+
+// Standalone time logged on a task with no tracked session (meeting, code
+// review, planning). Becomes its own Tempo worklog. Mutable while day Draft.
+export interface ManualEntry {
+  readonly id: string;
+  readonly task: string;          // matches config.taskPattern, e.g. ATL-10
+  minutes: number;                // > 0, max MAX_ADJUSTMENT_MINUTES
+  description: string;            // → worklog.description
+  activity: string;              // Tempo _Activity_ value, e.g. 'CodeReview'
+  readonly createdAt: string;     // ISO timestamp
+}
+
 // ─── Evidence & Sessions ─────────────────────────────────────────────────
 
 // Mutable accumulator — fields incremented during session lifecycle
@@ -207,6 +220,7 @@ export interface DailyLog {
   dayStartedAt: string | null;
   sessions: Session[];
   signals: Signal[];
+  manualEntries: ManualEntry[];
   pushedAt: string | null;
 }
 
@@ -384,6 +398,7 @@ export interface TodayResponse {
   readonly dayType: string;
   readonly status: string;
   readonly sessions: readonly SessionDetail[];
+  readonly manualEntries: readonly ManualEntry[];
   readonly totalEffectiveMs: number;
   readonly signalCount: number;
   readonly budgetMs: number;
@@ -434,6 +449,27 @@ export interface SetStartResponse {
   readonly dayStart: string;
   readonly budgetMs: number;
   readonly remainingBudgetMs: number;
+}
+
+export interface ManualEntryResponse {
+  readonly id: string;
+  readonly task: string;
+  readonly minutes: number;
+  readonly description: string;
+  readonly activity: string;
+  readonly totalManualMinutes: number;   // sum of all manual entries today
+  readonly remainingBudgetMs: number;
+}
+
+export interface ActivityType {
+  readonly value: string;   // Tempo _Activity_ value, e.g. 'CodeReview'
+  readonly name: string;    // display label, e.g. 'Code Review'
+}
+
+export interface ActivityTypesResponse {
+  readonly key: string;                          // '_Activity_'
+  readonly activities: readonly ActivityType[];
+  readonly fromCache: boolean;                   // false when served from fallback
 }
 
 export interface DaysResponse {

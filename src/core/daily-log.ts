@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdi
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
-import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment, type ActiveInterval } from './types.js';
+import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment, type ManualEntry, type ActiveInterval } from './types.js';
 import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ADJUSTMENT_MINUTES, MS_PER_MINUTE } from './constants.js';
 
 /** Generate short unique session id */
@@ -52,6 +52,7 @@ export function createEmptyLog(date: string, config: AppConfig): DailyLog {
     dayStartedAt: null,
     sessions: [],
     signals: [],
+    manualEntries: [],
     pushedAt: null,
   };
 }
@@ -377,9 +378,15 @@ export function computeBudgetMs(log: DailyLog, config: AppConfig): number {
   return Math.max(0, dayEnd - dayStart);
 }
 
-/** Sum of all sessions' full effective duration (ms) */
+/** Sum of all manual entries' minutes (ms) */
+export function computeTotalManualEntryMs(log: DailyLog): number {
+  return (log.manualEntries ?? []).reduce((sum, e) => sum + e.minutes * MS_PER_MINUTE, 0);
+}
+
+/** Sum of all sessions' full effective duration + manual entries (ms) */
 export function computeTotalClaimedMs(log: DailyLog): number {
-  return log.sessions.reduce((sum, s) => sum + computeFullEffectiveDuration(s), 0);
+  const sessionsMs = log.sessions.reduce((sum, s) => sum + computeFullEffectiveDuration(s), 0);
+  return sessionsMs + computeTotalManualEntryMs(log);
 }
 
 /** Check if day budget is exhausted */
@@ -471,6 +478,126 @@ export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: n
     reason,
     addedAt: new Date().toISOString(),
   });
+}
+
+// ─── Manual entries ───────────────────────────────────────────────────────
+
+/** Find a manual entry by id */
+export function findManualEntry(log: DailyLog, id: string): ManualEntry | undefined {
+  return (log.manualEntries ?? []).find(e => e.id === id);
+}
+
+/** Resolve a manual entry by 1-based index (#2) or id */
+export function resolveManualEntryTarget(log: DailyLog, target: string): ManualEntry | null {
+  const entries = log.manualEntries ?? [];
+  const index = parseInt(target.replace('#', ''), 10);
+  if (!isNaN(index) && index >= 1 && index <= entries.length) {
+    return entries[index - 1];
+  }
+  return entries.find(e => e.id === target) ?? null;
+}
+
+/** Validate a task key against the configured pattern (full-string match). */
+function assertValidTask(task: string, config: AppConfig): void {
+  const match = task.match(new RegExp(config.taskPattern));
+  if (!match || match[0] !== task) {
+    throw new Error(`Task "${task}" is not a valid key (pattern: ${config.taskPattern})`);
+  }
+}
+
+/**
+ * Add a manual entry — standalone time on a task, no session involved.
+ * Same budget invariant as manual adjustments: total claimed ≤ day window.
+ * Throws on validation failure.
+ */
+export function addManualEntry(
+  log: DailyLog,
+  input: { task: string; minutes: number; description: string; activity: string },
+  config: AppConfig,
+): ManualEntry {
+  if (log.status !== DayStatus.Draft) {
+    throw new Error('Cannot add to confirmed/pushed day');
+  }
+
+  const task = input.task.trim();
+  if (!task) throw new Error('Task is required');
+  assertValidTask(task, config);
+
+  if (!Number.isFinite(input.minutes) || input.minutes <= 0) {
+    throw new Error('Minutes must be positive');
+  }
+  if (input.minutes > MAX_ADJUSTMENT_MINUTES) {
+    throw new Error(`Max is ${MAX_ADJUSTMENT_MINUTES} minutes (8h)`);
+  }
+
+  const description = input.description.trim();
+  if (!description) throw new Error('Description is required');
+
+  const activity = input.activity.trim();
+  if (!activity) throw new Error('Activity is required');
+
+  const addMs = input.minutes * MS_PER_MINUTE;
+  if (computeTotalClaimedMs(log) + addMs > computeBudgetMs(log, config)) {
+    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
+    throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
+  }
+
+  if (!log.manualEntries) log.manualEntries = [];
+  const entry: ManualEntry = {
+    id: generateSessionId(),
+    task,
+    minutes: input.minutes,
+    description,
+    activity,
+    createdAt: new Date().toISOString(),
+  };
+  log.manualEntries.push(entry);
+  return entry;
+}
+
+/**
+ * Edit a manual entry in place (absolute set of provided fields).
+ * Budget re-checked when minutes increase. Throws on validation failure.
+ */
+export function editManualEntry(
+  log: DailyLog,
+  id: string,
+  patch: { minutes?: number; description?: string; activity?: string },
+  config: AppConfig,
+): void {
+  if (log.status !== DayStatus.Draft) {
+    throw new Error('Cannot edit confirmed/pushed day');
+  }
+
+  const entry = findManualEntry(log, id);
+  if (!entry) throw new Error(`Manual entry not found: ${id}`);
+
+  if (patch.minutes !== undefined) {
+    if (!Number.isFinite(patch.minutes) || patch.minutes <= 0) {
+      throw new Error('Minutes must be positive');
+    }
+    if (patch.minutes > MAX_ADJUSTMENT_MINUTES) {
+      throw new Error(`Max is ${MAX_ADJUSTMENT_MINUTES} minutes (8h)`);
+    }
+    const deltaMs = (patch.minutes - entry.minutes) * MS_PER_MINUTE;
+    if (deltaMs > 0 && computeTotalClaimedMs(log) + deltaMs > computeBudgetMs(log, config)) {
+      const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
+      throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
+    }
+    entry.minutes = patch.minutes;
+  }
+
+  if (patch.description !== undefined) {
+    const d = patch.description.trim();
+    if (!d) throw new Error('Description cannot be empty');
+    entry.description = d;
+  }
+
+  if (patch.activity !== undefined) {
+    const a = patch.activity.trim();
+    if (!a) throw new Error('Activity cannot be empty');
+    entry.activity = a;
+  }
 }
 
 /**
