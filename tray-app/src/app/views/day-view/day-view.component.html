@@ -18,60 +18,34 @@
 
 <!-- Content -->
 <div class="content" *ngIf="data && !error">
-  <!-- Day timeline -->
-  <section class="timeline" *ngIf="data.activeIntervals.length || dayStartIso">
-    <div class="timeline-row">
-      <div class="timeline-bar">
-        <div class="timeline-segment"
-             *ngFor="let iv of data.activeIntervals"
-             [class.closed]="isSessionClosed(iv.sessionId)"
-             [class.highlight]="hoveredSessionId === iv.sessionId"
-             [style.left.%]="timeToPercent(iv.from)"
-             [style.width.%]="timeToPercent(iv.to) - timeToPercent(iv.from)"
-             [style.background-color]="sessionColor(iv.sessionId)"
-             [style.--seg-color]="sessionColor(iv.sessionId)"
-             (mouseenter)="hoveredSessionId = iv.sessionId"
-             (mouseleave)="hoveredSessionId = null">
-        </div>
-        <div class="timeline-now"
-             *ngIf="isViewingToday && currentTimePercent !== null"
-             [style.left.%]="currentTimePercent"
-             title="Now">
-        </div>
-        <div class="timeline-daystart"
-             *ngIf="dayStartPercent !== null"
-             [style.left.%]="dayStartPercent">
-          <span class="timeline-daystart-label"
-                [style.transform]="dayStartLabelTransform">{{ dayStartLabel }}</span>
-        </div>
-        <div class="timeline-dayend"
-             *ngIf="lastActivityPercent !== null"
-             [style.left.%]="lastActivityPercent">
-          <span class="timeline-dayend-label"
-                [style.transform]="lastActivityLabelTransform">{{ lastActivityLabel }}</span>
-        </div>
+  <!-- Day block: date + start→end (left) · active|idle ratio (right) -->
+  <section class="day-block">
+    <div class="day-head">
+      <h1 class="day-date"
+          [class.past]="!isViewingToday"
+          (click)="goTodayRequested.emit()"
+          [title]="isViewingToday ? '' : 'Back to today'">{{ dateLabel }}</h1>
+      <div class="day-times" *ngIf="dayStartIso">
+        <button class="day-start"
+                (click)="setStartRequested.emit()"
+                [disabled]="!isViewingToday || actionPending"
+                [title]="isViewingToday ? 'Set day start time' : ''">
+          {{ dayStartLabel }}<span class="pencil" *ngIf="isManualStart" title="Manual start"> ✎</span>
+        </button>
+        <span class="day-arrow" *ngIf="lastActivityLabel">→ {{ lastActivityLabel }}</span>
       </div>
-      <button class="timeline-edge-btn start"
-              *ngIf="isViewingToday && hasSessions"
-              (click)="setStartRequested.emit()"
-              [disabled]="actionPending"
-              aria-label="Set day start time"
-              title="Set day start time">
-        <span class="edge-glyph">⇤</span>
-      </button>
-      <button class="timeline-edge-btn end"
-              *ngIf="isViewingToday && hasSessions"
-              (click)="endDayRequested.emit()"
-              [disabled]="actionPending"
-              aria-label="End workday"
-              title="End workday — close all sessions and stop the daemon">
-        <span class="edge-glyph">⏻</span>
-      </button>
     </div>
-    <div class="timeline-stats">
-      <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
-      <span class="dot-sep" *ngIf="totalPauseMs > 0">&middot;</span>
-      <span class="idle-line" *ngIf="totalPauseMs > 0">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
+
+    <div class="ratio" *ngIf="hasActivity">
+      <div class="ratio-bar">
+        <span class="seg active" [style.width.%]="activePct"></span>
+        <span class="seg idle" *ngIf="idlePct > 0" [style.width.%]="idlePct"></span>
+      </div>
+      <div class="ratio-caption">
+        <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
+        <span class="dot-sep" *ngIf="totalPauseMs > 0">&middot;</span>
+        <span class="idle-line" *ngIf="totalPauseMs > 0">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
+      </div>
     </div>
   </section>
 
@@ -80,10 +54,7 @@
     <h2>Active <span class="count">({{ openSessions.length }})</span></h2>
     <div class="session-card"
          *ngFor="let s of openSessions"
-         [class.highlight]="hoveredSessionId === s.id"
-         [style.--repo-color]="sessionColor(s.id)"
-         (mouseenter)="hoveredSessionId = s.id"
-         (mouseleave)="hoveredSessionId = null">
+         [style.--repo-color]="sessionColor(s.id)">
       <span class="session-color-bar" [style.background-color]="sessionColor(s.id)"></span>
       <div class="session-header">
         <span class="repo">{{ repoName(s.repo) }}</span>
@@ -98,7 +69,7 @@
         </div>
         <div class="row time-row">
           <span class="label">Time</span>
-          <span class="value time">{{ formatDuration(s.effectiveDurationMs) }}</span>
+          <span class="value time">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
           <button class="add-time-btn"
                   *ngIf="isViewingToday"
                   [disabled]="actionPending"
@@ -170,15 +141,12 @@
     <h2>Closed <span class="count">({{ closedSessions.length }})</span></h2>
     <div class="closed-row"
          *ngFor="let s of closedSessions"
-         [class.highlight]="hoveredSessionId === s.id"
-         [style.--repo-color]="sessionColor(s.id)"
-         (mouseenter)="hoveredSessionId = s.id"
-         (mouseleave)="hoveredSessionId = null">
+         [style.--repo-color]="sessionColor(s.id)">
       <span class="closed-color-bar"></span>
       <span class="repo">{{ repoName(s.repo) }}</span>
       <span class="task">{{ s.task ?? '—' }}</span>
       <span class="interval">{{ sessionInterval(s) }}</span>
-      <span class="dur">{{ formatDuration(s.effectiveDurationMs) }}</span>
+      <span class="dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
       <span class="reason-badge"
             [class]="'reason-badge ' + closedReasonClass(s.closedBy)"
             [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>

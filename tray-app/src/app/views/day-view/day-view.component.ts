@@ -26,6 +26,7 @@ export class DayViewComponent {
   @Input() loading = false;
   @Input() error: string | null = null;
   @Input() isViewingToday = true;
+  @Input() dateLabel = '';
   @Input() actionPending = false;
   @Input() daemonStarting = false;
   @Input() currentTimeMs: number = Date.now();
@@ -34,10 +35,8 @@ export class DayViewComponent {
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeRequested = new EventEmitter<SessionDetail>();
   @Output() setStartRequested = new EventEmitter<void>();
-  @Output() endDayRequested = new EventEmitter<void>();
   @Output() startDaemonRequested = new EventEmitter<void>();
-
-  hoveredSessionId: string | null = null;
+  @Output() goTodayRequested = new EventEmitter<void>();
 
   // ─── Sessions ─────────────────────────────────────────────────────────
 
@@ -51,30 +50,6 @@ export class DayViewComponent {
 
   get hasSessions(): boolean {
     return (this.data?.sessions.length ?? 0) > 0;
-  }
-
-  // ─── Timeline geometry ────────────────────────────────────────────────
-
-  get scheduleWindowMs(): number {
-    if (!this.data?.schedule) return 0;
-    const { start, end } = this.data.schedule;
-    const hours = end <= start ? (24 - start + end) : (end - start);
-    return hours * 3_600_000;
-  }
-
-  timeToPercent(isoTimestamp: string): number {
-    if (!this.data?.schedule) return 0;
-    const windowMs = this.scheduleWindowMs;
-    if (windowMs === 0) return 0;
-    const ts = new Date(isoTimestamp).getTime();
-    const offset = ts - this.getScheduleStartMs();
-    return Math.max(0, Math.min(100, (offset / windowMs) * 100));
-  }
-
-  private getScheduleStartMs(): number {
-    if (!this.data) return 0;
-    const [y, m, d] = this.data.date.split('-').map(Number);
-    return new Date(y, m - 1, d, this.data.schedule.start, 0, 0).getTime();
   }
 
   // ─── Day-start marker ─────────────────────────────────────────────────
@@ -93,13 +68,9 @@ export class DayViewComponent {
     return this.formatHm(iso);
   }
 
-  get dayStartPercent(): number | null {
-    const iso = this.dayStartIso;
-    return iso ? this.timeToPercent(iso) : null;
-  }
-
-  get dayStartLabelTransform(): string {
-    return this.labelTransform(this.dayStartPercent);
+  // Manual start gets a pencil marker; auto-derived start shows none.
+  get isManualStart(): boolean {
+    return !!this.data?.manualStart;
   }
 
   // ─── Last-activity marker ─────────────────────────────────────────────
@@ -119,33 +90,6 @@ export class DayViewComponent {
   get lastActivityLabel(): string {
     const iso = this.lastActivityIso;
     return iso ? this.formatHm(iso) : '';
-  }
-
-  get lastActivityPercent(): number | null {
-    const iso = this.lastActivityIso;
-    return iso ? this.timeToPercent(iso) : null;
-  }
-
-  get lastActivityLabelTransform(): string {
-    return this.labelTransform(this.lastActivityPercent);
-  }
-
-  // Keep the label inside the bar's horizontal bounds.
-  private labelTransform(p: number | null): string {
-    if (p === null) return 'translateX(-50%)';
-    if (p < 10) return 'translateX(0)';
-    if (p > 90) return 'translateX(-100%)';
-    return 'translateX(-50%)';
-  }
-
-  // Live "now" cursor — only on today.
-  get currentTimePercent(): number | null {
-    if (!this.isViewingToday || !this.data?.schedule) return null;
-    const windowMs = this.scheduleWindowMs;
-    if (windowMs === 0) return null;
-    const offset = this.currentTimeMs - this.getScheduleStartMs();
-    if (offset < 0 || offset > windowMs) return null;
-    return (offset / windowMs) * 100;
   }
 
   // ─── Stats ────────────────────────────────────────────────────────────
@@ -180,6 +124,23 @@ export class DayViewComponent {
     return span - work;
   }
 
+  // ─── Active|idle ratio ────────────────────────────────────────────────
+
+  // Bar + caption render only when there is something to show.
+  get hasActivity(): boolean {
+    return this.totalActiveMs > 0 || this.totalPauseMs > 0;
+  }
+
+  get activePct(): number {
+    const total = this.totalActiveMs + this.totalPauseMs;
+    return total > 0 ? (this.totalActiveMs / total) * 100 : 0;
+  }
+
+  get idlePct(): number {
+    const total = this.totalActiveMs + this.totalPauseMs;
+    return total > 0 ? (this.totalPauseMs / total) * 100 : 0;
+  }
+
   // ─── Session colour palette ───────────────────────────────────────────
 
   sessionColor(sessionId: string): string {
@@ -197,21 +158,7 @@ export class DayViewComponent {
     return [...set].sort();
   }
 
-  isSessionClosed(sessionId: string): boolean {
-    return this.data?.sessions.find(s => s.id === sessionId)?.closedBy != null;
-  }
-
   // ─── Formatters ───────────────────────────────────────────────────────
-
-  formatDuration(ms: number): string {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
-    if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
-    return `${seconds}s`;
-  }
 
   formatDurationHm(ms: number): string {
     const totalMinutes = Math.floor(ms / 60_000);

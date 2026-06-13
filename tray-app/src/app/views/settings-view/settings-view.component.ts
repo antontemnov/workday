@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
@@ -20,6 +20,9 @@ interface PendingPatch {
   styleUrl: './settings-view.component.scss',
 })
 export class SettingsViewComponent implements OnInit, OnDestroy {
+  // End-workday lives in the app shell's modal; settings just asks for it.
+  @Output() stopDaemonRequested = new EventEmitter<void>();
+
   settings: SettingsResponse | null = null;
   loading = true;
 

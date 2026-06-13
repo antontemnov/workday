@@ -121,222 +121,143 @@
   50%      { opacity: 0.5; transform: scale(0.7); }
 }
 
-// Day timeline
-.timeline {
-  margin: 22px 0 14px 0;
+// ─── Day block ────────────────────────────────────────────────────────────
+// Date + start→end (left), active|idle ratio (right). Bottoms aligned so the
+// ratio caption sits on the same baseline as the start→end line.
+.day-block {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 14px 0 16px;
+}
 
-  .timeline-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-bottom: 6px;
+.day-head {
+  min-width: 0;
+}
+
+.day-date {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+  color: #cdd6f4;
+  font-variant-numeric: tabular-nums;
+
+  // Past days are click-to-today; today's date is inert.
+  &.past {
+    cursor: pointer;
+    text-decoration: underline dotted #6c7086;
+    text-underline-offset: 4px;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
+
+    &:hover {
+      color: #ffffff;
+      text-decoration-color: #cdd6f4;
+    }
   }
+}
 
-  .timeline-bar {
-    flex: 1;
-    height: 30px;
-    background: #11111b;
-    border: 1px solid #313244;
-    border-radius: 4px;
-    position: relative;
-    overflow: visible;
-  }
+.day-times {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 5px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 
-  .timeline-edge-btn {
-    flex-shrink: 0;
-    width: 24px;
-    height: 30px;
+  // Clickable start → opens set-start modal (today only).
+  .day-start {
     background: transparent;
     border: none;
-    color: #585b70;
-    font-family: inherit;
-    font-size: 14px;
-    line-height: 1;
-    border-radius: 4px;
-    cursor: pointer;
     padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.3;
+    color: #a6adc8;
+    cursor: pointer;
+    text-decoration: underline dotted #585b70;
+    text-underline-offset: 3px;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
 
-    .edge-glyph {
-      display: inline-block;
-      transition: transform 0.15s ease;
+    &:hover:not(:disabled) {
+      color: #cdd6f4;
+      text-decoration-color: #cdd6f4;
     }
-
+    // Past day: show the time as plain text, not editable.
     &:disabled {
-      opacity: 0.25;
       cursor: default;
+      text-decoration: none;
+      color: #a6adc8;
     }
 
-    &.start:hover:not(:disabled) {
-      color: #89b4fa;
-      background: rgba(137, 180, 250, 0.08);
-      .edge-glyph { transform: translateX(-1px); }
-    }
-
-    &.end:hover:not(:disabled) {
-      color: #f38ba8;
-      background: rgba(243, 139, 168, 0.08);
-      .edge-glyph { transform: scale(1.08); }
-    }
+    .pencil { color: #fab387; }
   }
 
-  .timeline-segment {
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    border-radius: 3px;
-    min-width: 6px;
-    cursor: default;
-    --seg-color: #cdd6f4;
-    transition: box-shadow 0.18s ease, opacity 0.18s ease, filter 0.18s ease, transform 0.18s ease;
+  .day-arrow {
+    color: #6c7086;
+  }
+}
 
-    &.closed {
-      opacity: 0.55;
-    }
+// ─── Active|idle ratio ──────────────────────────────────────────────────────
+// Column hugs its caption width; the bar stretches to match, sitting directly
+// above its own numbers (right-aligned in the day block).
+.ratio {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
 
-    &.highlight {
-      opacity: 1;
-      z-index: 2;
-      box-shadow:
-        0 0 0 1px var(--seg-color),
-        0 0 14px 0 color-mix(in srgb, var(--seg-color) 65%, transparent);
-      filter: saturate(1.2) brightness(1.05);
-      transform: translateY(-1px);
-    }
+.ratio-bar {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #313244;
+
+  .seg {
+    height: 100%;
+    transition: width 0.5s ease;
+
+    &.active { background: #a6e3a1; }
+    &.idle   { background: #585b70; }
+  }
+}
+
+.ratio-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  strong {
+    font-weight: 600;
+    text-transform: none;
+    font-size: 11px;
+    letter-spacing: 0;
   }
 
-  .timeline-now {
-    position: absolute;
-    top: 2px;
-    bottom: 2px;
-    width: 1px;
-    background: #cdd6f4;
-    z-index: 4;
-    pointer-events: none;
-    opacity: 0.65;
-
-    &::before {
-      content: '';
-      position: absolute;
-      top: -3px;
-      left: -2px;
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: #cdd6f4;
-      box-shadow: 0 0 6px rgba(205, 214, 244, 0.6);
-      animation: now-pulse 1.8s ease-in-out infinite;
-    }
+  .active-line {
+    color: #6c7086;
+    strong { color: #a6e3a1; }
   }
 
-  @keyframes now-pulse {
-    0%, 100% { opacity: 0.55; transform: scale(0.85); }
-    50%      { opacity: 1;    transform: scale(1.15); }
+  .idle-line {
+    color: #6c7086;
+    strong { color: #bac2de; }
   }
 
-  .timeline-daystart,
-  .timeline-dayend {
-    position: absolute;
-    width: 1px;
-    background: #cdd6f4;
-    z-index: 3;
-    pointer-events: none;
-
-    &::after {
-      content: '';
-      position: absolute;
-      left: 50%;
-      width: 0;
-      height: 0;
-      transform: translateX(-50%);
-      border-left: 3px solid transparent;
-      border-right: 3px solid transparent;
-    }
-  }
-
-  .timeline-daystart {
-    top: -7px;
-    bottom: -2px;
-
-    &::after {
-      top: -4px;
-      border-top: 4px solid #cdd6f4;
-    }
-
-    .timeline-daystart-label {
-      position: absolute;
-      top: -16px;
-      left: 0;
-      font-size: 9px;
-      color: #cdd6f4;
-      letter-spacing: 0.4px;
-      white-space: nowrap;
-      padding: 1px 4px;
-      background: #1e1e2e;
-      border-radius: 3px;
-      font-variant-numeric: tabular-nums;
-    }
-  }
-
-  .timeline-dayend {
-    top: -2px;
-    bottom: -7px;
-
-    &::after {
-      bottom: -4px;
-      border-bottom: 4px solid #cdd6f4;
-    }
-
-    .timeline-dayend-label {
-      position: absolute;
-      bottom: -16px;
-      left: 0;
-      font-size: 9px;
-      color: #cdd6f4;
-      letter-spacing: 0.4px;
-      white-space: nowrap;
-      padding: 1px 4px;
-      background: #1e1e2e;
-      border-radius: 3px;
-      font-variant-numeric: tabular-nums;
-    }
-  }
-
-  .timeline-stats {
-    display: flex;
-    flex-direction: row;
-    align-items: baseline;
-    gap: 6px;
-    margin-top: 16px;
-    font-size: 10px;
-    letter-spacing: 0.3px;
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-    text-transform: uppercase;
-
-    strong {
-      font-weight: 600;
-      text-transform: none;
-      font-size: 11px;
-      letter-spacing: 0;
-    }
-
-    .active-line {
-      color: #6c7086;
-      strong { color: #a6e3a1; }
-    }
-
-    .idle-line {
-      color: #6c7086;
-      strong { color: #bac2de; }
-    }
-
-    .dot-sep {
-      color: #45475a;
-    }
+  .dot-sep {
+    color: #45475a;
   }
 }
 
@@ -370,11 +291,6 @@
   overflow: hidden;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 
-  &.highlight {
-    border-color: var(--repo-color);
-    box-shadow: 0 0 14px 0 color-mix(in srgb, var(--repo-color) 28%, transparent);
-  }
-
   .session-color-bar {
     position: absolute;
     left: 0;
@@ -384,10 +300,6 @@
     transition: width 0.18s ease, box-shadow 0.18s ease;
   }
 
-  &.highlight .session-color-bar {
-    width: 5px;
-    box-shadow: 0 0 8px 0 var(--repo-color);
-  }
 }
 
 .session-header {
@@ -653,10 +565,6 @@
     margin-bottom: 3px;
     transition: background 0.15s ease;
     font-variant-numeric: tabular-nums;
-
-    &.highlight {
-      background: rgba(24, 24, 37, 0.9);
-    }
 
     .closed-color-bar {
       width: 3px;

@@ -17,15 +17,15 @@
   user-select: none;
 }
 
-// ─── Header ─────────────────────────────────────────────────────────────
-// Three-column grid: weekday-grid (left) · date (centre) · view-switcher
-// (right). The two outer pills frame the centred date symmetrically.
+// ─── Nav row ────────────────────────────────────────────────────────────
+// Thin nav: weekday-grid (left) · view-switcher (right), faint divider below.
+// The date moved into the Day view's day-block.
 .header {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
   padding: 10px 12px 8px 12px;
   flex-shrink: 0;
+  border-bottom: 1px solid #23243a;
 }
 
 // Shared "header pill" primitive — used by both weekday-grid and view-switcher.
@@ -56,8 +56,7 @@
 
 // Weekday cells (Mon..Sun, single letter, weekend tint).
 .weekday-grid {
-  grid-column: 1;
-  justify-self: start;
+  flex-shrink: 0;
 }
 
 .weekday-cell {
@@ -79,33 +78,9 @@
   }
 }
 
-// Centre column: read-only date, click-to-today on past days.
-.date-current {
-  grid-column: 2;
-  justify-self: center;
-  color: #cdd6f4;
-  letter-spacing: 0.3px;
-  line-height: 18px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  font-size: 12px;
-
-  &.past {
-    cursor: pointer;
-    text-decoration: underline dotted #6c7086;
-    text-underline-offset: 3px;
-
-    &:hover {
-      color: #ffffff;
-      text-decoration-color: #cdd6f4;
-    }
-  }
-}
-
-// Right column: view-switcher (Day / Timesheets / Settings).
+// View-switcher (Day / Timesheets / Settings) — always pinned right.
 .view-switcher {
-  grid-column: 3;
-  justify-self: end;
+  margin-left: auto;
 }
 
 .view-btn {

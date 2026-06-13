@@ -1,7 +1,6 @@
 <div class="app">
-  <!-- Header: weekday-grid (left) · date (centre) · view-switcher (right).
-       Three-column grid keeps the date perfectly centred regardless of the
-       side-pill widths. Date click returns to today when viewing a past day. -->
+  <!-- Nav row: weekday-grid (left) · view-switcher (right), faint divider
+       below. The date moved into the Day view's day-block. -->
   <header class="header">
     <div class="pill-grid weekday-grid"
          *ngIf="data"
@@ -13,11 +12,6 @@
             [attr.aria-current]="i === activeWeekdayCell ? 'date' : null"
             [title]="c.full">{{ c.letter }}</span>
     </div>
-    <span class="date-current"
-          *ngIf="formattedDate"
-          [class.past]="!isViewingToday"
-          (click)="goToday()"
-          [title]="isViewingToday ? '' : 'Back to today'">{{ formattedDate }}</span>
     <div class="pill-grid view-switcher">
       <button class="pill-cell view-btn"
               [class.active]="activeView === 'day'"
@@ -56,6 +50,7 @@
       [loading]="loading"
       [error]="error"
       [isViewingToday]="isViewingToday"
+      [dateLabel]="formattedDate"
       [actionPending]="actionPending"
       [daemonStarting]="daemonStarting"
       [currentTimeMs]="currentTimeMs"
@@ -63,13 +58,14 @@
       (pillSelected)="onPillSelected($event)"
       (addTimeRequested)="openAdjustModal($event)"
       (setStartRequested)="setStartModalOpen = true"
-      (endDayRequested)="endDayModalOpen = true"
+      (goTodayRequested)="goToday()"
       (startDaemonRequested)="startDaemon()" />
 
     <app-timesheets-view *ngSwitchCase="'sheet'"
       (daySelected)="onDaySelected($event)" />
 
-    <app-settings-view *ngSwitchCase="'set'" />
+    <app-settings-view *ngSwitchCase="'set'"
+      (stopDaemonRequested)="endDayModalOpen = true" />
   </ng-container>
 
   <!-- Toast -->
@@ -102,19 +98,19 @@
     </div>
   </div>
 
-  <!-- End-day confirmation modal -->
+  <!-- Stop-daemon confirmation modal -->
   <div class="modal-backdrop" *ngIf="endDayModalOpen" (click)="endDayModalOpen = false">
     <div class="modal" (click)="$event.stopPropagation()">
-      <h3>End workday?</h3>
+      <h3>Stop daemon?</h3>
       <div class="modal-sub">
-        All open sessions will be closed and the daemon will stop.
+        All of today's sessions will be closed and the daemon will stop.
       </div>
       <div class="modal-actions">
         <button (click)="endDayModalOpen = false">Cancel</button>
         <button class="danger"
                 [disabled]="actionPending"
                 (click)="confirmEndDay()">
-          End day
+          Stop daemon
         </button>
       </div>
     </div>

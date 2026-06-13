@@ -104,12 +104,12 @@
       </div>
     </div>
 
-    <!-- Updates -->
+    <!-- Daemon -->
     <div class="settings-section">
-      <h3>Updates</h3>
+      <h3>Daemon</h3>
       <div class="opt-row">
         <div class="left">
-          <span class="name">Daemon <span class="version-tag">{{ daemonVersionLabel }}</span></span>
+          <span class="name">Version <span class="version-tag">{{ daemonVersionLabel }}</span></span>
           <span class="hint" [ngClass]="{'update-error': updateState === 'error'}">
             {{ updateLabel || 'Background tracker · updates itself twice a day' }}
           </span>
@@ -126,6 +126,15 @@
                   (click)="applyUpdate()">
             Update now
           </button>
+        </div>
+      </div>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Stop daemon</span>
+          <span class="hint">Stops all of today's sessions and force-ends the working day.</span>
+        </div>
+        <div class="right">
+          <button class="btn small danger" (click)="stopDaemonRequested.emit()">Stop</button>
         </div>
       </div>
     </div>

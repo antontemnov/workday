@@ -94,6 +94,12 @@
     font-size: 10px;
     &:hover:not(:disabled) { background: #3a2020; }
   }
+  &.danger {
+    background: transparent;
+    border: 1px solid #f38ba8;
+    color: #f38ba8;
+    &:hover:not(:disabled) { background: #f38ba8; color: #1e1e2e; }
+  }
 }
 
 // ─── Sections ───────────────────────────────────────────────────────────

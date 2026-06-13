@@ -257,9 +257,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       remainingBudgetMs: 0,
       dayStartedAt: log.dayStartedAt ?? null,
       manualStart: log.manualStart ?? null,
-      // Schedule is config-driven and not persisted in the log. Fall back to
-      // 10:00 → 04:00 — matches the daemon's default and is good enough for
-      // timeline rendering of a past day.
+      // Schedule is config-driven and not persisted in the log. Kept only to
+      // satisfy the response shape — the day view no longer renders against it.
       schedule: { start: 10, end: 4 },
       activeIntervals,
       downtimeMs: this.computeDowntime(activeIntervals),
