@@ -57,7 +57,8 @@
       [sensitivityPills]="sensitivityPills"
       (pillSelected)="onPillSelected($event)"
       (addTimeRequested)="openAdjustModal($event)"
-      (setStartRequested)="setStartModalOpen = true"
+      (setStartSubmitted)="submitSetStart($event)"
+      (clearStartRequested)="clearDayStart()"
       (goTodayRequested)="goToday()"
       (startDaemonRequested)="startDaemon()" />
 
@@ -71,31 +72,6 @@
   <!-- Toast -->
   <div class="toast error" *ngIf="actionError" (click)="dismissToast()">
     {{ actionError }}
-  </div>
-
-  <!-- Set-start modal -->
-  <div class="modal-backdrop" *ngIf="setStartModalOpen" (click)="setStartModalOpen = false">
-    <div class="modal" (click)="$event.stopPropagation()">
-      <h3>Set day start</h3>
-      <div class="modal-sub">Override when the working day begins</div>
-      <label>Time
-        <input #startTime type="time" [value]="dayStartLabelForModal || '09:00'" />
-      </label>
-      <div class="modal-actions">
-        <button (click)="setStartModalOpen = false">Cancel</button>
-        <button class="ghost"
-                [disabled]="actionPending || !hasManualStart"
-                (click)="clearDayStart()"
-                title="Fall back to the first session">
-          Clear
-        </button>
-        <button class="primary"
-                [disabled]="!startTime.value || actionPending"
-                (click)="submitSetStart(startTime.value)">
-          Apply
-        </button>
-      </div>
-    </div>
   </div>
 
   <!-- Stop-daemon confirmation modal -->

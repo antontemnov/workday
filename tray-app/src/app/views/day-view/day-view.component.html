@@ -26,12 +26,62 @@
           (click)="goTodayRequested.emit()"
           [title]="isViewingToday ? '' : 'Back to today'">{{ dateLabel }}</h1>
       <div class="day-times" *ngIf="dayStartIso">
-        <button class="day-start"
-                (click)="setStartRequested.emit()"
-                [disabled]="!isViewingToday || actionPending"
-                [title]="isViewingToday ? 'Set day start time' : ''">
-          {{ dayStartLabel }}<span class="pencil" *ngIf="isManualStart" title="Manual start"> ✎</span>
-        </button>
+        <span class="start-anchor">
+          <button class="day-start"
+                  (click)="toggleStartPopover()"
+                  [class.editing]="startPopoverOpen"
+                  [class.manual]="isManualStart"
+                  [disabled]="!isViewingToday || actionPending"
+                  [title]="isViewingToday ? 'Set day start time' : ''">
+            {{ dayStartLabel }}
+          </button>
+
+          <!-- Anchored set-start popover; click anywhere outside closes without applying -->
+          <div class="start-pop-backdrop" *ngIf="startPopoverOpen" (click)="closeStartPopover()"></div>
+          <div class="start-pop" *ngIf="startPopoverOpen" (keydown.escape)="closeStartPopover()">
+            <div class="start-pop-title">Day start</div>
+            <div class="time-spin">
+              <div class="spin-col" [class.invalid]="attemptedApply && hoursInvalid" (wheel)="onWheel('h', $event)">
+                <button type="button" class="spin-arrow" tabindex="-1"
+                        (mousedown)="$event.preventDefault()" (click)="bumpHours(1)" aria-label="Hour up">▲</button>
+                <input class="spin-val" type="text" inputmode="numeric" maxlength="2"
+                       [value]="hoursStr"
+                       (input)="onHoursInput($any($event.target).value)"
+                       (blur)="normalizeHours()"
+                       (keydown.arrowUp)="bumpHours(1); $event.preventDefault()"
+                       (keydown.arrowDown)="bumpHours(-1); $event.preventDefault()"
+                       (keydown.enter)="applyStart()"
+                       aria-label="Hours" autofocus />
+                <button type="button" class="spin-arrow" tabindex="-1"
+                        (mousedown)="$event.preventDefault()" (click)="bumpHours(-1)" aria-label="Hour down">▼</button>
+              </div>
+              <span class="spin-colon">:</span>
+              <div class="spin-col" [class.invalid]="attemptedApply && minutesInvalid" (wheel)="onWheel('m', $event)">
+                <button type="button" class="spin-arrow" tabindex="-1"
+                        (mousedown)="$event.preventDefault()" (click)="bumpMinutes(1)" aria-label="Minute up">▲</button>
+                <input class="spin-val" type="text" inputmode="numeric" maxlength="2"
+                       [value]="minutesStr"
+                       (input)="onMinutesInput($any($event.target).value)"
+                       (blur)="normalizeMinutes()"
+                       (keydown.arrowUp)="bumpMinutes(1); $event.preventDefault()"
+                       (keydown.arrowDown)="bumpMinutes(-1); $event.preventDefault()"
+                       (keydown.enter)="applyStart()"
+                       aria-label="Minutes" />
+                <button type="button" class="spin-arrow" tabindex="-1"
+                        (mousedown)="$event.preventDefault()" (click)="bumpMinutes(-1)" aria-label="Minute down">▼</button>
+              </div>
+            </div>
+            <div class="start-pop-actions">
+              <button class="sp-btn auto" *ngIf="isManualStart"
+                      [disabled]="actionPending"
+                      (click)="clearStart()"
+                      title="Revert to the auto-detected start (first activity)">Auto</button>
+              <button class="sp-btn primary"
+                      [disabled]="actionPending"
+                      (click)="applyStart()">Apply</button>
+            </div>
+          </div>
+        </span>
         <span class="day-arrow" *ngIf="lastActivityLabel">→ {{ lastActivityLabel }}</span>
       </div>
     </div>
@@ -39,12 +89,12 @@
     <div class="ratio" *ngIf="hasActivity">
       <div class="ratio-bar">
         <span class="seg active" [style.width.%]="activePct"></span>
-        <span class="seg idle" *ngIf="idlePct > 0" [style.width.%]="idlePct"></span>
+        <span class="seg idle" [style.width.%]="idlePct"></span>
       </div>
       <div class="ratio-caption">
         <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
-        <span class="dot-sep" *ngIf="totalPauseMs > 0">&middot;</span>
-        <span class="idle-line" *ngIf="totalPauseMs > 0">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
+        <span class="dot-sep">&middot;</span>
+        <span class="idle-line">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
       </div>
     </div>
   </section>

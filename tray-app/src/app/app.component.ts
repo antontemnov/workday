@@ -48,7 +48,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ];
 
   // Modal state (cross-cutting, triggered by DayView events)
-  setStartModalOpen = false;
   endDayModalOpen = false;
   adjustModalSession: SessionDetail | null = null;
   readonly adjustQuickPicks: readonly number[] = [15, 30, 45, 60, 90];
@@ -251,19 +250,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.adjustModalSession = null;
   }
 
-  get hasManualStart(): boolean {
-    return !!this.data?.manualStart;
-  }
-
-  /** dayStartLabel re-derived from data for the set-start modal seed value. */
-  get dayStartLabelForModal(): string {
-    const iso = this.data?.dayStartedAt ?? this.data?.sessions.find(s => !!s.activatedAt)?.activatedAt
-              ?? this.data?.sessions[0]?.startedAt ?? null;
-    if (!iso) return '';
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-
   async submitAdjust(minutesStr: string, reason: string): Promise<void> {
     const session = this.adjustModalSession;
     if (!session) return;
@@ -275,13 +261,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async submitSetStart(time: string): Promise<void> {
-    const ok = await this.runAction(() => this.api.setStart(time));
-    if (ok) this.setStartModalOpen = false;
+    await this.runAction(() => this.api.setStart(time));
   }
 
   async clearDayStart(): Promise<void> {
-    const ok = await this.runAction(() => this.api.clearStart());
-    if (ok) this.setStartModalOpen = false;
+    await this.runAction(() => this.api.clearStart());
   }
 
   async confirmEndDay(): Promise<void> {
