@@ -64,7 +64,24 @@ export function buildReport(from: string, to: string, config: AppConfig): TaskDa
       }
       if (totalSeconds <= 0) continue;
 
-      entries.push({ date, task, totalSeconds, sessionCount: count });
+      entries.push({ date, task, totalSeconds, sessionCount: count, kind: 'session' });
+    }
+
+    // Manual entries: each is its own unit (becomes its own worklog). Exact minutes —
+    // user-entered time is precise, unlike noisy session tracking, so no rounding.
+    for (const entry of log.manualEntries ?? []) {
+      const totalSeconds = entry.minutes * 60;
+      if (totalSeconds <= 0) continue;
+      entries.push({
+        date,
+        task: entry.task,
+        totalSeconds,
+        sessionCount: 0,
+        kind: 'manual',
+        entryId: entry.id,
+        description: entry.description,
+        activity: entry.activity,
+      });
     }
   }
 

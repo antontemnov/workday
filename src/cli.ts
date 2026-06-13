@@ -914,12 +914,17 @@ function printReport(report: ReportResponse): void {
     const entries = byDate.get(date)!.sort((a, b) => b.totalSeconds - a.totalSeconds);
     let dayTotal = 0;
     for (let i = 0; i < entries.length; i++) {
-      const hoursStr = formatReportHours(entries[i].totalSeconds);
-      dayTotal += entries[i].totalSeconds;
+      const e = entries[i];
+      const hoursStr = formatReportHours(e.totalSeconds);
+      dayTotal += e.totalSeconds;
+      const suffix = e.kind === 'manual'
+        ? `  · ${e.activity ?? ''}${e.description ? `: ${e.description}` : ''}`
+        : '';
       console.log(
         (i === 0 ? date : '').padEnd(COL_DATE)
-        + entries[i].task.padEnd(COL_TASK)
-        + hoursStr.padStart(COL_HOURS),
+        + e.task.padEnd(COL_TASK)
+        + hoursStr.padStart(COL_HOURS)
+        + suffix,
       );
     }
     if (entries.length > 1) {
@@ -957,12 +962,16 @@ function printPushPlan(plan: readonly PushPlanEntry[]): void {
   for (const entry of plan) {
     const hoursStr = formatReportHours(entry.targetSeconds);
     const actionStr = entry.action.toUpperCase();
+    const tag = entry.kind === 'manual'
+      ? `  · ${entry.activity ?? ''}${entry.description ? `: ${entry.description}` : ''}`
+      : '';
     console.log(
       entry.date.padEnd(COL_DATE)
       + entry.task.padEnd(COL_TASK)
       + hoursStr.padStart(COL_HOURS)
       + '  ' + actionStr.padEnd(COL_ACTION)
-      + '  ' + entry.detail,
+      + '  ' + entry.detail
+      + tag,
     );
   }
 

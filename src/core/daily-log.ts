@@ -441,12 +441,16 @@ export function computeActiveIntervals(sessions: readonly Session[]): ActiveInte
   }));
 }
 
+/** Allow edits on any day. A pushed/confirmed day reverts to Draft so the next
+ *  push re-syncs it; status=Draft also flags "unsynced local changes" for the UI. */
+function unsealForEdit(log: DailyLog): void {
+  if (log.status !== DayStatus.Draft) {
+    log.status = DayStatus.Draft;
+  }
+}
+
 /** Add manual adjustment to a session. Throws on validation failure. */
 export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: number, reason: string, config: AppConfig): void {
-  if (log.status !== DayStatus.Draft) {
-    throw new Error('Cannot adjust confirmed/pushed day');
-  }
-
   const session = log.sessions.find(s => s.id === sessionId);
   if (!session) {
     throw new Error(`Session not found: ${sessionId}`);
@@ -473,6 +477,7 @@ export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: n
     session.manualAdjustments = [];
   }
 
+  unsealForEdit(log);
   session.manualAdjustments.push({
     minutes,
     reason,
@@ -515,10 +520,6 @@ export function addManualEntry(
   input: { task: string; minutes: number; description: string; activity: string },
   config: AppConfig,
 ): ManualEntry {
-  if (log.status !== DayStatus.Draft) {
-    throw new Error('Cannot add to confirmed/pushed day');
-  }
-
   const task = input.task.trim();
   if (!task) throw new Error('Task is required');
   assertValidTask(task, config);
@@ -542,6 +543,7 @@ export function addManualEntry(
     throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
   }
 
+  unsealForEdit(log);
   if (!log.manualEntries) log.manualEntries = [];
   const entry: ManualEntry = {
     id: generateSessionId(),
@@ -565,10 +567,6 @@ export function editManualEntry(
   patch: { minutes?: number; description?: string; activity?: string },
   config: AppConfig,
 ): void {
-  if (log.status !== DayStatus.Draft) {
-    throw new Error('Cannot edit confirmed/pushed day');
-  }
-
   const entry = findManualEntry(log, id);
   if (!entry) throw new Error(`Manual entry not found: ${id}`);
 
@@ -598,6 +596,8 @@ export function editManualEntry(
     if (!a) throw new Error('Activity cannot be empty');
     entry.activity = a;
   }
+
+  unsealForEdit(log);
 }
 
 /**

@@ -157,11 +157,24 @@ test('rejects empty description', () => {
   assert.throws(() => addStd(log, config, { description: '   ' }), /Description is required/);
 });
 
-test('rejects add on non-Draft day', () => {
+test('add on pushed day unseals back to Draft', () => {
   const config = makeConfig();
   const log = makeLog(config);
   log.status = DayStatus.Pushed;
-  assert.throws(() => addStd(log, config), /confirmed\/pushed/);
+  const entry = addStd(log, config);
+  assert.equal(log.manualEntries.length, 1);
+  assert.equal(entry.task, 'ATL-10');
+  assert.equal(log.status, DayStatus.Draft); // pushed day reverts so next push re-syncs
+});
+
+test('edit on pushed day unseals back to Draft', () => {
+  const config = makeConfig();
+  const log = makeLog(config);
+  const e = addStd(log, config, { minutes: 30 });
+  log.status = DayStatus.Pushed;
+  editManualEntry(log, e.id, { minutes: 45 }, config);
+  assert.equal(findManualEntry(log, e.id)!.minutes, 45);
+  assert.equal(log.status, DayStatus.Draft);
 });
 
 test('budget invariant blocks overflow', () => {

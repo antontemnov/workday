@@ -6,6 +6,8 @@ interface CreateWorklogParams {
   readonly authorAccountId: string;
   readonly timeSpentSeconds: number;
   readonly startDate: string;
+  readonly description?: string;        // plain-text worklog description (manual entries)
+  readonly activity?: string;           // _Activity_ value; defaults to DEFAULT_ACTIVITY
 }
 
 export interface TempoWorkAttribute {
@@ -104,30 +106,28 @@ export class TempoClient {
     return response.results ?? [];
   }
 
-  /** Create a new worklog */
-  public async createWorklog(params: CreateWorklogParams): Promise<{ tempoWorklogId: number }> {
+  /** Build the shared worklog body. activity defaults to Development; description omitted when empty. */
+  private buildWorklogBody(params: CreateWorklogParams): Record<string, unknown> {
     const body: Record<string, unknown> = {
       issueId: params.issueId,
       authorAccountId: params.authorAccountId,
       timeSpentSeconds: params.timeSpentSeconds,
       startDate: params.startDate,
       startTime: '09:00:00',
-      attributes: [{ key: ACTIVITY_ATTRIBUTE_KEY, value: DEFAULT_ACTIVITY }],
+      attributes: [{ key: ACTIVITY_ATTRIBUTE_KEY, value: params.activity ?? DEFAULT_ACTIVITY }],
     };
-    return this.request('POST', '/4/worklogs', body) as Promise<{ tempoWorklogId: number }>;
+    if (params.description) body.description = params.description;
+    return body;
+  }
+
+  /** Create a new worklog */
+  public async createWorklog(params: CreateWorklogParams): Promise<{ tempoWorklogId: number }> {
+    return this.request('POST', '/4/worklogs', this.buildWorklogBody(params)) as Promise<{ tempoWorklogId: number }>;
   }
 
   /** Update an existing worklog */
   public async updateWorklog(worklogId: number, params: CreateWorklogParams): Promise<{ tempoWorklogId: number }> {
-    const body: Record<string, unknown> = {
-      issueId: params.issueId,
-      authorAccountId: params.authorAccountId,
-      timeSpentSeconds: params.timeSpentSeconds,
-      startDate: params.startDate,
-      startTime: '09:00:00',
-      attributes: [{ key: ACTIVITY_ATTRIBUTE_KEY, value: DEFAULT_ACTIVITY }],
-    };
-    return this.request('PUT', `/4/worklogs/${worklogId}`, body) as Promise<{ tempoWorklogId: number }>;
+    return this.request('PUT', `/4/worklogs/${worklogId}`, this.buildWorklogBody(params)) as Promise<{ tempoWorklogId: number }>;
   }
 
   /** Delete a worklog */

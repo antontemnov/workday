@@ -28,8 +28,8 @@ function savePushLog(log: Record<string, PushLogEntry>): void {
   writeFileSync(getPushLogPath(), JSON.stringify(log, null, 2), 'utf-8');
 }
 
-function pushLogKey(date: string, task: string): string {
-  return `${date}|${task}`;
+function pushLogKey(date: string, task: string, entryId?: string): string {
+  return entryId ? `${date}|${task}|m:${entryId}` : `${date}|${task}`;
 }
 
 // ─── Push plan ───────────────────────────────────────────────────────────
@@ -52,6 +52,13 @@ export function buildPushPlan(
     tempoByKey.set(key, list);
   }
 
+  // Worklogs we own as MANUAL entries — excluded from the session aggregate so a
+  // session line never treats its own task's manual worklogs as extra/foreign.
+  const manualOwnedTempoIds = new Set<number>();
+  for (const [key, logEntry] of Object.entries(pushLog)) {
+    if (key.includes('|m:')) manualOwnedTempoIds.add(logEntry.tempoWorklogId);
+  }
+
   // Track which Tempo worklogs are accounted for by our report
   const accountedTempoIds = new Set<number>();
 
@@ -59,112 +66,93 @@ export function buildPushPlan(
     const jira = jiraMap.get(entry.task);
     if (!jira) {
       plan.push({
-        date: entry.date,
-        task: entry.task,
-        targetSeconds: entry.totalSeconds,
-        action: 'error',
-        detail: 'Unresolved in Jira',
+        date: entry.date, task: entry.task, targetSeconds: entry.totalSeconds,
+        action: 'error', detail: 'Unresolved in Jira',
+        kind: entry.kind, entryId: entry.entryId, description: entry.description, activity: entry.activity,
       });
       continue;
     }
 
-    const key = pushLogKey(entry.date, entry.task);
-    const logEntry = pushLog[key];
-    const tempoKey = `${entry.date}|${jira.issueId}`;
-    const tempoMatches = tempoByKey.get(tempoKey) ?? [];
+    const tempoMatches = tempoByKey.get(`${entry.date}|${jira.issueId}`) ?? [];
 
-    // Verify push-log worklog still exists in Tempo
-    const validLogEntry = logEntry && tempoMatches.some(w => w.tempoWorklogId === logEntry.tempoWorklogId)
-      ? logEntry
-      : null;
+    // ── Manual entry: its own worklog, keyed by entryId (stable across edits) ──
+    if (entry.kind === 'manual') {
+      const base = {
+        date: entry.date, task: entry.task, targetSeconds: entry.totalSeconds,
+        issueId: jira.issueId, kind: 'manual' as const,
+        entryId: entry.entryId, description: entry.description, activity: entry.activity,
+      };
+      const key = pushLogKey(entry.date, entry.task, entry.entryId);
+      const logEntry = pushLog[key];
+      const live = logEntry && tempoMatches.some(w => w.tempoWorklogId === logEntry.tempoWorklogId)
+        ? logEntry : null;
+
+      if (live) {
+        accountedTempoIds.add(live.tempoWorklogId);
+        const timeDrift = Math.abs(live.timeSpentSeconds - entry.totalSeconds) > TEMPO_TOLERANCE_SECONDS;
+        const textDrift = (live.description ?? '') !== (entry.description ?? '')
+          || (live.activity ?? '') !== (entry.activity ?? '');
+        if (!timeDrift && !textDrift) {
+          plan.push({ ...base, action: 'skip', detail: `Already pushed (${formatHours(live.timeSpentSeconds)})`, existingWorklogId: live.tempoWorklogId });
+        } else {
+          const detail = timeDrift
+            ? `${formatHours(live.timeSpentSeconds)} → ${formatHours(entry.totalSeconds)}`
+            : 'text/activity changed';
+          plan.push({ ...base, action: 'update', detail, existingWorklogId: live.tempoWorklogId });
+        }
+      } else {
+        // No live worklog of ours — create. Foreign worklogs on the same issue+date
+        // are irrelevant: this entry has its own identity (entryId).
+        plan.push({ ...base, action: 'create', detail: `New (${formatHours(entry.totalSeconds)})` });
+      }
+      continue;
+    }
+
+    // ── Session aggregate: one worklog per (date, task) ──
+    const base = {
+      date: entry.date, task: entry.task, targetSeconds: entry.totalSeconds,
+      issueId: jira.issueId, kind: 'session' as const,
+    };
+    const logEntry = pushLog[pushLogKey(entry.date, entry.task)];
+    // Drop manual-owned worklogs: they belong to manual lines, not this aggregate.
+    const sessionMatches = tempoMatches.filter(w => !manualOwnedTempoIds.has(w.tempoWorklogId));
+    const validLogEntry = logEntry && sessionMatches.some(w => w.tempoWorklogId === logEntry.tempoWorklogId)
+      ? logEntry : null;
 
     if (validLogEntry) {
-      // We pushed this before and worklog still exists — check if it needs update
       accountedTempoIds.add(validLogEntry.tempoWorklogId);
       const diff = Math.abs(validLogEntry.timeSpentSeconds - entry.totalSeconds);
       if (diff <= TEMPO_TOLERANCE_SECONDS) {
-        plan.push({
-          date: entry.date,
-          task: entry.task,
-          targetSeconds: entry.totalSeconds,
-          action: 'skip',
-          detail: `Already pushed (${formatHours(validLogEntry.timeSpentSeconds)})`,
-          issueId: jira.issueId,
-          existingWorklogId: validLogEntry.tempoWorklogId,
-        });
+        plan.push({ ...base, action: 'skip', detail: `Already pushed (${formatHours(validLogEntry.timeSpentSeconds)})`, existingWorklogId: validLogEntry.tempoWorklogId });
       } else {
-        plan.push({
-          date: entry.date,
-          task: entry.task,
-          targetSeconds: entry.totalSeconds,
-          action: 'update',
-          detail: `${formatHours(validLogEntry.timeSpentSeconds)} → ${formatHours(entry.totalSeconds)}`,
-          issueId: jira.issueId,
-          existingWorklogId: validLogEntry.tempoWorklogId,
-        });
+        plan.push({ ...base, action: 'update', detail: `${formatHours(validLogEntry.timeSpentSeconds)} → ${formatHours(entry.totalSeconds)}`, existingWorklogId: validLogEntry.tempoWorklogId });
       }
-      // Mark other Tempo worklogs for same issue+date
-      for (const wl of tempoMatches) {
-        accountedTempoIds.add(wl.tempoWorklogId);
-      }
-    } else if (tempoMatches.length > 0) {
-      // Not in push log but exists in Tempo — could be manual entry
-      for (const wl of tempoMatches) accountedTempoIds.add(wl.tempoWorklogId);
-      const existingTotal = tempoMatches.reduce((s, w) => s + w.timeSpentSeconds, 0);
+      for (const wl of sessionMatches) accountedTempoIds.add(wl.tempoWorklogId);
+    } else if (sessionMatches.length > 0) {
+      for (const wl of sessionMatches) accountedTempoIds.add(wl.tempoWorklogId);
+      const existingTotal = sessionMatches.reduce((s, w) => s + w.timeSpentSeconds, 0);
       const diff = Math.abs(existingTotal - entry.totalSeconds);
       if (diff <= TEMPO_TOLERANCE_SECONDS) {
-        plan.push({
-          date: entry.date,
-          task: entry.task,
-          targetSeconds: entry.totalSeconds,
-          action: 'skip',
-          detail: `Exists in Tempo (${formatHours(existingTotal)})`,
-          issueId: jira.issueId,
-          extraWorklogIds: tempoMatches.map(w => w.tempoWorklogId),
-        });
+        plan.push({ ...base, action: 'skip', detail: `Exists in Tempo (${formatHours(existingTotal)})`, extraWorklogIds: sessionMatches.map(w => w.tempoWorklogId) });
       } else {
-        // Create new — Tempo already has something, but we don't own it
-        plan.push({
-          date: entry.date,
-          task: entry.task,
-          targetSeconds: entry.totalSeconds,
-          action: 'create',
-          detail: `Tempo has ${formatHours(existingTotal)}, adding ${formatHours(entry.totalSeconds)}`,
-          issueId: jira.issueId,
-          extraWorklogIds: tempoMatches.map(w => w.tempoWorklogId),
-        });
+        plan.push({ ...base, action: 'create', detail: `Tempo has ${formatHours(existingTotal)}, adding ${formatHours(entry.totalSeconds)}`, extraWorklogIds: sessionMatches.map(w => w.tempoWorklogId) });
       }
     } else {
-      // Not in push log and not in Tempo — create
-      plan.push({
-        date: entry.date,
-        task: entry.task,
-        targetSeconds: entry.totalSeconds,
-        action: 'create',
-        detail: `New (${formatHours(entry.totalSeconds)})`,
-        issueId: jira.issueId,
-      });
+      plan.push({ ...base, action: 'create', detail: `New (${formatHours(entry.totalSeconds)})` });
     }
   }
 
-  // Show Tempo-only entries (not in our report)
+  // Tempo-only worklogs (not matched by our report) — show, never mutate.
   for (const wl of tempoWorklogs) {
     if (accountedTempoIds.has(wl.tempoWorklogId)) continue;
-    // Find task key for this issueId from jiraMap
     let taskKey = `issue:${wl.issueId}`;
     for (const [key, jira] of jiraMap) {
-      if (jira.issueId === wl.issueId) {
-        taskKey = key;
-        break;
-      }
+      if (jira.issueId === wl.issueId) { taskKey = key; break; }
     }
     plan.push({
-      date: wl.startDate,
-      task: taskKey,
-      targetSeconds: wl.timeSpentSeconds,
-      action: 'skip',
-      detail: `Tempo only (${formatHours(wl.timeSpentSeconds)})`,
-      existingWorklogId: wl.tempoWorklogId,
+      date: wl.startDate, task: taskKey, targetSeconds: wl.timeSpentSeconds,
+      action: 'skip', detail: `Tempo only (${formatHours(wl.timeSpentSeconds)})`,
+      existingWorklogId: wl.tempoWorklogId, kind: 'session',
     });
   }
 
@@ -189,7 +177,7 @@ export async function executePlan(
   let failed = 0;
 
   for (const entry of plan) {
-    const key = pushLogKey(entry.date, entry.task);
+    const key = pushLogKey(entry.date, entry.task, entry.kind === 'manual' ? entry.entryId : undefined);
 
     switch (entry.action) {
       case 'skip':
@@ -204,11 +192,15 @@ export async function executePlan(
             authorAccountId: accountId,
             timeSpentSeconds: entry.targetSeconds,
             startDate: entry.date,
+            description: entry.description,
+            activity: entry.activity,
           });
           pushLog[key] = {
             tempoWorklogId: result.tempoWorklogId,
             timeSpentSeconds: entry.targetSeconds,
             pushedAt: new Date().toISOString(),
+            description: entry.description,
+            activity: entry.activity,
           };
           posted++;
           console.log(`  POST ${entry.date} ${entry.task} ${formatHours(entry.targetSeconds)}`);
@@ -227,11 +219,15 @@ export async function executePlan(
             authorAccountId: accountId,
             timeSpentSeconds: entry.targetSeconds,
             startDate: entry.date,
+            description: entry.description,
+            activity: entry.activity,
           });
           pushLog[key] = {
             tempoWorklogId: result.tempoWorklogId,
             timeSpentSeconds: entry.targetSeconds,
             pushedAt: new Date().toISOString(),
+            description: entry.description,
+            activity: entry.activity,
           };
           updated++;
           console.log(`  PUT  ${entry.date} ${entry.task} ${entry.detail}`);
@@ -341,8 +337,13 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
   console.log(`Executing ${actionable.length} mutation(s)...`);
   const result = await executePlan(plan, tempoClient, accountId);
 
-  // Mark daily logs as pushed
-  markDaysPushed(from, to);
+  // Seal the day only on a clean push. A failed mutation (network, Jira limit, etc.)
+  // must NOT mark the day pushed, or it would silently drop out of future syncs.
+  if (result.failed === 0) {
+    markDaysPushed(from, to);
+  } else {
+    console.log(`Not sealing days as pushed: ${result.failed} mutation(s) failed — re-run push.`);
+  }
 
   return { dryRun: false, plan, result };
 }

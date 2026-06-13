@@ -506,11 +506,17 @@ export interface AddRepoResponse {
 
 // ─── Report & Push ──────────────────────────────────────────────────────
 
+export type ReportEntryKind = 'session' | 'manual';
+
 export interface TaskDayReport {
   readonly date: string;        // YYYY-MM-DD
   readonly task: string;        // e.g. ATL-6173
   readonly totalSeconds: number;
   readonly sessionCount: number;
+  readonly kind: ReportEntryKind;  // 'session' = aggregated git work, 'manual' = standalone entry
+  readonly entryId?: string;       // ManualEntry.id — manual kind only
+  readonly description?: string;   // manual kind only → worklog description
+  readonly activity?: string;      // manual kind only → Tempo _Activity_ value
 }
 
 export interface TempoWorklog {
@@ -536,6 +542,10 @@ export interface PushPlanEntry {
   readonly issueId?: number;
   readonly existingWorklogId?: number;
   readonly extraWorklogIds?: readonly number[];
+  readonly kind: ReportEntryKind;  // mirrors the source report entry
+  readonly entryId?: string;       // manual kind: ManualEntry.id (pushLog key + snapshot)
+  readonly description?: string;   // manual kind: text to send
+  readonly activity?: string;      // manual kind: _Activity_ value to send
 }
 
 export interface PushResult {
@@ -558,6 +568,8 @@ export interface PushLogEntry {
   readonly tempoWorklogId: number;
   readonly timeSpentSeconds: number;
   readonly pushedAt: string;
+  readonly description?: string;   // snapshot of last pushed text — manual entries (drift detection)
+  readonly activity?: string;      // snapshot of last pushed _Activity_ value
 }
 
 export interface PushResponse {
