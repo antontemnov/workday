@@ -32,7 +32,7 @@
                   [class.editing]="startPopoverOpen"
                   [class.manual]="isManualStart"
                   [disabled]="!isViewingToday || actionPending"
-                  [title]="isViewingToday ? 'Set day start time' : ''">
+                  [title]="!isViewingToday ? '' : (isManualStart ? 'Day start set manually — click to change' : 'Set day start time')">
             {{ dayStartLabel }}
           </button>
 

@@ -371,7 +371,6 @@
   align-items: flex-end;
   gap: 6px;
   flex-shrink: 0;
-  width: 188px; // fits the longest caption (e.g. "12h 34m · 11h 59m") — never clips
 }
 
 .ratio-bar {
