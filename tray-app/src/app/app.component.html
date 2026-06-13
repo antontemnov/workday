@@ -55,12 +55,15 @@
       [daemonStarting]="daemonStarting"
       [currentTimeMs]="currentTimeMs"
       [sensitivityPills]="sensitivityPills"
+      [activityTypes]="activityTypes"
       (pillSelected)="onPillSelected($event)"
       (addTimeRequested)="openAdjustModal($event)"
       (setStartSubmitted)="submitSetStart($event)"
       (clearStartRequested)="clearDayStart()"
       (goTodayRequested)="goToday()"
-      (startDaemonRequested)="startDaemon()" />
+      (startDaemonRequested)="startDaemon()"
+      (logSubmitted)="submitLog($event)"
+      (entryEditSubmitted)="submitEntryEdit($event)" />
 
     <app-timesheets-view *ngSwitchCase="'sheet'"
       (daySelected)="onDaySelected($event)" />

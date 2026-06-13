@@ -3,5 +3,6 @@ dist/
 secrets.json
 data/
 *.tmp
+*.log
 .claude/
 .idea/

@@ -1,6 +1,16 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { SessionDetail, SensitivityLevel, SensitivityPill, TodayResponse } from '../../models/workday.models';
+import { FormsModule } from '@angular/forms';
+import {
+  SessionDetail,
+  SensitivityLevel,
+  SensitivityPill,
+  TodayResponse,
+  ManualEntry,
+  ManualEntryInput,
+  ManualEntryPatch,
+  ActivityType,
+} from '../../models/workday.models';
 
 interface SensitivityPillOption {
   readonly key: SensitivityPill;
@@ -14,10 +24,68 @@ const SESSION_COLOR_PALETTE: readonly string[] = [
   '#f9e2af', '#94e2d5', '#f5c2e7', '#74c7ec', '#eba0ac',
 ];
 
+// Manual entries are their own species — one accent (mauve) regardless of task.
+const MANUAL_ACCENT = '#cba6f7';
+const DEFAULT_ACTIVITY = 'Other';
+
+// Quick-pick durations for the composer.
+const MINUTE_QUICK_PICKS: ReadonlyArray<{ readonly label: string; readonly minutes: number }> = [
+  { label: '20m', minutes: 20 },
+  { label: '30m', minutes: 30 },
+  { label: '1h',  minutes: 60 },
+];
+
+// Below this, a bare number reads as hours; at or above, as minutes. App-
+// specific (Tempo treats every bare number as hours) — keeps "5" = 5h while
+// sparing the "45" = 45h footgun (→ 45m).
+const BARE_HOURS_THRESHOLD = 10;
+
+// Tempo-style duration parsing → minutes (null = unparseable).
+// Bare number: < 10 → hours ("1.5" → 90), ≥ 10 → minutes ("45" → 45). Units
+// h/m/d/w override ("90m" → 90, "1h 30m" → 90); whitespace ignored ("4 5 m" →
+// 45); a trailing unit-less number is minutes ("1h30" → 90).
+function parseDurationToMinutes(raw: string): number | null {
+  const s = raw.toLowerCase().replace(/\s+/g, '');
+  if (!s) return null;
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = parseFloat(s);
+    return Math.round(n < BARE_HOURS_THRESHOLD ? n * 60 : n);
+  }
+
+  const tokenRe = /(\d+(?:\.\d+)?)(h|m|d|w)/y; // sticky → tokens must be contiguous
+  let total = 0;
+  let pos = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(s)) !== null) {
+    const n = parseFloat(match[1]);
+    switch (match[2]) {
+      case 'h': total += n * 60; break;
+      case 'm': total += n; break;
+      case 'd': total += n * 8 * 60; break;     // Tempo workday = 8h
+      case 'w': total += n * 5 * 8 * 60; break; // Tempo workweek = 5d
+    }
+    pos = tokenRe.lastIndex;
+  }
+  // Trailing unit-less number = minutes, e.g. "1h30" → 90.
+  const rest = s.slice(pos);
+  if (rest && /^\d+(\.\d+)?$/.test(rest)) { total += parseFloat(rest); pos = s.length; }
+  if (pos !== s.length || total <= 0) return null;
+  return Math.round(total);
+}
+
+// 90 → "1h 30m", 45 → "45m", 120 → "2h".
+function formatDurationLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
 @Component({
   selector: 'app-day-view',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
@@ -31,6 +99,7 @@ export class DayViewComponent {
   @Input() daemonStarting = false;
   @Input() currentTimeMs: number = Date.now();
   @Input() sensitivityPills: readonly SensitivityPillOption[] = [];
+  @Input() activityTypes: readonly ActivityType[] = [];
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeRequested = new EventEmitter<SessionDetail>();
@@ -38,6 +107,10 @@ export class DayViewComponent {
   @Output() clearStartRequested = new EventEmitter<void>();
   @Output() startDaemonRequested = new EventEmitter<void>();
   @Output() goTodayRequested = new EventEmitter<void>();
+  @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
+  @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();
+
+  public constructor(private host: ElementRef<HTMLElement>) {}
 
   // Anchored set-start popover (replaces the full-screen modal). Hours/minutes
   // are strings so manual typing ("4" → "04") coexists with the wheel/▲▼ spinner.
@@ -238,17 +311,28 @@ export class DayViewComponent {
 
   // Bar + caption render only when there is something to show.
   get hasActivity(): boolean {
-    return this.totalActiveMs > 0 || this.totalPauseMs > 0;
+    return this.totalActiveMs > 0 || this.totalPauseMs > 0 || this.loggedMs > 0;
+  }
+
+  // Bar total = active + idle (git presence) + logged (manual). Three segments
+  // mirror the three caption numbers; logged is additive, not carved from idle.
+  private get ratioTotalMs(): number {
+    return this.totalActiveMs + this.totalPauseMs + this.loggedMs;
   }
 
   get activePct(): number {
-    const total = this.totalActiveMs + this.totalPauseMs;
+    const total = this.ratioTotalMs;
     return total > 0 ? (this.totalActiveMs / total) * 100 : 0;
   }
 
   get idlePct(): number {
-    const total = this.totalActiveMs + this.totalPauseMs;
+    const total = this.ratioTotalMs;
     return total > 0 ? (this.totalPauseMs / total) * 100 : 0;
+  }
+
+  get loggedPct(): number {
+    const total = this.ratioTotalMs;
+    return total > 0 ? (this.loggedMs / total) * 100 : 0;
   }
 
   // ─── Session colour palette ───────────────────────────────────────────
@@ -371,6 +455,184 @@ export class DayViewComponent {
       case 'superseded':          return 'reason-switched';
       default:                    return 'reason-other';
     }
+  }
+
+  // ─── Manual entries (LOGGED band) ──────────────────────────────────────
+
+  readonly manualAccent = MANUAL_ACCENT;
+  readonly minuteQuickPicks = MINUTE_QUICK_PICKS;
+
+  // Compose popover state. editingId = null → adding; otherwise editing that id.
+  logPopoverOpen = false;
+  editingId: string | null = null;
+  logTask = '';
+  logTimeStr = '30m';
+  logActivity = DEFAULT_ACTIVITY;
+  logDescription = '';
+  attemptedLog = false;
+  activityListOpen = false;
+  activitySearch = '';
+
+  get manualEntries(): readonly ManualEntry[] {
+    return this.data?.manualEntries ?? [];
+  }
+
+  // Today always shows the band (with the add affordance); a past day shows it
+  // only when it actually has entries — it is read-only there.
+  get showManualBand(): boolean {
+    return this.isViewingToday || this.manualEntries.length > 0;
+  }
+
+  get loggedMs(): number {
+    return this.manualEntries.reduce((sum, e) => sum + e.minutes, 0) * 60_000;
+  }
+
+  // Dropdown options — fall back to a single Other when types haven't loaded.
+  get activityOptions(): readonly ActivityType[] {
+    return this.activityTypes.length ? this.activityTypes : [{ value: DEFAULT_ACTIVITY, name: DEFAULT_ACTIVITY }];
+  }
+
+  activityLabel(value: string): string {
+    return this.activityTypes.find(a => a.value === value)?.name ?? value;
+  }
+
+  // CSS modifier so a few common activities get a distinct badge tint.
+  activityTone(value: string): string {
+    switch (value) {
+      case 'CodeReview':
+      case 'CodeReviewFixes':
+      case 'TestReview':   return 'rev';
+      case 'Development':
+      case 'Bugfixing':    return 'dev';
+      default:             return 'other';
+    }
+  }
+
+  // ─── Compose popover ───────────────────────────────────────────────────
+
+  openLogPopover(): void {
+    if (!this.isViewingToday) return;
+    this.editingId = null;
+    this.logTask = '';
+    this.logTimeStr = '30m';
+    this.logActivity = DEFAULT_ACTIVITY;
+    this.logDescription = '';
+    this.attemptedLog = false;
+    this.activityListOpen = false;
+    this.logPopoverOpen = true;
+  }
+
+  openEditPopover(entry: ManualEntry): void {
+    if (!this.isViewingToday) return;
+    this.editingId = entry.id;
+    this.logTask = entry.task;
+    this.logTimeStr = formatDurationLabel(entry.minutes);
+    this.logActivity = entry.activity;
+    this.logDescription = entry.description;
+    this.attemptedLog = false;
+    this.activityListOpen = false;
+    this.logPopoverOpen = true;
+  }
+
+  closeLogPopover(): void {
+    this.logPopoverOpen = false;
+    this.activityListOpen = false;
+  }
+
+  // ─── Activity dropdown (custom — native <select> can't cap height/scroll) ──
+
+  openActivityList(): void {
+    this.activityListOpen = true;
+    this.activitySearch = ''; // start unfiltered; the input filters as you type
+    // *ngIf renders the input on the next tick — query the live DOM and focus.
+    setTimeout(() => this.host.nativeElement
+      .querySelector<HTMLInputElement>('.lp-activity-search')?.focus());
+  }
+
+  closeActivityList(): void {
+    this.activityListOpen = false;
+  }
+
+  selectActivity(value: string): void {
+    this.logActivity = value;
+    this.activityListOpen = false;
+  }
+
+  // Enter in the filter picks the top match (Tempo-style).
+  selectFirstActivity(): void {
+    const first = this.filteredActivities[0];
+    if (first) this.selectActivity(first.value);
+  }
+
+  get filteredActivities(): readonly ActivityType[] {
+    const q = this.activitySearch.trim().toLowerCase();
+    if (!q) return this.activityOptions;
+    return this.activityOptions.filter(a => a.name.toLowerCase().includes(q));
+  }
+
+  // Free-text duration; live edits just clear the error flag.
+  onTimeInput(): void {
+    this.attemptedLog = false;
+  }
+
+  // Reformat to the canonical label on blur ("1.5" → "1h 30m"); leave invalid
+  // text as typed so the red flag points at it.
+  normalizeTime(): void {
+    const mins = this.parsedMinutes;
+    if (mins !== null) this.logTimeStr = formatDurationLabel(mins);
+  }
+
+  pickMinutes(minutes: number): void {
+    this.logTimeStr = formatDurationLabel(minutes);
+    this.attemptedLog = false;
+  }
+
+  // Mouse wheel steps the duration by 5 min (wheel-only, no spinner buttons).
+  onMinutesWheel(e: WheelEvent): void {
+    e.preventDefault();
+    const cur = this.parsedMinutes ?? 0;
+    const next = Math.max(5, cur + (e.deltaY < 0 ? 5 : -5));
+    this.logTimeStr = formatDurationLabel(next);
+    this.attemptedLog = false;
+  }
+
+  get parsedMinutes(): number | null {
+    return parseDurationToMinutes(this.logTimeStr);
+  }
+
+  get logTaskInvalid(): boolean {
+    return this.logTask.trim().length === 0;
+  }
+
+  get logMinutesInvalid(): boolean {
+    return this.parsedMinutes === null;
+  }
+
+  get logDescriptionInvalid(): boolean {
+    return this.logDescription.trim().length === 0;
+  }
+
+  get logInvalid(): boolean {
+    return this.logTaskInvalid || this.logMinutesInvalid || this.logDescriptionInvalid;
+  }
+
+  applyLog(): void {
+    if (this.actionPending) return;
+    if (this.logInvalid) {
+      this.attemptedLog = true;
+      return;
+    }
+    const task = this.logTask.trim();
+    const minutes = this.parsedMinutes ?? 0;
+    const description = this.logDescription.trim();
+    const activity = this.logActivity || DEFAULT_ACTIVITY;
+
+    if (this.editingId) {
+      this.entryEditSubmitted.emit({ target: this.editingId, patch: { minutes, description, activity } });
+    } else {
+      this.logSubmitted.emit({ task, minutes, description, activity });
+    }
+    this.closeLogPopover();
   }
 
   // ─── Click handlers (forwarded to shell) ──────────────────────────────

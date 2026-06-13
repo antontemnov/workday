@@ -56,11 +56,23 @@ export interface ActiveInterval {
   readonly repo: string;
 }
 
+// Standalone time logged on a task with no tracked git session (meeting, code
+// review, planning). Mirrors the daemon's ManualEntry — its own Tempo worklog.
+export interface ManualEntry {
+  readonly id: string;
+  readonly task: string;
+  readonly minutes: number;
+  readonly description: string;
+  readonly activity: string;        // Tempo _Activity_ value, e.g. 'CodeReview'
+  readonly createdAt: string;
+}
+
 export interface TodayResponse {
   date: string;
   dayType: string;
   status: string;
   sessions: SessionDetail[];
+  manualEntries: readonly ManualEntry[];
   totalEffectiveMs: number;
   signalCount: number;
   budgetMs: number;
@@ -103,6 +115,41 @@ export interface SetStartResponse {
 export interface DaysResponse {
   readonly dates: readonly string[];
 }
+
+// ─── Manual entries ────────────────────────────────────────────────────────
+
+// Tempo _Activity_ option — value is sent to Tempo, name is the display label.
+export interface ActivityType {
+  readonly value: string;   // e.g. 'CodeReview'
+  readonly name: string;    // e.g. 'Code Review'
+}
+
+export interface ActivityTypesResponse {
+  readonly key: string;                          // '_Activity_'
+  readonly activities: readonly ActivityType[];
+  readonly fromCache: boolean;                   // false when served from fallback
+}
+
+// Returned by POST /api/manual-entry and /api/manual-entry/update.
+export interface ManualEntryResponse {
+  readonly id: string;
+  readonly task: string;
+  readonly minutes: number;
+  readonly description: string;
+  readonly activity: string;
+  readonly totalManualMinutes: number;
+  readonly remainingBudgetMs: number;
+}
+
+// Input for adding / editing a manual entry from the UI.
+export interface ManualEntryInput {
+  readonly task: string;
+  readonly minutes: number;
+  readonly description: string;
+  readonly activity: string;
+}
+
+export type ManualEntryPatch = Partial<Pick<ManualEntryInput, 'minutes' | 'description' | 'activity'>>;
 
 // ─── Timesheets ──────────────────────────────────────────────────────────
 

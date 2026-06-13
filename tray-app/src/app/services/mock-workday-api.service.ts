@@ -17,6 +17,11 @@ import {
   AddRepoResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
+  ActivityTypesResponse,
+  ManualEntry,
+  ManualEntryResponse,
+  ManualEntryInput,
+  ManualEntryPatch,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -33,6 +38,17 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockSchedule: { start: number; end: number } = { start: 9, end: 4 };
   private mockTimezone = 'Europe/Moscow';
   private mockTaskPattern = 'ATL-\\d+';
+
+  // Mutable so add/edit manual entries feel real in mock mode.
+  private mockManualEntries: ManualEntry[] = [
+    { id: 'm1', task: 'ATL-6781', minutes: 15, description: 'daily standup',
+      activity: 'Other', createdAt: this.iso(10, 0) },
+    { id: 'm2', task: 'ATL-6712', minutes: 30, description: 'PR #214 review with team',
+      activity: 'CodeReview', createdAt: this.iso(13, 30) },
+    { id: 'm3', task: 'APP-1024', minutes: 45, description: 'sprint planning',
+      activity: 'Other', createdAt: this.iso(15, 0) },
+  ];
+  private mockEntrySeq = 4;
 
   private readonly today = (() => {
     const d = new Date();
@@ -188,11 +204,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
           totalPauseDurationMs: 0,
         },
       ],
+      manualEntries: [...this.mockManualEntries],
       totalEffectiveMs: 7 * 3600_000,
       signalCount: 42,
       budgetMs: 8 * 3600_000,
-      claimedMs: 0,
-      remainingBudgetMs: 8 * 3600_000,
+      claimedMs: this.mockManualMinutes() * 60_000,
+      remainingBudgetMs: 8 * 3600_000 - this.mockManualMinutes() * 60_000,
       dayStartedAt: this.iso(9, 18),
       manualStart: null,
       schedule: { start: 9, end: 23 },
@@ -258,6 +275,55 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   async startDaemon(): Promise<void> {
     // no-op in mock
+  }
+
+  // ─── Manual entries mocks ─────────────────────────────────────────────
+
+  private mockManualMinutes(): number {
+    return this.mockManualEntries.reduce((sum, e) => sum + e.minutes, 0);
+  }
+
+  async getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
+    return { ok: true, data: { key: '_Activity_', fromCache: true, activities: MOCK_ACTIVITIES } };
+  }
+
+  async addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>> {
+    await delay(150);
+    if (!input.task) return { ok: false, error: 'Missing task' };
+    if (!input.description) return { ok: false, error: 'Missing description' };
+    const entry: ManualEntry = {
+      id: `m${this.mockEntrySeq++}`,
+      task: input.task,
+      minutes: input.minutes,
+      description: input.description,
+      activity: input.activity || 'Other',
+      createdAt: this.iso(12, 0),
+    };
+    this.mockManualEntries = [...this.mockManualEntries, entry];
+    return { ok: true, data: this.toEntryResponse(entry) };
+  }
+
+  async updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>> {
+    await delay(150);
+    const idx = this.mockManualEntries.findIndex(e => e.id === target);
+    if (idx < 0) return { ok: false, error: `Manual entry not found: ${target}` };
+    const updated: ManualEntry = {
+      ...this.mockManualEntries[idx],
+      minutes: patch.minutes ?? this.mockManualEntries[idx].minutes,
+      description: patch.description ?? this.mockManualEntries[idx].description,
+      activity: patch.activity ?? this.mockManualEntries[idx].activity,
+    };
+    this.mockManualEntries = this.mockManualEntries.map((e, i) => i === idx ? updated : e);
+    return { ok: true, data: this.toEntryResponse(updated) };
+  }
+
+  private toEntryResponse(entry: ManualEntry): ManualEntryResponse {
+    return {
+      id: entry.id, task: entry.task, minutes: entry.minutes,
+      description: entry.description, activity: entry.activity,
+      totalManualMinutes: this.mockManualMinutes(),
+      remainingBudgetMs: 8 * 3600_000 - this.mockManualMinutes() * 60_000,
+    };
   }
 
   // ─── Timesheets / Settings mocks ──────────────────────────────────────
@@ -340,6 +406,27 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: { updating: true, target: '0.6.1', message: 'Installed v0.6.1 — daemon restarting' } };
   }
 }
+
+// ─── Mock activity types (mirrors daemon FALLBACK_ACTIVITIES) ─────────────
+
+const MOCK_ACTIVITIES: ReadonlyArray<{ readonly value: string; readonly name: string }> = [
+  { value: 'AutomationPerformanceTesting', name: 'Automation/Performance Testing' },
+  { value: 'Bugfixing', name: 'Bugfixing' },
+  { value: 'CodeReview', name: 'Code Review' },
+  { value: 'CodeReviewFixes', name: 'Code Review Fixes' },
+  { value: 'DesignAnalysis', name: 'Design/Analysis' },
+  { value: 'Development', name: 'Development' },
+  { value: 'EnvironmentSetup', name: 'Environment Setup' },
+  { value: 'Estimation', name: 'Estimation' },
+  { value: 'IntegrationTesting', name: 'Integration Testing' },
+  { value: 'Merge', name: 'Merge' },
+  { value: 'Other', name: 'Other' },
+  { value: "QAlead'sactivities", name: "QA lead's activities" },
+  { value: 'PM', name: 'PM' },
+  { value: 'TechnicalControl', name: 'Technical Control' },
+  { value: 'Testing', name: 'Testing' },
+  { value: 'TestReview', name: 'Test Review' },
+];
 
 // ─── Mock month dataset ──────────────────────────────────────────────────
 

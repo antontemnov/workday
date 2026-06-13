@@ -20,6 +20,11 @@ import {
   AddRepoResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
+  ActivityTypesResponse,
+  ManualEntry,
+  ManualEntryResponse,
+  ManualEntryInput,
+  ManualEntryPatch,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -179,6 +184,22 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     }
   }
 
+  // ─── Manual entries ──────────────────────────────────────────────────
+  // The daemon targets the currently-tracked day; no date param. The UI
+  // gates add/edit on "today" so a past day is never mutated.
+
+  override async getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
+    return this.get<ActivityTypesResponse>('/api/activity-types');
+  }
+
+  override async addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>> {
+    return this.post<ManualEntryResponse>('/api/manual-entry', { ...input });
+  }
+
+  override async updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>> {
+    return this.post<ManualEntryResponse>('/api/manual-entry/update', { target, ...patch });
+  }
+
   // ─── Stubs for endpoints not yet implemented on the daemon ───────────
   // The Timesheets and Settings views need data we don't have a real
   // endpoint for yet. Delegate to MockWorkdayApiService so the UI develops
@@ -248,6 +269,7 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       dayType: log.dayType ?? 'workday',
       status: log.status ?? 'draft',
       sessions,
+      manualEntries: log.manualEntries ?? [],
       totalEffectiveMs,
       signalCount: (log.signals ?? []).length,
       // Disk fallback: budget is daemon-computed, surface as zero. Past-day UI
@@ -375,6 +397,7 @@ interface RawDailyLog {
   readonly dayStartedAt?: string | null;
   readonly sessions?: RawSession[];
   readonly signals?: unknown[];
+  readonly manualEntries?: ManualEntry[];
 }
 
 interface RawSession {

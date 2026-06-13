@@ -14,6 +14,10 @@ import {
   AddRepoResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
+  ActivityTypesResponse,
+  ManualEntryResponse,
+  ManualEntryInput,
+  ManualEntryPatch,
 } from '../models/workday.models';
 
 /**
@@ -35,6 +39,12 @@ export abstract class WorkdayApiService {
   abstract clearStart(): Promise<ApiResponse<SetStartResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
   abstract startDaemon(): Promise<void>;
+
+  // Manual entries — standalone time on a task (HTTP add/edit target the
+  // currently-tracked day only; past days are read-only from the UI).
+  abstract getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;
+  abstract addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>>;
+  abstract updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>>;
 
   // Timesheets view — per-month aggregated day summaries.
   abstract getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>>;

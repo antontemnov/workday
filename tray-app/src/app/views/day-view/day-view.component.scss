@@ -387,6 +387,7 @@
 
     &.active { background: #a6e3a1; }
     &.idle   { background: #585b70; }
+    &.logged { background: #cba6f7; }
   }
 }
 
@@ -416,6 +417,11 @@
   .idle-line {
     color: #6c7086;
     strong { color: #bac2de; }
+  }
+
+  .logged-line {
+    color: #6c7086;
+    strong { color: #cba6f7; }
   }
 
   .dot-sep {
@@ -777,6 +783,344 @@
       &.reason-manual    { background: rgba(166, 173, 200, 0.12); color: #a6adc8; }
       &.reason-stopped   { background: rgba(108, 112, 134, 0.18); color: #a6adc8; }
       &.reason-other     { background: #2a2a3c; color: #6c7086; }
+    }
+  }
+}
+
+// ─── Logged: manual entries band ────────────────────────────────────────────
+// Third band under Active/Closed. Manual = mauve throughout (its own species).
+.sessions.logged {
+  position: relative; // anchor for the compose popover
+
+  .logged-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+
+    h2 { margin: 0; }
+  }
+
+  .log-add-btn {
+    background: rgba(203, 166, 247, 0.1);
+    border: 1px solid rgba(203, 166, 247, 0.32);
+    color: #cba6f7;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    padding: 3px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    line-height: 1.3;
+    transition: background 0.15s ease, border-color 0.15s ease;
+
+    &:hover:not(:disabled) { background: rgba(203, 166, 247, 0.18); border-color: #cba6f7; }
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+
+  .log-empty {
+    color: #585b70;
+    font-size: 11px;
+    padding: 2px 0 4px;
+    font-style: italic;
+  }
+
+  .log-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 8px 5px 0;
+    border-radius: 4px;
+    background: rgba(24, 24, 37, 0.5);
+    margin-bottom: 3px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    transition: background 0.15s ease;
+
+    &:hover { background: rgba(203, 166, 247, 0.06); }
+
+    .log-tick {
+      width: 3px;
+      align-self: stretch;
+      background: #cba6f7;
+      opacity: 0.8;
+      border-radius: 2px 0 0 2px;
+      flex-shrink: 0;
+    }
+
+    .log-task {
+      color: #cba6f7;
+      font-weight: 600;
+      background: rgba(203, 166, 247, 0.12);
+      padding: 1px 7px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .log-activity {
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      white-space: nowrap;
+
+      &.tone-other { color: #9399b2; background: rgba(147, 153, 178, 0.12); }
+      &.tone-rev   { color: #89b4fa; background: rgba(137, 180, 250, 0.12); }
+      &.tone-dev   { color: #a6e3a1; background: rgba(166, 227, 161, 0.12); }
+    }
+
+    .log-desc {
+      color: #7f849c;
+      font-style: italic;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .log-min {
+      color: #cdd6f4;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .log-edit {
+      background: transparent;
+      border: none;
+      color: #6c7086;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      transition: color 0.15s ease, background 0.15s ease;
+
+      &:hover:not(:disabled) { color: #cba6f7; background: rgba(203, 166, 247, 0.1); }
+      &:disabled { opacity: 0.35; cursor: default; }
+    }
+  }
+}
+
+// ─── Compose popover (Log time) ──────────────────────────────────────────────
+.log-pop-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40; // transparent — catches outside clicks
+}
+
+// Anchored to the "+ Log time" button so the popover tracks it.
+.log-add-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.log-pop {
+  position: absolute;
+  bottom: calc(100% + 8px); // opens upward from the button
+  right: 0;                 // right-aligned → grows left, stays inside the window
+  z-index: 41;
+  width: 280px;
+  box-sizing: border-box;
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  padding: 11px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  // Caret at the bottom, pointing down to the "+ Log time" button.
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    right: 16px;
+    width: 9px;
+    height: 9px;
+    background: #1e1e2e;
+    border-right: 1px solid #45475a;
+    border-bottom: 1px solid #45475a;
+    transform: rotate(45deg);
+  }
+}
+
+.log-pop-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #cba6f7;
+  margin-bottom: 9px;
+}
+
+.lp-field {
+  margin-bottom: 8px;
+
+  label {
+    display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #6c7086;
+    margin-bottom: 3px;
+  }
+}
+
+.lp-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 5px;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  transition: border-color 0.15s ease;
+
+  &:focus { outline: none; border-color: #89b4fa; }
+  &::placeholder { color: #585b70; }
+  &.invalid { border-color: #f38ba8; }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
+// Custom activity dropdown — native <select> can't cap the popup height,
+// scroll it, or shrink the option font, so we render our own list.
+.lp-activity-field {
+  position: relative;
+}
+
+.lp-activity-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+
+  .lp-activity-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lp-activity-caret {
+    color: #6c7086;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+}
+
+// Filter input shown in place of the trigger while the list is open.
+.lp-activity-search {
+  position: relative;
+  z-index: 44; // above the backdrop so it stays focusable and typable
+}
+
+// Full-window catcher so an outside click closes only the list.
+.lp-activity-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 42;
+}
+
+.lp-activity-list {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  z-index: 43;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  max-height: 148px;
+  overflow-y: auto;
+  background: #11111b;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+
+  .lp-activity-option {
+    font-size: 11px;
+    line-height: 1.4;
+    color: #bac2de;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover { background: #2c2a3a; color: #cdd6f4; }
+    &.selected { background: rgba(203, 166, 247, 0.15); color: #cba6f7; }
+  }
+
+  .lp-activity-empty {
+    font-size: 11px;
+    color: #585b70;
+    font-style: italic;
+    padding: 5px 8px;
+  }
+
+  &::-webkit-scrollbar { width: 5px; }
+  &::-webkit-scrollbar-thumb { background: #45475a; border-radius: 3px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+}
+
+.lp-min-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .lp-min-input {
+    width: 72px;
+    flex-shrink: 0;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    cursor: ns-resize; // hint: scroll to adjust
+  }
+
+  .lp-chip {
+    flex: 1;
+    background: #181825;
+    border: 1px solid #313244;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 4px 0;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+    &:hover { background: #2c2a3a; color: #cba6f7; border-color: #cba6f7; }
+  }
+}
+
+.lp-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 11px;
+
+  .lp-btn {
+    flex: 1;
+    box-sizing: border-box;
+    text-align: center;
+    background: #313244;
+    border: none;
+    color: #cdd6f4;
+    padding: 5px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    transition: background 0.15s ease;
+
+    &:hover:not(:disabled) { background: #45475a; }
+    &:disabled { opacity: 0.4; cursor: default; }
+
+    &.primary {
+      background: #cba6f7;
+      color: #1e1e2e;
+      font-weight: 600;
+      &:hover:not(:disabled) { background: #b894ee; }
     }
   }
 }

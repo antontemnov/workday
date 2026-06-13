@@ -8,6 +8,9 @@ import {
   ApiResponse,
   SensitivityLevel,
   SensitivityPill,
+  ActivityType,
+  ManualEntryInput,
+  ManualEntryPatch,
 } from './models/workday.models';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
@@ -52,6 +55,9 @@ export class AppComponent implements OnInit, OnDestroy {
   adjustModalSession: SessionDetail | null = null;
   readonly adjustQuickPicks: readonly number[] = [15, 30, 45, 60, 90];
 
+  // Tempo _Activity_ options for the manual-entry composer; prefetched once.
+  activityTypes: readonly ActivityType[] = [];
+
   // Toast + action gate
   actionError: string | null = null;
   actionPending = false;
@@ -73,6 +79,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.refreshAvailableDates();
+    void this.refreshActivityTypes();
     this.refresh();
     this.pollTimer = setInterval(() => {
       if (this.isViewingToday) this.refresh();
@@ -93,6 +100,14 @@ export class AppComponent implements OnInit, OnDestroy {
     if (res.ok && res.data) {
       this.availableDates = [...res.data.dates];
       this.navLoaded = true;
+    }
+  }
+
+  // Activity options rarely change — fetch once on load (cached daemon-side).
+  private async refreshActivityTypes(): Promise<void> {
+    const res = await this.api.getActivityTypes();
+    if (res.ok && res.data) {
+      this.activityTypes = res.data.activities;
     }
   }
 
@@ -262,6 +277,16 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async submitSetStart(time: string): Promise<void> {
     await this.runAction(() => this.api.setStart(time));
+  }
+
+  // ─── Manual entries ────────────────────────────────────────────────────
+
+  async submitLog(input: ManualEntryInput): Promise<void> {
+    await this.runAction(() => this.api.addManualEntry(input));
+  }
+
+  async submitEntryEdit(e: { target: string; patch: ManualEntryPatch }): Promise<void> {
+    await this.runAction(() => this.api.updateManualEntry(e.target, e.patch));
   }
 
   async clearDayStart(): Promise<void> {
