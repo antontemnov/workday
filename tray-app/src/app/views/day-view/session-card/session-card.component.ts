@@ -1,20 +1,23 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../models/workday.models';
+import { ModeDropdownComponent } from './mode-dropdown/mode-dropdown.component';
+import { StatusBadgeComponent } from './status-badge/status-badge.component';
 
 interface SpeedPillOption {
   readonly key: SensitivityLevel;
   readonly label: string;
+  readonly description: string;
   readonly title: string;
 }
 
 type TrackingAction = 'pause' | 'resume';
 
 /**
- * Single open-session card. Compact 3-row layout:
- *   1. identity   — repo · task tag · branch (fade-masked) · status badge
- *   2. metrics    — clickable time (+manual) · git stats (right-aligned)
- *   3. controls   — sensitivity scale (Sharp..Nonstop) · Pause/Resume (when meaningful)
+ * Single open-session card. Compact 2-row layout:
+ *   1. identity   — repo │ branch (fade-masked) · status badge (Pause/Resume
+ *                   built into the badge for Live/manual-paused)
+ *   2. metrics    — clickable time (+manual) · git stats · mode dropdown
  * Stamina is the card's bottom edge, not a row.
  *
  * Holds no state — pure projection of one SessionDetail + event emitters.
@@ -22,7 +25,7 @@ type TrackingAction = 'pause' | 'resume';
 @Component({
   selector: 'app-session-card',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, ModeDropdownComponent, StatusBadgeComponent],
   templateUrl: './session-card.component.html',
   styleUrl: './session-card.component.scss',
 })
@@ -35,6 +38,10 @@ export class SessionCardComponent {
   // Re-uses the existing pill channel: 'pause' → pause API, a level → sensitivity API.
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeRequested = new EventEmitter<SessionDetail>();
+
+  // True while the mode dropdown is open — lets the card lift its z-index so the
+  // menu can overflow the card without a sibling card clipping it.
+  menuOpen = false;
 
   // ─── Identity ──────────────────────────────────────────────────────────
 
@@ -97,12 +104,6 @@ export class SessionCardComponent {
     return this.session.paused && (this.session.pauseSource ?? '').toLowerCase() === 'manual';
   }
 
-  // Active speed is the session's sensitivity — kept visible (dimmed) while
-  // paused, so the level the session will resume into stays readable.
-  get activeSpeed(): SensitivityLevel {
-    return this.session.sensitivity;
-  }
-
   get isAlwaysOn(): boolean {
     return !this.session.paused && this.session.sensitivity === SensitivityLevel.AlwaysOn;
   }
@@ -136,6 +137,14 @@ export class SessionCardComponent {
   get manualLabel(): string | null {
     return this.session.manualMinutes > 0
       ? `+${this.formatDurationHm(this.session.manualMinutes * 60_000)}`
+      : null;
+  }
+
+  // Total time this session spent paused — duration only, no count. Shown in the
+  // time chip when there was any pause (mirrors how +manual only shows when > 0).
+  get pauseLabel(): string | null {
+    return this.session.totalPauseDurationMs > 0
+      ? this.formatDurationHm(this.session.totalPauseDurationMs)
       : null;
   }
 

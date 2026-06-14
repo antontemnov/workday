@@ -16,6 +16,7 @@ import {
 interface SensitivityPillOption {
   readonly key: SensitivityLevel;
   readonly label: string;
+  readonly description: string;
   readonly title: string;
 }
 

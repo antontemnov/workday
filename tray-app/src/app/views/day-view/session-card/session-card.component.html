@@ -1,15 +1,18 @@
-<div class="card" [class.paused]="isPaused">
+<div class="card" [class.paused]="isPaused" [class.menu-open]="menuOpen">
   <!-- 1 · Identity -->
   <div class="head">
     <span class="repo">{{ repoName }}</span>
     <span class="sep"></span>
     <span class="branch" [title]="session.branch">{{ session.branch }}</span>
-    <span class="badge" [ngClass]="statusClass">
-      <span class="badge-dot"></span>{{ statusLabel }}
-    </span>
+    <app-status-badge
+      [statusClass]="statusClass"
+      [label]="statusLabel"
+      [action]="trackingAction"
+      [pending]="actionPending"
+      (act)="onTrackingClick()" />
   </div>
 
-  <!-- 2 · Metrics: time chip + git chip, both left with a clear gap between -->
+  <!-- 2 · Metrics: time · git · mode picker (Pause/Resume now lives in the badge) -->
   <div class="metrics">
     <button class="chip time"
             (click)="onTimeClick()"
@@ -26,6 +29,15 @@
         <span class="sep"></span>
         <span class="manual">{{ manualLabel }}</span>
       </ng-container>
+      <ng-container *ngIf="pauseLabel">
+        <span class="sep"></span>
+        <span class="paused" title="Total time paused">
+          <svg class="pi" viewBox="0 0 10 10" aria-hidden="true">
+            <rect x="1.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
+            <rect x="6.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
+          </svg>{{ pauseLabel }}
+        </span>
+      </ng-container>
     </button>
     <span class="chip git" [title]="session.evidence.filesChanged + ' files changed'">
       <svg class="mi" viewBox="0 0 14 14" aria-hidden="true">
@@ -37,35 +49,15 @@
       <span class="added">+{{ session.evidence.linesAdded }}</span>
       <span class="removed">−{{ session.evidence.linesRemoved }}</span>
     </span>
-  </div>
 
-  <!-- 3 · Controls: sensitivity scale + Pause/Resume (only when actionable) -->
-  <div class="controls">
-    <div class="scale" [class.dis]="isManualPaused" [attr.title]="isManualPaused ? 'Locked while paused' : null">
-      <button class="sp"
-              *ngFor="let p of speedPills"
-              [class.on]="activeSpeed === p.key"
-              [ngClass]="'sp-' + p.key"
-              [disabled]="isManualPaused || actionPending || !isViewingToday"
-              [title]="p.title"
-              (click)="onSpeedClick(p.key)">{{ p.label }}</button>
-    </div>
+    <!-- Mode picker — collapses the old scale row onto this line -->
+    <app-mode-dropdown
+      [options]="speedPills"
+      [value]="session.sensitivity"
+      [disabled]="isManualPaused || actionPending || !isViewingToday"
+      (selected)="onSpeedClick($event)"
+      (openChange)="menuOpen = $event" />
 
-    <button class="track"
-            *ngIf="trackingAction"
-            [ngClass]="trackingAction"
-            [disabled]="actionPending"
-            [title]="trackingAction === 'pause' ? 'Pause this session' : 'Resume tracking'"
-            (click)="onTrackingClick()">
-      <svg class="track-ico" *ngIf="trackingAction === 'pause'" viewBox="0 0 10 10" aria-hidden="true">
-        <rect x="1.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
-        <rect x="6.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
-      </svg>
-      <svg class="track-ico" *ngIf="trackingAction === 'resume'" viewBox="0 0 10 10" aria-hidden="true">
-        <path d="M1.5 0.6 L9 5 L1.5 9.4 Z"></path>
-      </svg>
-      {{ trackingAction === 'pause' ? 'Pause' : 'Resume' }}
-    </button>
   </div>
 
   <!-- Stamina = bottom edge: length + colour encode the level; hover shows a tip -->

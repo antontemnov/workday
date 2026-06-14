@@ -22,6 +22,7 @@ type ActiveView = 'day' | 'sheet' | 'set';
 interface SensitivityPillOption {
   readonly key: SensitivityLevel;
   readonly label: string;
+  readonly description: string;
   readonly title: string;
 }
 
@@ -46,10 +47,10 @@ export class AppComponent implements OnInit, OnDestroy {
   // button now, so it's no longer a pill here. Labels are display-only; the
   // backing enum values (low/normal/patient/always_on) are unchanged.
   readonly sensitivityPills: readonly SensitivityPillOption[] = [
-    { key: SensitivityLevel.Low,      label: 'Sharp',   title: 'Short leash — any change buys ~2.5 min, intense work up to 15 min' },
-    { key: SensitivityLevel.Normal,   label: 'Normal',  title: 'Default — any change buys ~7.5 min, intense work up to 45 min' },
-    { key: SensitivityLevel.Patient,  label: 'Relaxed', title: 'Tolerant — any change buys ~15 min, intense work up to 90 min' },
-    { key: SensitivityLevel.AlwaysOn, label: 'Nonstop', title: 'Never auto-paused by idle timeout — tracks until you pause it' },
+    { key: SensitivityLevel.Low,      label: 'Sharp',   description: 'full stamina → 15 min idle', title: 'Short leash — at full stamina tolerates up to 15 min idle before pausing; each change tops it up' },
+    { key: SensitivityLevel.Normal,   label: 'Normal',  description: '→ 45 min',                  title: 'Default — at full stamina tolerates up to 45 min idle before pausing; each change tops it up' },
+    { key: SensitivityLevel.Patient,  label: 'Relaxed', description: '→ 90 min',                  title: 'Tolerant — at full stamina tolerates up to 90 min idle before pausing; each change tops it up' },
+    { key: SensitivityLevel.AlwaysOn, label: 'Nonstop', description: 'never auto-pauses',          title: 'Never auto-paused by idle timeout — tracks until you pause it manually' },
   ];
 
   // Modal state (cross-cutting, triggered by DayView events)
