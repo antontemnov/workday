@@ -20,7 +20,7 @@ type TrayKind = 'live' | 'pending' | 'idle' | 'paused' | 'none';
 type ActiveView = 'day' | 'sheet' | 'set';
 
 interface SensitivityPillOption {
-  readonly key: SensitivityPill;
+  readonly key: SensitivityLevel;
   readonly label: string;
   readonly title: string;
 }
@@ -42,12 +42,14 @@ export class AppComponent implements OnInit, OnDestroy {
   loading = true;
   daemonStarting = false;
 
+  // Sensitivity = idle-patience scale. Pause/Resume is a separate per-card
+  // button now, so it's no longer a pill here. Labels are display-only; the
+  // backing enum values (low/normal/patient/always_on) are unchanged.
   readonly sensitivityPills: readonly SensitivityPillOption[] = [
-    { key: 'pause',                       label: 'Pause',     title: 'Pause this session' },
-    { key: SensitivityLevel.Low,          label: 'Low',       title: 'Short leash — any change buys ~2.5 min, intense work up to 15 min' },
-    { key: SensitivityLevel.Normal,       label: 'Normal',    title: 'Default — any change buys ~7.5 min, intense work up to 45 min' },
-    { key: SensitivityLevel.Patient,      label: 'Patient',   title: 'Tolerant — any change buys ~15 min, intense work up to 90 min' },
-    { key: SensitivityLevel.AlwaysOn,     label: 'Always-on', title: 'Never auto-paused by idle timeout' },
+    { key: SensitivityLevel.Low,      label: 'Sharp',   title: 'Short leash — any change buys ~2.5 min, intense work up to 15 min' },
+    { key: SensitivityLevel.Normal,   label: 'Normal',  title: 'Default — any change buys ~7.5 min, intense work up to 45 min' },
+    { key: SensitivityLevel.Patient,  label: 'Relaxed', title: 'Tolerant — any change buys ~15 min, intense work up to 90 min' },
+    { key: SensitivityLevel.AlwaysOn, label: 'Nonstop', title: 'Never auto-paused by idle timeout — tracks until you pause it' },
   ];
 
   // Modal state (cross-cutting, triggered by DayView events)

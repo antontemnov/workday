@@ -32,11 +32,13 @@ export class SettingsViewComponent implements OnInit, OnDestroy {
   jiraTokenDraft: string | null = null;
   tempoTokenDraft: string | null = null;
 
+  // Display labels only — backing enum values (low/normal/patient/always_on)
+  // are unchanged. Mirrors the day-view scale naming.
   readonly sensitivityOptions: readonly { key: SensitivityLevel; label: string }[] = [
-    { key: SensitivityLevel.Low,      label: 'Low' },
+    { key: SensitivityLevel.Low,      label: 'Sharp' },
     { key: SensitivityLevel.Normal,   label: 'Normal' },
-    { key: SensitivityLevel.Patient,  label: 'Patient' },
-    { key: SensitivityLevel.AlwaysOn, label: 'Always-on' },
+    { key: SensitivityLevel.Patient,  label: 'Relaxed' },
+    { key: SensitivityLevel.AlwaysOn, label: 'Nonstop' },
   ];
 
   // Visual-only toggles (no backend yet — kept disabled in template)

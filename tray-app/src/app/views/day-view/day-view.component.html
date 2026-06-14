@@ -107,88 +107,14 @@
   <!-- Active sessions -->
   <section class="sessions" *ngIf="openSessions.length > 0">
     <h2>Active <span class="count">({{ openSessions.length }})</span></h2>
-    <div class="session-card"
-         *ngFor="let s of openSessions"
-         [style.--repo-color]="sessionColor(s.id)">
-      <span class="session-color-bar" [style.background-color]="sessionColor(s.id)"></span>
-      <div class="session-header">
-        <span class="repo">{{ repoName(s.repo) }}</span>
-        <span class="badge status-badge" [class]="statusClass(s)">{{ statusLabel(s) }}</span>
-      </div>
-      <div class="session-details">
-        <div class="row">
-          <span class="label">Task</span>
-          <span class="value">{{ s.task ?? '—' }}</span>
-          <span class="label ml">Branch</span>
-          <span class="value branch" [title]="s.branch">{{ s.branch }}</span>
-        </div>
-        <div class="row time-row">
-          <span class="label">Time</span>
-          <span class="value time">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
-          <button class="add-time-btn"
-                  *ngIf="isViewingToday"
-                  [disabled]="actionPending"
-                  (click)="addTimeRequested.emit(s)"
-                  title="Add manual time">＋ add time</button>
-          <span class="manual" *ngIf="s.manualMinutes > 0">+ {{ formatDurationHm(s.manualMinutes * 60000) }} manual</span>
-        </div>
-        <div class="row" *ngIf="s.pauseCount > 0">
-          <span class="label">Pauses</span>
-          <span class="value">{{ s.pauseCount }} ({{ formatDurationHm(s.totalPauseDurationMs) }} total)</span>
-        </div>
-        <div class="row">
-          <span class="label">Changes</span>
-          <span class="value">
-            {{ s.evidence.commits }} commits
-            <span *ngIf="s.evidence.filesChanged"> &middot; {{ s.evidence.filesChanged }} files</span>
-            <span class="added"> +{{ s.evidence.linesAdded }}</span>
-            <span class="removed"> -{{ s.evidence.linesRemoved }}</span>
-          </span>
-        </div>
-      </div>
-
-      <!-- Settings block: stamina + sensitivity, separated from the info block above. -->
-      <div class="session-controls">
-        <div class="row stamina-row">
-          <span class="label">Stamina</span>
-          <ng-container *ngIf="!isAlwaysOn(s); else alwaysOnTpl">
-            <div class="stamina-bar">
-              <div class="stamina-tick low"></div>
-              <div class="stamina-tick mid"></div>
-              <div class="stamina-fill"
-                   [style.width.%]="staminaPercent(s.normalizedScore)"
-                   [style.backgroundColor]="staminaColor(s.normalizedScore)">
-              </div>
-            </div>
-            <span class="stamina-pct">{{ staminaPercent(s.normalizedScore) }}%</span>
-          </ng-container>
-          <ng-template #alwaysOnTpl>
-            <div class="stamina-bar always-on">
-              <div class="stamina-fill always-on-fill"></div>
-            </div>
-            <span class="stamina-infinity" title="Always-on — no idle timeout">&infin;</span>
-          </ng-template>
-        </div>
-        <div class="row sensitivity-row" *ngIf="isViewingToday">
-          <span class="label">Mode</span>
-          <div class="sensitivity-scale">
-            <button class="pill"
-                    *ngFor="let p of sensitivityPills"
-                    [class.active]="activePill(s) === p.key"
-                    [class.pause-pill]="p.key === 'pause'"
-                    [class.low-pill]="p.key === 'low'"
-                    [class.normal-pill]="p.key === 'normal'"
-                    [class.patient-pill]="p.key === 'patient'"
-                    [class.alwayson-pill]="p.key === 'always_on'"
-                    [disabled]="actionPending"
-                    [title]="p.title"
-                    (click)="onPillClick(s, p.key)">
-              {{ p.label }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <app-session-card
+      *ngFor="let s of openSessions"
+      [session]="s"
+      [isViewingToday]="isViewingToday"
+      [actionPending]="actionPending"
+      [speedPills]="sensitivityPills"
+      (pillSelected)="pillSelected.emit($event)"
+      (addTimeRequested)="addTimeRequested.emit($event)" />
   </section>
 
   <!-- Closed sessions -->

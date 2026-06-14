@@ -1,6 +1,7 @@
 import { Component, ElementRef, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { SessionCardComponent } from './session-card/session-card.component';
 import {
   SessionDetail,
   SensitivityLevel,
@@ -13,7 +14,7 @@ import {
 } from '../../models/workday.models';
 
 interface SensitivityPillOption {
-  readonly key: SensitivityPill;
+  readonly key: SensitivityLevel;
   readonly label: string;
   readonly title: string;
 }
@@ -85,7 +86,7 @@ function formatDurationLabel(minutes: number): string {
 @Component({
   selector: 'app-day-view',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SessionCardComponent],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
@@ -375,52 +376,6 @@ export class DayViewComponent {
     return `${this.formatHm(s.startedAt)} → ${this.formatHm(s.lastSeenAt)}`;
   }
 
-  // ─── Status / sensitivity helpers ─────────────────────────────────────
-
-  staminaColor(normalizedScore: number): string {
-    if (normalizedScore >= 0.6) return '#a6e3a1';
-    if (normalizedScore >= 0.3) return '#f9e2af';
-    return '#f38ba8';
-  }
-
-  staminaPercent(normalizedScore: number): number {
-    return Math.round(Math.max(0, Math.min(1, normalizedScore)) * 100);
-  }
-
-  activePill(s: SessionDetail): SensitivityPill {
-    return s.paused ? 'pause' : s.sensitivity;
-  }
-
-  isAlwaysOn(s: SessionDetail): boolean {
-    return !s.paused && s.sensitivity === SensitivityLevel.AlwaysOn;
-  }
-
-  statusClass(s: SessionDetail): string {
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'status-idle';
-        case 'superseded':   return 'status-switched';
-        case 'teams_away':   return 'status-away';
-        case 'manual':       return 'status-paused';
-        default:             return 'status-paused';
-      }
-    }
-    return s.state === 'active' ? 'status-live' : 'status-pending';
-  }
-
-  statusLabel(s: SessionDetail): string {
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'Idle';
-        case 'superseded':   return 'Switched';
-        case 'teams_away':   return 'Away';
-        case 'manual':       return 'Paused';
-        default:             return 'Paused';
-      }
-    }
-    return s.state === 'active' ? 'Live' : 'Pending';
-  }
-
   // Reason badge for the Closed list. Labels stay short so the row layout
   // doesn't break at the default tray window width.
   closedReasonLabel(closedBy: string | null): string {
@@ -635,10 +590,4 @@ export class DayViewComponent {
     this.closeLogPopover();
   }
 
-  // ─── Click handlers (forwarded to shell) ──────────────────────────────
-
-  onPillClick(session: SessionDetail, pill: SensitivityPill): void {
-    if (pill === this.activePill(session)) return;
-    this.pillSelected.emit({ session, pill });
-  }
 }

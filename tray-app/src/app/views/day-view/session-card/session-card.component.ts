@@ -1,0 +1,174 @@
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../models/workday.models';
+
+interface SpeedPillOption {
+  readonly key: SensitivityLevel;
+  readonly label: string;
+  readonly title: string;
+}
+
+type TrackingAction = 'pause' | 'resume';
+
+/**
+ * Single open-session card. Compact 3-row layout:
+ *   1. identity   — repo · task tag · branch (fade-masked) · status badge
+ *   2. metrics    — clickable time (+manual) · git stats (right-aligned)
+ *   3. controls   — sensitivity scale (Sharp..Nonstop) · Pause/Resume (when meaningful)
+ * Stamina is the card's bottom edge, not a row.
+ *
+ * Holds no state — pure projection of one SessionDetail + event emitters.
+ */
+@Component({
+  selector: 'app-session-card',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './session-card.component.html',
+  styleUrl: './session-card.component.scss',
+})
+export class SessionCardComponent {
+  @Input({ required: true }) session!: SessionDetail;
+  @Input() isViewingToday = true;
+  @Input() actionPending = false;
+  @Input() speedPills: readonly SpeedPillOption[] = [];
+
+  // Re-uses the existing pill channel: 'pause' → pause API, a level → sensitivity API.
+  @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
+  @Output() addTimeRequested = new EventEmitter<SessionDetail>();
+
+  // ─── Identity ──────────────────────────────────────────────────────────
+
+  get repoName(): string {
+    return this.session.repo.split('/').pop() ?? this.session.repo;
+  }
+
+  // ─── Status badge ──────────────────────────────────────────────────────
+
+  get statusClass(): string {
+    const s = this.session;
+    if (s.paused) {
+      switch ((s.pauseSource ?? '').toLowerCase()) {
+        case 'idle_timeout': return 'status-idle';
+        case 'superseded':   return 'status-switched';
+        case 'teams_away':   return 'status-away';
+        default:             return 'status-paused';
+      }
+    }
+    return s.state === 'active' ? 'status-live' : 'status-pending';
+  }
+
+  get statusLabel(): string {
+    const s = this.session;
+    if (s.paused) {
+      switch ((s.pauseSource ?? '').toLowerCase()) {
+        case 'idle_timeout': return 'Idle';
+        case 'superseded':   return 'Switched';
+        case 'teams_away':   return 'Away';
+        default:             return 'Paused';
+      }
+    }
+    return s.state === 'active' ? 'Live' : 'Pending';
+  }
+
+  // ─── Tracking action (Pause / Resume) ──────────────────────────────────
+  // Shown only where it does something: Live → Pause, manual-paused → Resume.
+  // Auto-pauses (idle/superseded/away) and pending have no button — a manual
+  // resume there is a no-op (the evaluator re-pauses on the next tick), so the
+  // status badge stands alone.
+  get trackingAction(): TrackingAction | null {
+    const s = this.session;
+    if (!this.isViewingToday) return null;
+    if (s.paused) {
+      return (s.pauseSource ?? '').toLowerCase() === 'manual' ? 'resume' : null;
+    }
+    return s.state === 'active' ? 'pause' : null;
+  }
+
+  // ─── Sensitivity scale ─────────────────────────────────────────────────
+
+  get isPaused(): boolean {
+    return this.session.paused;
+  }
+
+  // Manual pause is the only "frozen" state — scale locks, stamina stops
+  // draining. Auto-pauses (idle/superseded/away) keep the scale live so you can
+  // still bump sensitivity (e.g. to Nonstop) to change what happens next.
+  get isManualPaused(): boolean {
+    return this.session.paused && (this.session.pauseSource ?? '').toLowerCase() === 'manual';
+  }
+
+  // Active speed is the session's sensitivity — kept visible (dimmed) while
+  // paused, so the level the session will resume into stays readable.
+  get activeSpeed(): SensitivityLevel {
+    return this.session.sensitivity;
+  }
+
+  get isAlwaysOn(): boolean {
+    return !this.session.paused && this.session.sensitivity === SensitivityLevel.AlwaysOn;
+  }
+
+  // ─── Stamina edge ──────────────────────────────────────────────────────
+
+  get staminaPercent(): number {
+    return Math.round(Math.max(0, Math.min(1, this.session.normalizedScore)) * 100);
+  }
+
+  get staminaColor(): string {
+    if (this.isManualPaused) return '#45475a'; // frozen — drain is suspended
+    const n = this.session.normalizedScore;
+    if (n >= 0.6) return '#a6e3a1';
+    if (n >= 0.3) return '#f9e2af';
+    return '#f38ba8';
+  }
+
+  get staminaTooltip(): string {
+    if (this.isManualPaused) return `Frozen · ${this.staminaPercent}%`;
+    if (this.isAlwaysOn) return 'Always tracking — no idle pause';
+    return `Stamina ${this.staminaPercent}%`;
+  }
+
+  // ─── Time ──────────────────────────────────────────────────────────────
+
+  get effectiveLabel(): string {
+    return this.formatDurationHm(this.session.effectiveDurationMs);
+  }
+
+  get manualLabel(): string | null {
+    return this.session.manualMinutes > 0
+      ? `+${this.formatDurationHm(this.session.manualMinutes * 60_000)}`
+      : null;
+  }
+
+  formatDurationHm(ms: number): string {
+    const totalMinutes = Math.floor(ms / 60_000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+    return `${minutes}m`;
+  }
+
+  // ─── Actions ───────────────────────────────────────────────────────────
+
+  onSpeedClick(level: SensitivityLevel): void {
+    if (this.isManualPaused || this.actionPending || !this.isViewingToday) return;
+    if (level === this.session.sensitivity) return;
+    this.pillSelected.emit({ session: this.session, pill: level });
+  }
+
+  onTrackingClick(): void {
+    if (this.actionPending) return;
+    const action = this.trackingAction;
+    if (action === 'pause') {
+      this.pillSelected.emit({ session: this.session, pill: 'pause' });
+    } else if (action === 'resume') {
+      // Resume = clear the manual pause by re-applying the current sensitivity;
+      // the daemon closes the open manual pause as a side-effect of setSensitivity.
+      this.pillSelected.emit({ session: this.session, pill: this.session.sensitivity });
+    }
+  }
+
+  onTimeClick(): void {
+    if (!this.isViewingToday || this.actionPending) return;
+    this.addTimeRequested.emit(this.session);
+  }
+}
