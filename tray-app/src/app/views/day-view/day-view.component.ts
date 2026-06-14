@@ -19,12 +19,6 @@ interface SensitivityPillOption {
   readonly title: string;
 }
 
-// Stable palette, stepped by repo order within the day.
-const SESSION_COLOR_PALETTE: readonly string[] = [
-  '#89b4fa', '#f38ba8', '#a6e3a1', '#fab387', '#cba6f7',
-  '#f9e2af', '#94e2d5', '#f5c2e7', '#74c7ec', '#eba0ac',
-];
-
 // Manual entries are their own species — one accent (mauve) regardless of task.
 const MANUAL_ACCENT = '#cba6f7';
 const DEFAULT_ACTIVITY = 'Other';
@@ -334,23 +328,6 @@ export class DayViewComponent {
   get loggedPct(): number {
     const total = this.ratioTotalMs;
     return total > 0 ? (this.loggedMs / total) * 100 : 0;
-  }
-
-  // ─── Session colour palette ───────────────────────────────────────────
-
-  sessionColor(sessionId: string): string {
-    const session = this.data?.sessions.find(s => s.id === sessionId);
-    if (!session) return '#6c7086';
-    const idx = this.uniqueReposSorted.indexOf(session.repo);
-    if (idx < 0) return '#6c7086';
-    return SESSION_COLOR_PALETTE[idx % SESSION_COLOR_PALETTE.length];
-  }
-
-  private get uniqueReposSorted(): readonly string[] {
-    if (!this.data) return [];
-    const set = new Set<string>();
-    for (const s of this.data.sessions) set.add(s.repo);
-    return [...set].sort();
   }
 
   // ─── Formatters ───────────────────────────────────────────────────────

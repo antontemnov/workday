@@ -399,28 +399,18 @@
 // Closed sessions
 .sessions.closed {
   .closed-row {
-    --repo-color: #6c7086;
     display: flex;
     align-items: center;
     gap: 10px;
     line-height: 1.6;
     color: #6c7086;
     font-size: 11px;
-    padding: 4px 8px 4px 0;
+    padding: 4px 8px;
     border-radius: 4px;
     background: rgba(24, 24, 37, 0.5);
     margin-bottom: 3px;
     transition: background 0.15s ease;
     font-variant-numeric: tabular-nums;
-
-    .closed-color-bar {
-      width: 3px;
-      align-self: stretch;
-      background: var(--repo-color);
-      opacity: 0.7;
-      border-radius: 2px 0 0 2px;
-      flex-shrink: 0;
-    }
 
     .repo {
       min-width: 110px;

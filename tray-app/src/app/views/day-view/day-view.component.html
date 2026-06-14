@@ -120,10 +120,7 @@
   <!-- Closed sessions -->
   <section class="sessions closed" *ngIf="closedSessions.length > 0">
     <h2>Closed <span class="count">({{ closedSessions.length }})</span></h2>
-    <div class="closed-row"
-         *ngFor="let s of closedSessions"
-         [style.--repo-color]="sessionColor(s.id)">
-      <span class="closed-color-bar"></span>
+    <div class="closed-row" *ngFor="let s of closedSessions">
       <span class="repo">{{ repoName(s.repo) }}</span>
       <span class="task">{{ s.task ?? '—' }}</span>
       <span class="interval">{{ sessionInterval(s) }}</span>

@@ -25,20 +25,22 @@
   margin-bottom: 10px;
   min-width: 0;
 
+  // Repo + branch are one identity line split by a divider — peers, no block.
+  // The task tag was dropped: it only duplicated the branch prefix, and its
+  // colour stopped meaning anything once the shared timeline bar (where repo
+  // colours lived) was removed.
   .repo {
+    flex-shrink: 0;
     font-weight: 600;
     color: #cdd6f4;
-    flex-shrink: 0;
   }
 
-  .tag {
+  // Divider between the two identity parts: repo │ branch.
+  .sep {
+    width: 1px;
+    height: 12px;
+    background: #45475a;
     flex-shrink: 0;
-    font-size: 11px;
-    font-weight: 500;
-    color: #89b4fa;
-    background: rgba(137, 180, 250, 0.12);
-    padding: 1px 7px;
-    border-radius: 4px;
   }
 
   // Long branch fades into transparency on the right instead of an ellipsis.

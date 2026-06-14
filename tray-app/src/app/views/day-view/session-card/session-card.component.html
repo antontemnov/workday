@@ -2,7 +2,7 @@
   <!-- 1 · Identity -->
   <div class="head">
     <span class="repo">{{ repoName }}</span>
-    <span class="tag" *ngIf="session.task">{{ session.task }}</span>
+    <span class="sep"></span>
     <span class="branch" [title]="session.branch">{{ session.branch }}</span>
     <span class="badge" [ngClass]="statusClass">
       <span class="badge-dot"></span>{{ statusLabel }}
