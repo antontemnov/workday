@@ -55,8 +55,6 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // Modal state (cross-cutting, triggered by DayView events)
   endDayModalOpen = false;
-  adjustModalSession: SessionDetail | null = null;
-  readonly adjustQuickPicks: readonly number[] = [15, 30, 45, 60, 90];
 
   // Tempo _Activity_ options for the manual-entry composer; prefetched once.
   activityTypes: readonly ActivityType[] = [];
@@ -258,24 +256,14 @@ export class AppComponent implements OnInit, OnDestroy {
     return repoPath.split('/').pop() ?? repoPath;
   }
 
-  // ─── Modal flow ────────────────────────────────────────────────────────
+  // ─── Add time ──────────────────────────────────────────────────────────
 
-  openAdjustModal(session: SessionDetail): void {
-    this.adjustModalSession = session;
-  }
-
-  closeAdjustModal(): void {
-    this.adjustModalSession = null;
-  }
-
-  async submitAdjust(minutesStr: string, reason: string): Promise<void> {
-    const session = this.adjustModalSession;
-    if (!session) return;
-    const minutes = parseInt(minutesStr, 10);
-    if (!Number.isFinite(minutes) || minutes <= 0) return;
-    const reasonText = reason?.trim() || 'manual via tray';
-    const ok = await this.runAction(() => this.api.adjust(session.id, minutes, reasonText));
-    if (ok) this.closeAdjustModal();
+  // The session card's add-time popover emits the parsed minutes directly. The
+  // daemon's /api/adjust still requires a non-empty reason, but the per-entry
+  // reason text was dead (never displayed, never pushed to Tempo), so we dropped
+  // the UI field and send a fixed placeholder.
+  async onAddTime(e: { session: SessionDetail; minutes: number }): Promise<void> {
+    await this.runAction(() => this.api.adjust(e.session.id, e.minutes, 'manual via tray'));
   }
 
   async submitSetStart(time: string): Promise<void> {

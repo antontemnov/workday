@@ -57,7 +57,7 @@
       [sensitivityPills]="sensitivityPills"
       [activityTypes]="activityTypes"
       (pillSelected)="onPillSelected($event)"
-      (addTimeRequested)="openAdjustModal($event)"
+      (addTimeSubmitted)="onAddTime($event)"
       (setStartSubmitted)="submitSetStart($event)"
       (clearStartRequested)="clearDayStart()"
       (goTodayRequested)="goToday()"
@@ -95,35 +95,4 @@
     </div>
   </div>
 
-  <!-- Add-time modal -->
-  <div class="modal-backdrop" *ngIf="adjustModalSession" (click)="closeAdjustModal()">
-    <div class="modal" (click)="$event.stopPropagation()">
-      <h3>Add manual time</h3>
-      <div class="modal-sub">
-        {{ adjustModalSession.repo.split('/').pop() }}
-        <span *ngIf="adjustModalSession.task"> · {{ adjustModalSession.task }}</span>
-      </div>
-      <label>Minutes
-        <input #adjMins type="number" min="1" max="480" placeholder="30" autofocus
-               (keydown.enter)="submitAdjust(adjMins.value, adjReason.value)" />
-      </label>
-      <div class="quick-picks">
-        <button type="button"
-                *ngFor="let q of adjustQuickPicks"
-                (click)="adjMins.value = q.toString(); adjMins.focus()">{{ q }}m</button>
-      </div>
-      <label>Reason <span class="optional">(optional)</span>
-        <input #adjReason type="text" placeholder="meeting / call / debug"
-               (keydown.enter)="submitAdjust(adjMins.value, adjReason.value)" />
-      </label>
-      <div class="modal-actions">
-        <button (click)="closeAdjustModal()">Cancel</button>
-        <button class="primary"
-                [disabled]="!adjMins.value || actionPending"
-                (click)="submitAdjust(adjMins.value, adjReason.value)">
-          Add
-        </button>
-      </div>
-    </div>
-  </div>
 </div>

@@ -1,0 +1,16 @@
+<div class="dur-row">
+  <input class="dur-input"
+         [class.invalid]="invalid"
+         [ngModel]="value"
+         (ngModelChange)="onInput($event)"
+         (blur)="normalize()"
+         (keydown.enter)="enter.emit()"
+         (wheel)="onWheel($event)"
+         [disabled]="disabled"
+         placeholder="1h 30m"
+         aria-label="Duration" />
+  <button type="button" class="dur-chip"
+          *ngFor="let q of quickPicks"
+          [disabled]="disabled"
+          (click)="pick(q.minutes)">{{ q.label }}</button>
+</div>

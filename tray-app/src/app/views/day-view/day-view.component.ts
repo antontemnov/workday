@@ -2,6 +2,8 @@ import { Component, ElementRef, EventEmitter, Input, Output } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionCardComponent } from './session-card/session-card.component';
+import { DurationFieldComponent } from './duration-field/duration-field.component';
+import { formatDurationLabel, parseDurationToMinutes } from './duration-field/duration.util';
 import {
   SessionDetail,
   SensitivityLevel,
@@ -24,64 +26,10 @@ interface SensitivityPillOption {
 const MANUAL_ACCENT = '#cba6f7';
 const DEFAULT_ACTIVITY = 'Other';
 
-// Quick-pick durations for the composer.
-const MINUTE_QUICK_PICKS: ReadonlyArray<{ readonly label: string; readonly minutes: number }> = [
-  { label: '20m', minutes: 20 },
-  { label: '30m', minutes: 30 },
-  { label: '1h',  minutes: 60 },
-];
-
-// Below this, a bare number reads as hours; at or above, as minutes. App-
-// specific (Tempo treats every bare number as hours) — keeps "5" = 5h while
-// sparing the "45" = 45h footgun (→ 45m).
-const BARE_HOURS_THRESHOLD = 10;
-
-// Tempo-style duration parsing → minutes (null = unparseable).
-// Bare number: < 10 → hours ("1.5" → 90), ≥ 10 → minutes ("45" → 45). Units
-// h/m/d/w override ("90m" → 90, "1h 30m" → 90); whitespace ignored ("4 5 m" →
-// 45); a trailing unit-less number is minutes ("1h30" → 90).
-function parseDurationToMinutes(raw: string): number | null {
-  const s = raw.toLowerCase().replace(/\s+/g, '');
-  if (!s) return null;
-  if (/^\d+(\.\d+)?$/.test(s)) {
-    const n = parseFloat(s);
-    return Math.round(n < BARE_HOURS_THRESHOLD ? n * 60 : n);
-  }
-
-  const tokenRe = /(\d+(?:\.\d+)?)(h|m|d|w)/y; // sticky → tokens must be contiguous
-  let total = 0;
-  let pos = 0;
-  let match: RegExpExecArray | null;
-  while ((match = tokenRe.exec(s)) !== null) {
-    const n = parseFloat(match[1]);
-    switch (match[2]) {
-      case 'h': total += n * 60; break;
-      case 'm': total += n; break;
-      case 'd': total += n * 8 * 60; break;     // Tempo workday = 8h
-      case 'w': total += n * 5 * 8 * 60; break; // Tempo workweek = 5d
-    }
-    pos = tokenRe.lastIndex;
-  }
-  // Trailing unit-less number = minutes, e.g. "1h30" → 90.
-  const rest = s.slice(pos);
-  if (rest && /^\d+(\.\d+)?$/.test(rest)) { total += parseFloat(rest); pos = s.length; }
-  if (pos !== s.length || total <= 0) return null;
-  return Math.round(total);
-}
-
-// 90 → "1h 30m", 45 → "45m", 120 → "2h".
-function formatDurationLabel(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h > 0 && m > 0) return `${h}h ${m}m`;
-  if (h > 0) return `${h}h`;
-  return `${m}m`;
-}
-
 @Component({
   selector: 'app-day-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, SessionCardComponent],
+  imports: [CommonModule, FormsModule, SessionCardComponent, DurationFieldComponent],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
@@ -98,7 +46,7 @@ export class DayViewComponent {
   @Input() activityTypes: readonly ActivityType[] = [];
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
-  @Output() addTimeRequested = new EventEmitter<SessionDetail>();
+  @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
   @Output() setStartSubmitted = new EventEmitter<string>();
   @Output() clearStartRequested = new EventEmitter<void>();
   @Output() startDaemonRequested = new EventEmitter<void>();
@@ -393,7 +341,6 @@ export class DayViewComponent {
   // ─── Manual entries (LOGGED band) ──────────────────────────────────────
 
   readonly manualAccent = MANUAL_ACCENT;
-  readonly minuteQuickPicks = MINUTE_QUICK_PICKS;
 
   // Compose popover state. editingId = null → adding; otherwise editing that id.
   logPopoverOpen = false;
@@ -503,32 +450,8 @@ export class DayViewComponent {
     return this.activityOptions.filter(a => a.name.toLowerCase().includes(q));
   }
 
-  // Free-text duration; live edits just clear the error flag.
-  onTimeInput(): void {
-    this.attemptedLog = false;
-  }
-
-  // Reformat to the canonical label on blur ("1.5" → "1h 30m"); leave invalid
-  // text as typed so the red flag points at it.
-  normalizeTime(): void {
-    const mins = this.parsedMinutes;
-    if (mins !== null) this.logTimeStr = formatDurationLabel(mins);
-  }
-
-  pickMinutes(minutes: number): void {
-    this.logTimeStr = formatDurationLabel(minutes);
-    this.attemptedLog = false;
-  }
-
-  // Mouse wheel steps the duration by 5 min (wheel-only, no spinner buttons).
-  onMinutesWheel(e: WheelEvent): void {
-    e.preventDefault();
-    const cur = this.parsedMinutes ?? 0;
-    const next = Math.max(5, cur + (e.deltaY < 0 ? 5 : -5));
-    this.logTimeStr = formatDurationLabel(next);
-    this.attemptedLog = false;
-  }
-
+  // Duration text edited via the shared DurationFieldComponent; parse here for
+  // validation + submit (the field handles input/chips/wheel/normalize).
   get parsedMinutes(): number | null {
     return parseDurationToMinutes(this.logTimeStr);
   }

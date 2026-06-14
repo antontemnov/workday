@@ -15,14 +15,17 @@
   transition: border-color 0.18s ease;
 
   // Paused: fade only the data chips (time/git). The mode picker manages its own
-  // disabled state, and Pause/Resume must stay prominent.
-  &.paused .metrics > .chip {
+  // disabled state, and Pause/Resume must stay prominent. The time chip is now
+  // wrapped in .time-anchor, so it needs its own selector.
+  &.paused .metrics > .chip,
+  &.paused .metrics > .time-anchor > .chip {
     opacity: 0.75;
   }
 
-  // While the menu is open, lift the whole card above its siblings so the
-  // overflowing menu isn't painted under the next card.
-  &.menu-open {
+  // While the mode menu or add-time popover is open, lift the whole card above
+  // its siblings so the overflowing layer isn't painted under the next card.
+  &.menu-open,
+  &.pop-open {
     z-index: 30;
   }
 }
@@ -159,6 +162,103 @@
     .commits { color: #bac2de; }
     .added   { color: #a6e3a1; }
     .removed { color: #f38ba8; margin-left: 5px; }
+  }
+}
+
+// ─── Add-time popover (anchored to the time chip) ────────────────────────────
+.time-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+// Chip reads "armed" while its popover is open.
+.time.active {
+  border-color: #cba6f7;
+  background: #232334;
+}
+
+.add-pop-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49; // transparent — catches outside clicks
+}
+
+.add-pop {
+  position: absolute;
+  top: calc(100% + 8px); // opens downward from the chip
+  left: 0;
+  z-index: 50;
+  width: 236px;
+  box-sizing: border-box;
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  padding: 11px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  // Caret at the top, pointing up to the time chip.
+  &::after {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: 18px;
+    width: 9px;
+    height: 9px;
+    background: #1e1e2e;
+    border-left: 1px solid #45475a;
+    border-top: 1px solid #45475a;
+    transform: rotate(45deg);
+  }
+}
+
+.add-pop-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #cba6f7;
+  margin-bottom: 2px;
+}
+
+.add-pop-sub {
+  font-size: 10px;
+  color: #7f849c;
+  margin-bottom: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-field label {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #6c7086;
+  margin-bottom: 3px;
+}
+
+.add-actions {
+  margin-top: 11px;
+
+  .add-btn {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    border: none;
+    border-radius: 5px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+
+    &.primary {
+      background: #cba6f7;
+      color: #1e1e2e;
+      font-weight: 600;
+      &:hover:not(:disabled) { background: #b894ee; }
+    }
+    &:disabled { opacity: 0.4; cursor: default; }
   }
 }
 

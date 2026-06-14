@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../models/workday.models';
 import { ModeDropdownComponent } from './mode-dropdown/mode-dropdown.component';
 import { StatusBadgeComponent } from './status-badge/status-badge.component';
+import { DurationFieldComponent } from '../duration-field/duration-field.component';
+import { parseDurationToMinutes } from '../duration-field/duration.util';
 
 interface SpeedPillOption {
   readonly key: SensitivityLevel;
@@ -20,12 +22,14 @@ type TrackingAction = 'pause' | 'resume';
  *   2. metrics    — clickable time (+manual) · git stats · mode dropdown
  * Stamina is the card's bottom edge, not a row.
  *
- * Holds no state — pure projection of one SessionDetail + event emitters.
+ * Mostly a projection of one SessionDetail; the only local state is the
+ * anchored Add-time popover (open flag + duration text), like the mode
+ * dropdown's own open state.
  */
 @Component({
   selector: 'app-session-card',
   standalone: true,
-  imports: [CommonModule, ModeDropdownComponent, StatusBadgeComponent],
+  imports: [CommonModule, ModeDropdownComponent, StatusBadgeComponent, DurationFieldComponent],
   templateUrl: './session-card.component.html',
   styleUrl: './session-card.component.scss',
 })
@@ -37,11 +41,17 @@ export class SessionCardComponent {
 
   // Re-uses the existing pill channel: 'pause' → pause API, a level → sensitivity API.
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
-  @Output() addTimeRequested = new EventEmitter<SessionDetail>();
+  @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
 
   // True while the mode dropdown is open — lets the card lift its z-index so the
   // menu can overflow the card without a sibling card clipping it.
   menuOpen = false;
+
+  // Add-time popover (anchored to the time chip). Default 30m; attemptedAdd
+  // flags the duration red only after a failed submit.
+  addPopoverOpen = false;
+  addTimeStr = '30m';
+  attemptedAdd = false;
 
   // ─── Identity ──────────────────────────────────────────────────────────
 
@@ -176,8 +186,40 @@ export class SessionCardComponent {
     }
   }
 
+  // ─── Add-time popover ──────────────────────────────────────────────────
+  // Tops up this session's tracked time. Mirrors the LOG TIME composer (shared
+  // DurationFieldComponent: free-text "1h 30m", quick-picks, wheel).
+
   onTimeClick(): void {
     if (!this.isViewingToday || this.actionPending) return;
-    this.addTimeRequested.emit(this.session);
+    if (this.addPopoverOpen) { this.closeAddPopover(); return; }
+    this.addTimeStr = '30m';
+    this.attemptedAdd = false;
+    this.addPopoverOpen = true;
+  }
+
+  closeAddPopover(): void {
+    this.addPopoverOpen = false;
+  }
+
+  // Repo · task context shown under the popover title (task is the session's).
+  get addSubtitle(): string {
+    return this.session.task ? `${this.repoName} · ${this.session.task}` : this.repoName;
+  }
+
+  get parsedAddMinutes(): number | null {
+    return parseDurationToMinutes(this.addTimeStr);
+  }
+
+  get addMinutesInvalid(): boolean {
+    return this.parsedAddMinutes === null;
+  }
+
+  applyAdd(): void {
+    if (this.actionPending) return;
+    const minutes = this.parsedAddMinutes;
+    if (minutes === null) { this.attemptedAdd = true; return; }
+    this.addTimeSubmitted.emit({ session: this.session, minutes });
+    this.closeAddPopover();
   }
 }

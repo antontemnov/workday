@@ -114,7 +114,7 @@
       [actionPending]="actionPending"
       [speedPills]="sensitivityPills"
       (pillSelected)="pillSelected.emit($event)"
-      (addTimeRequested)="addTimeRequested.emit($event)" />
+      (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
   </section>
 
   <!-- Closed sessions -->
@@ -158,19 +158,11 @@
 
           <div class="lp-field">
             <label>Duration</label>
-            <div class="lp-min-row">
-              <input class="lp-input lp-min-input"
-                     [class.invalid]="attemptedLog && logMinutesInvalid"
-                     [(ngModel)]="logTimeStr"
-                     (ngModelChange)="onTimeInput()"
-                     (blur)="normalizeTime()"
-                     (keydown.enter)="applyLog()"
-                     (wheel)="onMinutesWheel($event)"
-                     placeholder="1h 30m" />
-              <button type="button" class="lp-chip"
-                      *ngFor="let q of minuteQuickPicks"
-                      (click)="pickMinutes(q.minutes)">{{ q.label }}</button>
-            </div>
+            <app-duration-field
+              [value]="logTimeStr"
+              (valueChange)="logTimeStr = $event; attemptedLog = false"
+              [invalid]="attemptedLog && logMinutesInvalid"
+              (enter)="applyLog()" />
           </div>
 
           <div class="lp-field lp-activity-field">
@@ -223,7 +215,6 @@
     </div>
 
     <div class="log-row" *ngFor="let e of manualEntries">
-      <span class="log-tick"></span>
       <span class="log-task">{{ e.task }}</span>
       <span class="log-activity" [class]="'log-activity tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>
       <span class="log-desc" [title]="e.description">{{ e.description }}</span>
