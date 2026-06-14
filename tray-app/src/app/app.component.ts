@@ -61,7 +61,7 @@ export class AppComponent implements OnInit, OnDestroy {
     { key: SensitivityLevel.Low,      label: 'Sharp',   description: 'full stamina → 15 min idle', title: 'Short leash — at full stamina tolerates up to 15 min idle before pausing; each change tops it up' },
     { key: SensitivityLevel.Normal,   label: 'Normal',  description: '→ 45 min',                  title: 'Default — at full stamina tolerates up to 45 min idle before pausing; each change tops it up' },
     { key: SensitivityLevel.Patient,  label: 'Relaxed', description: '→ 90 min',                  title: 'Tolerant — at full stamina tolerates up to 90 min idle before pausing; each change tops it up' },
-    { key: SensitivityLevel.AlwaysOn, label: 'Nonstop', description: 'never auto-pauses',          title: 'Never auto-paused by idle timeout — tracks until you pause it manually' },
+    { key: SensitivityLevel.AlwaysOn, label: 'Nonstop', description: 'never auto-pauses',          title: 'Never idle-pauses, but prioritizes your active repository. Resumes when you return.' },
   ];
 
   // Modal state (cross-cutting, triggered by DayView events)

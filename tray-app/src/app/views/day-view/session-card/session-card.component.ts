@@ -118,6 +118,13 @@ export class SessionCardComponent {
     return !this.session.paused && this.session.sensitivity === SensitivityLevel.AlwaysOn;
   }
 
+  // A Nonstop session that has yielded (Switched) or been manually paused: the
+  // stamina bar is meaningless here (no idle leash applies), so the edge shows an
+  // empty track and no tooltip — the status badge already says Switched/Paused.
+  get isNonstopPaused(): boolean {
+    return this.session.paused && this.session.sensitivity === SensitivityLevel.AlwaysOn;
+  }
+
   // ─── Stamina edge ──────────────────────────────────────────────────────
 
   get staminaPercent(): number {
@@ -134,7 +141,7 @@ export class SessionCardComponent {
 
   get staminaTooltip(): string {
     if (this.isManualPaused) return `Frozen · ${this.staminaPercent}%`;
-    if (this.isAlwaysOn) return 'Always tracking — no idle pause';
+    if (this.isAlwaysOn) return 'Nonstop — no idle pause';
     return `Stamina ${this.staminaPercent}%`;
   }
 
