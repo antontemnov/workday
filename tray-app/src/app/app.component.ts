@@ -26,6 +26,17 @@ interface SensitivityPillOption {
   readonly title: string;
 }
 
+// One weekday cell resolved to a concrete date in the currently-viewed week.
+interface WeekdayNavCell {
+  readonly letter: string;
+  readonly full: string;
+  readonly weekend: boolean;
+  readonly date: string;       // YYYY-MM-DD for this weekday in the viewed week
+  readonly isToday: boolean;
+  readonly active: boolean;    // the currently-viewed date
+  readonly navigable: boolean; // has saved data (or is today) → clickable
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -186,6 +197,49 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.weekdayCells.findIndex(c => c.idx === dow);
   }
 
+  /** Mon..Sun of the viewed week, each cell resolved to a date + navigability.
+   *  A cell is navigable when it has saved data (or is today) → click jumps to it. */
+  get weekdayNav(): readonly WeekdayNavCell[] {
+    const ref = this.viewedDate ?? this.todayDate ?? this.computeLocalToday();
+    const monday = this.mondayOf(ref);
+    const today = this.todayDate ?? this.computeLocalToday();
+    const activeIdx = this.activeWeekdayCell;
+    return this.weekdayCells.map((c, i) => {
+      const date = this.addDays(monday, i);
+      const isToday = date === today;
+      return {
+        letter: c.letter,
+        full: c.full,
+        weekend: c.weekend,
+        date,
+        isToday,
+        active: i === activeIdx,
+        navigable: isToday || this.availableDates.includes(date),
+      };
+    });
+  }
+
+  trackByWeekday(_i: number, c: WeekdayNavCell): string {
+    return c.date;
+  }
+
+  /** Per-cell tooltip — full weekday, plus the date (and "today") when navigable. */
+  weekdayTitle(c: WeekdayNavCell): string {
+    if (!c.navigable || c.active) return c.full;
+    const [y, m, d] = c.date.split('-').map(Number);
+    const label = new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return `${c.full} · ${label}${c.isToday ? ' (today)' : ''}`;
+  }
+
+  /** Weekday cell click → switch to Day view for that date. No-op without data. */
+  selectWeekday(c: WeekdayNavCell): void {
+    if (!c.navigable) return;
+    this.activeView = 'day';
+    if (c.active) return;           // already this day — just surfaced the Day view
+    if (c.isToday) this.goToday();
+    else this.navigateTo(c.date);
+  }
+
   get formattedDate(): string {
     const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
     const [y, m, d] = date.split('-').map(Number);
@@ -213,8 +267,27 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private computeLocalToday(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return this.toIso(new Date());
+  }
+
+  // Monday of the week containing dateStr (week runs Mon..Sun to match the grid).
+  private mondayOf(dateStr: string): string {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const dow = dt.getDay();                    // 0=Sun..6=Sat
+    dt.setDate(dt.getDate() + (dow === 0 ? -6 : 1 - dow));
+    return this.toIso(dt);
+  }
+
+  private addDays(dateStr: string, n: number): string {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + n);
+    return this.toIso(dt);
+  }
+
+  private toIso(dt: Date): string {
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
   }
 
   // ─── Tray icon sync ────────────────────────────────────────────────────

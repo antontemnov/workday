@@ -66,12 +66,29 @@ export class DayViewComponent {
 
   // ─── Sessions ─────────────────────────────────────────────────────────
 
+  // Section collapse — "live open, history collapsed". Active starts open;
+  // Closed always starts collapsed; Logged too (the dock owns adding, the list
+  // is review-only).
+  activeOpen = true;
+  closedOpen = false;
+  loggedOpen = false;
+
   get openSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => !s.closedBy) ?? [];
   }
 
   get closedSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => s.closedBy) ?? [];
+  }
+
+  // Green dot on the Active header — at least one session is tracking right now.
+  get hasLiveSession(): boolean {
+    return this.openSessions.some(s => !s.paused && s.state === 'active');
+  }
+
+  // Σ on the Closed header — sum of effective durations.
+  get closedTotalMs(): number {
+    return this.closedSessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
   }
 
   get hasSessions(): boolean {
@@ -357,10 +374,10 @@ export class DayViewComponent {
     return this.data?.manualEntries ?? [];
   }
 
-  // Today always shows the band (with the add affordance); a past day shows it
-  // only when it actually has entries — it is read-only there.
-  get showManualBand(): boolean {
-    return this.isViewingToday || this.manualEntries.length > 0;
+  // The Logged section renders only with real entries; the dock owns adding, so
+  // there is no empty-state band any more.
+  get showLoggedSection(): boolean {
+    return this.manualEntries.length > 0;
   }
 
   get loggedMs(): number {

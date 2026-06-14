@@ -17,97 +17,125 @@
   user-select: none;
 }
 
-// ─── Nav row ────────────────────────────────────────────────────────────
-// Thin nav: weekday-grid (left) · view-switcher (right), faint divider below.
-// The date moved into the Day view's day-block.
+// ─── Sticky header ──────────────────────────────────────────────────────
+// Tinted chrome bar: weekday strip (left) · view-switcher (right). Tighter
+// vertical padding, bigger buttons than before; both pill-grids share the box
+// so they read as one visual family.
 .header {
   display: flex;
   align-items: center;
-  padding: 10px 12px 8px 12px;
+  padding: 4px 12px;
   flex-shrink: 0;
-  border-bottom: 1px solid #23243a;
+  background: #181825;
+  border-bottom: 1px solid #26263a;
 }
 
-// Shared "header pill" primitive — used by both weekday-grid and view-switcher.
-// Identical container chrome, identical cell sizing → the two siblings read
-// as a single visual family framing the date.
-.pill-grid {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 4px;
-  background: rgba(17, 17, 27, 0.6);
-  border: 1px solid #313244;
-  height: 18px;
-}
-
-.pill-cell {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  line-height: 1;
-  color: #45475a;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-// Weekday cells (Mon..Sun, single letter, weekend tint).
+// Weekday strip — current week of the viewed date. De-emphasized (boxless) so
+// it doesn't compete with the date below; today is marked by a small amber dot.
 .weekday-grid {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  // Cancel the first cell's centring inset so the letters line up under the
+  // date label below (glyph sits ~5px in from the 16px cell box).
+  margin-left: -5px;
 }
 
 .weekday-cell {
-  font-size: 9px;
-  font-weight: 600;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
   font-family: inherit;
   cursor: default;
 
-  &.weekend:not(.active) { color: #585b70; }
-
-  &.active {
-    color: #1e1e2e;
-    background: #cdd6f4;
-    font-weight: 700;
+  .wd-letter {
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 16px;
+    height: 13px;
+    border-radius: 4px;
+    padding-bottom: 1px;
+    box-sizing: border-box;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    color: #3a3b50;            // empty / future = very dim, inert
+    transition: background 0.15s ease, color 0.15s ease;
   }
-  &.active.weekend {
+  .wd-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: transparent;
+  }
+
+  // S3 soft highlight — navigable days (saved data) get a faint fill chip +
+  // readable letter, and become clickable.
+  &.nav {
+    cursor: pointer;
+    .wd-letter { color: #9399b2; background: rgba(147, 153, 178, 0.10); }
+    &:hover .wd-letter { color: #cdd6f4; background: rgba(147, 153, 178, 0.18); }
+  }
+
+  // Active (viewed) day — just a brighter letter, no chip / outline. Pure
+  // minimalism: today is marked by the dot alone.
+  &.active .wd-letter {
+    color: #cdd6f4;
+    background: transparent;
+  }
+
+  // Today — small amber dot under the letter, regardless of the viewed day.
+  &.today .wd-dot {
     background: #f9e2af;
-    color: #1e1e2e;
   }
 }
 
-// View-switcher (Day / Timesheets / Settings) — always pinned right.
+// View-switcher — boxless icons in the same minimal language as the weekday
+// strip: dim inactive, bright active + a small amber "current" dot underneath.
 .view-switcher {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .view-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   background: transparent;
   border: none;
-  color: #6c7086;
+  color: #585b70;            // inactive = dim
   cursor: pointer;
   font: inherit;
   padding: 0;
+  transition: color 0.15s ease;
 
   svg {
-    width: 10px;
-    height: 10px;
+    width: 15px;
+    height: 15px;
     stroke: currentColor;
     fill: none;
     stroke-width: 1.6;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
+  .vb-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: transparent;
+  }
 
-  &:hover { color: #bac2de; background: #313244; }
+  &:hover:not(.active) { color: #9399b2; }
 
   &.active {
-    color: #1e1e2e;
-    background: #cdd6f4;
-
-    svg { stroke-width: 1.9; }
+    color: #cdd6f4;          // active view = bright icon
+    .vb-dot { background: #f9e2af; }
   }
 }
 

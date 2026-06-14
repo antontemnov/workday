@@ -16,11 +16,11 @@
   No data for this day
 </div>
 
-<!-- Content -->
+<!-- Content (scrolls; the dock below stays pinned) -->
 <div class="content" *ngIf="data && !error">
-  <!-- Day block: date + start→end (left) · active|idle ratio (right) -->
+  <!-- Day block: date · start→end (one line) + full-width active|idle|logged ratio -->
   <section class="day-block">
-    <div class="day-head">
+    <div class="day-line">
       <h1 class="day-date"
           [class.past]="!isViewingToday"
           (click)="goTodayRequested.emit()"
@@ -86,144 +86,86 @@
       </div>
     </div>
 
-    <div class="ratio" *ngIf="hasActivity">
+    <!-- Ratio bar (grey track always; segments + legend only for real data) -->
+    <div class="ratio">
       <div class="ratio-bar">
-        <span class="seg active" [style.width.%]="activePct"></span>
-        <span class="seg idle" [style.width.%]="idlePct"></span>
+        <span class="seg active" *ngIf="totalActiveMs > 0" [style.width.%]="activePct"></span>
+        <span class="seg idle"   *ngIf="totalPauseMs > 0" [style.width.%]="idlePct"></span>
         <span class="seg logged" *ngIf="loggedMs > 0" [style.width.%]="loggedPct"></span>
       </div>
-      <div class="ratio-caption">
-        <span class="active-line">Active <strong>{{ formatDurationHm(totalActiveMs) }}</strong></span>
-        <span class="dot-sep">&middot;</span>
-        <span class="idle-line">Idle <strong>{{ formatDurationHm(totalPauseMs) }}</strong></span>
-        <ng-container *ngIf="loggedMs > 0">
-          <span class="dot-sep">&middot;</span>
-          <span class="logged-line">Logged <strong>{{ formatDurationHm(loggedMs) }}</strong></span>
-        </ng-container>
+      <div class="ratio-legend" *ngIf="hasActivity">
+        <span class="leg active" *ngIf="totalActiveMs > 0">
+          <span class="dot"></span><span class="num">{{ formatDurationHm(totalActiveMs) }}</span><span class="tag">active</span>
+        </span>
+        <span class="leg idle" *ngIf="totalPauseMs > 0">
+          <span class="dot"></span><span class="num">{{ formatDurationHm(totalPauseMs) }}</span><span class="tag">idle</span>
+        </span>
+        <span class="leg logged" *ngIf="loggedMs > 0">
+          <span class="dot"></span><span class="num">{{ formatDurationHm(loggedMs) }}</span><span class="tag">logged</span>
+        </span>
       </div>
     </div>
   </section>
 
-  <!-- Active sessions -->
-  <section class="sessions" *ngIf="openSessions.length > 0">
-    <h2>Active <span class="count">({{ openSessions.length }})</span></h2>
-    <app-session-card
-      *ngFor="let s of openSessions"
-      [session]="s"
-      [isViewingToday]="isViewingToday"
-      [actionPending]="actionPending"
-      [speedPills]="sensitivityPills"
-      (pillSelected)="pillSelected.emit($event)"
-      (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
-  </section>
-
-  <!-- Closed sessions -->
-  <section class="sessions closed" *ngIf="closedSessions.length > 0">
-    <h2>Closed <span class="count">({{ closedSessions.length }})</span></h2>
-    <div class="closed-row" *ngFor="let s of closedSessions">
-      <span class="repo">{{ repoName(s.repo) }}</span>
-      <span class="task">{{ s.task ?? '—' }}</span>
-      <span class="interval">{{ sessionInterval(s) }}</span>
-      <span class="dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
-      <span class="reason-badge"
-            [class]="'reason-badge ' + closedReasonClass(s.closedBy)"
-            [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
+  <!-- Active sessions — open by default; no count/sum, just a live dot -->
+  <section class="sessions foldable" [class.open]="activeOpen" *ngIf="openSessions.length > 0">
+    <h2 class="sec-head" (click)="activeOpen = !activeOpen">
+      <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
+      Active
+      <!-- Live dot only when collapsed — when open the cards' own Live badges show it. -->
+      <span class="live-dot" *ngIf="hasLiveSession && !activeOpen" title="Tracking now"></span>
+    </h2>
+    <div class="fold-body">
+      <app-session-card
+        *ngFor="let s of openSessions"
+        [session]="s"
+        [isViewingToday]="isViewingToday"
+        [actionPending]="actionPending"
+        [speedPills]="sensitivityPills"
+        (pillSelected)="pillSelected.emit($event)"
+        (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
     </div>
   </section>
 
-  <!-- Logged: manual entries (standalone time, no git session) -->
-  <section class="sessions logged" *ngIf="showManualBand">
-    <div class="logged-head">
-      <h2>Logged <span class="count">({{ manualEntries.length }})</span></h2>
-      <span class="log-add-anchor" *ngIf="isViewingToday">
-        <button class="log-add-btn"
+  <!-- Closed sessions — collapsed by default; count + Σ on the header -->
+  <section class="sessions closed foldable" [class.open]="closedOpen" *ngIf="closedSessions.length > 0">
+    <h2 class="sec-head" (click)="closedOpen = !closedOpen">
+      <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
+      Closed <span class="count">({{ closedSessions.length }})</span>
+      <span class="sec-sum">{{ formatDurationHm(closedTotalMs) }}</span>
+    </h2>
+    <div class="fold-body">
+      <div class="closed-row" *ngFor="let s of closedSessions">
+        <span class="repo">{{ repoName(s.repo) }}</span>
+        <span class="task">{{ s.task ?? '—' }}</span>
+        <span class="interval">{{ sessionInterval(s) }}</span>
+        <span class="dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
+        <span class="reason-badge"
+              [class]="'reason-badge ' + closedReasonClass(s.closedBy)"
+              [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Logged: manual entries — only when there are real entries; count + Σ -->
+  <section class="sessions logged foldable" [class.open]="loggedOpen" *ngIf="showLoggedSection">
+    <h2 class="sec-head" (click)="loggedOpen = !loggedOpen">
+      <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
+      Logged <span class="count">({{ manualEntries.length }})</span>
+      <span class="sec-sum">{{ formatDurationHm(loggedMs) }}</span>
+    </h2>
+    <div class="fold-body">
+      <div class="log-row" *ngFor="let e of manualEntries">
+        <span class="log-task">{{ e.task }}</span>
+        <span class="log-activity" [class]="'log-activity tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>
+        <span class="log-desc" [title]="e.description">{{ e.description }}</span>
+        <span class="log-min">{{ formatDurationHm(e.minutes * 60000) }}</span>
+        <button class="log-edit"
+                *ngIf="isViewingToday"
                 [disabled]="actionPending"
-                (click)="openLogPopover()"
-                title="Log standalone time on a task">＋ Log time</button>
-
-        <!-- Compose popover — opens up & left from the button; outside click closes -->
-        <div class="log-pop-backdrop" *ngIf="logPopoverOpen" (click)="closeLogPopover()"></div>
-        <div class="log-pop" *ngIf="logPopoverOpen" (keydown.escape)="closeLogPopover()">
-          <div class="log-pop-title">{{ editingId ? 'Edit entry' : 'Log time' }}</div>
-
-          <div class="lp-field">
-            <label>Task</label>
-            <input class="lp-input"
-                   [class.invalid]="attemptedLog && logTaskInvalid"
-                   [(ngModel)]="logTask"
-                   (ngModelChange)="attemptedLog = false"
-                   [disabled]="!!editingId"
-                   placeholder="ATL-1234" />
-          </div>
-
-          <div class="lp-field">
-            <label>Duration</label>
-            <app-duration-field
-              [value]="logTimeStr"
-              (valueChange)="logTimeStr = $event; attemptedLog = false"
-              [invalid]="attemptedLog && logMinutesInvalid"
-              (enter)="applyLog()" />
-          </div>
-
-          <div class="lp-field lp-activity-field">
-            <label>Activity</label>
-
-            <button *ngIf="!activityListOpen" type="button" class="lp-input lp-activity-trigger"
-                    (click)="openActivityList()">
-              <span class="lp-activity-value">{{ activityLabel(logActivity) }}</span>
-              <span class="lp-activity-caret" aria-hidden="true">▾</span>
-            </button>
-
-            <ng-container *ngIf="activityListOpen">
-              <input class="lp-input lp-activity-search"
-                     [(ngModel)]="activitySearch"
-                     (keydown.enter)="selectFirstActivity()"
-                     (keydown.escape)="closeActivityList(); $event.stopPropagation()"
-                     [placeholder]="activityLabel(logActivity)" />
-              <div class="lp-activity-backdrop" (click)="closeActivityList()"></div>
-              <ul class="lp-activity-list">
-                <li *ngFor="let a of filteredActivities"
-                    class="lp-activity-option"
-                    [class.selected]="a.value === logActivity"
-                    (click)="selectActivity(a.value)">{{ a.name }}</li>
-                <li *ngIf="filteredActivities.length === 0" class="lp-activity-empty">No matches</li>
-              </ul>
-            </ng-container>
-          </div>
-
-          <div class="lp-field">
-            <label>Description</label>
-            <input class="lp-input"
-                   [class.invalid]="attemptedLog && logDescriptionInvalid"
-                   [(ngModel)]="logDescription"
-                   (ngModelChange)="attemptedLog = false"
-                   (keydown.enter)="applyLog()"
-                   placeholder="daily standup" />
-          </div>
-
-          <div class="lp-actions">
-            <button class="lp-btn primary" [disabled]="actionPending" (click)="applyLog()">
-              {{ editingId ? 'Save' : 'Log time' }}
-            </button>
-          </div>
-        </div>
-      </span>
-    </div>
-
-    <div class="log-empty" *ngIf="manualEntries.length === 0">
-      No manual entries yet — meetings, reviews, planning.
-    </div>
-
-    <div class="log-row" *ngFor="let e of manualEntries">
-      <span class="log-task">{{ e.task }}</span>
-      <span class="log-activity" [class]="'log-activity tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>
-      <span class="log-desc" [title]="e.description">{{ e.description }}</span>
-      <span class="log-min">{{ formatDurationHm(e.minutes * 60000) }}</span>
-      <button class="log-edit"
-              *ngIf="isViewingToday"
-              [disabled]="actionPending"
-              (click)="openEditPopover(e)"
-              aria-label="Edit entry" title="Edit entry">✎</button>
+                (click)="openEditPopover(e)"
+                aria-label="Edit entry" title="Edit entry">✎</button>
+      </div>
     </div>
   </section>
 
@@ -231,4 +173,81 @@
   <div class="status-msg" *ngIf="data.sessions.length === 0 && manualEntries.length === 0">
     No sessions yet. Waiting for git activity...
   </div>
+</div>
+
+<!-- Pinned dock: quick add (today only). Favorites will join the button here later. -->
+<div class="dock" *ngIf="isViewingToday && data && !error">
+  <span class="log-add-anchor">
+    <button class="log-add-btn"
+            [disabled]="actionPending"
+            (click)="openLogPopover()"
+            title="Log standalone time on a task">Log</button>
+
+    <!-- Compose popover — opens up from the dock button; outside click closes -->
+    <div class="log-pop-backdrop" *ngIf="logPopoverOpen" (click)="closeLogPopover()"></div>
+    <div class="log-pop" *ngIf="logPopoverOpen" (keydown.escape)="closeLogPopover()">
+      <div class="log-pop-title">{{ editingId ? 'Edit entry' : 'Log time' }}</div>
+
+      <div class="lp-field">
+        <label>Task</label>
+        <input class="lp-input"
+               [class.invalid]="attemptedLog && logTaskInvalid"
+               [(ngModel)]="logTask"
+               (ngModelChange)="attemptedLog = false"
+               [disabled]="!!editingId"
+               placeholder="ATL-1234" />
+      </div>
+
+      <div class="lp-field">
+        <label>Duration</label>
+        <app-duration-field
+          [value]="logTimeStr"
+          (valueChange)="logTimeStr = $event; attemptedLog = false"
+          [invalid]="attemptedLog && logMinutesInvalid"
+          (enter)="applyLog()" />
+      </div>
+
+      <div class="lp-field lp-activity-field">
+        <label>Activity</label>
+
+        <button *ngIf="!activityListOpen" type="button" class="lp-input lp-activity-trigger"
+                (click)="openActivityList()">
+          <span class="lp-activity-value">{{ activityLabel(logActivity) }}</span>
+          <span class="lp-activity-caret" aria-hidden="true">▾</span>
+        </button>
+
+        <ng-container *ngIf="activityListOpen">
+          <input class="lp-input lp-activity-search"
+                 [(ngModel)]="activitySearch"
+                 (keydown.enter)="selectFirstActivity()"
+                 (keydown.escape)="closeActivityList(); $event.stopPropagation()"
+                 [placeholder]="activityLabel(logActivity)" />
+          <div class="lp-activity-backdrop" (click)="closeActivityList()"></div>
+          <ul class="lp-activity-list">
+            <li *ngFor="let a of filteredActivities"
+                class="lp-activity-option"
+                [class.selected]="a.value === logActivity"
+                (click)="selectActivity(a.value)">{{ a.name }}</li>
+            <li *ngIf="filteredActivities.length === 0" class="lp-activity-empty">No matches</li>
+          </ul>
+        </ng-container>
+      </div>
+
+      <div class="lp-field">
+        <label>Description</label>
+        <input class="lp-input"
+               [class.invalid]="attemptedLog && logDescriptionInvalid"
+               [(ngModel)]="logDescription"
+               (ngModelChange)="attemptedLog = false"
+               (keydown.enter)="applyLog()"
+               placeholder="daily standup" />
+      </div>
+
+      <div class="lp-actions">
+        <button class="lp-btn primary" [disabled]="actionPending" (click)="applyLog()">
+          {{ editingId ? 'Save' : 'Log time' }}
+        </button>
+      </div>
+    </div>
+  </span>
 </div>

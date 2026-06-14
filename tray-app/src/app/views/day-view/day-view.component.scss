@@ -1,13 +1,15 @@
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   overflow: hidden;
   min-height: 0;
 }
 
-// Content (scrollable)
+// Content (scrollable; the dock below stays pinned)
 .content {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 0 12px 12px 12px;
   box-sizing: border-box;
@@ -70,23 +72,25 @@
 }
 
 // ─── Day block ────────────────────────────────────────────────────────────
-// Date + start→end (left), active|idle ratio (right). Bottoms aligned so the
-// ratio caption sits on the same baseline as the start→end line.
+// Date · start→end on one line; the full-width ratio bar + legend sit below.
+// A faint divider closes the block off from the first section.
 .day-block {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 14px 0 16px;
+  margin: 11px 0 0;
+  padding-bottom: 11px;
+  border-bottom: 1px solid #26263a;
 }
 
-.day-head {
-  min-width: 0;
+.day-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 11px;
 }
 
 .day-date {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.2px;
   line-height: 1.2;
@@ -111,7 +115,6 @@
   display: flex;
   align-items: baseline;
   gap: 7px;
-  margin-top: 5px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 
@@ -309,16 +312,12 @@
   }
 }
 
-// ─── Active|idle ratio ──────────────────────────────────────────────────────
-// Fixed-length "tug of war" rope: the bar width never changes, only the
-// active|idle split moves — so the day-glance is comparable across days.
-// Caption sits beneath it (right-aligned in the day block).
+// ─── Active | idle | logged ratio ────────────────────────────────────────────
+// Full-width "energy of the day" bar — same visual DNA as the session stamina
+// edge (track #26263a, thin proportional fill). The grey track shows even when
+// empty; segments + legend render only for real data.
 .ratio {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  flex-shrink: 0;
+  display: block;
 }
 
 .ratio-bar {
@@ -327,7 +326,7 @@
   height: 8px;
   border-radius: 4px;
   overflow: hidden;
-  background: #313244;
+  background: #26263a;
 
   .seg {
     height: 100%;
@@ -339,60 +338,129 @@
   }
 }
 
-.ratio-caption {
+// Legend: active + idle hug the left; logged (manual) is pushed to the right,
+// roughly under its segment. Each number is tinted to its segment colour.
+.ratio-legend {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 10px;
-  letter-spacing: 0.3px;
-  line-height: 1.2;
+  align-items: center;
+  gap: 16px;
+  margin-top: 11px;
   font-variant-numeric: tabular-nums;
-  text-transform: uppercase;
-  white-space: nowrap;
 
-  strong {
-    font-weight: 600;
-    text-transform: none;
-    font-size: 11px;
-    letter-spacing: 0;
-  }
+  .leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 
-  .active-line {
-    color: #6c7086;
-    strong { color: #a6e3a1; }
-  }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .num {
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .tag {
+      font-size: 10px;
+      color: #6c7086;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
 
-  .idle-line {
-    color: #6c7086;
-    strong { color: #bac2de; }
-  }
-
-  .logged-line {
-    color: #6c7086;
-    strong { color: #cba6f7; }
-  }
-
-  .dot-sep {
-    color: #45475a;
+    &.active {
+      .dot { background: #a6e3a1; }
+      .num { color: #a6e3a1; font-size: 12px; }
+    }
+    &.idle {
+      .dot { background: #585b70; }
+      .num { color: #bac2de; }
+    }
+    &.logged {
+      margin-left: auto;
+      .dot { background: #cba6f7; }
+      .num { color: #cba6f7; }
+    }
   }
 }
 
-// Sessions
+// Sessions — each section folds; only Active is open by default. The #26263a
+// divider between sections is the same "structural neutral" as the empty ratio
+// track and the stamina edge.
 .sessions {
-  margin-bottom: 12px;
+  border-bottom: 1px solid #26263a;
 
-  h2 {
-    margin: 0 0 8px 0;
+  &:last-of-type { border-bottom: none; }
+
+  .sec-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 8px 0;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     color: #bac2de;
     letter-spacing: 0.5px;
+    cursor: pointer;
+    user-select: none;
 
     .count {
       font-weight: 400;
       color: #6c7086;
     }
+
+    // Σ duration — pushed to the right edge.
+    .sec-sum {
+      margin-left: auto;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #6c7086;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chev {
+      width: 12px;
+      height: 12px;
+      color: #6c7086;
+      flex-shrink: 0;
+      transition: transform 0.2s ease;
+
+      path {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+    }
+
+    // Green "tracking now" dot — identical to the session Live badge dot:
+    // same 5px size, colour, and pulse (status-pulse in status-badge.scss).
+    .live-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #a6e3a1;
+      flex-shrink: 0;
+      animation: live-pulse 1.6s ease-in-out infinite;
+    }
+  }
+
+  &.open .sec-head .chev {
+    transform: rotate(90deg);
+  }
+
+  // Collapsed body is hidden outright — no overflow clip, so card dropdowns and
+  // the add-time popover still escape the card when the section is open.
+  .fold-body {
+    padding-bottom: 10px;
+  }
+  &:not(.open) .fold-body {
+    display: none;
   }
 }
 
@@ -457,43 +525,9 @@
 }
 
 // ─── Logged: manual entries band ────────────────────────────────────────────
-// Third band under Active/Closed. Manual = mauve throughout (its own species).
+// Manual = mauve throughout (its own species). The add affordance lives in the
+// pinned dock now — this section is just the folding list.
 .sessions.logged {
-  position: relative; // anchor for the compose popover
-
-  .logged-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-
-    h2 { margin: 0; }
-  }
-
-  .log-add-btn {
-    background: rgba(203, 166, 247, 0.1);
-    border: 1px solid rgba(203, 166, 247, 0.32);
-    color: #cba6f7;
-    font-family: inherit;
-    font-size: 10px;
-    letter-spacing: 0.3px;
-    padding: 3px 10px;
-    border-radius: 10px;
-    cursor: pointer;
-    line-height: 1.3;
-    transition: background 0.15s ease, border-color 0.15s ease;
-
-    &:hover:not(:disabled) { background: rgba(203, 166, 247, 0.18); border-color: #cba6f7; }
-    &:disabled { opacity: 0.4; cursor: default; }
-  }
-
-  .log-empty {
-    color: #585b70;
-    font-size: 11px;
-    padding: 2px 0 4px;
-    font-style: italic;
-  }
-
   .log-row {
     display: flex;
     align-items: center;
@@ -563,6 +597,42 @@
   }
 }
 
+// ─── Pinned dock ──────────────────────────────────────────────────────────────
+// Quick-add footer, always reachable below the scroll. Favorites will join the
+// button here later (wrap-grid, variant D).
+.dock {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: #181825;
+  border-top: 1px solid #313244;
+}
+
+// Rounded mauve "Log" pill — inline-flex + line-height:1 so the label is
+// optically centred; symmetric padding for an even pill.
+.log-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(203, 166, 247, 0.1);
+  border: 1px solid rgba(203, 166, 247, 0.32);
+  color: #cba6f7;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  padding: 6px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(:disabled) { background: rgba(203, 166, 247, 0.18); border-color: #cba6f7; }
+  &:disabled { opacity: 0.4; cursor: default; }
+}
+
 // ─── Compose popover (Log time) ──────────────────────────────────────────────
 .log-pop-backdrop {
   position: fixed;
@@ -578,8 +648,8 @@
 
 .log-pop {
   position: absolute;
-  bottom: calc(100% + 8px); // opens upward from the button
-  right: 0;                 // right-aligned → grows left, stays inside the window
+  bottom: calc(100% + 8px); // opens upward from the dock button
+  left: 0;                  // left-aligned → grows right, stays inside the window
   z-index: 41;
   width: 280px;
   box-sizing: border-box;
@@ -589,12 +659,12 @@
   padding: 11px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 
-  // Caret at the bottom, pointing down to the "+ Log time" button.
+  // Caret at the bottom, pointing down to the "＋ Log" button.
   &::after {
     content: '';
     position: absolute;
     bottom: -5px;
-    right: 16px;
+    left: 16px;
     width: 9px;
     height: 9px;
     background: #1e1e2e;
@@ -766,4 +836,11 @@
 .content::-webkit-scrollbar-thumb {
   background: #313244;
   border-radius: 2px;
+}
+
+// Mirrors status-badge.scss status-pulse — keeps the ACTIVE header dot in lockstep
+// with the session Live badge dot.
+@keyframes live-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%      { opacity: 0.5; transform: scale(0.7); }
 }
