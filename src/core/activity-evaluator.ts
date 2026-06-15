@@ -48,7 +48,8 @@ export class ActivityEvaluator {
    * Scoring algorithm ("stamina"):
    * 1. EMA — binary moving average of activity (1 if dynamics/commit, 0 otherwise)
    * 2. Touch floor — any active tick lifts score to STAMINA_FLOOR_RATIO * maxTicks.
-   *    A single stray keystroke buys a small leash (Normal: ~7.5 min), nothing more.
+   *    A single stray keystroke buys a leash (Normal: ~11 min), nothing more —
+   *    generous enough to ride out a normal "stop and think" gap unaided.
    * 3. Frequency gain — ema * FREQUENCY_GAIN_MAX per active tick. Only a sustained
    *    tick-after-tick stream of updates (EMA → 1) outpaces decay on its own.
    * 4. Volume gain — deltaMagnitude / linesPerGainTick (STAMINA_LINES_PER_MINUTE,
@@ -59,7 +60,8 @@ export class ActivityEvaluator {
    * 7. Decay — BASE_DECAY on active ticks; on idle ticks BASE_DECAY +
    *    DECAY_BOOST × EMA (asymmetric fade: the denser the recent work, the
    *    faster the buffer cools once activity stops — a full Normal bar drains
-   *    in ~15 min after an abrupt stop, not 45)
+   *    in ~30 min after an abrupt stop, not 45; gentle enough that a think gap
+   *    after a burst isn't mistaken for a break)
    * 8. score == 0 → idle timeout → eligible for auto-pause (unless ignoreIdleTimeout)
    *
    * Leadership is driven by a separate short-window attention EMA (~2 min),
@@ -67,9 +69,11 @@ export class ActivityEvaluator {
    * (~2 min) regardless of how full the bars are, while a single stray touch
    * can never steal leadership.
    *
-   * Net effect (30s ticks, Normal 15–45 min): light sporadic edits hover at the
-   * floor; a relentless every-tick stream saturates in ~40 min; ~10+ lines per
-   * tick saturates in ~15 min; reaching 100% is intentionally hard.
+   * Net effect (30s ticks, Normal 11–45 min): light sporadic edits hover at the
+   * floor; pulsed work (bursts with think gaps) now accumulates a buffer instead
+   * of collapsing back to the floor; a relentless every-tick stream saturates in
+   * ~40 min; ~15 lines per tick saturates in ~15 min; reaching 100% is
+   * intentionally hard.
    */
   public processAllTicks(ticks: readonly TickInput[]): EvaluatorResult {
     const scores = new Map<string, SessionScore>();

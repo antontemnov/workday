@@ -101,21 +101,26 @@ export const EMA_WINDOW_MINUTES = 10;
 export const ATTENTION_WINDOW_MINUTES = 2;
 /**
  * Touch floor: any active tick lifts score to at least this fraction of the
- * sensitivity max timeout (Low: 2.5 min, Normal: 7.5 min, Patient: 15 min).
+ * sensitivity max timeout (Low: 3.75 min, Normal: 11.25 min, Patient: 22.5 min).
  * Guards against pause noise from single keystrokes without jumping the bar.
+ *
+ * Tuned to 1/4 (was 1/6): a false pause — real work whose time goes UNLOGGED —
+ * is strictly worse than a late pause, so the guaranteed leash a single touch
+ * buys is deliberately generous enough to ride out a normal "stop and think"
+ * gap without any buildup. See the asymmetric-loss tuning note on DECAY_BOOST.
  */
-export const STAMINA_FLOOR_RATIO = 1 / 6;
+export const STAMINA_FLOOR_RATIO = 1 / 4;
 /** Score per active tick at full activity frequency (EMA = 1) */
 export const FREQUENCY_GAIN_MAX = 2;
 /**
- * Lines changed per minute worth +1 score per tick (5 lines per 30s tick).
+ * Lines changed per minute worth +1 score per tick (4 lines per 30s tick).
  * Converted to a per-tick divisor at evaluator construction so the
  * lines-per-minute intensity needed to fill the bar doesn't depend on
  * diffPollSeconds.
  */
-export const STAMINA_LINES_PER_MINUTE = 10;
-/** Cap on the volume contribution per tick (reached at 20 changed lines at 30s ticks) */
-export const VOLUME_GAIN_MAX = 4;
+export const STAMINA_LINES_PER_MINUTE = 8;
+/** Cap on the volume contribution per tick (reached at 24 changed lines at 30s ticks) */
+export const VOLUME_GAIN_MAX = 6;
 /**
  * Line-equivalent granted per file whose content changed while its diff
  * numbers stayed flat (rewrite-in-place: lines already differed from the
@@ -131,12 +136,19 @@ export const COMMIT_BONUS_SECONDS = 150;
 export const BASE_DECAY = 1;
 /**
  * Extra drain per idle tick, scaled by the frequency EMA: decay = BASE_DECAY +
- * DECAY_BOOST × EMA. A dense coder who stops abruptly cools down fast (full
- * Normal bar → pause in ~15 min instead of 45), while sporadic workers keep
- * the plain 1/tick fade. Restores the v1 "sudden stop after intense work is
- * a pause" detection philosophy on top of the v2 fill model.
+ * DECAY_BOOST × EMA. A dense coder who stops cools down faster than a sporadic
+ * one (who keeps the plain 1/tick fade), but only mildly: the v1 "sudden stop
+ * after intense work is a pause" instinct is wrong in the LLM era, where the
+ * stop after a big paste is usually *reading/thinking*, not a break.
+ *
+ * Tuned down to 2 (was 4): a boost of 4 collapsed every earned buffer back to
+ * the floor within ~15 min regardless of how hard you worked, so the leash
+ * never reflected real effort and pulsed work risked false pauses. At 2 the
+ * earned buffer survives normal think gaps while a true walk-away is still
+ * caught within ~half the ceiling. Parameter set chosen by the asymmetric-loss
+ * grid search in scripts/stamina-sim.mjs (false pause ≫ late pause).
  */
-export const DECAY_BOOST = 4;
+export const DECAY_BOOST = 2;
 
 // ─── Sensitivity → max timeout (stamina ceiling) in minutes ──────────────
 // The single knob per level: the score ceiling. The touch floor is derived

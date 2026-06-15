@@ -22,7 +22,7 @@ import type {
 } from '../../src/core/types.js';
 
 const POLL_SECONDS = 30;
-// Normal sensitivity at 30s ticks: ceiling 45 min, touch floor = 90/6 = 15 ticks (7.5 min)
+// Normal sensitivity at 30s ticks: ceiling 45 min, touch floor = 90/4 = 22.5 ticks (11.25 min)
 const MAX_TICKS = 90;
 
 let passed = 0;
@@ -77,9 +77,9 @@ console.log('Stamina (ActivityEvaluator)');
 test('single 1-line touch lands near the floor, not half the bar', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   const s = runTicks(ev, 'a', [{ dyn: true, lines: 1 }]);
-  // floor 15 + tiny frequency/volume gains − decay ≈ 14.3 of 90
-  assert.ok(s.normalizedScore > 0.1 && s.normalizedScore < 0.2,
-    `normalized = ${s.normalizedScore.toFixed(3)}, expected ~0.16`);
+  // floor 22.5 + tiny frequency/volume gains − decay ≈ 21.9 of 90
+  assert.ok(s.normalizedScore > 0.2 && s.normalizedScore < 0.3,
+    `normalized = ${s.normalizedScore.toFixed(3)}, expected ~0.24`);
 });
 
 test('floor guarantees a multi-minute leash after one touch (no 1-line = 1-minute noise)', () => {
@@ -90,11 +90,11 @@ test('floor guarantees a multi-minute leash after one touch (no 1-line = 1-minut
     s = runTicks(ev, 'a', [{}]);
     idleTicks++;
   }
-  // floor 15 ticks, EMA near zero so decay ≈ 1 → ~13 idle ticks ≈ 6.5 min
-  assert.ok(idleTicks >= 11 && idleTicks <= 16, `idle ticks to pause = ${idleTicks}, expected ~13`);
+  // floor 22.5 ticks, EMA near zero so decay ≈ 1 → ~22 idle ticks ≈ 11 min
+  assert.ok(idleTicks >= 18 && idleTicks <= 26, `idle ticks to pause = ${idleTicks}, expected ~22`);
 });
 
-test('asymmetric decay: a full bar after intense work drains in ~15 min, not 45', () => {
+test('asymmetric decay: a full bar after intense work drains in ~30 min, not 45', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   let s = runTicks(ev, 'a', repeat({ dyn: true, lines: 20 }, 60)); // EMA → 1, bar full
   assert.ok(s.normalizedScore >= 0.98, `precondition: bar full, got ${s.normalizedScore.toFixed(3)}`);
@@ -103,30 +103,32 @@ test('asymmetric decay: a full bar after intense work drains in ~15 min, not 45'
     s = runTicks(ev, 'a', [{}]);
     idleTicks++;
   }
-  // decay = 1 + 4×EMA while EMA cools → ~30 ticks ≈ 15 min (plain decay would be 90)
-  assert.ok(idleTicks >= 25 && idleTicks <= 40, `idle ticks to pause = ${idleTicks}, expected ~30`);
+  // decay = 1 + 2×EMA while EMA cools → ~59 ticks ≈ 30 min (plain decay would be 90).
+  // Still asymmetric (a full bar fades faster than its 45-min ceiling), just
+  // gentler than the old boost=4 (~15 min) so think gaps aren't punished.
+  assert.ok(idleTicks >= 50 && idleTicks <= 68, `idle ticks to pause = ${idleTicks}, expected ~59`);
 });
 
-test('asymmetric decay: moderate work (mid bar) fades in ~14 min', () => {
+test('asymmetric decay: moderate work (mid bar) fades in ~18 min', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
-  // ~12 min of continuous 10-line ticks → mid bar, EMA ~0.7
-  let s = runTicks(ev, 'a', repeat({ dyn: true, lines: 10 }, 25));
-  assert.ok(s.normalizedScore > 0.4 && s.normalizedScore < 0.8,
+  // ~7 min of continuous 8-line ticks → mid bar (~0.5), EMA ~0.5
+  let s = runTicks(ev, 'a', repeat({ dyn: true, lines: 8 }, 14));
+  assert.ok(s.normalizedScore > 0.4 && s.normalizedScore < 0.7,
     `precondition: mid bar, got ${s.normalizedScore.toFixed(3)}`);
   let idleTicks = 0;
   while (!s.isIdleTimeout && idleTicks < 100) {
     s = runTicks(ev, 'a', [{}]);
     idleTicks++;
   }
-  assert.ok(idleTicks >= 15 && idleTicks <= 32, `idle ticks to pause = ${idleTicks}, expected ~28`);
+  assert.ok(idleTicks >= 30 && idleTicks <= 44, `idle ticks to pause = ${idleTicks}, expected ~37`);
 });
 
 test('floor is shielded from the decay boost: leash never collapses at high EMA', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   // long intense run → EMA ≈ 1, then a stop and a single touch near the floor:
-  // the old behavior drained 5/tick from the floor → pause in ~2 min
+  // a naive boosted-from-floor drain would collapse the leash in ~2 min
   runTicks(ev, 'a', repeat({ dyn: true, lines: 20 }, 40));
-  let s = runTicks(ev, 'a', repeat({}, 60)); // fade out completely
+  let s = runTicks(ev, 'a', repeat({}, 120)); // fade out completely
   assert.ok(s.isIdleTimeout, 'precondition: faded to pause');
   s = runTicks(ev, 'a', [{ dyn: true, lines: 1 }]); // single touch, EMA still warm
   let idleTicks = 0;
@@ -134,11 +136,11 @@ test('floor is shielded from the decay boost: leash never collapses at high EMA'
     s = runTicks(ev, 'a', [{}]);
     idleTicks++;
   }
-  // below the floor decay is always 1/tick → ≥ ~14 ticks (7 min) guaranteed
-  assert.ok(idleTicks >= 13, `idle ticks to pause = ${idleTicks}, expected >= 13 (~7 min)`);
+  // below the floor decay is always 1/tick → ~22 ticks (11 min) guaranteed
+  assert.ok(idleTicks >= 18, `idle ticks to pause = ${idleTicks}, expected >= 18 (~11 min)`);
 });
 
-test('Patient: full bar after intense work still catches a lunch break (~45 min)', () => {
+test('Patient: full bar drains in ~70 min — under the 90-min plain fade, tolerant of long thinks', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   const patientMax = 180; // 90 min at 30s ticks
   const tickOnce = (dyn: boolean): SessionScore => ev.processAllTicks([{
@@ -155,8 +157,10 @@ test('Patient: full bar after intense work still catches a lunch break (~45 min)
     s = tickOnce(false);
     idleTicks++;
   }
-  // ~85-100 ticks ≈ 45 min: lunch (60 min) is detected, unlike a fixed 90-min fade
-  assert.ok(idleTicks >= 70 && idleTicks <= 120, `idle ticks to pause = ${idleTicks}, expected ~90`);
+  // ~142 ticks ≈ 71 min: a long walk-away is still caught (faster than the
+  // 180-tick / 90-min plain fade), but with boost=2 a full Patient bar
+  // intentionally tolerates a long think before pausing.
+  assert.ok(idleTicks >= 125 && idleTicks <= 160, `idle ticks to pause = ${idleTicks}, expected ~142`);
 });
 
 test('etaTicks matches the actual ticks-to-pause under asymmetric decay', () => {
@@ -175,7 +179,8 @@ test('etaTicks matches the actual ticks-to-pause under asymmetric decay', () => 
 test('two bulk-paste ticks no longer saturate the bar (old algorithm hit 100%)', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   const s = runTicks(ev, 'a', repeat({ dyn: true, lines: 1000 }, 2));
-  assert.ok(s.normalizedScore < 0.3, `normalized = ${s.normalizedScore.toFixed(3)}, expected < 0.3`);
+  // ~0.36: floor + two volume-capped ticks, still far from the old 100% saturation
+  assert.ok(s.normalizedScore < 0.45, `normalized = ${s.normalizedScore.toFixed(3)}, expected < 0.45`);
 });
 
 test('sporadic light edits hover at the floor and never climb', () => {
@@ -201,7 +206,7 @@ test('relentless every-tick stream of small edits saturates, but only after ~40 
 test('high volume (15 lines/tick) fills the bar in ~15 min, not instantly', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   const at15 = runTicks(ev, 'a', repeat({ dyn: true, lines: 15 }, 15));
-  assert.ok(at15.normalizedScore < 0.8, `at 7.5 min: ${at15.normalizedScore.toFixed(3)}, expected < 0.8`);
+  assert.ok(at15.normalizedScore < 0.9, `at 7.5 min: ${at15.normalizedScore.toFixed(3)}, expected < 0.9`);
   const at30 = runTicks(ev, 'a', repeat({ dyn: true, lines: 15 }, 15));
   assert.ok(at30.normalizedScore >= 0.95, `at 15 min: ${at30.normalizedScore.toFixed(3)}, expected >= 0.95`);
 });

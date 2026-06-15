@@ -35,7 +35,7 @@ Key design goals:
   never "1 line = 1 minute"
 - **Behavior-change pause detection**: drain is asymmetric — the denser the
   recent work, the faster the buffer cools after an abrupt stop (full Normal
-  bar fades in ~19 min, not 45), but the boost never breaches the touch floor —
+  bar fades in ~30 min, not 45), but the boost never breaches the touch floor —
   the floor minutes are guaranteed at any EMA
 - **Cross-repo awareness**: only one repo can hold attention at a time; leadership
   follows a short attention window, independent of how full the bars are
@@ -52,22 +52,25 @@ Tick-based values are derived at `ActivityEvaluator` construction time.
 
 The repo's **sensitivity** sets a single knob — the max timeout / stamina ceiling
 (`SENSITIVITY_TIMEOUTS`). The touch floor is *derived* from it
-(`× STAMINA_FLOOR_RATIO = 1/6`), there is no separate min constant:
+(`× STAMINA_FLOOR_RATIO = 1/4`), there is no separate min constant:
 
 | Sensitivity | max (ceiling) | derived touch floor |
 |-------------|---------------|---------------------|
-| `low` | 15 min | 2.5 min |
-| `normal` (default) | 45 min | 7.5 min |
-| `patient` | 90 min | 15 min |
-| `always_on` | 45 min (idle timeout ignored) | 7.5 min |
+| `low` | 15 min | 3.75 min |
+| `normal` (default) | 45 min | 11.25 min |
+| `patient` | 90 min | 22.5 min |
+| `always_on` | 45 min (idle timeout ignored) | 11.25 min |
 
 | Constant | Value | Unit | Description |
 |----------|-------|------|-------------|
-| `STAMINA_FLOOR_RATIO` | 1/6 | — | Touch floor as a fraction of the ceiling |
+| `STAMINA_FLOOR_RATIO` | 1/4 | — | Touch floor as a fraction of the ceiling |
 | `EMA_WINDOW_MINUTES` | 10 | min | Frequency EMA smoothing window |
 | `ATTENTION_WINDOW_MINUTES` | 2 | min | Attention EMA window (cross-repo leadership) |
 | `COMMIT_BONUS_SECONDS` | 150 | sec | Extra score from a commit (in timeout equivalent) |
-| `DECAY_BOOST` | 4 | — | Extra drain per idle tick × EMA (asymmetric fade, never breaches the floor) |
+| `FREQUENCY_GAIN_MAX` | 2 | — | Frequency gain per active tick at EMA = 1 |
+| `STAMINA_LINES_PER_MINUTE` | 8 | lines | Churn worth +1 score/min (→ 4 lines per 30s tick) |
+| `VOLUME_GAIN_MAX` | 6 | — | Cap on the volume gain per tick |
+| `DECAY_BOOST` | 2 | — | Extra drain per idle tick × EMA (asymmetric fade, never breaches the floor) |
 | `IN_PLACE_CHURN_LINES` | 8 | lines | Line-equivalent per file rewritten in place (flat diff numbers, changed content hash) |
 | `CHURN_MAX_FILES` | 100 | files | Churn scanner cap: max files read/hashed per tick |
 | `CHURN_MAX_FILE_BYTES` | 2 MB | bytes | Churn scanner cap: oversized files skipped (binaries too) |
@@ -84,19 +87,19 @@ FLOOR_TICKS         = MAX_TICKS * STAMINA_FLOOR_RATIO
 EMA_ALPHA           = 1 / (EMA_WINDOW_MINUTES * 60 / tickSeconds)
 ATTENTION_ALPHA     = 1 / (ATTENTION_WINDOW_MINUTES * 60 / tickSeconds)
 COMMIT_BONUS        = COMMIT_BONUS_SECONDS / tickSeconds
-LINES_PER_GAIN_TICK = STAMINA_LINES_PER_MINUTE * tickSeconds / 60   // 5 at 30s
+LINES_PER_GAIN_TICK = STAMINA_LINES_PER_MINUTE * tickSeconds / 60   // 4 at 30s
 ```
 
 ### Derivation table for different `diffPollSeconds` (normal sensitivity)
 
 | Config | MAX_TICKS | FLOOR_TICKS | EMA_ALPHA | ATTENTION_ALPHA | COMMIT_BONUS |
 |--------|-----------|-------------|-----------|-----------------|--------------|
-| 15s    | 180       | 30          | ~0.025    | 0.125           | 10           |
-| 30s    | 90        | 15          | ~0.05     | 0.25            | 5            |
-| 45s    | 60        | 10          | ~0.075    | 0.375           | ~3           |
-| 60s    | 45        | 7.5         | ~0.10     | 0.5             | ~3           |
+| 15s    | 180       | 45          | ~0.025    | 0.125           | 10           |
+| 30s    | 90        | 22.5        | ~0.05     | 0.25            | 5            |
+| 45s    | 60        | 15          | ~0.075    | 0.375           | ~3           |
+| 60s    | 45        | 11.25       | ~0.10     | 0.5             | ~3           |
 
-The timeout range [7.5, 45] minutes is preserved regardless of tick duration.
+The timeout range [11.25, 45] minutes is preserved regardless of tick duration.
 
 ---
 
@@ -186,7 +189,7 @@ if (hasActivity):                          // dynamics or commit
 ### Touch floor
 
 Any active tick lifts the score to at least `MAX_TICKS × STAMINA_FLOOR_RATIO`
-(Normal: 45 / 6 = **7.5 min**, ~17% of the bar). Two guarantees at once:
+(Normal: 45 / 4 = **11.25 min**, 25% of the bar). Two guarantees at once:
 
 - a single keystroke can't jump the bar to half (old algorithm: one tick = ~52%)
 - a single keystroke still buys a multi-minute leash — never "1 line = 1 minute
@@ -206,13 +209,13 @@ within the tick, capped:
 
 | Lines changed in tick | Volume gain | Net vs decay (−1) |
 |----------------------|------------|--------------------|
-| 1 | +0.2 | negative |
-| 5 | +1.0 | breakeven |
-| 10 | +2.0 | +1 |
-| 15 | +3.0 | +2 |
-| 20+ | +4.0 (cap) | +3 |
+| 1 | +0.25 | negative |
+| 4 | +1.0 | breakeven |
+| 8 | +2.0 | +1 |
+| 12 | +3.0 | +2 |
+| 24+ | +6.0 (cap) | +5 |
 
-The cap means a bulk paste of a generated file is worth at most +4 — filling
+The cap means a bulk paste of a generated file is worth at most +6 — filling
 the bar always requires *sustained* activity, never a single event.
 
 ### Asymmetric fade (pause detection)
@@ -226,17 +229,17 @@ itself cools during the silence, so the drain relaxes back to 1/tick over ~10 mi
 The boost is **shielded by the floor**: within one idle segment it can drain the
 score down to the floor but never through it, and at/below the floor the drain
 is always a plain 1/tick. So the guarantee "any touch buys the floor minutes
-(Normal: 7.5 min) before a pause" holds at *any* EMA. Without the shield a hot
-EMA (≈1) drained a floor-level bar in ~2 minutes, which produced a storm of
-pauses in real use whenever an intense stream went quiet for a moment.
+(Normal: 11.25 min) before a pause" holds at *any* EMA. Without the shield a hot
+EMA (≈1) would drain a floor-level bar far faster, producing a storm of
+pauses whenever an intense stream went quiet for a moment.
 
 | State at stop (Normal) | Time to auto-pause |
 |------------------------|--------------------|
-| Full bar, EMA ≈ 1 (intense streak) | ~19 min (fast segment to the floor ~11–12 min + floor segment 7.5 min) |
-| Half bar, EMA ≈ 0.5 (moderate work) | ~14 min |
-| Floor-level bar, EMA ≈ 1 (hot stream just started) | ~7.5 min (floor shield; was ~2 min) |
-| Floor after a single touch, EMA ≈ 0 | ~7 min |
-| Patient, full bar, EMA ≈ 1 | ~53 min (lunch is caught) |
+| Full bar, EMA ≈ 1 (intense streak) | ~30 min (fast segment to the floor ~18 min + floor segment ~11 min) |
+| Half bar, EMA ≈ 0.5 (moderate work) | ~18 min |
+| Floor-level bar, EMA ≈ 1 (hot stream just started) | ~11 min (floor shield) |
+| Floor after a single touch, EMA ≈ 0 | ~11 min |
+| Patient, full bar, EMA ≈ 1 | ~71 min (a long walk-away is caught) |
 
 Since drain is no longer constant, the auto-pause countdown is reported as
 `etaTicks` (simulated fade), not as the raw score.
@@ -245,11 +248,11 @@ Since drain is no longer constant, the auto-pause countdown is reported as
 
 | Work pattern | Bar behavior |
 |--------------|--------------|
-| Single touch | jumps to ~17%, fades, pause ~7 min later |
-| Sporadic 1-line edits every few minutes | hovers at ~17%, never climbs |
-| Update every tick, 1–3 lines | saturates in ~40 min of continuity |
-| Every tick, ~10 lines | saturates in ~15 min |
-| Every tick, 20+ churn line-equivalents (cap) — typed, agent-rewritten or committed | saturates in ~9 min — still not instant |
+| Single touch | jumps to 25%, fades, pause ~11 min later |
+| Sporadic 1-line edits every few minutes | hovers at ~25%, never climbs |
+| Update every tick, 1–3 lines | saturates in ~30–40 min of continuity |
+| Every tick, ~10 lines | saturates in ~13 min |
+| Every tick, 24+ churn line-equivalents (cap) — typed, agent-rewritten or committed | saturates in ~6 min — still not instant |
 
 ---
 
@@ -286,8 +289,8 @@ difference of summed totals:
    file goes flat.
 
 The gain formula in the evaluator is unchanged:
-`min(VOLUME_GAIN_MAX, deltaMagnitude / LINES_PER_GAIN_TICK)` — at most +4 per
-30s tick, reached at 20 churn line-equivalents.
+`min(VOLUME_GAIN_MAX, deltaMagnitude / LINES_PER_GAIN_TICK)` — at most +6 per
+30s tick, reached at 24 churn line-equivalents.
 
 ### Why per-file churn, not netted totals?
 
@@ -305,7 +308,7 @@ machine-speed work.
 | Metric | Contribution | Question it answers |
 |--------|-------------|---------------------|
 | EMA (binary) | frequency gain (max +2/tick) | "How often does the developer produce changes?" |
-| Magnitude | volume gain (max +4/tick) | "How big are the changes when they happen?" |
+| Magnitude | volume gain (max +6/tick) | "How big are the changes when they happen?" |
 
 Both feed the same stamina buffer additively, so the bar reflects *frequency ×
 volume* — exactly the intuition "how intensely is this repo being worked on".
@@ -316,7 +319,7 @@ The previous model used a logarithmic bonus (`log2(1+n)/7`, capped at ×1.5)
 on top of a huge per-tick base (50% of the ceiling). Result: 1 line and 1000
 lines were nearly indistinguishable, and any two active ticks saturated the
 bar. The linear-with-cap volume gain makes the difference between 2 lines
-(+0.4) and 15 lines (+3) visible, while the cap (20+ lines) prevents bulk
+(+0.5) and 12 lines (+3) visible, while the cap (24+ lines) prevents bulk
 pastes from cheating the bar.
 
 ---
@@ -620,22 +623,23 @@ Developer writes code with dynamics nearly every tick for 2 hours (10–15 lines
 
 Phase 1: Working
   EMA → ~1.0 within ~10 min (binary input, activity every tick)
-  Per-tick gain ≈ 2 (frequency) + 2–3 (volume) − 1 (decay) → net +3..4
-  Score: from the 15-tick floor to the 90-tick cap in ~20-25 min, then capped
+  Per-tick gain ≈ 2 (frequency) + 3–4 (volume) − 1 (decay) → net +4..5
+  Score: from the 22.5-tick floor to the 90-tick cap in ~10-13 min, then capped
   (Agent-driven work behaves the same: per-file churn counts big rewrites,
   new files and immediately committed steps, so a Claude Code session
   saturates the bar just as fast as hand-typing.)
 
 Phase 2: Lunch break starts (bar was full, EMA ≈ 1)
-  Asymmetric fade: drain = 1 + 4×EMA ≈ 5/tick at first, relaxing as EMA
+  Asymmetric fade: drain = 1 + 2×EMA ≈ 3/tick at first, relaxing as EMA
   cools and stopping at the floor (below it: always 1/tick)
-  Score 90 → floor 15 in ~23 ticks, → 0 in ~38 ticks total
-  AutoPause (IdleTimeout) ~19 min after the last edit —
-  an abrupt stop after dense work is the clearest pause signal
+  Score 90 → floor 22.5 in ~36 ticks, → 0 in ~59 ticks total
+  AutoPause (IdleTimeout) ~30 min after the last edit —
+  an abrupt stop after dense work fades faster than a sporadic one,
+  but gently enough that a long think isn't mistaken for a break
 
 Phase 3: Return from lunch (1 hour later)
   EMA during pause: 1.0 × (1-0.05)^120 ≈ 0.002 (fully decayed)
-  First dynamics → AutoResume, score = floor 15 (+ small gains) ≈ 7.5 min leash
+  First dynamics → AutoResume, score = floor 22.5 (+ small gains) ≈ 11 min leash
   The bar rebuilds as the stream of edits resumes
 ```
 
@@ -643,18 +647,18 @@ Phase 3: Return from lunch (1 hour later)
 
 ```
 Developer reads code and makes occasional small changes.
-Gap between dynamics: 30 ticks (15 min) — longer than the 15-tick floor.
+Gap between dynamics: 30 ticks (15 min) — longer than the 22.5-tick floor.
 
 Each touch:
-  score = floor 15 (+ ~0.3 gains) → decays to 0 in ~15 ticks
-  → IdleTimeout ~7.5 min after the touch
+  score = floor 22.5 (+ ~0.3 gains) → decays to 0 in ~22 ticks
+  → IdleTimeout ~11 min after the touch
   → auto-resume at the next touch
 
-With Normal sensitivity this style logs ~7.5 min per touch with pauses
+With Normal sensitivity this style logs ~11 min per touch with pauses
 between. That's by design: 15 idle minutes between one-line edits are
 mostly not work. If for this repo they ARE work (research-heavy code),
-switch the repo to Patient: floor = 90/6 = 15 min — every gap up to
-15 min is then covered, and the session stays continuous.
+switch the repo to Patient: floor = 90/4 = 22.5 min — every gap up to
+22.5 min is then covered, and the session stays continuous.
 ```
 
 ### Scenario C: Cross-repo switch (attention leadership)
@@ -688,7 +692,7 @@ Developer is actively working in repo A (leader, attention ≈ 1.0).
 Accidentally saves a file in repo B.
 
 Tick 0: dynamics in B (1 line)
-  B: score = floor 15 (bar ~17%), attention = 0.25
+  B: score = floor 22.5 (bar 25%), attention = 0.25
   A: attention ≈ 1.0 → challenger needs > 1.25 — impossible
   A stays leader; B stays Pending
 
@@ -745,11 +749,11 @@ diffPollSeconds = 60, Normal sensitivity.
 
 Derived constants:
   MAX_TICKS = 45 * 60 / 60 = 45 ticks
-  FLOOR_TICKS = 45 / 6 = 7.5 ticks (= 7.5 min, same as with 30s polls ✓)
+  FLOOR_TICKS = 45 / 4 = 11.25 ticks (= 11.25 min, same as with 30s polls ✓)
   EMA_ALPHA = 1/10 = 0.10
   ATTENTION_ALPHA = 1/2 = 0.5
 
-A touch buys the same 7.5 minutes; the ceiling is the same 45 minutes;
+A touch buys the same 11.25 minutes; the ceiling is the same 45 minutes;
 filling the bar requires the same lines-per-minute intensity (the volume
 divisor is per tick, and ticks are twice as long). All time guarantees
 are preserved regardless of tick duration.
@@ -794,7 +798,7 @@ C: Pending → Pending → Active (became leader)
 ### Rebase / merge dynamics
 
 A rebase can generate large diff dynamics (100+ lines) that are not real
-development. The volume cap (`VOLUME_GAIN_MAX` = 4) limits the stamina impact
+development. The volume cap (`VOLUME_GAIN_MAX` = 6) limits the stamina impact
 of any single burst to a few ticks.
 
 Evidence counters (commits / lines on the session) are rebase-stable by
@@ -832,18 +836,18 @@ Pending sessions are closed by:
 | Constant | Value | Rationale |
 |----------|-------|-----------|
 | `SENSITIVITY_TIMEOUTS` | low 15 / normal 45 / patient 90 / always_on 45 min | The single per-level knob: stamina ceiling = max leash |
-| `STAMINA_FLOOR_RATIO` | 1/6 | Touch floor = ceiling / 6 (Normal: 7.5 min) — no pause noise, no bar jump |
+| `STAMINA_FLOOR_RATIO` | 1/4 | Touch floor = ceiling / 4 (Normal: 11.25 min) — no pause noise, no bar jump, rides out a think gap unaided |
 | `EMA_WINDOW_MINUTES` | 10 | Frequency memory of ~15 min, forgets after ~30 min idle |
 | `ATTENTION_WINDOW_MINUTES` | 2 | Leadership follows the developer within ~2 min |
 | `FREQUENCY_GAIN_MAX` | 2 | A sustained every-tick stream outpaces decay on its own |
-| `STAMINA_LINES_PER_MINUTE` | 10 | 10 lines/min = +1 score per tick; breakeven at 5 lines per 30s tick |
-| `VOLUME_GAIN_MAX` | 4 | Bulk pastes capped — filling the bar requires sustained activity |
+| `STAMINA_LINES_PER_MINUTE` | 8 | 8 lines/min = +1 score per tick; breakeven at 4 lines per 30s tick |
+| `VOLUME_GAIN_MAX` | 6 | Bulk pastes capped — filling the bar requires sustained activity |
 | `IN_PLACE_CHURN_LINES` | 8 | Line-equivalent for a file rewritten in place (flat numstat, changed content hash) |
 | `CHURN_MAX_FILES` | 100 | Churn scan cap per tick (file reads/hashes) |
 | `CHURN_MAX_FILE_BYTES` | 2 MB | Oversized/binary files contribute no churn |
 | `COMMIT_BONUS_SECONDS` | 150 | Commit adds ~2.5 min of buffer |
 | `BASE_DECAY` | 1 | Drain on active ticks and at/below the floor |
-| `DECAY_BOOST` | 4 | Idle drain above the floor = 1 + 4×EMA, never through the floor — dense coders cool down fast (full Normal bar ≈ 19 min) |
+| `DECAY_BOOST` | 2 | Idle drain above the floor = 1 + 2×EMA, never through the floor — dense coders cool down faster than sporadic ones, but gently (full Normal bar ≈ 30 min) so a think gap isn't read as a break |
 
 ### Contract (TypeScript)
 
