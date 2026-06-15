@@ -66,10 +66,10 @@ The repo's **sensitivity** sets a single knob — the max timeout / stamina ceil
 | `STAMINA_FLOOR_RATIO` | 1/4 | — | Touch floor as a fraction of the ceiling |
 | `EMA_WINDOW_MINUTES` | 10 | min | Frequency EMA smoothing window |
 | `ATTENTION_WINDOW_MINUTES` | 2 | min | Attention EMA window (cross-repo leadership) |
-| `COMMIT_BONUS_SECONDS` | 150 | sec | Extra score from a commit (in timeout equivalent) |
+| `COMMIT_BONUS_SECONDS` | 240 | sec | Extra score from a commit (in timeout equivalent) |
 | `FREQUENCY_GAIN_MAX` | 2 | — | Frequency gain per active tick at EMA = 1 |
 | `STAMINA_LINES_PER_MINUTE` | 8 | lines | Churn worth +1 score/min (→ 4 lines per 30s tick) |
-| `VOLUME_GAIN_MAX` | 6 | — | Cap on the volume gain per tick |
+| `VOLUME_GAIN_MAX` | 8 | — | Cap on the volume gain per tick |
 | `DECAY_BOOST` | 2 | — | Extra drain per idle tick × EMA (asymmetric fade, never breaches the floor) |
 | `IN_PLACE_CHURN_LINES` | 8 | lines | Line-equivalent per file rewritten in place (flat diff numbers, changed content hash) |
 | `CHURN_MAX_FILES` | 100 | files | Churn scanner cap: max files read/hashed per tick |
@@ -94,10 +94,10 @@ LINES_PER_GAIN_TICK = STAMINA_LINES_PER_MINUTE * tickSeconds / 60   // 4 at 30s
 
 | Config | MAX_TICKS | FLOOR_TICKS | EMA_ALPHA | ATTENTION_ALPHA | COMMIT_BONUS |
 |--------|-----------|-------------|-----------|-----------------|--------------|
-| 15s    | 180       | 45          | ~0.025    | 0.125           | 10           |
-| 30s    | 90        | 22.5        | ~0.05     | 0.25            | 5            |
-| 45s    | 60        | 15          | ~0.075    | 0.375           | ~3           |
-| 60s    | 45        | 11.25       | ~0.10     | 0.5             | ~3           |
+| 15s    | 180       | 45          | ~0.025    | 0.125           | 16           |
+| 30s    | 90        | 22.5        | ~0.05     | 0.25            | 8            |
+| 45s    | 60        | 15          | ~0.075    | 0.375           | ~5           |
+| 60s    | 45        | 11.25       | ~0.10     | 0.5             | 4            |
 
 The timeout range [11.25, 45] minutes is preserved regardless of tick duration.
 
@@ -213,9 +213,10 @@ within the tick, capped:
 | 4 | +1.0 | breakeven |
 | 8 | +2.0 | +1 |
 | 12 | +3.0 | +2 |
-| 24+ | +6.0 (cap) | +5 |
+| 24 | +6.0 | +5 |
+| 32+ | +8.0 (cap) | +7 |
 
-The cap means a bulk paste of a generated file is worth at most +6 — filling
+The cap means a bulk paste of a generated file is worth at most +8 — filling
 the bar always requires *sustained* activity, never a single event.
 
 ### Asymmetric fade (pause detection)
@@ -252,7 +253,7 @@ Since drain is no longer constant, the auto-pause countdown is reported as
 | Sporadic 1-line edits every few minutes | hovers at ~25%, never climbs |
 | Update every tick, 1–3 lines | saturates in ~30–40 min of continuity |
 | Every tick, ~10 lines | saturates in ~13 min |
-| Every tick, 24+ churn line-equivalents (cap) — typed, agent-rewritten or committed | saturates in ~6 min — still not instant |
+| Every tick, 32+ churn line-equivalents (cap) — typed, agent-rewritten or committed | saturates in ~5 min — still not instant |
 
 ---
 
@@ -289,8 +290,8 @@ difference of summed totals:
    file goes flat.
 
 The gain formula in the evaluator is unchanged:
-`min(VOLUME_GAIN_MAX, deltaMagnitude / LINES_PER_GAIN_TICK)` — at most +6 per
-30s tick, reached at 24 churn line-equivalents.
+`min(VOLUME_GAIN_MAX, deltaMagnitude / LINES_PER_GAIN_TICK)` — at most +8 per
+30s tick, reached at 32 churn line-equivalents.
 
 ### Why per-file churn, not netted totals?
 
@@ -308,7 +309,7 @@ machine-speed work.
 | Metric | Contribution | Question it answers |
 |--------|-------------|---------------------|
 | EMA (binary) | frequency gain (max +2/tick) | "How often does the developer produce changes?" |
-| Magnitude | volume gain (max +6/tick) | "How big are the changes when they happen?" |
+| Magnitude | volume gain (max +8/tick) | "How big are the changes when they happen?" |
 
 Both feed the same stamina buffer additively, so the bar reflects *frequency ×
 volume* — exactly the intuition "how intensely is this repo being worked on".
@@ -319,7 +320,7 @@ The previous model used a logarithmic bonus (`log2(1+n)/7`, capped at ×1.5)
 on top of a huge per-tick base (50% of the ceiling). Result: 1 line and 1000
 lines were nearly indistinguishable, and any two active ticks saturated the
 bar. The linear-with-cap volume gain makes the difference between 2 lines
-(+0.5) and 12 lines (+3) visible, while the cap (24+ lines) prevents bulk
+(+0.5) and 12 lines (+3) visible, while the cap (32+ lines) prevents bulk
 pastes from cheating the bar.
 
 ---
@@ -716,11 +717,11 @@ Tick N+1: git add . && git commit
   per-file churn magnitude ≈ 0 (committing is not new churn)
   reflog: new commit → hasCommit = TRUE
 
-  Score: 45 + 2 (frequency) + 0 (volume) + 5 (COMMIT_BONUS) − 1 ≈ 51
+  Score: 45 + 2 (frequency) + 0 (volume) + 8 (COMMIT_BONUS) − 1 ≈ 54
   Commit visibly tops up the bar, never drops it.
 
 Tick N+2 (no new coding yet):
-  no churn, no totals movement → hasDynamics = FALSE → normal decay, score 50
+  no churn, no totals movement → hasDynamics = FALSE → normal decay, score 53
   Plenty of leash to think about the next step.
 ```
 
@@ -841,11 +842,11 @@ Pending sessions are closed by:
 | `ATTENTION_WINDOW_MINUTES` | 2 | Leadership follows the developer within ~2 min |
 | `FREQUENCY_GAIN_MAX` | 2 | A sustained every-tick stream outpaces decay on its own |
 | `STAMINA_LINES_PER_MINUTE` | 8 | 8 lines/min = +1 score per tick; breakeven at 4 lines per 30s tick |
-| `VOLUME_GAIN_MAX` | 6 | Bulk pastes capped — filling the bar requires sustained activity |
+| `VOLUME_GAIN_MAX` | 8 | Bulk pastes capped — filling the bar requires sustained activity |
 | `IN_PLACE_CHURN_LINES` | 8 | Line-equivalent for a file rewritten in place (flat numstat, changed content hash) |
 | `CHURN_MAX_FILES` | 100 | Churn scan cap per tick (file reads/hashes) |
 | `CHURN_MAX_FILE_BYTES` | 2 MB | Oversized/binary files contribute no churn |
-| `COMMIT_BONUS_SECONDS` | 150 | Commit adds ~2.5 min of buffer |
+| `COMMIT_BONUS_SECONDS` | 240 | Commit adds ~4 min of buffer — committing every few minutes while prepping a review branch shouldn't pause |
 | `BASE_DECAY` | 1 | Drain on active ticks and at/below the floor |
 | `DECAY_BOOST` | 2 | Idle drain above the floor = 1 + 2×EMA, never through the floor — dense coders cool down faster than sporadic ones, but gently (full Normal bar ≈ 30 min) so a think gap isn't read as a break |
 

@@ -179,7 +179,7 @@ test('etaTicks matches the actual ticks-to-pause under asymmetric decay', () => 
 test('two bulk-paste ticks no longer saturate the bar (old algorithm hit 100%)', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   const s = runTicks(ev, 'a', repeat({ dyn: true, lines: 1000 }, 2));
-  // ~0.36: floor + two volume-capped ticks, still far from the old 100% saturation
+  // ~0.41: floor + two volume-capped ticks, still far from the old 100% saturation
   assert.ok(s.normalizedScore < 0.45, `normalized = ${s.normalizedScore.toFixed(3)}, expected < 0.45`);
 });
 
@@ -216,7 +216,7 @@ test('commit adds its bonus on top of the floor', () => {
   const withCommit = runTicks(evCommit, 'a', [{ dyn: true, commit: true, lines: 1 }]);
   const evPlain = new ActivityEvaluator(POLL_SECONDS);
   const plain = runTicks(evPlain, 'a', [{ dyn: true, lines: 1 }]);
-  const bonusTicks = 150 / POLL_SECONDS;
+  const bonusTicks = 240 / POLL_SECONDS;
   assert.ok(Math.abs((withCommit.score - plain.score) - bonusTicks) < 0.001,
     `commit bonus = ${(withCommit.score - plain.score).toFixed(2)}, expected ${bonusTicks}`);
 });

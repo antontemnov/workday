@@ -21,7 +21,7 @@ const MIN = 2; // ticks per minute at 30s
 // Constants currently SHIPPED in src/core/constants.ts. Keep in sync.
 const SHIPPED = {
   EMA_WINDOW_MINUTES: 10, FREQUENCY_GAIN_MAX: 2, STAMINA_LINES_PER_MINUTE: 8,
-  VOLUME_GAIN_MAX: 6, COMMIT_BONUS_SECONDS: 150, BASE_DECAY: 1, DECAY_BOOST: 2,
+  VOLUME_GAIN_MAX: 8, COMMIT_BONUS_SECONDS: 240, BASE_DECAY: 1, DECAY_BOOST: 2,
   STAMINA_FLOOR_RATIO: 1 / 4,
 };
 // The pre-tuning values, kept for the before/after comparison only.
@@ -166,12 +166,22 @@ const GRID = {
   EMA_WINDOW_MINUTES: [5, 10, 15],
   FREQUENCY_GAIN_MAX: [2, 3, 4, 5, 6],
   STAMINA_LINES_PER_MINUTE: [8, 10, 15],
-  VOLUME_GAIN_MAX: [2, 3, 4, 6],
-  COMMIT_BONUS_SECONDS: [60, 150, 300],
+  VOLUME_GAIN_MAX: [2, 3, 4, 6, 8],
+  COMMIT_BONUS_SECONDS: [60, 150, 240, 300],
   BASE_DECAY: [1],
   DECAY_BOOST: [0, 0.5, 1, 1.5, 2, 3],
   STAMINA_FLOOR_RATIO: [1 / 6, 1 / 5, 1 / 4],
 };
+
+// NOTE: the SHIPPED set is intentionally not the grid-optimal. The loss
+// function rewards "no false pause + catch real breaks", but two shipped
+// choices come from hands-on feel the loss can't fully see:
+//   - COMMIT_BONUS_SECONDS=240: prepping a branch for review means a commit
+//     every 5-7 min with little churn between; that real, focused work must
+//     not pause, so a commit buys ~4 min of leash on top of the floor.
+//   - VOLUME_GAIN_MAX=8: a slightly fuller response to big bursts.
+// Both trade a tiny amount of "late-pause" loss for fewer false pauses in
+// real use — exactly the asymmetry this whole exercise is about.
 
 function* product(grid) {
   const keys = Object.keys(grid);

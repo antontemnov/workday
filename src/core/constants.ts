@@ -119,8 +119,8 @@ export const FREQUENCY_GAIN_MAX = 2;
  * diffPollSeconds.
  */
 export const STAMINA_LINES_PER_MINUTE = 8;
-/** Cap on the volume contribution per tick (reached at 24 changed lines at 30s ticks) */
-export const VOLUME_GAIN_MAX = 6;
+/** Cap on the volume contribution per tick (reached at 32 changed lines at 30s ticks) */
+export const VOLUME_GAIN_MAX = 8;
 /**
  * Line-equivalent granted per file whose content changed while its diff
  * numbers stayed flat (rewrite-in-place: lines already differed from the
@@ -130,8 +130,14 @@ export const IN_PLACE_CHURN_LINES = 8;
 /** Churn scanner caps: don't read/hash absurd working sets */
 export const CHURN_MAX_FILES = 100;
 export const CHURN_MAX_FILE_BYTES = 2 * 1024 * 1024;
-/** "Free" score on commit (in seconds, converted to ticks) */
-export const COMMIT_BONUS_SECONDS = 150;
+/**
+ * "Free" score on commit (in seconds, converted to ticks). Tuned up to 240
+ * (was 150): committing every few minutes while polishing a branch for review
+ * is real, focused work, so a commit should buy enough leash (Normal: ~4 min
+ * on top of the touch floor) to bridge the gap to the next commit without a
+ * false pause.
+ */
+export const COMMIT_BONUS_SECONDS = 240;
 /** Constant per-tick score drain */
 export const BASE_DECAY = 1;
 /**
