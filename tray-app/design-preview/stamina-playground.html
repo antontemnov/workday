@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>workday · stamina playground</title>
+<style>
+  /* ----- Catppuccin Mocha palette (matches the real app) ----- */
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --surface0:#313244;
+    --surface1:#45475a; --surface2:#585b70; --overlay0:#6c7086; --overlay1:#7f849c;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4; --lavender:#b4befe;
+    --blue:#89b4fa; --sapphire:#74c7ec; --teal:#94e2d5; --green:#a6e3a1;
+    --yellow:#f9e2af; --peach:#fab387; --red:#f38ba8; --mauve:#cba6f7; --pink:#f5c2e7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--crust); color: var(--text);
+    font: 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: 16px; -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 16px; margin: 0 0 2px; color: var(--lavender); font-weight: 600; }
+  .sub { color: var(--overlay1); font-size: 11px; margin-bottom: 14px; }
+  .layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
+  .card { background: var(--base); border: 1px solid var(--surface0); border-radius: 10px; padding: 14px; }
+  .card + .card { margin-top: 12px; }
+  .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--subtext0); margin: 0 0 10px; font-weight: 600; }
+
+  /* sliders */
+  .param { margin-bottom: 11px; }
+  .param .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .param label { color: var(--subtext1); font-size: 11.5px; }
+  .param .val { color: var(--peach); font-weight: 600; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; margin: 5px 0 0; accent-color: var(--mauve); height: 4px; }
+  select, input[type=number] {
+    background: var(--mantle); color: var(--text); border: 1px solid var(--surface1);
+    border-radius: 6px; padding: 4px 6px; font: inherit; width: 100%;
+  }
+  .pillrow { display: flex; gap: 5px; flex-wrap: wrap; }
+  .pillrow.cols2 { display: grid; grid-template-columns: 1fr 1fr; }
+  button {
+    background: var(--surface0); color: var(--text); border: 1px solid var(--surface1);
+    border-radius: 7px; padding: 7px 9px; font: inherit; cursor: pointer; transition: .08s;
+  }
+  button:hover { background: var(--surface1); border-color: var(--surface2); }
+  button:active { transform: translateY(1px); }
+  button.accent { background: var(--mauve); color: var(--crust); border-color: var(--mauve); font-weight: 600; }
+  button.blue   { background: var(--blue);  color: var(--crust); border-color: var(--blue); font-weight: 600; }
+  button.ghost  { background: transparent; }
+  button.on     { background: var(--green); color: var(--crust); border-color: var(--green); font-weight: 600; }
+  .hint { color: var(--overlay0); font-size: 10.5px; margin-top: 4px; }
+
+  /* bars */
+  .bars { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .barwrap.solo { grid-template-columns: 1fr; }
+  .barbox { background: var(--mantle); border: 1px solid var(--surface0); border-radius: 10px; padding: 12px; }
+  .barbox .title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .barbox .title .name { color: var(--subtext1); font-size: 11px; }
+  .pct { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bar { position: relative; height: 26px; background: var(--surface0); border-radius: 6px; overflow: hidden; }
+  .bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; transition: width .12s linear, background .2s; }
+  .bar .floor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--yellow); opacity: .85; }
+  .bar .floor::after { content: "floor"; position: absolute; top: -14px; left: -10px; font-size: 9px; color: var(--yellow); }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; margin-top: 9px; font-size: 11px; color: var(--subtext0); }
+  .meta b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .paused-tag { color: var(--red); font-weight: 700; }
+  .live-tag { color: var(--green); font-weight: 700; }
+
+  .contrib { margin-top: 9px; font-size: 10.5px; color: var(--overlay1); }
+  .contrib span { display: inline-block; margin-right: 9px; }
+  .contrib .pos { color: var(--green); } .contrib .neg { color: var(--red); }
+
+  /* clock + transport */
+  .topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+  .clock { font-size: 20px; font-weight: 700; color: var(--sapphire); font-variant-numeric: tabular-nums; }
+  .speedtag { color: var(--overlay1); font-size: 11px; }
+  canvas { width: 100%; height: 200px; display: block; background: var(--mantle); border-radius: 8px; border: 1px solid var(--surface0); }
+  .legend { display: flex; gap: 14px; margin-top: 7px; font-size: 10.5px; color: var(--overlay1); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 4px; border-radius: 2px; }
+  .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .actions button { font-size: 11.5px; padding: 9px 6px; }
+  .statline { font-size: 11px; color: var(--subtext0); margin-top: 8px; }
+  .statline b { color: var(--text); }
+  details summary { cursor: pointer; color: var(--subtext0); font-size: 11px; }
+  code { color: var(--peach); }
+</style>
+</head>
+<body>
+  <h1>workday · stamina playground</h1>
+  <div class="sub">Faithful tick-engine from <code>activity-evaluator.ts</code>. Time is accelerated — click repo actions and watch the bar fill &amp; decay. Pin a ghost to A/B compare two parameter sets on the same action stream.</div>
+
+  <div class="layout">
+    <!-- ───────── left: controls ───────── -->
+    <div>
+      <div class="card">
+        <h2>Presets</h2>
+        <div class="pillrow cols2">
+          <button data-preset="baseline">Baseline (now)</button>
+          <button class="accent" data-preset="recommended">Recommended</button>
+          <button data-preset="gentle">Gentle</button>
+          <button data-preset="reset">Reset run</button>
+        </div>
+        <div class="pillrow" style="margin-top:7px">
+          <button id="pinBtn" class="blue" style="flex:1">📌 Pin current → Ghost B</button>
+          <button id="unpinBtn" class="ghost">clear</button>
+        </div>
+        <div class="hint">Ghost B is frozen; change the A sliders and watch both react to identical actions.</div>
+      </div>
+
+      <div class="card">
+        <h2>Sensitivity & engine</h2>
+        <div class="param">
+          <div class="row"><label>Sensitivity (ceiling)</label></div>
+          <select id="sensitivity">
+            <option value="15">Sharp — 15 min</option>
+            <option value="45" selected>Normal — 45 min</option>
+            <option value="90">Relaxed — 90 min</option>
+          </select>
+        </div>
+        <div class="param" id="p_tick"></div>
+        <div class="param" id="p_speed"></div>
+      </div>
+
+      <div class="card">
+        <h2>Algorithm parameters (A)</h2>
+        <div id="params"></div>
+      </div>
+    </div>
+
+    <!-- ───────── right: stage ───────── -->
+    <div>
+      <div class="card">
+        <div class="topbar">
+          <span class="clock" id="clock">00:00</span>
+          <span class="speedtag" id="speedtag"></span>
+          <button id="playBtn" class="on">⏸ Pause</button>
+          <button id="stepBtn" class="ghost">⏭ Step tick</button>
+          <div style="flex:1"></div>
+          <select id="scenario" style="width:auto">
+            <option value="">▶ Replay scenario…</option>
+            <option value="pulsed_light">pulsed_light (burst/think ×5)</option>
+            <option value="pulsed_heavy">pulsed_heavy (burst/10m think ×4)</option>
+            <option value="llm_paste">llm_paste (paste→9m think→edits)</option>
+            <option value="llm_long_read">llm_long_read (paste→16m read)</option>
+            <option value="slow_steady">slow_steady (duty .33, 40m)</option>
+            <option value="paste_then_leave">paste_then_leave (then idle)</option>
+            <option value="break_eod">break_eod (12m work, 60m idle)</option>
+          </select>
+        </div>
+
+        <div class="bars" id="bars">
+          <div class="barbox" id="boxA">
+            <div class="title"><span class="name">A · live settings</span><span class="pct" id="pctA">0%</span></div>
+            <div class="bar"><div class="fill" id="fillA"></div><div class="floor" id="floorA"></div></div>
+            <div class="meta">
+              <div>score <b id="scoreA">0</b> / <span id="maxA">90</span></div>
+              <div>ema <b id="emaA">0.00</b></div>
+              <div>leash if stop now <b id="leashA">—</b></div>
+              <div>state <b id="stateA" class="live-tag">active</b></div>
+            </div>
+            <div class="contrib" id="contribA"></div>
+          </div>
+          <div class="barbox" id="boxB" style="display:none">
+            <div class="title"><span class="name" id="nameB">B · ghost</span><span class="pct" id="pctB">0%</span></div>
+            <div class="bar"><div class="fill" id="fillB"></div><div class="floor" id="floorB"></div></div>
+            <div class="meta">
+              <div>score <b id="scoreB">0</b> / <span id="maxB">90</span></div>
+              <div>ema <b id="emaB">0.00</b></div>
+              <div>leash if stop now <b id="leashB">—</b></div>
+              <div>state <b id="stateB" class="live-tag">active</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="statline" id="stats"></div>
+      </div>
+
+      <div class="card">
+        <h2>Repo actions (inject into next tick)</h2>
+        <div class="actions">
+          <button data-act="small">⌨ small edit · 5 lines</button>
+          <button data-act="medium">⌨ medium · 15 lines</button>
+          <button data-act="big">⌨ big change · 40 lines</button>
+          <button data-act="paste">📋 LLM paste · 150 lines</button>
+          <button data-act="commit">✓ commit</button>
+          <button data-act="pastecommit">📋✓ paste + commit</button>
+        </div>
+        <div class="pillrow" style="margin-top:9px; align-items:center">
+          <button id="autoBtn" class="ghost">▶ Auto-work</button>
+          <span style="flex:1" id="dutyWrap"></span>
+        </div>
+        <div class="hint">Auto-work emits a “medium edit” on each tick with the chosen probability (duty cycle). Stop it to watch the bar decay.</div>
+      </div>
+
+      <div class="card">
+        <h2>Stamina over time</h2>
+        <canvas id="chart" width="900" height="200"></canvas>
+        <div class="legend">
+          <span><i style="background:var(--mauve)"></i>A score</span>
+          <span><i style="background:var(--blue)"></i>B ghost</span>
+          <span><i style="background:var(--yellow)"></i>floor</span>
+          <span><i style="background:var(--green)"></i>activity tick</span>
+          <span><i style="background:var(--red)"></i>pause (score→0)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+//  Engine — identical maths to ActivityEvaluator.processAllTicks (tick loop)
+// ─────────────────────────────────────────────────────────────────────────
+const PARAM_DEFS = [
+  { key:'EMA_WINDOW_MINUTES',      label:'EMA window (min)',        min:2,  max:20, step:1,    def:10 },
+  { key:'FREQUENCY_GAIN_MAX',      label:'Frequency gain / tick',   min:0,  max:8,  step:0.5,  def:2 },
+  { key:'STAMINA_LINES_PER_MINUTE',label:'Lines/min for +1',        min:4,  max:30, step:1,    def:10 },
+  { key:'VOLUME_GAIN_MAX',         label:'Volume gain cap / tick',  min:0,  max:10, step:0.5,  def:4 },
+  { key:'COMMIT_BONUS_SECONDS',    label:'Commit bonus (sec)',      min:0,  max:600,step:30,   def:150 },
+  { key:'BASE_DECAY',              label:'Base decay / tick',       min:0.25,max:3, step:0.25, def:1 },
+  { key:'DECAY_BOOST',             label:'Decay boost × ema',       min:0,  max:6,  step:0.5,  def:4 },
+  { key:'STAMINA_FLOOR_RATIO',     label:'Floor ratio',             min:0,  max:0.4,step:0.0166667, def:1/6 },
+];
+const PRESETS = {
+  baseline:    { DECAY_BOOST:4, STAMINA_FLOOR_RATIO:1/6, VOLUME_GAIN_MAX:4, STAMINA_LINES_PER_MINUTE:10, FREQUENCY_GAIN_MAX:2, COMMIT_BONUS_SECONDS:150, EMA_WINDOW_MINUTES:10, BASE_DECAY:1 },
+  recommended: { DECAY_BOOST:2, STAMINA_FLOOR_RATIO:1/4, VOLUME_GAIN_MAX:6, STAMINA_LINES_PER_MINUTE:8,  FREQUENCY_GAIN_MAX:2, COMMIT_BONUS_SECONDS:150, EMA_WINDOW_MINUTES:10, BASE_DECAY:1 },
+  gentle:      { DECAY_BOOST:1, STAMINA_FLOOR_RATIO:1/4, VOLUME_GAIN_MAX:6, STAMINA_LINES_PER_MINUTE:8,  FREQUENCY_GAIN_MAX:2, COMMIT_BONUS_SECONDS:150, EMA_WINDOW_MINUTES:10, BASE_DECAY:1 },
+};
+
+// one tick of state evolution; returns {state, contrib}
+function step(state, p, maxTicks, sig, tickSec) {
+  const emaAlpha = 1 / (p.EMA_WINDOW_MINUTES * 60 / tickSec);
+  const linesPerGainTick = p.STAMINA_LINES_PER_MINUTE * tickSec / 60;
+  const commitBonus = p.COMMIT_BONUS_SECONDS / tickSec;
+  const floor = maxTicks * p.STAMINA_FLOOR_RATIO;
+  const active = sig.dyn || sig.commit;
+  let { score, ema } = state;
+  ema = emaAlpha * (active ? 1 : 0) + (1 - emaAlpha) * ema;
+  const c = { floor:0, freq:0, vol:0, commit:0, decay:0 };
+  if (active) {
+    if (score < floor) { c.floor = floor - score; score = floor; }
+    const fg = Math.min(1, ema) * p.FREQUENCY_GAIN_MAX; score += fg; c.freq = fg;
+    const vg = Math.min(p.VOLUME_GAIN_MAX, sig.delta / linesPerGainTick); score += vg; c.vol = vg;
+    if (sig.commit) { score += commitBonus; c.commit = commitBonus; }
+    if (score > maxTicks) { c.commit -= 0; score = maxTicks; }
+  }
+  let d;
+  if (!active && score > floor) {
+    d = p.BASE_DECAY + p.DECAY_BOOST * Math.min(1, ema);
+    score = Math.max(floor, score - d);
+  } else {
+    d = p.BASE_DECAY; score = Math.max(0, score - p.BASE_DECAY);
+  }
+  c.decay = -d;
+  return { state: { score, ema }, contrib: c, floor, paused: score === 0 };
+}
+
+// forward-simulate idle ticks until score hits 0 → leash (in ticks)
+function leashTicks(state, p, maxTicks, tickSec) {
+  const emaAlpha = 1 / (p.EMA_WINDOW_MINUTES * 60 / tickSec);
+  const floor = maxTicks * p.STAMINA_FLOOR_RATIO;
+  let { score, ema } = state, n = 0;
+  while (score > 0 && n < 100000) {
+    ema *= (1 - emaAlpha);
+    score = score > floor ? Math.max(floor, score - (p.BASE_DECAY + p.DECAY_BOOST * Math.min(1, ema)))
+                          : score - p.BASE_DECAY;
+    n++;
+  }
+  return n;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  State
+// ─────────────────────────────────────────────────────────────────────────
+let A = readParams();         // live params (object)
+let B = null;                 // pinned ghost params or null
+let stA = { score:0, ema:0 }, stB = { score:0, ema:0 };
+let lastContribA = null;
+let maxTicks = 90, tickSec = 30, speed = 10;
+let running = true, autoWork = false, duty = 0.5;
+let vTime = 0;                // virtual seconds elapsed
+let tickCount = 0;
+let pendingSig = { dyn:false, commit:false, delta:0 };
+let scenarioQueue = null, scenarioIdx = 0;
+let stats = { ticks:0, falsePauseA:0, pausesA:0 };
+const HIST = []; const HIST_MAX = 300;
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Build UI
+// ─────────────────────────────────────────────────────────────────────────
+function readParams() {
+  const o = {};
+  for (const d of PARAM_DEFS) {
+    const el = document.getElementById('rng_' + d.key);
+    o[d.key] = el ? parseFloat(el.value) : d.def;
+  }
+  return o;
+}
+function buildParams() {
+  const host = document.getElementById('params');
+  host.innerHTML = '';
+  for (const d of PARAM_DEFS) {
+    const wrap = document.createElement('div'); wrap.className = 'param';
+    wrap.innerHTML = `<div class="row"><label>${d.label}</label><span class="val" id="val_${d.key}"></span></div>
+      <input type="range" id="rng_${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${d.def}">`;
+    host.appendChild(wrap);
+    wrap.querySelector('input').addEventListener('input', () => { A = readParams(); refreshVals(); syncURL(); });
+  }
+  // tick + speed sliders
+  document.getElementById('p_tick').innerHTML =
+    `<div class="row"><label>Tick length (diffPollSeconds)</label><span class="val" id="val_tick"></span></div>
+     <input type="range" id="rng_tick" min="10" max="60" step="5" value="30">`;
+  document.getElementById('p_speed').innerHTML =
+    `<div class="row"><label>Speed (× real time)</label><span class="val" id="val_speed"></span></div>
+     <input type="range" id="rng_speed" min="1" max="120" step="1" value="10">`;
+  document.getElementById('rng_tick').addEventListener('input', e => { tickSec = +e.target.value; refreshVals(); });
+  document.getElementById('rng_speed').addEventListener('input', e => { speed = +e.target.value; refreshVals(); });
+  document.getElementById('dutyWrap').innerHTML =
+    `<label style="color:var(--subtext1);font-size:11px">duty <b id="val_duty" style="color:var(--peach)">0.50</b></label>
+     <input type="range" id="rng_duty" min="0.05" max="1" step="0.05" value="0.5" style="width:120px;vertical-align:middle">`;
+  document.getElementById('rng_duty').addEventListener('input', e => { duty = +e.target.value; refreshVals(); });
+  refreshVals();
+}
+function refreshVals() {
+  for (const d of PARAM_DEFS) {
+    const v = A[d.key];
+    const txt = d.key === 'STAMINA_FLOOR_RATIO' ? (v.toFixed(3) + ' (1/' + (1/v).toFixed(1) + ')') : v;
+    const el = document.getElementById('val_' + d.key); if (el) el.textContent = txt;
+  }
+  document.getElementById('val_tick').textContent = tickSec + 's';
+  document.getElementById('val_speed').textContent = speed + '×';
+  const du = document.getElementById('val_duty'); if (du) du.textContent = duty.toFixed(2);
+  document.getElementById('speedtag').textContent =
+    `${speed}× · 1 tick = ${tickSec}s sim = ${(tickSec/speed).toFixed(2)}s real`;
+}
+function applyPreset(name) {
+  if (name === 'reset') { resetRun(); return; }
+  const pr = PRESETS[name]; if (!pr) return;
+  for (const d of PARAM_DEFS) document.getElementById('rng_' + d.key).value = pr[d.key];
+  A = readParams(); refreshVals(); syncURL();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Tick driver
+// ─────────────────────────────────────────────────────────────────────────
+function doTick() {
+  // resolve this tick's signal
+  let sig;
+  if (scenarioQueue) {
+    if (scenarioIdx >= scenarioQueue.length) { scenarioQueue = null; sig = { dyn:false, commit:false, delta:0 }; document.getElementById('scenario').value = ''; }
+    else sig = scenarioQueue[scenarioIdx++];
+  } else {
+    sig = pendingSig;
+    if (autoWork && Math.random() < duty) { sig = { dyn:true, commit:sig.commit, delta:Math.max(sig.delta, 15) }; }
+    pendingSig = { dyn:false, commit:false, delta:0 };
+  }
+
+  const rA = step(stA, A, maxTicks, sig, tickSec); stA = rA.state; lastContribA = rA.contrib;
+  let rB = null;
+  if (B) { rB = step(stB, B, maxTicks, sig, tickSec); stB = rB.state; }
+
+  // stats
+  stats.ticks++;
+  const active = sig.dyn || sig.commit;
+  if (!active && rA.paused) { stats.pausesA++; }
+
+  vTime += tickSec; tickCount++;
+  HIST.push({
+    a: stA.score / maxTicks, b: B ? stB.score / maxTicks : null,
+    floor: A.STAMINA_FLOOR_RATIO, active, commit: sig.commit,
+    pausedA: rA.paused, pausedB: rB ? rB.paused : false,
+  });
+  while (HIST.length > HIST_MAX) HIST.shift();
+  render();
+}
+
+function render() {
+  // bars
+  setBar('A', stA, A, lastContribA);
+  if (B) { document.getElementById('boxB').style.display = ''; setBar('B', stB, B, null); }
+  else document.getElementById('boxB').style.display = 'none';
+  // clock
+  const mm = String(Math.floor(vTime/60)).padStart(2,'0');
+  const ss = String(Math.floor(vTime%60)).padStart(2,'0');
+  document.getElementById('clock').textContent = `${mm}:${ss}`;
+  // stats
+  document.getElementById('stats').innerHTML =
+    `sim time <b>${(vTime/60).toFixed(1)} min</b> · ticks <b>${stats.ticks}</b> · ` +
+    `idle-pauses(A) <b>${stats.pausesA}</b>` + (B ? ` · ghost B = <b>${document.getElementById('nameB').dataset.tag||'pinned'}</b>` : '');
+  drawChart();
+}
+
+function setBar(which, st, p, contrib) {
+  const pct = maxTicks > 0 ? st.score / maxTicks : 0;
+  const fill = document.getElementById('fill'+which);
+  fill.style.width = (pct*100).toFixed(1) + '%';
+  fill.style.background = pct <= 0 ? 'var(--red)' : pct < p.STAMINA_FLOOR_RATIO + 0.001 ? 'var(--peach)' : pct > 0.66 ? 'var(--green)' : 'var(--teal)';
+  document.getElementById('floor'+which).style.left = (p.STAMINA_FLOOR_RATIO*100).toFixed(1) + '%';
+  document.getElementById('pct'+which).textContent = Math.round(pct*100) + '%';
+  document.getElementById('pct'+which).style.color = pct <= 0 ? 'var(--red)' : 'var(--text)';
+  document.getElementById('score'+which).textContent = st.score.toFixed(1);
+  document.getElementById('max'+which).textContent = Math.round(maxTicks);
+  document.getElementById('ema'+which).textContent = st.ema.toFixed(2);
+  const lt = leashTicks(st, p, maxTicks, tickSec);
+  document.getElementById('leash'+which).textContent = st.score<=0 ? 'paused' : (lt*tickSec/60).toFixed(1) + ' min';
+  const stEl = document.getElementById('state'+which);
+  if (st.score <= 0) { stEl.textContent = 'PAUSED'; stEl.className = 'paused-tag'; }
+  else { stEl.textContent = 'live'; stEl.className = 'live-tag'; }
+  if (contrib) {
+    const f = (v) => (v>=0?'+':'') + v.toFixed(2);
+    document.getElementById('contribA').innerHTML =
+      `last tick:` +
+      (contrib.floor? ` <span class="pos">floor ${f(contrib.floor)}</span>`:``) +
+      ` <span class="pos">freq ${f(contrib.freq)}</span>` +
+      ` <span class="pos">vol ${f(contrib.vol)}</span>` +
+      (contrib.commit? ` <span class="pos">commit ${f(contrib.commit)}</span>`:``) +
+      ` <span class="neg">decay ${f(contrib.decay)}</span>`;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Chart
+// ─────────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('chart'), ctx = canvas.getContext('2d');
+function drawChart() {
+  const W = canvas.width, H = canvas.height, pad = 6;
+  ctx.clearRect(0,0,W,H);
+  const n = HIST.length; if (!n) return;
+  const x = (i) => pad + (W-2*pad) * (i/(HIST_MAX-1));
+  const y = (v) => H-pad - (H-2*pad) * v;
+  // floor line (use latest floor)
+  const floor = HIST[n-1].floor;
+  ctx.strokeStyle = 'rgba(249,226,175,.5)'; ctx.setLineDash([4,4]); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(pad,y(floor)); ctx.lineTo(W-pad,y(floor)); ctx.stroke(); ctx.setLineDash([]);
+  // activity / pause ticks
+  for (let i=0;i<n;i++){
+    const h=HIST[i];
+    if (h.active){ ctx.fillStyle='rgba(166,227,161,.5)'; ctx.fillRect(x(i)-1,y(0)-3,2,3); }
+    if (h.pausedA){ ctx.fillStyle='var(--red)'; ctx.fillStyle='#f38ba8'; ctx.fillRect(x(i)-1,pad,2,H-2*pad); }
+    if (h.commit){ ctx.fillStyle='#94e2d5'; ctx.fillRect(x(i)-1,pad,2,8); }
+  }
+  // B line
+  if (B){ ctx.strokeStyle='#89b4fa'; ctx.lineWidth=1.5; ctx.beginPath();
+    HIST.forEach((h,i)=>{ if(h.b==null)return; const px=x(i),py=y(h.b); i?ctx.lineTo(px,py):ctx.moveTo(px,py); }); ctx.stroke(); }
+  // A line
+  ctx.strokeStyle='#cba6f7'; ctx.lineWidth=2; ctx.beginPath();
+  HIST.forEach((h,i)=>{ const px=x(i),py=y(h.a); i?ctx.lineTo(px,py):ctx.moveTo(px,py); }); ctx.stroke();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Scenarios (tick arrays) — mirror /tmp/sim.mjs builder
+// ─────────────────────────────────────────────────────────────────────────
+function seg(durMin, period, delta=0, commit=false, ts=tickSec) {
+  const n = Math.round(durMin*60/ts), out=[];
+  for (let i=0;i<n;i++){ const a = period!==Infinity && i%period===0;
+    out.push({ dyn:a, delta:a?delta:0, commit:a&&commit }); }
+  return out;
+}
+const idleSeg = (m)=>seg(m,Infinity);
+const concat = (...xs)=>[].concat(...xs);
+const SCN = {
+  pulsed_light:    ()=>concat(...Array.from({length:5},()=>concat(seg(2,2,8),idleSeg(7)))),
+  pulsed_heavy:    ()=>concat(...Array.from({length:4},()=>concat(seg(3,2,15),idleSeg(10)))),
+  llm_paste:       ()=>concat(...Array.from({length:4},()=>concat(seg(0.5,1,150,true),idleSeg(9),seg(2,2,8)))),
+  llm_long_read:   ()=>concat(...Array.from({length:3},()=>concat(seg(0.5,1,200,true),idleSeg(16),seg(3,2,10)))),
+  slow_steady:     ()=>seg(40,3,6),
+  paste_then_leave:()=>concat(seg(0.5,1,150,true),idleSeg(40)),
+  break_eod:       ()=>concat(seg(12,2,10),idleSeg(60)),
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Wiring
+// ─────────────────────────────────────────────────────────────────────────
+const ACTIONS = {
+  small:{dyn:true,delta:5}, medium:{dyn:true,delta:15}, big:{dyn:true,delta:40},
+  paste:{dyn:true,delta:150}, commit:{commit:true,dyn:false,delta:0}, pastecommit:{dyn:true,commit:true,delta:150},
+};
+document.querySelectorAll('[data-act]').forEach(b=>b.addEventListener('click',()=>{
+  const a=ACTIONS[b.dataset.act];
+  pendingSig = { dyn: pendingSig.dyn||!!a.dyn, commit: pendingSig.commit||!!a.commit, delta: pendingSig.delta + (a.delta||0) };
+  if (!running) doTick(); // single-shot feedback when paused
+}));
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>applyPreset(b.dataset.preset)));
+document.getElementById('pinBtn').addEventListener('click',()=>{
+  B = JSON.parse(JSON.stringify(A)); stB = { score: stA.score, ema: stA.ema };
+  const nm=document.getElementById('nameB'); nm.textContent='B · ghost (pinned)'; nm.dataset.tag='pinned';
+  document.getElementById('maxB').textContent=Math.round(maxTicks); render();
+});
+document.getElementById('unpinBtn').addEventListener('click',()=>{ B=null; render(); });
+document.getElementById('playBtn').addEventListener('click',e=>{
+  running=!running; e.target.textContent = running?'⏸ Pause':'▶ Play'; e.target.className = running?'on':'ghost';
+});
+document.getElementById('stepBtn').addEventListener('click',()=>doTick());
+document.getElementById('autoBtn').addEventListener('click',e=>{
+  autoWork=!autoWork; e.target.textContent=autoWork?'⏹ Auto-work ON':'▶ Auto-work'; e.target.className=autoWork?'on':'ghost';
+});
+document.getElementById('sensitivity').addEventListener('change',e=>{ maxTicks = (+e.target.value)*60/tickSec; render(); });
+document.getElementById('scenario').addEventListener('change',e=>{
+  const k=e.target.value; if(!k){scenarioQueue=null;return;}
+  resetRun(); scenarioQueue = SCN[k]().map(s=>({dyn:s.dyn,commit:s.commit,delta:s.delta})); scenarioIdx=0; running=true;
+  document.getElementById('playBtn').textContent='⏸ Pause'; document.getElementById('playBtn').className='on';
+});
+
+function resetRun(){
+  stA={score:0,ema:0}; stB={score:0,ema:0}; vTime=0; tickCount=0;
+  stats={ticks:0,falsePauseA:0,pausesA:0}; HIST.length=0; pendingSig={dyn:false,commit:false,delta:0};
+  scenarioQueue=null; render();
+}
+
+// URL share
+function syncURL(){
+  const q = new URLSearchParams();
+  for (const d of PARAM_DEFS) q.set(d.key.slice(0,4), A[d.key]);
+  history.replaceState(null,'','#'+q.toString());
+}
+function loadURL(){
+  if(!location.hash) return;
+  const q=new URLSearchParams(location.hash.slice(1));
+  for(const d of PARAM_DEFS){ const v=q.get(d.key.slice(0,4)); if(v!==null){ const el=document.getElementById('rng_'+d.key); if(el) el.value=v; } }
+  A=readParams();
+}
+
+// boot
+buildParams();
+maxTicks = (+document.getElementById('sensitivity').value)*60/tickSec;
+document.getElementById('maxA').textContent=Math.round(maxTicks);
+loadURL(); refreshVals(); render();
+
+// real-time loop: fire a tick every (tickSec/speed) seconds
+let acc=0, last=performance.now();
+function loop(now){
+  const dt=(now-last)/1000; last=now;
+  if (running){ acc+=dt; const interval=tickSec/speed;
+    let guard=0;
+    while(acc>=interval && guard++<50){ acc-=interval; doTick(); } }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
