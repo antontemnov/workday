@@ -604,19 +604,19 @@ export function editManualEntry(
  * Set manual day start. Passing null clears the override.
  *
  * Rules:
- * - Manual start is unavailable until the first session exists — nothing to anchor to.
- * - Once sessions exist: schedule.start <= newStart <= first session's startedAt.
- *   Real logged activity wins; user may only shift earlier, never after it.
+ * - Lower bound: schedule.start (the tracking-window start hour).
+ * - Upper bound: the earliest session's `activatedAt` (first CONFIRMED work).
+ *   Real logged activity wins — the user may only shift the start earlier, never
+ *   past the moment real work began. We anchor to `activatedAt`, NOT `startedAt`:
+ *   a PENDING session's `startedAt` is just when the daemon first saw the branch
+ *   (often the moment the tracker launched), not when work actually started.
+ * - If no session has activated yet there is no confirmed activity to anchor to,
+ *   so the only constraint is that the start cannot be in the future.
  */
 export function setDayManualStart(log: DailyLog, isoTimestamp: string | null, config: AppConfig): void {
   if (isoTimestamp === null) {
     log.manualStart = null;
     return;
-  }
-
-  const firstSession = log.sessions[0];
-  if (!firstSession) {
-    throw new Error('No sessions yet — manual day start is unavailable until work begins');
   }
 
   const newStart = new Date(isoTimestamp).getTime();
@@ -626,11 +626,23 @@ export function setDayManualStart(log: DailyLog, isoTimestamp: string | null, co
     throw new Error(`Cannot start before ${String(config.schedule.start).padStart(2, '0')}:00 (tracking window)`);
   }
 
-  const firstStart = new Date(firstSession.startedAt).getTime();
-  if (newStart > firstStart) {
-    const d = new Date(firstSession.startedAt);
-    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    throw new Error(`Cannot start after the first session (${hhmm})`);
+  // Upper bound = first CONFIRMED activity (earliest activatedAt), not startedAt.
+  let firstActivated: number | null = null;
+  for (const s of log.sessions) {
+    if (!s.activatedAt) continue;
+    const t = new Date(s.activatedAt).getTime();
+    if (firstActivated === null || t < firstActivated) firstActivated = t;
+  }
+
+  if (firstActivated !== null) {
+    if (newStart > firstActivated) {
+      const d = new Date(firstActivated);
+      const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      throw new Error(`Cannot start after the first activity (${hhmm})`);
+    }
+  } else if (newStart > Date.now()) {
+    // No confirmed work yet — only forbid a future start.
+    throw new Error('Cannot start in the future');
   }
 
   log.manualStart = isoTimestamp;
