@@ -353,13 +353,23 @@ export function computeDayStart(log: DailyLog, config: AppConfig): number {
  * this returns null when nothing meaningful is set yet, so the client can
  * hide the indicator until the user either marks it manually or the first
  * session reaches ACTIVE.
+ *
+ * The fallback is the EARLIEST `activatedAt` across all sessions (first
+ * CONFIRMED work), NOT `sessions[0]`. Array order follows repo discovery,
+ * so the first entry may be a session that activated much later — anchoring
+ * to it would push the indicator past the real start. This matches the
+ * upper-bound logic in `setDayManualStart`.
  */
 export function resolveUiDayStart(log: DailyLog): string | null {
   if (log.manualStart) return log.manualStart;
+  let earliest: string | null = null;
   for (const s of log.sessions) {
-    if (s.activatedAt) return s.activatedAt;
+    if (!s.activatedAt) continue;
+    if (earliest === null || new Date(s.activatedAt).getTime() < new Date(earliest).getTime()) {
+      earliest = s.activatedAt;
+    }
   }
-  return null;
+  return earliest;
 }
 
 /** Compute day end timestamp (next day boundary) */

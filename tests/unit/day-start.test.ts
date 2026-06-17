@@ -11,7 +11,7 @@
  * just when the daemon first saw the branch and must not block a later start.
  */
 import assert from 'node:assert/strict';
-import { createEmptyLog, setDayManualStart } from '../../src/core/daily-log.js';
+import { createEmptyLog, setDayManualStart, resolveUiDayStart } from '../../src/core/daily-log.js';
 import { SessionState, SensitivityLevel, type AppConfig, type DailyLog, type Session } from '../../src/core/types.js';
 
 let passed = 0;
@@ -148,6 +148,41 @@ test('no activated sessions: a future start throws', () => {
   const log = makeLog(config, [makeSession({ state: SessionState.Pending, activatedAt: null })]);
   const future = new Date(Date.now() + 3600_000).toISOString();
   assert.throws(() => setDayManualStart(log, future, config), /in the future/);
+});
+
+console.log('\nDay start — resolveUiDayStart');
+
+test('manualStart wins over sessions', () => {
+  const config = makeConfig();
+  const log = makeLog(config, [makeSession({ activatedAt: `${DATE}T10:00:00.000Z` })]);
+  log.manualStart = `${DATE}T09:00:00.000Z`;
+  assert.equal(resolveUiDayStart(log), `${DATE}T09:00:00.000Z`);
+});
+
+test('null when no session has activated', () => {
+  const config = makeConfig();
+  const log = makeLog(config, [makeSession({ state: SessionState.Pending, activatedAt: null })]);
+  assert.equal(resolveUiDayStart(log), null);
+});
+
+test('REGRESSION: returns EARLIEST activatedAt, not sessions[0]', () => {
+  // The real bug: sessions[0] (repo discovery order) activated late because
+  // another repo held cross-repo leadership first. Must return the earliest.
+  const config = makeConfig();
+  const log = makeLog(config, [
+    makeSession({ id: 'a', repo: 'atlas-frontend', activatedAt: `${DATE}T13:07:00.000Z` }),
+    makeSession({ id: 'b', repo: 'appone-backend', activatedAt: `${DATE}T10:54:00.000Z` }),
+  ]);
+  assert.equal(resolveUiDayStart(log), `${DATE}T10:54:00.000Z`);
+});
+
+test('pending sessions are skipped when finding earliest', () => {
+  const config = makeConfig();
+  const log = makeLog(config, [
+    makeSession({ id: 'a', state: SessionState.Pending, startedAt: `${DATE}T08:00:00.000Z`, activatedAt: null }),
+    makeSession({ id: 'b', activatedAt: `${DATE}T11:00:00.000Z` }),
+  ]);
+  assert.equal(resolveUiDayStart(log), `${DATE}T11:00:00.000Z`);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
