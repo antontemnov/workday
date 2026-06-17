@@ -95,6 +95,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.refresh();
     this.pollTimer = setInterval(() => {
       if (this.isViewingToday) this.refresh();
+      // Activity types load once on startup; if that first fetch failed
+      // (daemon not ready at launch / transient version mismatch) the
+      // composer is stuck on "Other" until app restart. Retry until loaded.
+      if (this.activityTypes.length === 0) void this.refreshActivityTypes();
     }, 10_000);
     this.tickTimer = setInterval(() => {
       if (this.isViewingToday) this.currentTimeMs = Date.now();
