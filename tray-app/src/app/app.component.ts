@@ -80,6 +80,11 @@ export class AppComponent implements OnInit, OnDestroy {
   private availableDates: string[] = [];
   private navLoaded = false;
 
+  // Tracks daemon reachability across polls. Flips false on any failed call
+  // (daemon down, mid-life self-update, apiVersion mismatch) so the next
+  // success is recognized as a reconnect → re-pull activity types.
+  private daemonWasReachable = true;
+
   // Live ticker — advances the "now" cursor between polls.
   currentTimeMs: number = Date.now();
 
@@ -135,6 +140,15 @@ export class AppComponent implements OnInit, OnDestroy {
     if (res.ok && res.data) {
       this.data = res.data;
       this.error = null;
+      // Daemon reachable again after a failure window — e.g. it finished a
+      // self-update mid-session, possibly with a new apiVersion. Re-pull
+      // activity types: they're never cleared on failure (so they can't fall
+      // off), but a restarted daemon may serve an updated list, and this also
+      // recovers a first load that never landed while the daemon was down.
+      if (!this.daemonWasReachable) {
+        this.daemonWasReachable = true;
+        void this.refreshActivityTypes();
+      }
       if (!date) this.todayDate = res.data.date;
       if (res.data.sessions.length > 0 && !this.availableDates.includes(res.data.date)) {
         this.availableDates = [res.data.date, ...this.availableDates].sort().reverse();
@@ -144,6 +158,7 @@ export class AppComponent implements OnInit, OnDestroy {
       }
     } else {
       this.error = res.error ?? 'Unknown error';
+      this.daemonWasReachable = false;
     }
     this.loading = false;
     if (this.isViewingToday) this.syncTrayStatus();
