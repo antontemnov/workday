@@ -8,13 +8,16 @@ import type {
   RepoTracker,
   EvidenceSnapshot,
   EvidenceBasis,
+  LedgerQuery,
+  LedgerUpdate,
 } from '../core/types.js';
 import { RepoState } from '../core/types.js';
-import { extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
+import { extractTask, getConfiguredDefaultBranchName, computeWorkingDate } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
 import { SnapshotParser } from './snapshot-parser.js';  // static methods only
 import { buildChurnFiles } from './churn-scanner.js';
+import { collectLedgerUpdate, computeSeedBaseline } from './ledger-collector.js';
 
 /**
  * Final fallback list when no config and no `origin/HEAD` are available.
@@ -56,13 +59,17 @@ export class GitTracker {
    * that base; otherwise the snapshot is null and SessionTracker is
    * expected to capture currentHead as the new baseSha.
    */
-  public async pollAll(baseShas?: ReadonlyMap<string, string | null>): Promise<PollResult[]> {
+  public async pollAll(
+    baseShas?: ReadonlyMap<string, string | null>,
+    ledgerQueries?: ReadonlyMap<string, LedgerQuery | null>,
+  ): Promise<PollResult[]> {
     const results: PollResult[] = [];
 
     for (const repoPath of this.config.repos) {
       try {
         const baseSha = baseShas?.get(repoPath) ?? null;
-        const result = await this.pollRepo(repoPath, baseSha);
+        const ledgerQuery = ledgerQueries?.get(repoPath) ?? null;
+        const result = await this.pollRepo(repoPath, baseSha, ledgerQuery);
         if (result !== null) {
           results.push(result);
         }
@@ -105,7 +112,11 @@ export class GitTracker {
    * Poll a single repo.
    * Returns null if branch is not developer's (skip this repo for now).
    */
-  private async pollRepo(repoPath: string, baseSha: string | null): Promise<PollResult | null> {
+  private async pollRepo(
+    repoPath: string,
+    baseSha: string | null,
+    ledgerQuery: LedgerQuery | null,
+  ): Promise<PollResult | null> {
     const now = Date.now();
     const defaultBranchRef = await this.resolveDefaultBranchRef(repoPath);
 
@@ -186,6 +197,23 @@ export class GitTracker {
       evidenceBasis = mergeBaseSha !== null ? 'merge_base' : 'base_sha';
     }
 
+    // Commit ledger: replay branch-reflog transitions (exact per-operation
+    // accounting) or seed a fresh ledger. Only on developer branches with a
+    // resolved default branch + merge-base — everything else falls back to
+    // the positive-jump commit counter.
+    let ledgerUpdate: LedgerUpdate | null = null;
+    if (task !== null && defaultBranchRef !== null && mergeBaseSha !== null) {
+      ledgerUpdate = await collectLedgerUpdate(
+        this.gitClient, repoPath, raw.branch, mergeBaseSha, defaultBranchRef, ledgerQuery,
+      );
+      if (ledgerUpdate?.kind === 'seed') {
+        const baseline = await computeSeedBaseline(
+          this.gitClient, repoPath, mergeBaseSha, ledgerUpdate.commits, this.isInWorkingDay,
+        );
+        ledgerUpdate = { ...ledgerUpdate, baseline };
+      }
+    }
+
     return {
       repoPath,
       branch: raw.branch,
@@ -197,8 +225,16 @@ export class GitTracker {
       evidenceSnapshot,
       evidenceBasis,
       mergeBaseSha,
+      ledgerUpdate,
     };
   }
+
+  /** True when a unix-seconds timestamp falls inside the current working day. */
+  public readonly isInWorkingDay = (unixSeconds: number): boolean => {
+    const { end } = this.config.schedule;
+    const tz = this.config.timezone;
+    return computeWorkingDate(unixSeconds * 1000, end, tz) === computeWorkingDate(Date.now(), end, tz);
+  };
 
   /**
    * Resolve the default-branch ref for a repo through the configured cascade.

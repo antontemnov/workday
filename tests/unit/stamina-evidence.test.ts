@@ -417,6 +417,7 @@ function poll(spec: PollSpec): PollResult {
     evidenceSnapshot: spec.snap ?? null,
     evidenceBasis: spec.snap ? (spec.basis ?? 'merge_base') : null,
     mergeBaseSha: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
+    ledgerUpdate: null,
   };
 }
 

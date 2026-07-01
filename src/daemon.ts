@@ -239,7 +239,8 @@ export class Daemon {
 
     try {
       const baseShas = this.sessionTracker.getBaseShasPerRepoPath(this.config.repos);
-      const results = await this.gitTracker.pollAll(baseShas);
+      const ledgerQueries = this.sessionTracker.getLedgerQueries(this.config.repos);
+      const results = await this.gitTracker.pollAll(baseShas, ledgerQueries);
 
       // 1. Session lifecycle + evidence
       for (const result of results) {

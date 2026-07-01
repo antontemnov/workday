@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
-import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot } from './types.js';
+import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery } from './types.js';
+import { applyLedgerUpdate, countSessionCommits, createEmptyLedger } from './commit-ledger.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -72,8 +73,13 @@ export class SessionTracker {
       if (session.mergeBaseSha === undefined) session.mergeBaseSha = null;
       if (session.evidenceBaseline === undefined) session.evidenceBaseline = null;
       if (session.lastBranchCommits === undefined) session.lastBranchCommits = null;
+      if (session.ledger === undefined) session.ledger = null;
     }
   }
+
+  /** True when a unix-seconds timestamp falls inside this log's working day. */
+  private readonly isInDay = (unixSeconds: number): boolean =>
+    computeWorkingDate(unixSeconds * 1000, this.config.schedule.end, this.config.timezone) === this.dailyLog.date;
 
   public getDailyLog(): DailyLog {
     return this.dailyLog;
@@ -316,6 +322,37 @@ export class SessionTracker {
     return map;
   }
 
+  /**
+   * Per-repo commit-ledger context for the next poll tick. The open session's
+   * ledger wins; with none open, the newest closed session today that carries
+   * a ledger keeps reflog continuity across close/reopen (transitions that
+   * happened while the session was closed replay instead of getting lost).
+   * Null → the collector seeds a fresh ledger.
+   */
+  public getLedgerQueries(repoPaths: readonly string[]): Map<string, LedgerQuery | null> {
+    const map = new Map<string, LedgerQuery | null>();
+    for (const repoPath of repoPaths) {
+      const name = basename(repoPath);
+      let source = this.dailyLog.sessions.find(s => !s.closedBy && s.repo === name) ?? null;
+      if (!source) {
+        for (let i = this.dailyLog.sessions.length - 1; i >= 0; i--) {
+          const s = this.dailyLog.sessions[i];
+          if (s.repo === name && s.ledger) { source = s; break; }
+        }
+      }
+      if (!source?.ledger) {
+        map.set(repoPath, null);
+        continue;
+      }
+      map.set(repoPath, {
+        branch: source.branch,
+        pointer: source.ledger.pointer,
+        knownShas: source.ledger.commits.map(c => c.sha),
+      });
+    }
+    return map;
+  }
+
   // ─── Evaluator integration ────────────────────────────────────────────
 
   /** Build TickInput[] for all open sessions (except manually paused) */
@@ -504,6 +541,7 @@ export class SessionTracker {
       mergeBaseSha: null,
       evidenceBaseline: prior?.evidenceBaseline ? { ...prior.evidenceBaseline } : null,
       lastBranchCommits: prior?.lastBranchCommits ?? null,
+      ledger: prior?.ledger ? structuredClone(prior.ledger) : null,
     };
     if (prior) {
       // Commit accumulator continues from where the prior session stopped.
@@ -518,7 +556,7 @@ export class SessionTracker {
     if (!task) return null;
     for (let i = this.dailyLog.sessions.length - 1; i >= 0; i--) {
       const s = this.dailyLog.sessions[i];
-      if (s.repo === repo && s.task === task && (s.baseSha || s.evidenceBaseline)) return s;
+      if (s.repo === repo && s.task === task && (s.baseSha || s.evidenceBaseline || s.ledger)) return s;
     }
     return null;
   }
@@ -602,12 +640,14 @@ export class SessionTracker {
       // upstream commits as today's work. Re-anchor and start over.
       session.baseSha = result.currentHead;
       this.zeroLineEvidence(session);
-      session.evidence.commits = 0;
+      if (session.ledger === null) session.evidence.commits = 0;
       return;
     }
 
     if (result.evidenceSnapshot !== null) {
-      session.evidence.commits = result.evidenceSnapshot.commits;
+      // A ledger-backed commit count is never clobbered by the raw rev-list
+      // count of a fallback tick (merge-base transiently unresolvable).
+      if (session.ledger === null) session.evidence.commits = result.evidenceSnapshot.commits;
       session.evidence.linesAdded = result.evidenceSnapshot.linesAdded;
       session.evidence.linesRemoved = result.evidenceSnapshot.linesRemoved;
       session.evidence.filesChanged = result.evidenceSnapshot.filesChanged;
@@ -616,7 +656,7 @@ export class SessionTracker {
 
     // baseSha invalidated — zero out and re-anchor at HEAD.
     this.zeroLineEvidence(session);
-    session.evidence.commits = 0;
+    if (session.ledger === null) session.evidence.commits = 0;
     session.baseSha = result.currentHead;
   }
 
@@ -629,6 +669,9 @@ export class SessionTracker {
    * subsequent work is counted from the new, lower base.
    */
   private applyMergeBaseEvidence(session: Session, snap: EvidenceSnapshot, result: PollResult): void {
+    // Commit ledger first: a seed also delivers the day-start line baseline.
+    const ledgerActive = this.applyLedger(session, result);
+
     let base = session.evidenceBaseline;
     if (base === null) {
       base = {
@@ -646,7 +689,7 @@ export class SessionTracker {
     session.evidence.linesRemoved = snap.linesRemoved - base.linesRemoved;
     session.evidence.filesChanged = snap.filesChanged - base.filesChanged;
 
-    if (session.lastBranchCommits !== null && snap.commits > session.lastBranchCommits) {
+    if (!ledgerActive && session.lastBranchCommits !== null && snap.commits > session.lastBranchCommits) {
       session.evidence.commits += snap.commits - session.lastBranchCommits;
     }
     session.lastBranchCommits = snap.commits;
@@ -656,6 +699,46 @@ export class SessionTracker {
     if (session.baseSha === null) {
       session.baseSha = result.currentHead;
     }
+  }
+
+  /**
+   * Feed this tick's ledger update into the session's commit ledger and
+   * derive evidence.commits from it. Returns true when the ledger owns the
+   * commit counter this tick (the positive-jump fallback must then stay off).
+   *
+   * A seed on a session that already carries a ledger merges (known SHAs are
+   * skipped) — happens when reflog continuity was lost. A transitions/resync
+   * update can't initialize a ledger from nothing: without the seeded branch
+   * state it would miss pre-existing commits, so the tick stays on fallback
+   * and the next poll (query = null) seeds properly.
+   */
+  private applyLedger(session: Session, result: PollResult): boolean {
+    const update = result.ledgerUpdate ?? null;
+    if (update === null) {
+      // Reflog unavailable this tick — a ledger-backed counter stays frozen
+      // rather than being overwritten by the raw rev-list count.
+      return session.ledger !== null;
+    }
+    if (session.ledger === null) {
+      if (update.kind !== 'seed') return false;
+      session.ledger = createEmptyLedger();
+    } else if (update.kind === 'seed' && session.ledger.pointer !== null) {
+      // Inherited ledger with reflog continuity, but the seed was computed
+      // against another session's stale query (e.g. task switch). Adopting
+      // its pointer would skip the unreplayed transitions — ignore the seed;
+      // the next tick's query comes from this session and replays properly.
+      session.evidence.commits = countSessionCommits(session.ledger);
+      return true;
+    }
+    applyLedgerUpdate(session.ledger, update, this.isInDay);
+    session.evidence.commits = countSessionCommits(session.ledger);
+
+    if (update.kind === 'seed' && session.evidenceBaseline === null) {
+      // Line baseline anchored at the last pre-day commit: lines committed
+      // earlier today (before the daemon saw the repo) count, older don't.
+      session.evidenceBaseline = { ...update.baseline };
+    }
+    return true;
   }
 
   private zeroLineEvidence(session: Session): void {

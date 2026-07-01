@@ -154,9 +154,13 @@ export interface Session {
   // first merge-base tick.
   evidenceBaseline: EvidenceBaseline | null;
   // Branch commit count (`rev-list merge-base..HEAD`) seen on the previous
-  // tick. evidence.commits accumulates only positive jumps of this counter,
-  // so squash / drop / amend / rebase never erase already-counted commits.
+  // tick. Fallback only (repos where the branch reflog is unavailable):
+  // evidence.commits then accumulates only positive jumps of this counter.
   lastBranchCommits: number | null;
+  // Commit ledger — exact per-commit accounting replayed from the branch
+  // reflog. When present, evidence.commits is derived from it and the
+  // positive-jump fallback is skipped. Null on old logs / fallback repos.
+  ledger: CommitLedgerState | null;
 }
 
 // Mutable — ratcheted down in place when branch totals drop below it.
@@ -258,6 +262,98 @@ export interface GitDelta {
   readonly magnitude: number;
 }
 
+// ─── Commit ledger ───────────────────────────────────────────────────────
+//
+// Exact per-commit accounting that survives history rewrites. Instead of
+// sampling `rev-list --count` every 30s (which coalesces commit+squash into
+// a net number), the branch reflog — a complete journal of every branch-tip
+// move — is replayed transition-by-transition through a ledger of commit
+// identities. See docs/commit-accounting.md.
+
+/** Immutable metadata of a single commit, readable even for unreachable SHAs. */
+export interface CommitMeta {
+  readonly sha: string;
+  readonly tree: string;
+  readonly parentCount: number;
+  readonly authorEmail: string;
+  readonly authorTs: number;    // unix seconds
+  readonly committerTs: number; // unix seconds
+}
+
+/** One branch-tip move taken from the branch reflog (old → new). */
+export interface BranchTransition {
+  readonly ts: number; // reflog entry timestamp, unix seconds
+  // Commits that left the branch and are NOT reachable from the default
+  // branch (commits merged upstream are deliberately absent — they survive).
+  readonly removedShas: readonly string[];
+  // Commits that entered the branch and are NOT reachable from the default
+  // branch, parent-first order.
+  readonly added: readonly CommitMeta[];
+}
+
+/** Resume position in the branch reflog: newest processed entry. */
+export interface ReflogPointer {
+  readonly sha: string;
+  readonly ts: number; // unix seconds
+}
+
+/** One commit tracked by the ledger. Mutable — flags flip as history moves. */
+export interface LedgerCommit {
+  readonly sha: string;
+  readonly tree: string;
+  readonly authorEmail: string;
+  readonly authorTs: number;
+  readonly committerTs: number;
+  // Created within this working day (directly or inherited through rewrites).
+  readonly sessionCreated: boolean;
+  // Still exists: reachable from the branch tip or merged into the default
+  // branch. Squashed/dropped/reset-away commits flip to false.
+  live: boolean;
+  // Monotonic id of the ledger transition that removed this commit — squash
+  // detection matches a new commit's tree against a chain removed together.
+  removedAtSeq: number | null;
+  // SHA of the rewrite that absorbed this commit (amend/squash/rebase pick).
+  // Absorbed commits are out of the matching pool; cleared on resurrect.
+  absorbedBy: string | null;
+}
+
+/** Persisted per-session ledger state. */
+export interface CommitLedgerState {
+  commits: LedgerCommit[];
+  pointer: ReflogPointer | null;
+  // Monotonic transition counter — source of LedgerCommit.removedAtSeq.
+  seq: number;
+}
+
+/**
+ * Per-repo ledger context passed into the poll — mirrors baseShas. Tells the
+ * collector whether to seed a fresh ledger (no open session yet) or collect
+ * reflog transitions since the stored pointer.
+ */
+export interface LedgerQuery {
+  readonly branch: string;
+  readonly pointer: ReflogPointer | null;
+  // SHAs already known to the ledger — used by resync to restore live flags.
+  readonly knownShas: readonly string[];
+}
+
+/** Branch totals at the last pre-day commit — the day-start line baseline. */
+export interface SeedBaseline {
+  readonly linesAdded: number;
+  readonly linesRemoved: number;
+  readonly filesChanged: number;
+}
+
+export type LedgerUpdate =
+  // Fresh ledger: every commit currently on the branch (vs merge-base), with
+  // the line baseline anchored at the last commit made before today.
+  | { readonly kind: 'seed'; readonly commits: readonly CommitMeta[]; readonly baseline: SeedBaseline; readonly pointer: ReflogPointer | null }
+  // Normal tick: branch-reflog transitions since the stored pointer.
+  | { readonly kind: 'transitions'; readonly transitions: readonly BranchTransition[]; readonly pointer: ReflogPointer | null }
+  // Pointer fell out of the reflog window (long daemon downtime) — rebuild
+  // live flags from the current branch state instead of replaying.
+  | { readonly kind: 'resync'; readonly liveShas: readonly string[]; readonly mergedShas: readonly string[]; readonly unknownCommits: readonly CommitMeta[]; readonly pointer: ReflogPointer | null };
+
 // ─── Reflog ──────────────────────────────────────────────────────────────
 
 export type ReflogEntryType = 'commit' | 'checkout' | 'reset' | 'rebase' | 'other';
@@ -318,6 +414,10 @@ export interface PollResult {
   // Fresh `merge-base(HEAD, default branch)` for this tick. Null when no
   // default branch resolves.
   readonly mergeBaseSha: string | null;
+  // Commit-ledger input for this tick: seed / reflog transitions / resync.
+  // Null when the branch reflog (or a merge-base) is unavailable — the
+  // session then falls back to the positive-jump commit counter.
+  readonly ledgerUpdate: LedgerUpdate | null;
 }
 
 // ─── Daemon runtime state (per repo, not persisted) ─────────────────────

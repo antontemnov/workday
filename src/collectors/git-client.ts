@@ -1,7 +1,7 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import type { RawGitOutput } from '../core/types.js';
+import type { RawGitOutput, CommitMeta } from '../core/types.js';
 import { GIT_BATCH_SEPARATOR, GIT_MAX_BUFFER_BYTES } from '../core/constants.js';
 
 const execAsync = promisify(exec);
@@ -134,6 +134,129 @@ export class GitClient {
       return name && name.length > 0 ? name : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Branch reflog entries, newest first: [{sha (new value of the ref),
+   * ts (when the move happened), message}]. Every branch-tip move —
+   * commit, amend, rebase finish, reset, merge — writes exactly one entry,
+   * so consecutive entries form the complete old→new transition journal.
+   * Empty array when the branch has no reflog (core.logAllRefUpdates off).
+   */
+  public async getBranchReflog(
+    repoPath: string,
+    branch: string,
+    count: number,
+  ): Promise<Array<{ sha: string; ts: number; message: string }>> {
+    try {
+      const { stdout } = await execAsync(
+        `git -C "${repoPath}" reflog show "${branch}" -${count} --format="%H|%gd|%gs" --date=unix`,
+        { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
+      );
+      const entries: Array<{ sha: string; ts: number; message: string }> = [];
+      for (const line of stdout.split('\n')) {
+        const match = line.match(/^([0-9a-f]{40})\|.*@\{(\d+)\}\|(.*)$/);
+        if (!match) continue;
+        entries.push({ sha: match[1], ts: parseInt(match[2], 10), message: match[3] });
+      }
+      return entries;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Batched commit metadata. Works for unreachable SHAs too (squashed-away
+   * commits stay in the object db until gc — reflog entries protect them),
+   * which is exactly what transition replay needs. SHAs whose objects are
+   * gone are silently omitted.
+   */
+  public async getCommitsMeta(repoPath: string, shas: readonly string[]): Promise<CommitMeta[]> {
+    if (shas.length === 0) return [];
+    const metas: CommitMeta[] = [];
+    // Chunk to keep the command line comfortably short.
+    for (let i = 0; i < shas.length; i += 50) {
+      const chunk = shas.slice(i, i + 50);
+      let stdout: string;
+      try {
+        ({ stdout } = await execAsync(
+          `git -C "${repoPath}" show -s --format="%H|%T|%P|%ae|%at|%ct" ${chunk.join(' ')}`,
+          { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
+        ));
+      } catch {
+        // One bad SHA fails the whole batch — retry individually, skip the dead.
+        stdout = '';
+        for (const sha of chunk) {
+          try {
+            const single = await execAsync(
+              `git -C "${repoPath}" show -s --format="%H|%T|%P|%ae|%at|%ct" ${sha}`,
+              { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
+            );
+            stdout += single.stdout + '\n';
+          } catch { /* object gone — skip */ }
+        }
+      }
+      for (const line of stdout.split('\n')) {
+        const parts = line.trim().split('|');
+        if (parts.length !== 6 || !/^[0-9a-f]{40}$/.test(parts[0])) continue;
+        metas.push({
+          sha: parts[0],
+          tree: parts[1],
+          parentCount: parts[2] === '' ? 0 : parts[2].split(' ').length,
+          authorEmail: parts[3],
+          authorTs: parseInt(parts[4], 10),
+          committerTs: parseInt(parts[5], 10),
+        });
+      }
+    }
+    return metas;
+  }
+
+  /**
+   * `git rev-list include ^exclude ...` — SHAs reachable from `include` but
+   * none of `excludes`, parent-first (oldest first). Empty on any git error.
+   */
+  public async revListShas(
+    repoPath: string,
+    include: string,
+    excludes: readonly string[],
+  ): Promise<string[]> {
+    const excludeArgs = excludes.map(e => `"^${e}"`).join(' ');
+    try {
+      const { stdout } = await execAsync(
+        `git -C "${repoPath}" rev-list --reverse ${include} ${excludeArgs}`,
+        { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
+      );
+      return stdout.split('\n').map(s => s.trim()).filter(s => /^[0-9a-f]{40}$/.test(s));
+    } catch {
+      return [];
+    }
+  }
+
+  /** `git merge-base --is-ancestor sha ref` — true when sha is reachable from ref. */
+  public async isAncestor(repoPath: string, sha: string, ref: string): Promise<boolean> {
+    try {
+      await execAsync(`git -C "${repoPath}" merge-base --is-ancestor ${sha} ${ref}`, {
+        maxBuffer: GIT_MAX_BUFFER_BYTES,
+        windowsHide: true,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Raw `git diff from to --numstat` output. Empty string on error. */
+  public async diffNumstat(repoPath: string, from: string, to: string): Promise<string> {
+    try {
+      const { stdout } = await execAsync(
+        `git -C "${repoPath}" diff ${from} ${to} --numstat`,
+        { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
+      );
+      return stdout.trim();
+    } catch {
+      return '';
     }
   }
 

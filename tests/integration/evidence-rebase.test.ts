@@ -83,7 +83,8 @@ async function main(): Promise<void> {
 
   const tick = async (): Promise<PollResult | undefined> => {
     const baseShas = sessions.getBaseShasPerRepoPath(config.repos);
-    const results = await gitTracker.pollAll(baseShas);
+    const ledgerQueries = sessions.getLedgerQueries(config.repos);
+    const results = await gitTracker.pollAll(baseShas, ledgerQueries);
     for (const r of results) sessions.processPollResult(r);
     return results[0];
   };
@@ -131,9 +132,9 @@ async function main(): Promise<void> {
   git('commit -m "ATL-1 squashed"');
   await tick();
 
-  check('squash keeps the day\'s commit count', () => {
+  check('squash of two session commits drops the count to one', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
+    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
     assert.equal(ev.linesAdded, 50, `linesAdded = ${ev.linesAdded}`);
   });
 
@@ -145,7 +146,7 @@ async function main(): Promise<void> {
 
   check('new commit after rebase+squash keeps counting', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 3, `commits = ${ev.commits}`);
+    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
     assert.equal(ev.linesAdded, 60, `linesAdded = ${ev.linesAdded}`);
   });
 
@@ -156,7 +157,7 @@ async function main(): Promise<void> {
   check('uncommitted worktree lines are included', () => {
     const ev = evidence();
     assert.equal(ev.linesAdded, 65, `linesAdded = ${ev.linesAdded}`);
-    assert.equal(ev.commits, 3, `commits = ${ev.commits}`);
+    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
   });
 
   // ── Agent-style activity: churn magnitude from real git state ─────────
@@ -192,7 +193,7 @@ async function main(): Promise<void> {
 
   check('committed new file lines reached the evidence counters', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 4, `commits = ${ev.commits}`);
+    assert.equal(ev.commits, 3, `commits = ${ev.commits}`);
     assert.ok(ev.linesAdded >= 300, `linesAdded = ${ev.linesAdded}, expected >= 300`);
   });
 
