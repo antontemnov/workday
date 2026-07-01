@@ -3,8 +3,10 @@
  *
  * The scenarios that break counter-sampling approaches: several git
  * operations landing between two polls (commit + squash inside one tick),
- * amend/reword, dropped commits, squash that includes a pre-day commit,
- * work done while the daemon was down, and a mid-day merge to master.
+ * amend/reword, dropped commits, squash that includes pre-session commits,
+ * and daemon restarts. Counters are strictly session-scoped: a new session
+ * starts at zero and nothing done outside a session (daemon down, session
+ * closed) is ever counted.
  *
  * Run: npx tsx tests/integration/commit-ledger.test.ts
  */
@@ -73,8 +75,12 @@ async function main(): Promise<void> {
   mkdirSync(REPO, { recursive: true });
   writeFileSync(GITCONFIG, '[user]\n\tname = Test\n\temail = test@test.local\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = master\n');
 
-  // Firmly outside any working-day window regardless of when the test runs.
+  // Committer dates older than the session-start slack (2 poll intervals =
+  // 60s) — in real life pre-session commits are minutes to days old; the
+  // test compresses everything into one second, so dates must be explicit.
   const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+  const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
   git('init');
   writeFileSync(join(REPO, 'base.txt'), 'line\n'.repeat(10));
@@ -82,14 +88,14 @@ async function main(): Promise<void> {
   git('commit -m "init"', twoDaysAgo);
   git('checkout -b atemnov/ATL-2-ledger');
 
-  // Branch history that predates the daemon: a commit from two days ago
-  // (+100 lines) and a commit made earlier today (+30 lines).
+  // Branch history that predates the session: an old commit (+100 lines)
+  // and a commit made before the daemon started (+30 lines).
   writeFileSync(join(REPO, 'old-work.ts'), 'old\n'.repeat(100));
   git('add .');
-  git('commit -m "ATL-2 yesterday work"', twoDaysAgo);
-  writeFileSync(join(REPO, 'today.ts'), 'early\n'.repeat(30));
+  git('commit -m "ATL-2 old work"', twoDaysAgo);
+  writeFileSync(join(REPO, 'pre-daemon.ts'), 'early\n'.repeat(30));
   git('add .');
-  git('commit -m "ATL-2 before daemon"');
+  git('commit -m "ATL-2 before daemon"', tenMinAgo);
 
   const gitTracker = new GitTracker(config, secrets);
   let sessions = new SessionTracker(config);
@@ -108,13 +114,13 @@ async function main(): Promise<void> {
     return open[0].evidence;
   };
 
-  // ── Seed: daemon starts on a branch with history ───────────────────────
+  // ── Seed: a fresh session starts at zero ───────────────────────────────
   await tick();
 
-  check('seed counts today\'s pre-daemon commit, not older branch work', () => {
+  check('session starts at zero — pre-session branch work is not counted', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 30, `linesAdded = ${ev.linesAdded}`);
+    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
   });
 
   // ── Commit + squash between two polls (the original bug) ──────────────
@@ -130,8 +136,8 @@ async function main(): Promise<void> {
 
   check('commit + commit + squash inside one tick nets exactly +1', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 50, `linesAdded = ${ev.linesAdded}`);
+    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 20, `linesAdded = ${ev.linesAdded}`);
   });
 
   // ── Amend with content, then reword ────────────────────────────────────
@@ -142,8 +148,8 @@ async function main(): Promise<void> {
 
   check('content amend does not change the commit count', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 55, `linesAdded = ${ev.linesAdded}`);
+    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 25, `linesAdded = ${ev.linesAdded}`);
   });
 
   git('commit --amend -m "ATL-2 squashed (reworded)"');
@@ -151,7 +157,7 @@ async function main(): Promise<void> {
 
   check('reword does not change the commit count', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
+    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
   });
 
   // ── Dropped commit: reset --hard between polls ─────────────────────────
@@ -162,8 +168,8 @@ async function main(): Promise<void> {
 
   check('new commit counts before being dropped', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 3, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 65, `linesAdded = ${ev.linesAdded}`);
+    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 35, `linesAdded = ${ev.linesAdded}`);
   });
 
   git('reset --hard HEAD~1');
@@ -171,53 +177,68 @@ async function main(): Promise<void> {
 
   check('hard reset of a session commit decrements the count', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 55, `linesAdded = ${ev.linesAdded}`);
+    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 25, `linesAdded = ${ev.linesAdded}`);
   });
 
-  // ── Daemon restart: operations happen while no polls run ───────────────
+  // ── Daemon restart: work done while it was down is NOT counted ─────────
+  // Mark the session activated (the evaluator would have promoted it on the
+  // commit signals) so the crash-close keeps it — and its ledger — in the log.
+  sessions.getOpenSessions()[0].activatedAt = new Date().toISOString();
   sessions.closeAllSessions(ClosedBy.DaemonCrash);
   const persistedLog = sessions.getDailyLog();
 
   writeFileSync(join(REPO, 'f4.ts'), 'four\n'.repeat(10));
   git('add .');
-  git('commit -m "ATL-2 c4"');
+  git('commit -m "ATL-2 downtime c4"', fiveMinAgo);
   writeFileSync(join(REPO, 'f5.ts'), 'five\n'.repeat(10));
   git('add .');
-  git('commit -m "ATL-2 c5"');
+  git('commit -m "ATL-2 downtime c5"', fiveMinAgo);
   git('reset --soft HEAD~2');
-  git('commit -m "ATL-2 downtime squashed"');
+  git('commit -m "ATL-2 downtime squashed"', fiveMinAgo);
 
   sessions = new SessionTracker(config, persistedLog);
   await tick();
 
-  check('downtime operations replay from the branch reflog after restart', () => {
+  check('after a restart the new session starts at zero (downtime not counted)', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 3, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 75, `linesAdded = ${ev.linesAdded}`);
+    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
   });
 
-  // ── Squash everything, including pre-day commits ───────────────────────
+  writeFileSync(join(REPO, 'f6.ts'), 'six\n'.repeat(10));
+  git('add .');
+  git('commit -m "ATL-2 c6"');
+  await tick();
+
+  check('new work counts from zero in the restarted session', () => {
+    const ev = evidence();
+    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 10, `linesAdded = ${ev.linesAdded}`);
+  });
+
+  // ── Squash everything, including pre-session commits ───────────────────
   git('reset --soft master');
   git('commit -m "ATL-2 all squashed"');
   await tick();
 
-  check('squash into pre-day history keeps exactly one session commit', () => {
+  check('squash into pre-session history keeps exactly one session commit', () => {
     const ev = evidence();
     assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 75, `linesAdded = ${ev.linesAdded}`);
+    assert.equal(ev.linesAdded, 10, `linesAdded = ${ev.linesAdded}`);
   });
 
-  // ── Merge to master mid-session: merged work survives ─────────────────
+  // ── Merge to master, come back: again a clean session ─────────────────
   git('checkout master');
   await tick(); // closes the session (generic branch)
   git('merge --ff-only atemnov/ATL-2-ledger');
   git('checkout atemnov/ATL-2-ledger');
-  await tick(); // reopens the session, ledger inherited
+  await tick(); // opens a NEW session — clean slate
 
-  check('commit merged into master stays counted', () => {
+  check('session reopened after merge starts at zero', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
+    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
   });
 
   writeFileSync(join(REPO, 'after-merge.ts'), 'post\n'.repeat(10));
@@ -225,26 +246,34 @@ async function main(): Promise<void> {
   git('commit -m "ATL-2 after merge"');
   await tick();
 
-  check('work continues counting after the merge', () => {
+  check('work after the merge counts in the new session', () => {
     const ev = evidence();
-    assert.equal(ev.commits, 2, `commits = ${ev.commits}`);
+    assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
     assert.equal(ev.linesAdded, 10, `linesAdded = ${ev.linesAdded}`);
   });
 
-  // ── rebase -i squash of a today-commit INTO a pre-day commit ───────────
+  // ── rebase -i squash of a session commit INTO a pre-session commit ─────
   // The squashed result keeps the OLD commit's author date, so only the
-  // tree match (which sees the whole removed chain) keeps today's work
-  // counted — the user rule: such a squash must NOT decrement.
+  // tree match (which sees the whole removed chain) keeps the session's
+  // work counted — the user rule: such a squash must NOT decrement.
   git('checkout -b atemnov/ATL-3-mixed master');
   writeFileSync(join(REPO, 'mixed.ts'), 'pre\n'.repeat(20));
   git('add .');
   git('commit -m "ATL-3 old base"', twoDaysAgo);
+  await tick(); // new session on ATL-3, seeds with the pre-session commit
+
+  check('new task session seeds at zero', () => {
+    const ev = evidence();
+    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
+  });
+
   appendFileSync(join(REPO, 'mixed.ts'), 'new\n'.repeat(10));
   git('add .');
   git('commit -m "ATL-3 today fix"');
-  await tick(); // new session on ATL-3
+  await tick();
 
-  check('new task session seeds with one today-commit', () => {
+  check('session commit on the mixed branch counts', () => {
     const ev = evidence();
     assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
     assert.equal(ev.linesAdded, 10, `linesAdded = ${ev.linesAdded}`);
@@ -261,7 +290,7 @@ async function main(): Promise<void> {
   });
   await tick();
 
-  check('rebase-squash into a pre-day commit keeps the count', () => {
+  check('rebase-squash into a pre-session commit keeps the count', () => {
     const ev = evidence();
     assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
     assert.equal(ev.linesAdded, 10, `linesAdded = ${ev.linesAdded}`);

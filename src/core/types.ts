@@ -304,7 +304,9 @@ export interface LedgerCommit {
   readonly authorEmail: string;
   readonly authorTs: number;
   readonly committerTs: number;
-  // Created within this working day (directly or inherited through rewrites).
+  // Created within this session (directly or inherited through rewrites).
+  // Seeded pre-session commits and commits made while the daemon was down
+  // are false — the counter is strictly bounded by the session's lifetime.
   readonly sessionCreated: boolean;
   // Still exists: reachable from the branch tip or merged into the default
   // branch. Squashed/dropped/reset-away commits flip to false.
@@ -337,17 +339,10 @@ export interface LedgerQuery {
   readonly knownShas: readonly string[];
 }
 
-/** Branch totals at the last pre-day commit — the day-start line baseline. */
-export interface SeedBaseline {
-  readonly linesAdded: number;
-  readonly linesRemoved: number;
-  readonly filesChanged: number;
-}
-
 export type LedgerUpdate =
-  // Fresh ledger: every commit currently on the branch (vs merge-base), with
-  // the line baseline anchored at the last commit made before today.
-  | { readonly kind: 'seed'; readonly commits: readonly CommitMeta[]; readonly baseline: SeedBaseline; readonly pointer: ReflogPointer | null }
+  // Fresh ledger: every commit currently on the branch (vs merge-base).
+  // Seeded commits are pre-session — the counter starts at zero.
+  | { readonly kind: 'seed'; readonly commits: readonly CommitMeta[]; readonly pointer: ReflogPointer | null }
   // Normal tick: branch-reflog transitions since the stored pointer.
   | { readonly kind: 'transitions'; readonly transitions: readonly BranchTransition[]; readonly pointer: ReflogPointer | null }
   // Pointer fell out of the reflog window (long daemon downtime) — rebuild

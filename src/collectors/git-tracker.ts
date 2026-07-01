@@ -12,12 +12,12 @@ import type {
   LedgerUpdate,
 } from '../core/types.js';
 import { RepoState } from '../core/types.js';
-import { extractTask, getConfiguredDefaultBranchName, computeWorkingDate } from '../core/config.js';
+import { extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
 import { SnapshotParser } from './snapshot-parser.js';  // static methods only
 import { buildChurnFiles } from './churn-scanner.js';
-import { collectLedgerUpdate, computeSeedBaseline } from './ledger-collector.js';
+import { collectLedgerUpdate } from './ledger-collector.js';
 
 /**
  * Final fallback list when no config and no `origin/HEAD` are available.
@@ -206,12 +206,6 @@ export class GitTracker {
       ledgerUpdate = await collectLedgerUpdate(
         this.gitClient, repoPath, raw.branch, mergeBaseSha, defaultBranchRef, ledgerQuery,
       );
-      if (ledgerUpdate?.kind === 'seed') {
-        const baseline = await computeSeedBaseline(
-          this.gitClient, repoPath, mergeBaseSha, ledgerUpdate.commits, this.isInWorkingDay,
-        );
-        ledgerUpdate = { ...ledgerUpdate, baseline };
-      }
     }
 
     return {
@@ -229,12 +223,6 @@ export class GitTracker {
     };
   }
 
-  /** True when a unix-seconds timestamp falls inside the current working day. */
-  public readonly isInWorkingDay = (unixSeconds: number): boolean => {
-    const { end } = this.config.schedule;
-    const tz = this.config.timezone;
-    return computeWorkingDate(unixSeconds * 1000, end, tz) === computeWorkingDate(Date.now(), end, tz);
-  };
 
   /**
    * Resolve the default-branch ref for a repo through the configured cascade.

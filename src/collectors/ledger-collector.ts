@@ -1,13 +1,10 @@
 import type {
   BranchTransition,
-  CommitMeta,
   LedgerQuery,
   LedgerUpdate,
   ReflogPointer,
-  SeedBaseline,
 } from '../core/types.js';
 import { GitClient } from './git-client.js';
-import { SnapshotParser } from './snapshot-parser.js';
 
 /**
  * Reflog entries fetched per tick. Far above any realistic number of branch
@@ -73,12 +70,9 @@ export async function collectLedgerUpdate(
 }
 
 /**
- * Fresh ledger: all commits on the branch (vs merge-base) plus the line
- * baseline anchored at the last commit made before today — so commits and
- * lines produced earlier today (before the daemon saw the repo) count, and
- * older branch work doesn't.
- *
- * `isInDay` is injected by the caller (GitTracker owns the schedule config).
+ * Fresh ledger: all commits currently on the branch (vs merge-base). The
+ * SessionTracker marks them pre-session at apply time — a new session always
+ * starts counting from zero.
  */
 async function buildSeed(
   gitClient: GitClient,
@@ -88,40 +82,7 @@ async function buildSeed(
 ): Promise<LedgerUpdate> {
   const shas = await gitClient.revListShas(repoPath, 'HEAD', [mergeBaseSha]);
   const commits = await gitClient.getCommitsMeta(repoPath, shas);
-  return {
-    kind: 'seed',
-    commits,
-    baseline: { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
-    pointer,
-  };
-}
-
-/**
- * Compute the day-start line baseline for a seed: branch totals at the last
- * pre-day commit. Split from buildSeed because only the caller knows the
- * working-day window.
- */
-export async function computeSeedBaseline(
-  gitClient: GitClient,
-  repoPath: string,
-  mergeBaseSha: string,
-  commits: readonly CommitMeta[],
-  isInDay: (unixSeconds: number) => boolean,
-): Promise<SeedBaseline> {
-  let boundarySha: string | null = null;
-  for (const meta of commits) {
-    if (!isInDay(meta.committerTs)) boundarySha = meta.sha;
-  }
-  if (boundarySha === null) {
-    return { linesAdded: 0, linesRemoved: 0, filesChanged: 0 };
-  }
-  const numstat = await gitClient.diffNumstat(repoPath, mergeBaseSha, boundarySha);
-  const parsed = SnapshotParser.parseDiffNumstatFiles(numstat);
-  return {
-    linesAdded: parsed.totals.added,
-    linesRemoved: parsed.totals.removed,
-    filesChanged: parsed.totals.fileCount,
-  };
+  return { kind: 'seed', commits, pointer };
 }
 
 async function buildResync(

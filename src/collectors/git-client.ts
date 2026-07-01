@@ -247,19 +247,6 @@ export class GitClient {
     }
   }
 
-  /** Raw `git diff from to --numstat` output. Empty string on error. */
-  public async diffNumstat(repoPath: string, from: string, to: string): Promise<string> {
-    try {
-      const { stdout } = await execAsync(
-        `git -C "${repoPath}" diff ${from} ${to} --numstat`,
-        { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
-      );
-      return stdout.trim();
-    } catch {
-      return '';
-    }
-  }
-
   private static parseSections(raw: string, withBase: boolean): RawGitOutput {
     const normalized = raw.replace(/\r\n/g, '\n');
     // Windows echo may add trailing space: "---WORKDAY-SEP--- \n"

@@ -77,10 +77,6 @@ export class SessionTracker {
     }
   }
 
-  /** True when a unix-seconds timestamp falls inside this log's working day. */
-  private readonly isInDay = (unixSeconds: number): boolean =>
-    computeWorkingDate(unixSeconds * 1000, this.config.schedule.end, this.config.timezone) === this.dailyLog.date;
-
   public getDailyLog(): DailyLog {
     return this.dailyLog;
   }
@@ -323,31 +319,24 @@ export class SessionTracker {
   }
 
   /**
-   * Per-repo commit-ledger context for the next poll tick. The open session's
-   * ledger wins; with none open, the newest closed session today that carries
-   * a ledger keeps reflog continuity across close/reopen (transitions that
-   * happened while the session was closed replay instead of getting lost).
-   * Null → the collector seeds a fresh ledger.
+   * Per-repo commit-ledger context for the next poll tick — from the open
+   * session only. Closed sessions are deliberately not consulted: the ledger
+   * is strictly session-scoped, so a new session always seeds fresh (null
+   * query) with a zero counter and a pointer at the current branch tip.
    */
   public getLedgerQueries(repoPaths: readonly string[]): Map<string, LedgerQuery | null> {
     const map = new Map<string, LedgerQuery | null>();
     for (const repoPath of repoPaths) {
       const name = basename(repoPath);
-      let source = this.dailyLog.sessions.find(s => !s.closedBy && s.repo === name) ?? null;
-      if (!source) {
-        for (let i = this.dailyLog.sessions.length - 1; i >= 0; i--) {
-          const s = this.dailyLog.sessions[i];
-          if (s.repo === name && s.ledger) { source = s; break; }
-        }
-      }
-      if (!source?.ledger) {
+      const session = this.dailyLog.sessions.find(s => !s.closedBy && s.repo === name);
+      if (!session?.ledger) {
         map.set(repoPath, null);
         continue;
       }
       map.set(repoPath, {
-        branch: source.branch,
-        pointer: source.ledger.pointer,
-        knownShas: source.ledger.commits.map(c => c.sha),
+        branch: session.branch,
+        pointer: session.ledger.pointer,
+        knownShas: session.ledger.commits.map(c => c.sha),
       });
     }
     return map;
@@ -519,11 +508,12 @@ export class SessionTracker {
   }
 
   private openSession(repo: string, task: string | null, branch: string, now: string): Session {
-    // Continued work on the same repo+task today inherits the evidence
-    // baseline and counters, so the day's numbers keep accumulating across
-    // close/reopen. If no prior session is found, the first poll captures
-    // a fresh baseline — see updateSessionTick.
-    const prior = this.findPriorTaskSession(repo, task);
+    // Every session starts from a clean slate — nothing is inherited from
+    // earlier sessions on the same repo+task. The counters are strictly
+    // bounded by the session's lifetime: the first poll captures a fresh
+    // line baseline and seeds the commit ledger with everything already on
+    // the branch marked pre-session, so commits/lines produced while no
+    // session was open (daemon down, session closed) are never counted.
     const session: Session = {
       id: generateSessionId(),
       repo,
@@ -537,28 +527,14 @@ export class SessionTracker {
       evidence: createEmptyEvidence(),
       pauses: [],
       manualAdjustments: [],
-      baseSha: prior?.baseSha ?? null,
+      baseSha: null,
       mergeBaseSha: null,
-      evidenceBaseline: prior?.evidenceBaseline ? { ...prior.evidenceBaseline } : null,
-      lastBranchCommits: prior?.lastBranchCommits ?? null,
-      ledger: prior?.ledger ? structuredClone(prior.ledger) : null,
+      evidenceBaseline: null,
+      lastBranchCommits: null,
+      ledger: null,
     };
-    if (prior) {
-      // Commit accumulator continues from where the prior session stopped.
-      session.evidence.commits = prior.evidence.commits;
-    }
     this.dailyLog.sessions.push(session);
     return session;
-  }
-
-  /** Most-recent session today on the same (repo, task) with a captured evidence base. */
-  private findPriorTaskSession(repo: string, task: string | null): Session | null {
-    if (!task) return null;
-    for (let i = this.dailyLog.sessions.length - 1; i >= 0; i--) {
-      const s = this.dailyLog.sessions[i];
-      if (s.repo === repo && s.task === task && (s.baseSha || s.evidenceBaseline || s.ledger)) return s;
-    }
-    return null;
   }
 
   private closeSession(session: Session, reason: ClosedBy, now: string): void {
@@ -706,11 +682,9 @@ export class SessionTracker {
    * derive evidence.commits from it. Returns true when the ledger owns the
    * commit counter this tick (the positive-jump fallback must then stay off).
    *
-   * A seed on a session that already carries a ledger merges (known SHAs are
-   * skipped) — happens when reflog continuity was lost. A transitions/resync
-   * update can't initialize a ledger from nothing: without the seeded branch
-   * state it would miss pre-existing commits, so the tick stays on fallback
-   * and the next poll (query = null) seeds properly.
+   * A transitions/resync update can't initialize a ledger from nothing:
+   * without the seeded branch state it would miss pre-existing commits, so
+   * such a tick stays on fallback and the next poll (query = null) seeds.
    */
   private applyLedger(session: Session, result: PollResult): boolean {
     const update = result.ledgerUpdate ?? null;
@@ -723,21 +697,31 @@ export class SessionTracker {
       if (update.kind !== 'seed') return false;
       session.ledger = createEmptyLedger();
     } else if (update.kind === 'seed' && session.ledger.pointer !== null) {
-      // Inherited ledger with reflog continuity, but the seed was computed
-      // against another session's stale query (e.g. task switch). Adopting
-      // its pointer would skip the unreplayed transitions — ignore the seed;
-      // the next tick's query comes from this session and replays properly.
+      // Seed computed against a stale query (e.g. the session opened during
+      // this very tick's processing). The ledger already has continuity —
+      // ignore the seed; the next tick's query replays transitions properly.
       session.evidence.commits = countSessionCommits(session.ledger);
       return true;
     }
-    applyLedgerUpdate(session.ledger, update, this.isInDay);
-    session.evidence.commits = countSessionCommits(session.ledger);
 
-    if (update.kind === 'seed' && session.evidenceBaseline === null) {
-      // Line baseline anchored at the last pre-day commit: lines committed
-      // earlier today (before the daemon saw the repo) count, older don't.
-      session.evidenceBaseline = { ...update.baseline };
+    // "Created in this session" = committer timestamp after the session
+    // opened — minus a two-tick slack, so the commit that itself triggered
+    // the session (made just before the opening poll) still counts — AND
+    // not already accounted for by an earlier session's ledger today (a
+    // commit from a session closed moments ago falls inside the slack of
+    // the next one; the SHA-set check keeps it from being recounted).
+    const slackSeconds = this.config.session.diffPollSeconds * 2;
+    const sessionStartTs = Date.parse(session.startedAt) / 1000 - slackSeconds;
+    const priorShas = new Set<string>();
+    for (const s of this.dailyLog.sessions) {
+      if (s === session || s.repo !== session.repo || !s.ledger) continue;
+      for (const c of s.ledger.commits) priorShas.add(c.sha);
     }
+    const countsAsSession = (meta: { readonly sha: string; readonly committerTs: number }): boolean =>
+      meta.committerTs >= sessionStartTs && !priorShas.has(meta.sha);
+
+    applyLedgerUpdate(session.ledger, update, countsAsSession);
+    session.evidence.commits = countSessionCommits(session.ledger);
     return true;
   }
 

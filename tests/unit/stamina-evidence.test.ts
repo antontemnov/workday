@@ -500,7 +500,7 @@ test('amend does not double-count (branch commit count unchanged)', () => {
   assert.equal(openEvidence(tracker).commits, 1, 'amend rewrites the tip, count stays 1');
 });
 
-test('reopening the same task later today inherits baseline and counters', () => {
+test('reopening the same task later today starts a clean session (no inheritance)', () => {
   const tracker = new SessionTracker(config);
   tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
   tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) })); // commits 2, +50
@@ -508,8 +508,14 @@ test('reopening the same task later today inherits baseline and counters', () =>
   assert.equal(tracker.getOpenSessions().length, 0);
   tracker.processPollResult(poll({ snap: snap(6, 160, 25, 8) })); // back on the task
   const ev = openEvidence(tracker);
-  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [3, 60, 15, 3],
+  // Counters are session-scoped: the new session anchors a fresh baseline
+  // at the current branch state and counts from zero.
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [0, 0, 0, 0],
     `evidence after reopen = ${JSON.stringify(ev)}`);
+  tracker.processPollResult(poll({ snap: snap(7, 180, 30, 9) })); // work in the new session
+  const ev2 = openEvidence(tracker);
+  assert.deepEqual([ev2.commits, ev2.linesAdded], [1, 20],
+    `evidence after new work = ${JSON.stringify(ev2)}`);
 });
 
 test('fallback mode (no default branch): snapshot applied as-is, rebase re-anchors and zeroes', () => {

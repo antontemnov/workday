@@ -1,15 +1,21 @@
 # Commit & Line Accounting — the Commit Ledger
 
-Goal: at the end of the day the counters answer two questions *exactly*:
+Goal: each session's counters answer two questions *exactly*:
 
-- **commits** — how many commits did today ultimately produce? Squashing two
-  of today's commits into one drops the counter 2 → 1. Squashing a today
-  commit *into* an older commit does **not** decrement — the day's work
-  survived, inside a rewritten commit. Dropped / hard-reset commits stop
-  counting; commits merged into the default branch keep counting.
-- **lines** — how many lines does today's work amount to right now (branch
-  totals vs the merge-base, minus everything the branch already had before
-  today).
+- **commits** — how many commits did this session ultimately produce?
+  Squashing two session commits into one drops the counter 2 → 1. Squashing
+  a session commit *into* a pre-session commit does **not** decrement — the
+  session's work survived, inside a rewritten commit. Dropped / hard-reset
+  commits stop counting; commits merged into the default branch keep
+  counting.
+- **lines** — how many lines does the session's work amount to right now
+  (branch totals vs the merge-base, minus everything the branch already had
+  when the session opened).
+
+Counters are **strictly session-scoped**. A session opens at zero, its
+counters freeze the moment it closes, and nothing done outside a session —
+daemon stopped, session closed, working on another branch — is ever
+counted. A daemon restart therefore starts a fresh session at zero.
 
 ## Why polling counters can never be exact
 
@@ -26,9 +32,9 @@ the **branch reflog**. Every commit, amend, rebase finish, reset and merge
 writes exactly one `old-sha → new-sha` entry, and entries are never
 coalesced no matter how fast operations happen. The daemon stores a pointer
 (sha + timestamp of the last processed entry) per session and, on every
-tick, replays the entries above the pointer as individual transitions.
-Because the reflog is on disk, replay also survives daemon restarts: work
-done while the daemon was down is accounted for after the next start.
+tick, replays the entries above the pointer as individual transitions. So
+while a session is open, no operation between polls is ever lost — no
+matter how many of them land inside one 30-second window.
 
 For each transition the collector computes (relative to the default branch,
 so upstream commits never enter the picture):
@@ -44,7 +50,7 @@ so upstream commits never enter the picture):
 
 Each session carries a ledger: the set of commit identities seen on the
 branch, each flagged `live` (still exists) and `sessionCreated` (produced
-today, directly or through rewrites). `evidence.commits` = live ∧
+by this session, directly or through rewrites). `evidence.commits` = live ∧
 sessionCreated.
 
 An added commit is classified by a matching cascade against gone,
@@ -54,23 +60,27 @@ not-yet-absorbed ledger entries:
 2. **Tree match** → squash: the new commit's tree equals the tree of a
    removed commit, so it absorbs the whole chain removed in that same
    transition and inherits `sessionCreated` as OR over the chain. This is
-   the rule that keeps the counter when a today-commit is squashed into a
-   pre-day commit (`rebase -i` keeps the old commit's author date, so only
-   the tree sees the truth).
+   the rule that keeps the counter when a session commit is squashed into a
+   pre-session commit (`rebase -i` keeps the old commit's author date, so
+   only the tree sees the truth).
 3. **Author identity match** (email + author timestamp) → rebase pick /
    amend / reword: git preserves the author timestamp through these, so the
-   rewrite inherits the original's membership. Rebasing yesterday's commits
-   today does *not* recount them.
+   rewrite inherits the original's membership. Rebasing pre-session commits
+   does *not* recount them.
 4. **No match** → genuinely new; counts when its committer timestamp falls
-   inside the current working day. Merge commits never count.
+   after the session opened (minus a two-tick slack, so the commit that
+   itself triggered the session counts) AND its SHA is not already recorded
+   in an earlier session's ledger today (a commit made moments before a
+   close/reopen falls inside the next session's slack — the SHA-set check
+   keeps it from being recounted). Merge commits never count.
 
 ### Seeding
 
-When a session first sees a branch, the ledger seeds from every commit
-between the merge-base and HEAD: commits with a today committer date count
-(the stats reflect the day, not the daemon's uptime), older ones don't. The
-seed also anchors the **line baseline** at the last pre-day commit, so lines
-committed earlier today count and older branch lines don't.
+When a session opens, the ledger seeds from every commit between the
+merge-base and HEAD — all marked pre-session, so the counter starts at
+zero. The line baseline is captured from the branch totals on the first
+tick: lines the branch already had (including uncommitted work made before
+the session) are excluded.
 
 ### Degradation ladder
 
@@ -83,18 +93,23 @@ committed earlier today count and older branch lines don't.
 
 ## Known limitations
 
+- Session counters are not additive across history rewrites that span
+  sessions: squashing two commits of a *closed* session during a later one
+  doesn't retro-decrement the closed session's frozen counter (each number
+  is honest for its own window, but the sum can differ from what finally
+  survives on the branch).
 - Line totals are branch-state based; when the branch is merged into the
   default branch mid-session, branch totals collapse and the line counters
   ratchet from a new base (the commit counter is unaffected — merged commits
   stay counted).
 - A squash performed with extra edits staged (tree no longer equals any
   removed commit's tree) falls through to rule 4: the result counts as one
-  new today-commit — the net count is still correct when the squashed chain
-  was today's work.
+  new session commit — the net count is still correct when the squashed
+  chain was the session's work.
 - `git reflog expire` or disabling reflogs removes the journal — the ledger
   then degrades as described above.
 
 Integration coverage: `tests/integration/commit-ledger.test.ts` (commit +
-squash inside one poll, amend, reword, drop, restart replay, mixed-day
-squash via `rebase -i`, merge to master) and
+squash inside one poll, amend, reword, drop, restart-at-zero, squash into
+pre-session history via `rebase -i`, merge to master) and
 `tests/integration/evidence-rebase.test.ts`.
