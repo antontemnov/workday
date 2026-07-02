@@ -3,12 +3,14 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconEvent,
     AppHandle,
+    Emitter,
     Manager,
     RunEvent,
     WindowEvent,
@@ -24,11 +26,16 @@ use tray_icon::TrayStatus;
 /// the daemon as before.
 static MANUAL_QUIT: AtomicBool = AtomicBool::new(false);
 
-/// Set right before the updater downloads/installs a tray update. On Windows
+/// Set right before the user-approved update download/install. On Windows
 /// the updater kills the process to run the installer; on other platforms we
 /// call restart() ourselves. Either way the exit must NOT stop the daemon —
 /// the tray is coming right back.
 static SELF_UPDATING: AtomicBool = AtomicBool::new(false);
+
+/// Version found by the last background update check. The webview may not be
+/// listening yet when the launch check fires, so the frontend also pulls this
+/// once on init via get_pending_app_update.
+static PENDING_APP_UPDATE: Mutex<Option<String>> = Mutex::new(None);
 
 /// How often the running tray re-checks for its own updates. The old
 /// launch-only check meant a tray that lives for weeks never updated.
@@ -121,11 +128,57 @@ async fn upgrade_daemon() -> Result<String, String> {
 }
 
 /// Frontend-triggered tray self-update check (e.g. when the daemon's API
-/// version is ahead of this app). Same flow as the periodic check.
+/// version is ahead of this app). Same check-only flow as the periodic check:
+/// a found update raises the banner, install waits for the user's click.
 #[tauri::command]
 async fn check_app_update(app: AppHandle) -> Result<String, String> {
     check_for_updates(app).await.map_err(|e| e.to_string())?;
     Ok("Update check finished".to_string())
+}
+
+/// Pending tray update found by a background check, if any. Called once by
+/// the frontend on init — the launch check can fire before its listener is up.
+#[tauri::command]
+fn get_pending_app_update() -> Option<String> {
+    PENDING_APP_UPDATE.lock().unwrap().clone()
+}
+
+/// User clicked the update banner: download, install and restart now.
+#[tauri::command]
+async fn install_app_update(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let update = match updater.check().await.map_err(|e| e.to_string())? {
+        Some(u) => u,
+        None => {
+            // Stale banner (release pulled / already updated) — nothing to do.
+            *PENDING_APP_UPDATE.lock().unwrap() = None;
+            return Err("Already up to date".to_string());
+        }
+    };
+
+    // The updater exit (Windows: installer kills the process; elsewhere:
+    // restart() below) must not stop the daemon.
+    SELF_UPDATING.store(true, Ordering::Relaxed);
+
+    let install_result = update
+        .download_and_install(
+            |_chunk, _total| {},
+            || {
+                eprintln!("workday: update downloaded and staged");
+            },
+        )
+        .await;
+    if let Err(e) = install_result {
+        // Failed mid-download — this process is staying alive, so exits must
+        // go back to stopping the daemon as usual.
+        SELF_UPDATING.store(false, Ordering::Relaxed);
+        return Err(e.to_string());
+    }
+
+    // On Windows download_and_install never returns (the installer relaunches
+    // the app). Elsewhere the update applies on restart — do it now.
+    eprintln!("workday: update installed, restarting app");
+    app.restart()
 }
 
 #[tauri::command]
@@ -228,7 +281,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, list_local_days, read_local_day, set_tray_status])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -238,9 +291,9 @@ pub fn run() {
                 )?;
             }
 
-            // Check for UI updates in background (non-blocking): once at
-            // launch, then periodically — the tray lives for weeks, a
-            // launch-only check would never fire again.
+            // Check for UI updates in background (check-only, banner-driven
+            // install): once at launch, then periodically — the tray lives
+            // for weeks, a launch-only check would never fire again.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = check_for_updates(handle).await {
@@ -330,6 +383,10 @@ pub fn run() {
     });
 }
 
+/// Background check — never installs. A found update is remembered and
+/// announced to the webview (banner with a restart button); the install
+/// itself runs only when the user clicks — a silent mid-work restart used
+/// to kill the window (and any half-typed manual entry) without warning.
 async fn check_for_updates(handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let updater = handle.updater()?;
 
@@ -340,36 +397,8 @@ async fn check_for_updates(handle: tauri::AppHandle) -> Result<(), Box<dyn std::
                 update.current_version,
                 update.version
             );
-
-            // The updater exit (Windows: installer kills the process;
-            // elsewhere: our restart() below) must not stop the daemon.
-            SELF_UPDATING.store(true, Ordering::Relaxed);
-
-            // Download and install silently
-            let mut downloaded: u64 = 0;
-            let install_result = update
-                .download_and_install(
-                    |chunk, _total| {
-                        downloaded += chunk as u64;
-                    },
-                    || {
-                        eprintln!("workday: update downloaded and staged");
-                    },
-                )
-                .await;
-            if let Err(e) = install_result {
-                // Failed mid-download — this process is staying alive, so
-                // exits must go back to stopping the daemon as usual.
-                SELF_UPDATING.store(false, Ordering::Relaxed);
-                return Err(e.into());
-            }
-
-            // On Windows download_and_install never returns (the installer
-            // relaunches the app). Elsewhere the update applies on restart —
-            // do it now: the tray is a background app, a silent relaunch is
-            // invisible to the user.
-            eprintln!("workday: update installed, restarting app");
-            handle.restart();
+            *PENDING_APP_UPDATE.lock().unwrap() = Some(update.version.clone());
+            let _ = handle.emit("app-update-available", update.version.clone());
         }
         Ok(None) => {
             eprintln!("workday: app is up to date");

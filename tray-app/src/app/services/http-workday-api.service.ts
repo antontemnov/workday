@@ -62,7 +62,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       if (daemonIsBehind) {
         void this.upgradeDaemon();
       } else {
-        // Fire the tray's own updater; harmless when already up to date.
+        // Fire the tray's own update check; a found version raises the
+        // update banner — install waits for the user's click.
         void invoke('check_app_update').catch(() => {});
       }
     }
@@ -71,7 +72,7 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       ? (this.upgradeError
           ? `Daemon upgrade failed: ${this.upgradeError}`
           : 'Updating daemon to match app version...')
-      : 'Workday app is older than the daemon — checking for app updates...';
+      : 'Workday app is older than the daemon — update it via the banner above';
     return { ok: false, error: msg };
   }
 

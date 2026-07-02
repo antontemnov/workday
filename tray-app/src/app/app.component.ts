@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { WorkdayApiService } from './services/workday-api.service';
 import {
   TodayResponse,
@@ -74,6 +75,12 @@ export class AppComponent implements OnInit, OnDestroy {
   actionError: string | null = null;
   actionPending = false;
 
+  // App self-update: version announced by the Rust background check.
+  // Non-null → banner with a restart button; install is click-only.
+  appUpdateVersion: string | null = null;
+  appUpdateInstalling = false;
+  private unlistenAppUpdate: UnlistenFn | null = null;
+
   // Day navigation: null = viewing today, otherwise a YYYY-MM-DD past date.
   viewedDate: string | null = null;
   private todayDate: string | null = null;
@@ -95,6 +102,7 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(private api: WorkdayApiService) {}
 
   ngOnInit(): void {
+    void this.watchAppUpdates();
     void this.refreshAvailableDates();
     void this.refreshActivityTypes();
     this.refresh();
@@ -114,6 +122,36 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.tickTimer) clearInterval(this.tickTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    if (this.unlistenAppUpdate) this.unlistenAppUpdate();
+  }
+
+  // ─── App self-update ─────────────────────────────────────────────────────
+
+  // Rust checks for tray updates (launch + every 6h) and announces a found
+  // version. The launch check can finish before this listener attaches, so
+  // also pull the stored pending version once.
+  private async watchAppUpdates(): Promise<void> {
+    try {
+      this.unlistenAppUpdate = await listen<string>('app-update-available', e => {
+        this.appUpdateVersion = e.payload;
+      });
+      const pending = await invoke<string | null>('get_pending_app_update');
+      if (pending) this.appUpdateVersion = pending;
+    } catch {
+      // Outside Tauri webview (browser dev mode) — no updater.
+    }
+  }
+
+  async installAppUpdate(): Promise<void> {
+    if (this.appUpdateInstalling) return;
+    this.appUpdateInstalling = true;
+    try {
+      // On success this process is replaced by the new version — no return.
+      await invoke('install_app_update');
+    } catch (e: unknown) {
+      this.appUpdateInstalling = false;
+      this.showToast(`App update failed: ${String(e)}`);
+    }
   }
 
   private async refreshAvailableDates(): Promise<void> {

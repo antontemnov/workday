@@ -54,6 +54,17 @@
     </div>
   </header>
 
+  <!-- App self-update banner: a background check found a new tray version.
+       Install runs only on click; the app restarts, the daemon keeps running. -->
+  <div class="update-banner" *ngIf="appUpdateVersion">
+    <span class="ub-text">Update v{{ appUpdateVersion }} is ready</span>
+    <button class="ub-btn"
+            [disabled]="appUpdateInstalling"
+            (click)="installAppUpdate()">
+      {{ appUpdateInstalling ? 'Installing…' : 'Restart to update' }}
+    </button>
+  </div>
+
   <!-- View body: Day / Timesheets / Settings -->
   <ng-container [ngSwitch]="activeView">
     <app-day-view *ngSwitchCase="'day'"

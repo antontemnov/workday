@@ -139,6 +139,39 @@
   }
 }
 
+// ─── App-update banner ──────────────────────────────────────────────────
+// Slim strip under the header; same chrome family, blue accent = actionable.
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  flex-shrink: 0;
+  background: rgba(137, 180, 250, 0.08);
+  border-bottom: 1px solid #26263a;
+
+  .ub-text {
+    color: #89b4fa;
+    font-size: 11px;
+  }
+
+  .ub-btn {
+    margin-left: auto;
+    background: #89b4fa;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 3px;
+    padding: 3px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #74a3f8; }
+    &:disabled { opacity: 0.5; cursor: default; }
+  }
+}
+
 // ─── Modals ─────────────────────────────────────────────────────────────
 .modal-backdrop {
   position: fixed;
