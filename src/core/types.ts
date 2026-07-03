@@ -433,14 +433,6 @@ export interface RepoTracker {
   prevEvidenceSnapshot: EvidenceSnapshot | null;
 }
 
-// Candidate session: born from activity, lives only in memory until the
-// evaluator promotes it (score > 0 && leader). The session object is a
-// regular Session — all tick/evidence/ledger mechanics apply unchanged.
-export interface CandidateEntry {
-  readonly session: Session;
-  lastActivityAt: number; // Date.now() of the last dynamics/commit tick (TTL anchor)
-}
-
 // Live view of a configured repo sitting on a task branch with no session —
 // source for synthetic "watching" cards in the HTTP API.
 export interface WatchingRepo {

@@ -1,6 +1,7 @@
 /**
  * Unit tests for lazy sessions (package A): candidate lifecycle, promotion,
- * TTL evaporation, day materialization, rollover and watching-card synthesis.
+ * score-drain evaporation, day materialization, rollover and watching-card
+ * synthesis.
  *
  * Run: npx tsx tests/unit/candidate-lifecycle.test.ts
  *
@@ -126,7 +127,6 @@ function makeHarness(initialLog?: DailyLog) {
   const tick = (results: PollResult[]): void => {
     for (const r of results) tracker.processPollResult(r);
     tracker.applyEvaluatorResult(evaluator.processAllTicks(tracker.buildTickInputs(results)));
-    tracker.sweepCandidates(Date.now());
   };
   return { tracker, evaluator, tick };
 }
@@ -193,18 +193,24 @@ test('activity in repo B while A leads → candidate, not in the log', () => {
   assert.equal(candidates[0].state, SessionState.Pending);
 });
 
-test('candidate survives while active, evaporates by TTL after silence — no traces', () => {
+test('candidate survives while active, evaporates when the score drains — no traces', () => {
   const { tracker, tick } = makeHarness();
   tick([poll({ dyn: true })]);
   tick([poll({ dyn: true }), pollB({ dyn: true })]);
   assert.equal(tracker.getCandidates().length, 1);
 
-  // activity keeps refreshing the TTL anchor
-  tracker.sweepCandidates(Date.now() + 29 * 60_000);
-  assert.equal(tracker.getCandidates().length, 1, 'inside TTL — alive');
+  // a short think-gap does not kill the candidate (A stays leader throughout)
+  for (let i = 0; i < 5; i++) tick([poll({ dyn: true }), pollB({})]);
+  assert.equal(tracker.getCandidates().length, 1, 'short silence — alive');
 
-  tracker.sweepCandidates(Date.now() + 31 * 60_000);
-  assert.equal(tracker.getCandidates().length, 0, 'past TTL — evaporated');
+  // sustained silence drains the stamina to zero → evaporation
+  let goneAt = -1;
+  for (let i = 1; i <= 200; i++) {
+    tick([poll({ dyn: true }), pollB({})]);
+    if (tracker.getCandidates().length === 0) { goneAt = i; break; }
+  }
+  assert.ok(goneAt > 0, 'candidate evaporated after the score drained');
+  assert.ok(goneAt <= 120, `evaporated within the stamina window (tick ${goneAt})`);
   assert.ok(
     tracker.getDailyLog().sessions.every(s => s.repo !== 'repoB'),
     'no trace of B in the log',
@@ -362,7 +368,14 @@ test('a live candidate counts as active work', () => {
   assert.equal(tracker.hasActiveWork(), true);
   tracker.pauseAllSessions(); // pauses A; the candidate still blocks restarts
   assert.equal(tracker.hasActiveWork(), true);
-  tracker.sweepCandidates(Date.now() + 31 * 60_000);
+  tracker.resumeAllSessions();
+
+  // B stays silent while A keeps leading → B drains and evaporates
+  for (let i = 0; i < 200 && tracker.getCandidates().length > 0; i++) {
+    tick([poll({ dyn: true }), pollB({})]);
+  }
+  assert.equal(tracker.getCandidates().length, 0, 'candidate drained away');
+  tracker.pauseAllSessions();
   assert.equal(tracker.hasActiveWork(), false, 'paused session + no candidates = quiet');
 });
 

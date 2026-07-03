@@ -1,9 +1,8 @@
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
-import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery, CandidateEntry } from './types.js';
+import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery } from './types.js';
 import { applyLedgerUpdate, countSessionCommits, createEmptyLedger } from './commit-ledger.js';
 import { isDayMaterialized } from './day-lifecycle.js';
-import { CANDIDATE_TTL_MINUTES, MS_PER_MINUTE } from './constants.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -47,8 +46,9 @@ export class SessionTracker {
   private lastEvaluatorResult: EvaluatorResult | null = null;
   // In-memory candidate sessions (born from activity, not yet confirmed
   // facts) keyed by repo name. Promoted to dailyLog.sessions by the
-  // evaluator (score > 0 && leader); evaporate on TTL / checkout / rollover.
-  private readonly candidates: Map<string, CandidateEntry> = new Map();
+  // evaluator (score > 0 && leader); evaporate when the stamina score
+  // drains to zero, on checkout away, or at rollover.
+  private readonly candidates: Map<string, Session> = new Map();
   // Lazy-day gate: a day loaded from disk keeps being written; a fresh draft
   // materializes only on the first confirmed fact (activation/manual entry).
   private loadedFromDisk: boolean;
@@ -148,23 +148,18 @@ export class SessionTracker {
     // 3. Candidate lifecycle — sessions are born from activity, never from
     //    the mere presence of a task branch (checkout alone is not activity).
     let candidate = this.candidates.get(repoName);
-    if (candidate && candidate.session.task !== result.task) {
+    if (candidate && candidate.task !== result.task) {
       this.dropCandidate(repoName);
       candidate = undefined;
     }
 
     if (!candidate) {
       if (!hasActivity) return; // watching — nothing exists yet
-      candidate = {
-        session: this.createSession(repoName, result.task, result.branch, now),
-        lastActivityAt: Date.now(),
-      };
+      candidate = this.createSession(repoName, result.task, result.branch, now);
       this.candidates.set(repoName, candidate);
-    } else if (hasActivity) {
-      candidate.lastActivityAt = Date.now();
     }
 
-    this.updateSessionTick(candidate.session, result, now);
+    this.updateSessionTick(candidate, result, now);
   }
 
   /**
@@ -371,8 +366,8 @@ export class SessionTracker {
       ticks.push(this.toTickInput(session, resultMap));
     }
 
-    for (const entry of this.candidates.values()) {
-      ticks.push(this.toTickInput(entry.session, resultMap));
+    for (const session of this.candidates.values()) {
+      ticks.push(this.toTickInput(session, resultMap));
     }
 
     return ticks;
@@ -427,17 +422,23 @@ export class SessionTracker {
       }
     }
 
-    // Candidate promotion: score > 0 AND leadership — the first active tick
-    // when the repo leads. The session becomes a confirmed fact: pushed into
-    // the log and flushed immediately (the moment the day materializes).
+    // Candidate lifecycle by evaluator score. Promotion: leadership (implies
+    // score > 0) — the first active tick when the repo leads; the session
+    // becomes a confirmed fact, pushed into the log and flushed immediately
+    // (the moment the day materializes). Fade-out: score drained to zero —
+    // the same decay that idle-pauses a session, but an unconfirmed fact has
+    // nothing to pause, so it evaporates. Raw score, not isIdleTimeout: an
+    // Always-on repo must not breed an immortal candidate.
     let promoted = false;
-    for (const [repoName, entry] of [...this.candidates]) {
-      const sessionScore = result.scores.get(entry.session.id);
+    for (const [repoName, session] of [...this.candidates]) {
+      const sessionScore = result.scores.get(session.id);
       if (!sessionScore) continue;
-      if (sessionScore.score > 0 && result.leaderId === entry.session.id) {
-        entry.session.state = SessionState.Active;
-        entry.session.activatedAt = now;
-        this.dailyLog.sessions.push(entry.session);
+      if (sessionScore.score === 0) {
+        this.dropCandidate(repoName);
+      } else if (result.leaderId === session.id) {
+        session.state = SessionState.Active;
+        session.activatedAt = now;
+        this.dailyLog.sessions.push(session);
         this.candidates.delete(repoName);
         promoted = true;
       }
@@ -520,7 +521,8 @@ export class SessionTracker {
 
   /**
    * True when someone is plausibly mid-work: at least one open, unpaused
-   * session OR a live candidate (a session mid-birth). Used as the
+   * session OR a candidate (a session mid-birth — live by construction:
+   * a drained candidate evaporates on the same tick). Used as the
    * quiet-window gate for self-update restarts.
    */
   public hasActiveWork(): boolean {
@@ -532,27 +534,14 @@ export class SessionTracker {
 
   /** Candidate sessions (in-memory, not yet confirmed facts) in birth order. */
   public getCandidates(): readonly Session[] {
-    return [...this.candidates.values()].map(entry => entry.session);
-  }
-
-  /**
-   * TTL evaporation: a candidate whose last activity is older than
-   * CANDIDATE_TTL_MINUTES vanishes without logs or traces (A-7).
-   */
-  public sweepCandidates(now: number): void {
-    const ttlMs = CANDIDATE_TTL_MINUTES * MS_PER_MINUTE;
-    for (const [repoName, entry] of [...this.candidates]) {
-      if (now - entry.lastActivityAt > ttlMs) {
-        this.dropCandidate(repoName);
-      }
-    }
+    return [...this.candidates.values()];
   }
 
   private dropCandidate(repoName: string): void {
-    const entry = this.candidates.get(repoName);
-    if (!entry) return;
+    const session = this.candidates.get(repoName);
+    if (!session) return;
     this.candidates.delete(repoName);
-    this.onSessionClosed?.(entry.session.id);
+    this.onSessionClosed?.(session.id);
   }
 
   private dropAllCandidates(): void {
@@ -571,7 +560,7 @@ export class SessionTracker {
 
   /** Open session first, then candidate — for baseSha/ledger poll context. */
   private findOpenOrCandidateSession(repo: string): Session | null {
-    return this.findOpenSession(repo) ?? this.candidates.get(repo)?.session ?? null;
+    return this.findOpenSession(repo) ?? this.candidates.get(repo) ?? null;
   }
 
   private createSession(repo: string, task: string | null, branch: string, now: string): Session {

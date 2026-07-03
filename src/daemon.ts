@@ -249,11 +249,9 @@ export class Daemon {
       // 3. Evaluate activity scores and leadership
       const evaluatorResult = this.activityEvaluator.processAllTicks(tickInputs);
 
-      // 4. Apply evaluator decisions (auto-pause/resume, candidate promotion)
+      // 4. Apply evaluator decisions (auto-pause/resume, candidate
+      //    promotion / drained-candidate evaporation)
       this.sessionTracker.applyEvaluatorResult(evaluatorResult);
-
-      // 5. Evaporate candidates that went quiet (TTL)
-      this.sessionTracker.sweepCandidates(Date.now());
 
       this.sessionTracker.flush();
 
