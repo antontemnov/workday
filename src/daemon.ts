@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig } from './core/config.js';
 import { readDailyLog, writeDailyLog } from './core/daily-log.js';
 import { runStartupJanitor } from './core/janitor.js';
+import { writeStopMarker, clearStopMarker } from './core/stop-marker.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
@@ -79,6 +80,9 @@ export class Daemon {
     this.sessionTracker.onSessionClosed = (sessionId) => this.activityEvaluator.removeSession(sessionId);
 
     this.writePidFile();
+    // A starting daemon voids any manual-stop intent — the tray watchdog
+    // may resume guarding it.
+    clearStopMarker();
     this.registerShutdownHandlers();
 
     // HTTP API server
@@ -203,7 +207,13 @@ export class Daemon {
     return { ok: true };
   }
 
-  public async stop(): Promise<void> {
+  /**
+   * Graceful stop. `manual` marks a user-initiated stop (CLI `workday stop`,
+   * tray Stop, Ctrl+C) — it writes the stop marker so the tray watchdog does
+   * not respawn the daemon. Self-update restarts pass false: the daemon is
+   * coming right back and must stay under the watchdog's guard.
+   */
+  public async stop(manual: boolean = true): Promise<void> {
     if (!this.running) return;
 
     if (this.pollTimer) clearInterval(this.pollTimer);
@@ -219,6 +229,7 @@ export class Daemon {
     this.sessionTracker.flush();
     this.activityEvaluator.clear();
     this.removePidFile();
+    if (manual) writeStopMarker();
 
     console.log('Daemon stopped.');
   }
@@ -415,7 +426,7 @@ export class Daemon {
     this.restarting = true;
     console.log(`[update] restarting into v${targetVersion}...`);
 
-    await this.stop();
+    await this.stop(false);
 
     const script = fileURLToPath(import.meta.url);
     const child = spawn(process.execPath, [...process.execArgv, script], {

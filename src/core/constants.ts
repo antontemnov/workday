@@ -2,6 +2,9 @@
 export const CONFIG_FILE_NAME = 'config.json';
 export const SECRETS_FILE_NAME = 'secrets.json';
 export const PID_FILE_NAME = 'workday.pid';
+// Manual-stop marker (in WORKDAY_HOME) — the tray watchdog does not respawn
+// a manually stopped daemon; cleared on daemon start / autostart login.
+export const STOP_MARKER_FILE_NAME = 'daemon.stopped';
 export const DATA_DIR_NAME = 'data';
 export const TMP_EXTENSION = '.tmp';
 export const BACKUP_EXTENSION = '.bak';
