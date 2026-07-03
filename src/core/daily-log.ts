@@ -48,7 +48,6 @@ export function createEmptyLog(date: string, config: AppConfig): DailyLog {
     date,
     status: DayStatus.Draft,
     dayType: determineDayType(date, config),
-    manualStart: null,
     dayStartedAt: null,
     sessions: [],
     signals: [],
@@ -332,36 +331,16 @@ export function computeFullEffectiveDuration(session: Session): number {
   return computeEffectiveDuration(session) + computeManualMinutes(session) * MS_PER_MINUTE;
 }
 
-/** Resolve dayStart timestamp using priority chain: manualStart → dayStartedAt → first session */
-export function computeDayStart(log: DailyLog, config: AppConfig): number {
-  if (log.manualStart) {
-    return new Date(log.manualStart).getTime();
-  }
-  if (log.dayStartedAt) {
-    return new Date(log.dayStartedAt).getTime();
-  }
-  // Fallback: first activated session
-  for (const s of log.sessions) {
-    if (s.activatedAt) return new Date(s.activatedAt).getTime();
-  }
-  // No sessions yet — use day boundary start (date + dayBoundaryHour in timezone)
-  return parseDateWithHour(log.date, config.schedule.end, config.timezone);
-}
-
 /**
- * UI-only resolver for the day-start indicator. Unlike `computeDayStart`,
- * this returns null when nothing meaningful is set yet, so the client can
- * hide the indicator until the user either marks it manually or the first
- * session reaches ACTIVE.
+ * UI-only resolver for the day-start indicator. Returns null when no session
+ * has reached ACTIVE yet, so the client hides the indicator until then.
  *
- * The fallback is the EARLIEST `activatedAt` across all sessions (first
+ * The result is the EARLIEST `activatedAt` across all sessions (first
  * CONFIRMED work), NOT `sessions[0]`. Array order follows repo discovery,
  * so the first entry may be a session that activated much later — anchoring
- * to it would push the indicator past the real start. This matches the
- * upper-bound logic in `setDayManualStart`.
+ * to it would push the indicator past the real start.
  */
 export function resolveUiDayStart(log: DailyLog): string | null {
-  if (log.manualStart) return log.manualStart;
   let earliest: string | null = null;
   for (const s of log.sessions) {
     if (!s.activatedAt) continue;
@@ -381,9 +360,15 @@ export function computeDayEnd(date: string, dayBoundaryHour: number, timezone: s
   return parseDateWithHour(nextDateStr, dayBoundaryHour, timezone);
 }
 
-/** Compute total budget in ms */
+/**
+ * Budget v2: the full physical day window (boundary hour → next boundary
+ * hour, ~24h). Depends only on log.date and config — never on sessions,
+ * dayStartedAt or the daemon lifecycle, so restarts mid-day don't shrink it.
+ * On DST transition days the window is honestly 23/25h — the physical day
+ * length, not a bug.
+ */
 export function computeBudgetMs(log: DailyLog, config: AppConfig): number {
-  const dayStart = computeDayStart(log, config);
+  const dayStart = parseDateWithHour(log.date, config.schedule.end, config.timezone);
   const dayEnd = computeDayEnd(log.date, config.schedule.end, config.timezone);
   return Math.max(0, dayEnd - dayStart);
 }
@@ -397,11 +382,6 @@ export function computeTotalManualEntryMs(log: DailyLog): number {
 export function computeTotalClaimedMs(log: DailyLog): number {
   const sessionsMs = log.sessions.reduce((sum, s) => sum + computeFullEffectiveDuration(s), 0);
   return sessionsMs + computeTotalManualEntryMs(log);
-}
-
-/** Check if day budget is exhausted */
-export function isBudgetExhausted(log: DailyLog, config: AppConfig): boolean {
-  return computeTotalClaimedMs(log) >= computeBudgetMs(log, config);
 }
 
 /** Remaining budget in ms, clamped >= 0 */
@@ -480,7 +460,7 @@ export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: n
   const budget = computeBudgetMs(log, config);
   if (currentClaimed + addMs > budget) {
     const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
-    throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
+    throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
   }
 
   if (!session.manualAdjustments) {
@@ -550,7 +530,7 @@ export function addManualEntry(
   const addMs = input.minutes * MS_PER_MINUTE;
   if (computeTotalClaimedMs(log) + addMs > computeBudgetMs(log, config)) {
     const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
-    throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
+    throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
   }
 
   unsealForEdit(log);
@@ -590,7 +570,7 @@ export function editManualEntry(
     const deltaMs = (patch.minutes - entry.minutes) * MS_PER_MINUTE;
     if (deltaMs > 0 && computeTotalClaimedMs(log) + deltaMs > computeBudgetMs(log, config)) {
       const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
-      throw new Error(`Exceeds day budget. Remaining: ${remainMinutes}m. Use set-start to extend.`);
+      throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
     }
     entry.minutes = patch.minutes;
   }
@@ -608,54 +588,6 @@ export function editManualEntry(
   }
 
   unsealForEdit(log);
-}
-
-/**
- * Set manual day start. Passing null clears the override.
- *
- * Rules:
- * - Lower bound: schedule.start (the tracking-window start hour).
- * - Upper bound: the earliest session's `activatedAt` (first CONFIRMED work).
- *   Real logged activity wins — the user may only shift the start earlier, never
- *   past the moment real work began. We anchor to `activatedAt`, NOT `startedAt`:
- *   a PENDING session's `startedAt` is just when the daemon first saw the branch
- *   (often the moment the tracker launched), not when work actually started.
- * - If no session has activated yet there is no confirmed activity to anchor to,
- *   so the only constraint is that the start cannot be in the future.
- */
-export function setDayManualStart(log: DailyLog, isoTimestamp: string | null, config: AppConfig): void {
-  if (isoTimestamp === null) {
-    log.manualStart = null;
-    return;
-  }
-
-  const newStart = new Date(isoTimestamp).getTime();
-
-  const lowerBound = parseDateWithHour(log.date, config.schedule.start, config.timezone);
-  if (newStart < lowerBound) {
-    throw new Error(`Cannot start before ${String(config.schedule.start).padStart(2, '0')}:00 (tracking window)`);
-  }
-
-  // Upper bound = first CONFIRMED activity (earliest activatedAt), not startedAt.
-  let firstActivated: number | null = null;
-  for (const s of log.sessions) {
-    if (!s.activatedAt) continue;
-    const t = new Date(s.activatedAt).getTime();
-    if (firstActivated === null || t < firstActivated) firstActivated = t;
-  }
-
-  if (firstActivated !== null) {
-    if (newStart > firstActivated) {
-      const d = new Date(firstActivated);
-      const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      throw new Error(`Cannot start after the first activity (${hhmm})`);
-    }
-  } else if (newStart > Date.now()) {
-    // No confirmed work yet — only forbid a future start.
-    throw new Error('Cannot start in the future');
-  }
-
-  log.manualStart = isoTimestamp;
 }
 
 /** Parse a date string + hour into a timestamp in the given timezone */

@@ -177,13 +177,22 @@ test('edit on pushed day unseals back to Draft', () => {
   assert.equal(log.status, DayStatus.Draft);
 });
 
-test('budget invariant blocks overflow', () => {
+test('budget v2: 24h window fits exactly, +1m overflows', () => {
   const config = makeConfig();
   const log = makeLog(config);
-  // Shrink window to 1h: dayStartedAt 23:00 UTC, dayEnd = next 00:00 UTC.
-  log.dayStartedAt = '2026-06-13T23:00:00.000Z';
-  addStd(log, config, { minutes: 30 });          // ok: 30 ≤ 60
-  assert.throws(() => addStd(log, config, { minutes: 31 }), /Exceeds day budget/);
+  // Window is the full day (24h = 1440m), regardless of dayStartedAt/sessions.
+  addStd(log, config, { minutes: 480 });
+  addStd(log, config, { minutes: 480 });
+  addStd(log, config, { minutes: 480 });         // ok: exactly 1440m (check is strict >)
+  assert.throws(() => addStd(log, config, { minutes: 1 }), /Exceeds 24h day window/);
+});
+
+test('budget v2: dayStartedAt does not shrink the window', () => {
+  const config = makeConfig();
+  const log = makeLog(config);
+  log.dayStartedAt = '2026-06-13T23:00:00.000Z'; // v1 would leave a 1h window
+  const e = addStd(log, config, { minutes: 480 }); // far beyond 1h — must pass now
+  assert.equal(e.minutes, 480);
 });
 
 test('findManualEntry by id', () => {
@@ -219,9 +228,13 @@ test('editManualEntry sets provided fields', () => {
 test('editManualEntry budget re-check on increase; shrink always ok', () => {
   const config = makeConfig();
   const log = makeLog(config);
-  log.dayStartedAt = '2026-06-13T23:00:00.000Z'; // 1h window
+  // Fill the 24h window to 1410m, leaving 30m of headroom.
+  addStd(log, config, { minutes: 480 });
+  addStd(log, config, { minutes: 480 });
+  addStd(log, config, { minutes: 450 });
   const e = addStd(log, config, { minutes: 30 });
-  assert.throws(() => editManualEntry(log, e.id, { minutes: 90 }, config), /Exceeds day budget/);
+  // 30 → 31 would cross the 24h window.
+  assert.throws(() => editManualEntry(log, e.id, { minutes: 31 }, config), /Exceeds 24h day window/);
   editManualEntry(log, e.id, { minutes: 10 }, config);
   assert.equal(findManualEntry(log, e.id)!.minutes, 10);
 });

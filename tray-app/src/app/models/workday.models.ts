@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 6;
+export const EXPECTED_API_VERSION = 7;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -75,11 +75,8 @@ export interface TodayResponse {
   manualEntries: readonly ManualEntry[];
   totalEffectiveMs: number;
   signalCount: number;
-  budgetMs: number;
   claimedMs: number;
-  remainingBudgetMs: number;
   dayStartedAt: string | null;
-  manualStart: string | null;
   schedule: { start: number; end: number };
   activeIntervals: ActiveInterval[];
   downtimeMs?: number;
@@ -103,13 +100,6 @@ export interface AdjustResponse {
   task: string | null;
   addedMinutes: number;
   totalManualMinutes: number;
-  remainingBudgetMs: number;
-}
-
-export interface SetStartResponse {
-  dayStart: string;
-  budgetMs: number;
-  remainingBudgetMs: number;
 }
 
 export interface DaysResponse {
@@ -138,7 +128,6 @@ export interface ManualEntryResponse {
   readonly description: string;
   readonly activity: string;
   readonly totalManualMinutes: number;
-  readonly remainingBudgetMs: number;
 }
 
 // Input for adding / editing a manual entry from the UI.

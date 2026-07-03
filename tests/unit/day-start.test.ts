@@ -1,17 +1,14 @@
 /**
- * Unit tests for setDayManualStart: the manual day-start bound.
+ * Unit tests for the day-start label (resolveUiDayStart) and budget v2
+ * (computeBudgetMs = full physical day window, independent of sessions).
  *
  * Run: npx tsx tests/unit/day-start.test.ts
  * Exit code: 0 = all pass, 1 = any fail
  *
  * Pure in-memory — no disk, no daemon.
- *
- * Regression guard: the upper bound must anchor to the earliest `activatedAt`
- * (first CONFIRMED work), NOT `startedAt`. A PENDING session's `startedAt` is
- * just when the daemon first saw the branch and must not block a later start.
  */
 import assert from 'node:assert/strict';
-import { createEmptyLog, setDayManualStart, resolveUiDayStart } from '../../src/core/daily-log.js';
+import { createEmptyLog, resolveUiDayStart, computeBudgetMs } from '../../src/core/daily-log.js';
 import { SessionState, SensitivityLevel, type AppConfig, type DailyLog, type Session } from '../../src/core/types.js';
 
 let passed = 0;
@@ -74,94 +71,17 @@ function makeLog(config: AppConfig, sessions: Session[] = []): DailyLog {
   return log;
 }
 
-console.log('Day start — setDayManualStart');
-
-test('null clears the override', () => {
-  const config = makeConfig();
-  const log = makeLog(config, [makeSession({ activatedAt: `${DATE}T10:00:00.000Z` })]);
-  setDayManualStart(log, `${DATE}T09:30:00.000Z`, config);
-  assert.equal(log.manualStart, `${DATE}T09:30:00.000Z`);
-  setDayManualStart(log, null, config);
-  assert.equal(log.manualStart, null);
-});
-
-test('REGRESSION: pending-only session does NOT block a later start', () => {
-  // The user's bug: tracker launched at 09:00, session sits PENDING (no real
-  // work). Old code anchored to startedAt and rejected anything after 09:00.
-  const config = makeConfig();
-  const log = makeLog(config, [makeSession({ state: SessionState.Pending, startedAt: `${DATE}T09:00:00.000Z`, activatedAt: null })]);
-  setDayManualStart(log, `${DATE}T10:00:00.000Z`, config); // after startedAt — must succeed now
-  assert.equal(log.manualStart, `${DATE}T10:00:00.000Z`);
-});
-
-test('start between startedAt and activatedAt is allowed', () => {
-  // Old code rejected this (startedAt bound); new code allows up to activatedAt.
-  const config = makeConfig();
-  const log = makeLog(config, [makeSession({ startedAt: `${DATE}T09:00:00.000Z`, activatedAt: `${DATE}T10:00:00.000Z` })]);
-  setDayManualStart(log, `${DATE}T09:30:00.000Z`, config);
-  assert.equal(log.manualStart, `${DATE}T09:30:00.000Z`);
-});
-
-test('start exactly at activatedAt is allowed', () => {
-  const config = makeConfig();
-  const log = makeLog(config, [makeSession({ activatedAt: `${DATE}T10:00:00.000Z` })]);
-  setDayManualStart(log, `${DATE}T10:00:00.000Z`, config);
-  assert.equal(log.manualStart, `${DATE}T10:00:00.000Z`);
-});
-
-test('start after first activatedAt throws', () => {
-  const config = makeConfig();
-  const log = makeLog(config, [makeSession({ activatedAt: `${DATE}T10:00:00.000Z` })]);
-  assert.throws(() => setDayManualStart(log, `${DATE}T10:30:00.000Z`, config), /after the first activity/);
-  assert.equal(log.manualStart, null); // unchanged on rejection
-});
-
-test('bound is the EARLIEST activatedAt across sessions (pending skipped)', () => {
-  const config = makeConfig();
-  const log = makeLog(config, [
-    makeSession({ id: 'a', repo: 'repoA', startedAt: `${DATE}T08:00:00.000Z`, activatedAt: `${DATE}T11:00:00.000Z` }),
-    makeSession({ id: 'b', repo: 'repoB', state: SessionState.Pending, startedAt: `${DATE}T08:30:00.000Z`, activatedAt: null }),
-    makeSession({ id: 'c', repo: 'repoC', startedAt: `${DATE}T09:00:00.000Z`, activatedAt: `${DATE}T10:00:00.000Z` }),
-  ]);
-  // Earliest activation is 10:00 (session c) — 10:30 must be rejected...
-  assert.throws(() => setDayManualStart(log, `${DATE}T10:30:00.000Z`, config), /after the first activity/);
-  // ...but 09:30 (before earliest activation) is fine.
-  setDayManualStart(log, `${DATE}T09:30:00.000Z`, config);
-  assert.equal(log.manualStart, `${DATE}T09:30:00.000Z`);
-});
-
-test('start before tracking-window lower bound throws', () => {
-  const config = makeConfig(8); // schedule.start = 08:00
-  const log = makeLog(config, [makeSession({ activatedAt: `${DATE}T10:00:00.000Z` })]);
-  assert.throws(() => setDayManualStart(log, `${DATE}T07:00:00.000Z`, config), /Cannot start before 08:00/);
-});
-
-test('no sessions: a past start within the window is allowed', () => {
-  const config = makeConfig();
-  const log = makeLog(config, []);
-  setDayManualStart(log, `${DATE}T09:00:00.000Z`, config); // DATE is in the past relative to now
-  assert.equal(log.manualStart, `${DATE}T09:00:00.000Z`);
-});
-
-test('no activated sessions: a future start throws', () => {
-  const config = makeConfig();
-  const log = makeLog(config, [makeSession({ state: SessionState.Pending, activatedAt: null })]);
-  const future = new Date(Date.now() + 3600_000).toISOString();
-  assert.throws(() => setDayManualStart(log, future, config), /in the future/);
-});
-
-console.log('\nDay start — resolveUiDayStart');
-
-test('manualStart wins over sessions', () => {
-  const config = makeConfig();
-  const log = makeLog(config, [makeSession({ activatedAt: `${DATE}T10:00:00.000Z` })]);
-  log.manualStart = `${DATE}T09:00:00.000Z`;
-  assert.equal(resolveUiDayStart(log), `${DATE}T09:00:00.000Z`);
-});
+console.log('Day start — resolveUiDayStart');
 
 test('null when no session has activated', () => {
   const config = makeConfig();
   const log = makeLog(config, [makeSession({ state: SessionState.Pending, activatedAt: null })]);
+  assert.equal(resolveUiDayStart(log), null);
+});
+
+test('null on an empty day', () => {
+  const config = makeConfig();
+  const log = makeLog(config, []);
   assert.equal(resolveUiDayStart(log), null);
 });
 
@@ -183,6 +103,25 @@ test('pending sessions are skipped when finding earliest', () => {
     makeSession({ id: 'b', activatedAt: `${DATE}T11:00:00.000Z` }),
   ]);
   assert.equal(resolveUiDayStart(log), `${DATE}T11:00:00.000Z`);
+});
+
+console.log('\nBudget v2 — computeBudgetMs');
+
+test('window is the full 24h day (UTC config)', () => {
+  const config = makeConfig();
+  const log = makeLog(config, []);
+  assert.equal(computeBudgetMs(log, config), 24 * 3600_000);
+});
+
+test('window ignores sessions and dayStartedAt', () => {
+  const config = makeConfig();
+  const empty = makeLog(config, []);
+  const busy = makeLog(config, [
+    makeSession({ activatedAt: `${DATE}T18:00:00.000Z` }),
+  ]);
+  busy.dayStartedAt = `${DATE}T17:55:00.000Z`; // daemon started in the evening
+  assert.equal(computeBudgetMs(busy, config), computeBudgetMs(empty, config));
+  assert.equal(computeBudgetMs(busy, config), 24 * 3600_000);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

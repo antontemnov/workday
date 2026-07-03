@@ -8,14 +8,11 @@ import {
   createEmptyLog,
   writeDailyLog,
   addSignal,
-  isBudgetExhausted,
   addManualAdjustment,
   addManualEntry,
   editManualEntry,
-  setDayManualStart,
   resolveSessionTarget,
   computeManualMinutes,
-  getRemainingBudgetMs,
   getOpenPause,
 } from './daily-log.js';
 import { computeWorkingDate, getSensitivityForRepo, resolveSensitivityTicks, writeConfig } from './config.js';
@@ -91,8 +88,6 @@ export class SessionTracker {
    * 4. Update session tick (lastSeenAt, evidence, promote PENDING→ACTIVE)
    */
   public processPollResult(result: PollResult): void {
-    if (this.isBudgetExhausted()) return;
-
     const now = new Date().toISOString();
     const repoName = basename(result.repoPath);
     let openSession = this.findOpenSession(repoName);
@@ -215,28 +210,11 @@ export class SessionTracker {
     return completedLog;
   }
 
-  /** Mark manual start of workday */
-  public setManualStart(timestamp: string): void {
-    this.dailyLog.manualStart = timestamp;
-  }
-
   /** Set dayStartedAt (called by daemon on startup) */
   public setDayStartedAt(timestamp: string): void {
     if (!this.dailyLog.dayStartedAt) {
       this.dailyLog.dayStartedAt = timestamp;
     }
-  }
-
-  // ─── Budget ────────────────────────────────────────────────────────────
-
-  /** Check if budget is exhausted */
-  public isBudgetExhausted(): boolean {
-    return isBudgetExhausted(this.dailyLog, this.config);
-  }
-
-  /** Close all open sessions with BudgetExhausted */
-  public closeBudgetExhausted(): void {
-    this.closeAllSessions(ClosedBy.BudgetExhausted);
   }
 
   /** Add manual time adjustment to a session */
@@ -248,16 +226,6 @@ export class SessionTracker {
     try {
       addManualAdjustment(this.dailyLog, session.id, minutes, reason, this.config);
       return { ok: true, sessionId: session.id };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  }
-
-  /** Set manual day start. Pass null to clear. */
-  public setManualDayStart(isoTimestamp: string | null): { ok: boolean; error?: string } {
-    try {
-      setDayManualStart(this.dailyLog, isoTimestamp, this.config);
-      return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -281,11 +249,6 @@ export class SessionTracker {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-  }
-
-  /** Get remaining budget in ms */
-  public getRemainingBudgetMs(): number {
-    return getRemainingBudgetMs(this.dailyLog, this.config);
   }
 
   /** Get manual minutes for a session */

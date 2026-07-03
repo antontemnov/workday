@@ -11,7 +11,6 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   AdjustResponse,
-  SetStartResponse,
   DaysResponse,
   EXPECTED_API_VERSION,
   MonthResponse,
@@ -164,14 +163,6 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/adjust', { target, minutes, reason });
   }
 
-  override async setStart(time: string): Promise<ApiResponse<SetStartResponse>> {
-    return this.post('/api/set-start', { time });
-  }
-
-  override async clearStart(): Promise<ApiResponse<SetStartResponse>> {
-    return this.post('/api/set-start', { clear: true });
-  }
-
   override async stop(): Promise<ApiResponse<unknown>> {
     return this.post('/api/stop');
   }
@@ -273,19 +264,29 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       manualEntries: log.manualEntries ?? [],
       totalEffectiveMs,
       signalCount: (log.signals ?? []).length,
-      // Disk fallback: budget is daemon-computed, surface as zero. Past-day UI
-      // does not show the budget bar anyway.
-      budgetMs: 0,
+      // Disk fallback: claimed is daemon-computed, surface as zero. Past-day
+      // UI does not render against it anyway.
       claimedMs: 0,
-      remainingBudgetMs: 0,
-      dayStartedAt: log.dayStartedAt ?? null,
-      manualStart: log.manualStart ?? null,
+      // Mirror the daemon's resolveUiDayStart: earliest activatedAt. The raw
+      // log.dayStartedAt on old files is "the moment the daemon launched".
+      dayStartedAt: this.earliestActivatedAt(log.sessions ?? []),
       // Schedule is config-driven and not persisted in the log. Kept only to
       // satisfy the response shape — the day view no longer renders against it.
       schedule: { start: 10, end: 4 },
       activeIntervals,
       downtimeMs: this.computeDowntime(activeIntervals),
     };
+  }
+
+  private earliestActivatedAt(sessions: readonly RawSession[]): string | null {
+    let earliest: string | null = null;
+    for (const s of sessions) {
+      if (!s.activatedAt) continue;
+      if (earliest === null || new Date(s.activatedAt).getTime() < new Date(earliest).getTime()) {
+        earliest = s.activatedAt;
+      }
+    }
+    return earliest;
   }
 
   private toSessionDetail(s: RawSession): SessionDetail {
@@ -394,7 +395,6 @@ interface RawDailyLog {
   readonly date: string;
   readonly status?: string;
   readonly dayType?: string;
-  readonly manualStart?: string | null;
   readonly dayStartedAt?: string | null;
   readonly sessions?: RawSession[];
   readonly signals?: unknown[];

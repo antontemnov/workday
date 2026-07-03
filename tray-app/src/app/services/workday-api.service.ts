@@ -6,7 +6,6 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   AdjustResponse,
-  SetStartResponse,
   DaysResponse,
   MonthResponse,
   SettingsResponse,
@@ -35,8 +34,6 @@ export abstract class WorkdayApiService {
   abstract resume(): Promise<ApiResponse<{ resumed: string[] }>>;
   abstract sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>>;
   abstract adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>>;
-  abstract setStart(time: string): Promise<ApiResponse<SetStartResponse>>;
-  abstract clearStart(): Promise<ApiResponse<SetStartResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
   abstract startDaemon(): Promise<void>;
 

@@ -6,10 +6,8 @@ import {
   computeEffectiveDuration,
   computeTotalPauseDuration,
   computeManualMinutes,
-  computeBudgetMs,
   computeTotalClaimedMs,
   computeTotalManualEntryMs,
-  getRemainingBudgetMs,
   computeActiveIntervals,
   computeDaySummary,
   resolveUiDayStart,
@@ -22,7 +20,6 @@ import {
 import { resolveActivityTypes } from './push/activity-types.js';
 import {
   computeWorkingDate,
-  buildTimestamp,
   buildPatchedConfig,
   writeConfig,
   writeSecrets,
@@ -41,7 +38,6 @@ import type {
   StopResponse,
   SensitivityResponse,
   AdjustResponse,
-  SetStartResponse,
   ManualEntryResponse,
   ActivityTypesResponse,
   DaysResponse,
@@ -60,7 +56,6 @@ export interface HttpServerDeps {
   readonly stopCallback: () => Promise<void>;
   readonly getStartedAt: () => number;
   readonly getCurrentDate: () => string;
-  readonly onBudgetFreed: () => void;
   /**
    * Forces an immediate evaluator tick — used after mutating actions so the
    * next read reflects leadership/auto-pause decisions without waiting for
@@ -156,10 +151,6 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/adjust') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleAdjust(body));
-      }
-      if (method === 'POST' && path === '/api/set-start') {
-        const body = await this.readBody(req);
-        return this.sendJson(res, 200, await this.handleSetStart(body));
       }
       if (method === 'POST' && path === '/api/manual-entry') {
         const body = await this.readBody(req);
@@ -273,11 +264,8 @@ export class HttpServer {
         manualEntries: log.manualEntries ?? [],
         totalEffectiveMs,
         signalCount: log.signals.length,
-        budgetMs: computeBudgetMs(log, config),
         claimedMs: computeTotalClaimedMs(log),
-        remainingBudgetMs: getRemainingBudgetMs(log, config),
         dayStartedAt: resolveUiDayStart(log),
-        manualStart: log.manualStart,
         schedule: { start: config.schedule.start, end: config.schedule.end },
         activeIntervals: computeActiveIntervals(log.sessions),
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
@@ -359,7 +347,7 @@ export class HttpServer {
 
     const log = tracker.getDailyLog();
     const session = log.sessions.find(s => s.id === result.sessionId)!;
-    const response: ApiResponse<AdjustResponse> = {
+    return {
       ok: true,
       data: {
         sessionId: session.id,
@@ -367,55 +355,8 @@ export class HttpServer {
         task: session.task,
         addedMinutes: minutes,
         totalManualMinutes: computeManualMinutes(session),
-        remainingBudgetMs: getRemainingBudgetMs(log, this.deps.config),
       },
     };
-
-    // Re-run evaluator so a tick after manual adjustment picks up any
-    // budget-exhaustion implications (may close sessions).
-    await this.deps.forceTick();
-    return response;
-  }
-
-  private async handleSetStart(body: Record<string, unknown>): Promise<ApiResponse<SetStartResponse>> {
-    const tracker = this.deps.sessionTracker;
-    const log = tracker.getDailyLog();
-    const config = this.deps.config;
-
-    const rawTime = typeof body.time === 'string' ? body.time : '';
-    const wantClear = body.clear === true || rawTime === '';
-
-    let isoTimestamp: string | null = null;
-    if (!wantClear) {
-      const match = rawTime.match(/^(\d{1,2}):(\d{2})$/);
-      if (!match) return { ok: false, error: 'Invalid time format. Use HH:MM' };
-      isoTimestamp = buildTimestamp(log.date, parseInt(match[1]), parseInt(match[2]), config.timezone);
-    }
-
-    const result = tracker.setManualDayStart(isoTimestamp);
-    if (!result.ok) {
-      return { ok: false, error: result.error };
-    }
-
-    tracker.flush();
-
-    // If budget was exhausted and now freed, notify daemon
-    if (!tracker.isBudgetExhausted()) {
-      this.deps.onBudgetFreed();
-    }
-
-    const response: ApiResponse<SetStartResponse> = {
-      ok: true,
-      data: {
-        dayStart: isoTimestamp ?? '',
-        budgetMs: computeBudgetMs(log, config),
-        remainingBudgetMs: getRemainingBudgetMs(log, config),
-      },
-    };
-
-    // Re-run evaluator so budget state settles before the next read.
-    await this.deps.forceTick();
-    return response;
   }
 
   // ─── Manual entries ──────────────────────────────────────────────
@@ -440,7 +381,7 @@ export class HttpServer {
 
     const log = tracker.getDailyLog();
     const entry = result.entry;
-    const response: ApiResponse<ManualEntryResponse> = {
+    return {
       ok: true,
       data: {
         id: entry.id,
@@ -449,12 +390,8 @@ export class HttpServer {
         description: entry.description,
         activity: entry.activity,
         totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
-        remainingBudgetMs: getRemainingBudgetMs(log, this.deps.config),
       },
     };
-    // Manual time counts toward budget — settle exhaustion before next read.
-    await this.deps.forceTick();
-    return response;
   }
 
   private async handleUpdateManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
@@ -477,7 +414,7 @@ export class HttpServer {
     const log = tracker.getDailyLog();
     const entry = findManualEntry(log, found.id);
     if (!entry) return { ok: false, error: 'Manual entry not found after update' };
-    const response: ApiResponse<ManualEntryResponse> = {
+    return {
       ok: true,
       data: {
         id: entry.id,
@@ -486,11 +423,8 @@ export class HttpServer {
         description: entry.description,
         activity: entry.activity,
         totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
-        remainingBudgetMs: getRemainingBudgetMs(log, this.deps.config),
       },
     };
-    await this.deps.forceTick();
-    return response;
   }
 
   private async handleActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
@@ -655,11 +589,8 @@ export class HttpServer {
         manualEntries: log.manualEntries ?? [],
         totalEffectiveMs,
         signalCount: log.signals.length,
-        budgetMs: computeBudgetMs(log, config),
         claimedMs: computeTotalClaimedMs(log),
-        remainingBudgetMs: getRemainingBudgetMs(log, config),
         dayStartedAt: resolveUiDayStart(log),
-        manualStart: log.manualStart,
         schedule: { start: config.schedule.start, end: config.schedule.end },
         activeIntervals: computeActiveIntervals(log.sessions),
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,

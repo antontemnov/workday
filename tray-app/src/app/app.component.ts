@@ -396,10 +396,6 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.runAction(() => this.api.adjust(e.session.id, e.minutes, 'manual via tray'));
   }
 
-  async submitSetStart(time: string): Promise<void> {
-    await this.runAction(() => this.api.setStart(time));
-  }
-
   // ─── Manual entries ────────────────────────────────────────────────────
 
   async submitLog(input: ManualEntryInput): Promise<void> {
@@ -408,10 +404,6 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async submitEntryEdit(e: { target: string; patch: ManualEntryPatch }): Promise<void> {
     await this.runAction(() => this.api.updateManualEntry(e.target, e.patch));
-  }
-
-  async clearDayStart(): Promise<void> {
-    await this.runAction(() => this.api.clearStart());
   }
 
   async confirmEndDay(): Promise<void> {

@@ -6,14 +6,10 @@ import {
   computeTotalPauseDuration,
   computeDaySummary,
   computeManualMinutes,
-  computeDayStart,
-  computeBudgetMs,
   computeTotalClaimedMs,
-  getRemainingBudgetMs,
-  isBudgetExhausted,
+  resolveUiDayStart,
   getOpenPause,
 } from './daily-log.js';
-import { MS_PER_MINUTE } from './constants.js';
 
 // ANSI helpers
 const CLEAR = '\x1b[2J\x1b[H';
@@ -71,8 +67,8 @@ export class StatusRenderer {
     const uptime = formatDuration(now - this.ctx.startedAt);
     const tracker = this.ctx.sessionTracker;
     const log = tracker.getDailyLog();
-    const dayStartTs = computeDayStart(log, this.ctx.config);
-    const dayStartTime = formatTime(dayStartTs, this.ctx.timezone);
+    const dayStartIso = resolveUiDayStart(log);
+    const dayStartTime = dayStartIso ? formatTime(new Date(dayStartIso).getTime(), this.ctx.timezone) : '—';
     lines.push(`  ${DIM}PID${RESET} ${process.pid}  ${DIM}Date${RESET} ${this.ctx.currentDate}  ${DIM}Start${RESET} ${dayStartTime}  ${DIM}Up${RESET} ${uptime} ${DIM}(#${this.tickCount})${RESET}`);
     lines.push('');
 
@@ -167,28 +163,16 @@ export class StatusRenderer {
       }
     }
 
-    // Footer: actual work/downtime via interval merge + budget
+    // Footer: actual work/downtime via interval merge + claimed total
     const { workMs, downtimeMs, spanMs } = computeDaySummary(log.sessions);
     lines.push(`${DIM}${'─'.repeat(LINE_WIDTH)}${RESET}`);
     lines.push(`  ${BOLD}Worktime${RESET} ${formatDuration(workMs)}  ${BOLD}Idle${RESET} ${formatDuration(downtimeMs)}  ${BOLD}Total${RESET} ${formatDuration(spanMs)}`);
 
-    // Budget bar
-    const config = this.ctx.config;
-    const budgetMs = computeBudgetMs(log, config);
+    // Claimed = sessions (tracked + adjustments) + manual entries
     const claimedMs = computeTotalClaimedMs(log);
-    const remainingMs = getRemainingBudgetMs(log, config);
-    const totalManualMs = log.sessions.reduce((sum, s) => sum + computeManualMinutes(s) * MS_PER_MINUTE, 0);
-    const autoWorkMs = claimedMs - totalManualMs;
-
-    const budgetLine = `  ${BOLD}Budget${RESET} ${formatDuration(budgetMs)} | ` +
-      `${BOLD}Work${RESET} ${formatDuration(autoWorkMs)}` +
-      (totalManualMs > 0 ? ` + ${MAGENTA}Manual ${formatDuration(totalManualMs)}${RESET}` : '') +
-      ` | ${BOLD}Free${RESET} ${formatDuration(remainingMs)}`;
-    lines.push(budgetLine);
-
-    if (isBudgetExhausted(log, config)) {
-      lines.push(`  ${RED}${BOLD}BUDGET EXHAUSTED${RESET} ${DIM}— tracking paused until budget freed or day resets${RESET}`);
-    }
+    const sessionsMs = log.sessions.reduce((sum, s) => sum + computeEffectiveDuration(s), 0);
+    const manualMs = claimedMs - sessionsMs;
+    lines.push(`  ${BOLD}Claimed${RESET} ${formatDuration(claimedMs)} ${DIM}(sessions ${formatDuration(sessionsMs)} + ${RESET}${MAGENTA}manual ${formatDuration(manualMs)}${RESET}${DIM})${RESET}`);
 
     // Write to stdout
     process.stdout.write(CLEAR + lines.join('\n') + '\n');

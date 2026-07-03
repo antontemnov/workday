@@ -47,22 +47,12 @@ export class DayViewComponent {
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
-  @Output() setStartSubmitted = new EventEmitter<string>();
-  @Output() clearStartRequested = new EventEmitter<void>();
   @Output() startDaemonRequested = new EventEmitter<void>();
   @Output() goTodayRequested = new EventEmitter<void>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();
 
   public constructor(private host: ElementRef<HTMLElement>) {}
-
-  // Anchored set-start popover (replaces the full-screen modal). Hours/minutes
-  // are strings so manual typing ("4" → "04") coexists with the wheel/▲▼ spinner.
-  startPopoverOpen = false;
-  hoursStr = '09';
-  minutesStr = '00';
-  initialStart = '';
-  attemptedApply = false;
 
   // ─── Sessions ─────────────────────────────────────────────────────────
 
@@ -97,124 +87,25 @@ export class DayViewComponent {
 
   // ─── Day-start marker ─────────────────────────────────────────────────
 
+  // Server-resolved label (earliest activatedAt); the disk-fallback path may
+  // leave it null, so mirror the same earliest-activatedAt logic locally.
   get dayStartIso(): string | null {
     if (!this.data) return null;
     if (this.data.dayStartedAt) return this.data.dayStartedAt;
-    const firstActivated = this.data.sessions.find(s => !!s.activatedAt)?.activatedAt;
-    if (firstActivated) return firstActivated;
-    return this.data.sessions[0]?.startedAt ?? null;
+    let earliest: string | null = null;
+    for (const s of this.data.sessions) {
+      if (!s.activatedAt) continue;
+      if (earliest === null || new Date(s.activatedAt).getTime() < new Date(earliest).getTime()) {
+        earliest = s.activatedAt;
+      }
+    }
+    return earliest;
   }
 
   get dayStartLabel(): string {
     const iso = this.dayStartIso;
     if (!iso) return '';
     return this.formatHm(iso);
-  }
-
-  // Manual start renders mauve (like a session's manual-time tag); auto shows plain.
-  get isManualStart(): boolean {
-    return !!this.data?.manualStart;
-  }
-
-  // ─── Set-start popover ─────────────────────────────────────────────────
-
-  // Click on the start time opens a small spinner anchored to it.
-  toggleStartPopover(): void {
-    if (this.startPopoverOpen) { this.closeStartPopover(); return; }
-    if (!this.isViewingToday) return;
-    const [h, m] = (this.dayStartLabel || '09:00').split(':');
-    this.hoursStr = h ?? '09';
-    this.minutesStr = m ?? '00';
-    this.initialStart = `${this.hoursStr}:${this.minutesStr}`;
-    this.attemptedApply = false;
-    this.startPopoverOpen = true;
-  }
-
-  closeStartPopover(): void {
-    this.startPopoverOpen = false;
-  }
-
-  // Manual typing: digits only, max two. Range validity is reported live via
-  // hoursInvalid/minutesInvalid — we never silently clamp an out-of-range value.
-  onHoursInput(value: string): void {
-    this.hoursStr = value.replace(/\D/g, '').slice(0, 2);
-    this.attemptedApply = false;
-  }
-
-  onMinutesInput(value: string): void {
-    this.minutesStr = value.replace(/\D/g, '').slice(0, 2);
-    this.attemptedApply = false;
-  }
-
-  // Pad a valid value to two digits on blur ("4" → "04"); leave invalid as typed.
-  normalizeHours(): void {
-    if (!this.hoursInvalid) this.hoursStr = this.hoursStr.padStart(2, '0');
-  }
-
-  normalizeMinutes(): void {
-    if (!this.minutesInvalid) this.minutesStr = this.minutesStr.padStart(2, '0');
-  }
-
-  get hoursInvalid(): boolean {
-    return !this.inRange(this.hoursStr, 23);
-  }
-
-  get minutesInvalid(): boolean {
-    return !this.inRange(this.minutesStr, 59);
-  }
-
-  private inRange(value: string, max: number): boolean {
-    if (!/^\d{1,2}$/.test(value.trim())) return false;
-    const n = parseInt(value, 10);
-    return n >= 0 && n <= max;
-  }
-
-  private toInt(value: string): number {
-    const n = parseInt(value, 10);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  // Wheel + ▲▼ steppers, wrapping 00-23 / 00-59 (always land on a valid value).
-  bumpHours(delta: number): void {
-    this.hoursStr = String((this.toInt(this.hoursStr) + delta + 24) % 24).padStart(2, '0');
-    this.attemptedApply = false;
-  }
-
-  bumpMinutes(delta: number): void {
-    this.minutesStr = String((this.toInt(this.minutesStr) + delta + 60) % 60).padStart(2, '0');
-    this.attemptedApply = false;
-  }
-
-  onWheel(field: 'h' | 'm', e: WheelEvent): void {
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 1 : -1;
-    if (field === 'h') this.bumpHours(delta);
-    else this.bumpMinutes(delta);
-  }
-
-  // Invalid → flag the bad control(s) red and keep the popover open.
-  applyStart(): void {
-    if (this.actionPending) return;
-    if (this.hoursInvalid || this.minutesInvalid) {
-      this.attemptedApply = true;
-      return;
-    }
-    this.hoursStr = this.hoursStr.padStart(2, '0');
-    this.minutesStr = this.minutesStr.padStart(2, '0');
-    const value = `${this.hoursStr}:${this.minutesStr}`;
-    // Unchanged from the start we opened with → no daemon write, no manual override.
-    if (value === this.initialStart) {
-      this.closeStartPopover();
-      return;
-    }
-    this.setStartSubmitted.emit(value);
-    this.closeStartPopover();
-  }
-
-  clearStart(): void {
-    if (!this.isManualStart || this.actionPending) return;
-    this.clearStartRequested.emit();
-    this.closeStartPopover();
   }
 
   // ─── Last-activity marker ─────────────────────────────────────────────

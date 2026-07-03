@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getWorkdayHome, getPackageRoot, getDataDir, buildTimestamp, computeWorkingDate } from './core/config.js';
+import { loadConfig, loadSecrets, getWorkdayHome, getPackageRoot, getDataDir, computeWorkingDate } from './core/config.js';
 import { UpdateManager } from './core/update-manager.js';
 import {
   CONFIG_FILE_NAME,
@@ -21,13 +21,10 @@ import {
   writeDailyLog,
   resolveSessionTarget,
   addManualAdjustment,
-  setDayManualStart,
   computeManualMinutes,
   computeEffectiveDuration,
   computeTotalPauseDuration,
-  computeBudgetMs,
   computeTotalClaimedMs,
-  getRemainingBudgetMs,
   computeActiveIntervals,
   computeDaySummary,
   resolveUiDayStart,
@@ -47,7 +44,6 @@ import type {
   StopResponse,
   SensitivityResponse,
   AdjustResponse,
-  SetStartResponse,
   SessionDetail,
   SessionSummary,
   TaskDayReport,
@@ -165,10 +161,7 @@ function printStatusData(data: StatusResponse): void {
 function printTodayData(data: TodayResponse): void {
   console.log(`Date: ${data.date}  (${data.dayType})  Status: ${data.status}`);
   console.log(`Total: ${formatDuration(data.totalEffectiveMs)}  Signals: ${data.signalCount}`);
-
-  if (data.budgetMs > 0) {
-    console.log(`Budget: ${formatDuration(data.budgetMs)} | Claimed: ${formatDuration(data.claimedMs)} | Remaining: ${formatDuration(data.remainingBudgetMs)}`);
-  }
+  console.log(`Claimed: ${formatDuration(data.claimedMs)}`);
 
   if (data.sessions.length === 0) {
     console.log('No sessions.');
@@ -407,7 +400,6 @@ async function handleAdjust(args: string[]): Promise<void> {
     }
     const d = result.data!;
     console.log(`Adjusted ${d.repo} (${d.task ?? '—'}): +${d.addedMinutes}m (total manual: ${d.totalManualMinutes}m)`);
-    console.log(`Remaining budget: ${formatDuration(d.remainingBudgetMs)}`);
   }
 }
 
@@ -435,60 +427,6 @@ function handleAdjustOffline(date: string, target: string, minutes: number, reas
   writeDailyLog(log);
   console.log(`Adjusted ${session.repo} (${session.task ?? '—'}): +${minutes}m`);
   console.log(`Total manual for session: ${computeManualMinutes(session)}m`);
-  console.log(`Remaining budget: ${formatDuration(getRemainingBudgetMs(log, config))}`);
-}
-
-async function handleSetStart(args: string[]): Promise<void> {
-  // workday set-start HH:MM [--date YYYY-MM-DD]
-  const dateIdx = args.indexOf('--date');
-  let date: string | null = null;
-  let cmdArgs = args;
-  if (dateIdx !== -1) {
-    date = args[dateIdx + 1];
-    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
-  }
-
-  const time = cmdArgs[0];
-  if (!time || !/^\d{1,2}:\d{2}$/.test(time)) {
-    console.log('Usage: workday set-start HH:MM [--date YYYY-MM-DD]');
-    return;
-  }
-
-  if (date) {
-    handleSetStartOffline(date, time);
-  } else {
-    const result = await apiPost<SetStartResponse>('/api/set-start', { time });
-    if (!result.ok) {
-      console.log(result.error);
-      return;
-    }
-    const d = result.data!;
-    console.log(`Day start set to: ${d.dayStart}`);
-    console.log(`Budget: ${formatDuration(d.budgetMs)} | Remaining: ${formatDuration(d.remainingBudgetMs)}`);
-  }
-}
-
-function handleSetStartOffline(date: string, time: string): void {
-  const config = loadConfig();
-  const log = readDailyLog(date);
-  if (!log) {
-    console.log(`No data for ${date}`);
-    return;
-  }
-
-  const [h, m] = time.split(':').map(Number);
-  const isoTimestamp = buildTimestamp(date, h, m, config.timezone);
-
-  try {
-    setDayManualStart(log, isoTimestamp, config);
-  } catch (err) {
-    console.log(err instanceof Error ? err.message : String(err));
-    return;
-  }
-
-  writeDailyLog(log);
-  console.log(`Day start set to: ${isoTimestamp}`);
-  console.log(`Budget: ${formatDuration(computeBudgetMs(log, config))} | Remaining: ${formatDuration(getRemainingBudgetMs(log, config))}`);
 }
 
 // ─── Manual entries ──────────────────────────────────────────────────────
@@ -533,7 +471,7 @@ async function handleLog(args: string[]): Promise<void> {
   if (!result.ok) { console.log(result.error); return; }
   const d = result.data!;
   console.log(`Logged ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
-  console.log(`Total manual: ${d.totalManualMinutes}m | Remaining budget: ${formatDuration(d.remainingBudgetMs)}`);
+  console.log(`Total manual: ${d.totalManualMinutes}m`);
 }
 
 function handleLogOffline(date: string, task: string, minutes: number, description: string, activity: string): void {
@@ -549,7 +487,7 @@ function handleLogOffline(date: string, task: string, minutes: number, descripti
     const entry = addManualEntry(log, { task, minutes, description, activity }, config);
     writeDailyLog(log);
     console.log(`Logged ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
-    console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m | Remaining budget: ${formatDuration(getRemainingBudgetMs(log, config))}`);
+    console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m`);
   } catch (err) {
     console.log(err instanceof Error ? err.message : String(err));
   }
@@ -597,7 +535,7 @@ async function handleLogEdit(args: string[]): Promise<void> {
   if (!result.ok) { console.log(result.error); return; }
   const d = result.data!;
   console.log(`Updated ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
-  console.log(`Total manual: ${d.totalManualMinutes}m | Remaining budget: ${formatDuration(d.remainingBudgetMs)}`);
+  console.log(`Total manual: ${d.totalManualMinutes}m`);
 }
 
 function handleLogEditOffline(date: string, target: string, patch: { minutes?: number; description?: string; activity?: string }): void {
@@ -710,11 +648,8 @@ async function handleDay(args: string[]): Promise<void> {
     manualEntries: log.manualEntries ?? [],
     totalEffectiveMs,
     signalCount: log.signals.length,
-    budgetMs: computeBudgetMs(log, config),
     claimedMs: computeTotalClaimedMs(log),
-    remainingBudgetMs: getRemainingBudgetMs(log, config),
     dayStartedAt: resolveUiDayStart(log),
-    manualStart: log.manualStart,
     schedule: { start: config.schedule.start, end: config.schedule.end },
     activeIntervals: computeActiveIntervals(log.sessions),
     downtimeMs: computeDaySummary(log.sessions).downtimeMs,
@@ -1017,9 +952,6 @@ async function main(): Promise<void> {
     case 'adjust':
       await handleAdjust(args.slice(1));
       break;
-    case 'set-start':
-      await handleSetStart(args.slice(1));
-      break;
     case 'day':
       await handleDay(args.slice(1));
       break;
@@ -1066,8 +998,6 @@ Usage:
   workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday adjust <target> +<N> "<reason>"              Add manual time (today)
   workday adjust <target> +<N> "<reason>" --date DATE  Add manual time (past day)
-  workday set-start HH:MM                              Set day start earlier (today)
-  workday set-start HH:MM --date DATE                  Set day start earlier (past day)
   workday log <task> <min> "<desc>" [--activity T]     Log manual time (today)
   workday log <task> <min> "<desc>" --date DATE        Log manual time (past day)
   workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry

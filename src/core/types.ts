@@ -88,6 +88,7 @@ export enum ClosedBy {
   DaemonStop = 'daemon_stop',
   DaemonCrash = 'daemon_crash',
   ManualStop = 'manual_stop',
+  // Legacy — never produced since budget v2; kept so old day files still read.
   BudgetExhausted = 'budget_exhausted',
 }
 
@@ -220,7 +221,6 @@ export interface DailyLog {
   readonly date: string;
   status: DayStatus;
   dayType: DayType;
-  manualStart: string | null;
   dayStartedAt: string | null;
   sessions: Session[];
   signals: Signal[];
@@ -496,11 +496,8 @@ export interface TodayResponse {
   readonly manualEntries: readonly ManualEntry[];
   readonly totalEffectiveMs: number;
   readonly signalCount: number;
-  readonly budgetMs: number;
   readonly claimedMs: number;
-  readonly remainingBudgetMs: number;
   readonly dayStartedAt: string | null;
-  readonly manualStart: string | null;
   readonly schedule: ScheduleConfig;
   readonly activeIntervals: readonly ActiveInterval[];
   // Time when no session was active (union of work intervals subtracted from full span).
@@ -537,13 +534,6 @@ export interface AdjustResponse {
   readonly task: string | null;
   readonly addedMinutes: number;
   readonly totalManualMinutes: number;
-  readonly remainingBudgetMs: number;
-}
-
-export interface SetStartResponse {
-  readonly dayStart: string;
-  readonly budgetMs: number;
-  readonly remainingBudgetMs: number;
 }
 
 export interface ManualEntryResponse {
@@ -553,7 +543,6 @@ export interface ManualEntryResponse {
   readonly description: string;
   readonly activity: string;
   readonly totalManualMinutes: number;   // sum of all manual entries today
-  readonly remainingBudgetMs: number;
 }
 
 export interface ActivityType {

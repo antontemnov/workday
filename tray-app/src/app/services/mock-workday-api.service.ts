@@ -7,7 +7,6 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   AdjustResponse,
-  SetStartResponse,
   DaysResponse,
   MonthResponse,
   MonthDay,
@@ -207,11 +206,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
       manualEntries: [...this.mockManualEntries],
       totalEffectiveMs: 7 * 3600_000,
       signalCount: 42,
-      budgetMs: 8 * 3600_000,
       claimedMs: this.mockManualMinutes() * 60_000,
-      remainingBudgetMs: 8 * 3600_000 - this.mockManualMinutes() * 60_000,
       dayStartedAt: this.iso(9, 18),
-      manualStart: null,
       schedule: { start: 9, end: 23 },
       activeIntervals: [
         { from: this.iso(9, 18),  to: this.iso(10, 45), sessionId: 'c1', repo: 'D:/work/atlas-frontend' },
@@ -257,16 +253,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return {
       ok: true,
       data: { sessionId: target, repo: 'mock', task: null, addedMinutes: minutes,
-              totalManualMinutes: minutes, remainingBudgetMs: 8 * 3600_000 },
+              totalManualMinutes: minutes },
     };
-  }
-
-  async setStart(time: string): Promise<ApiResponse<SetStartResponse>> {
-    return { ok: true, data: { dayStart: time, budgetMs: 8 * 3600_000, remainingBudgetMs: 8 * 3600_000 } };
-  }
-
-  async clearStart(): Promise<ApiResponse<SetStartResponse>> {
-    return { ok: true, data: { dayStart: '', budgetMs: 8 * 3600_000, remainingBudgetMs: 8 * 3600_000 } };
   }
 
   async stop(): Promise<ApiResponse<unknown>> {
@@ -322,7 +310,6 @@ export class MockWorkdayApiService extends WorkdayApiService {
       id: entry.id, task: entry.task, minutes: entry.minutes,
       description: entry.description, activity: entry.activity,
       totalManualMinutes: this.mockManualMinutes(),
-      remainingBudgetMs: 8 * 3600_000 - this.mockManualMinutes() * 60_000,
     };
   }
 

@@ -283,26 +283,6 @@ export function computeWorkingDate(timestamp: number, dayBoundaryHour: number, t
   return formatDate(timestamp, timezone);
 }
 
-/** Build ISO timestamp from date + hour:minute in timezone */
-export function buildTimestamp(date: string, hour: number, minute: number, timezone: string): string {
-  const [year, month, day] = date.split('-').map(Number);
-  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour: 'numeric',
-    hour12: false,
-    minute: 'numeric',
-  }).formatToParts(guess);
-  const hourPart = parts.find(p => p.type === 'hour');
-  const minutePart = parts.find(p => p.type === 'minute');
-  if (!hourPart || !minutePart) throw new Error(`Failed to parse time in timezone ${timezone}`);
-  const actualHour = parseInt(hourPart.value);
-  const actualMinute = parseInt(minutePart.value);
-  const h = actualHour === 24 ? 0 : actualHour;
-  const diffMs = ((hour - h) * 60 + (minute - actualMinute)) * 60_000;
-  return new Date(guess.getTime() + diffMs).toISOString();
-}
-
 /** Extract task key from branch name. Returns null for generic/foreign branches. */
 export function extractTask(branch: string, taskPattern: string, developer: string, genericBranches: readonly string[]): string | null {
   if (/^[0-9a-f]{7,40}$/.test(branch)) return null;

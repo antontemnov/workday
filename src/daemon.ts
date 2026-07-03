@@ -39,7 +39,6 @@ export class Daemon {
   private running: boolean = false;
   private foreground: boolean = false;
   private startedAt: number = 0;
-  private budgetExhaustedLogged: boolean = false;
   // Serializes scheduled and forced ticks so parallel calls do not race
   // over git polling, in-memory state or flush writes.
   private tickQueue: Promise<void> = Promise.resolve();
@@ -85,7 +84,6 @@ export class Daemon {
       stopCallback: () => this.stopAndExit(),
       getStartedAt: () => this.startedAt,
       getCurrentDate: () => this.currentDate,
-      onBudgetFreed: () => { this.budgetExhaustedLogged = false; },
       forceTick: () => this.pollTick(),
       applyConfigUpdate: (patch) => this.applyConfigUpdate(patch),
       addRepo: (path) => this.addRepo(path),
@@ -255,15 +253,6 @@ export class Daemon {
 
       // 4. Apply evaluator decisions (auto-pause/resume, promotion)
       this.sessionTracker.applyEvaluatorResult(evaluatorResult);
-
-      // 5. Budget check — close all sessions if budget exhausted
-      if (this.sessionTracker.isBudgetExhausted()) {
-        this.sessionTracker.closeBudgetExhausted();
-        if (!this.budgetExhaustedLogged) {
-          this.budgetExhaustedLogged = true;
-          console.warn('[budget] Day budget exhausted — all sessions closed. Use set-start to extend.');
-        }
-      }
 
       this.sessionTracker.flush();
 
