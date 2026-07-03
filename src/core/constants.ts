@@ -84,6 +84,11 @@ export const CRASH_RECOVERY_LOOKBACK_DAYS = 7;
 // Default for config session.idleCloseHours (0 = disabled).
 export const DEFAULT_IDLE_CLOSE_HOURS = 3;
 
+// ─── Gap detection (sleep / hibernate / suspended process) ──────────────
+export const GAP_THRESHOLD_POLL_MULTIPLIER = 3;
+// Floor so a single slow git poll or GC hiccup never reads as a sleep gap.
+export const GAP_THRESHOLD_FLOOR_SECONDS = 120;
+
 // ─── HTTP body size limit ───────────────────────────────────────────────
 export const MAX_BODY_BYTES = 4096;
 

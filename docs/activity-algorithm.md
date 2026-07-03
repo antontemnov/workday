@@ -496,6 +496,33 @@ user) but its trailing chain is trimmed on close like any other.
 New activity after an auto-close births a fresh session (lazy sessions).
 ```
 
+### Observation gap (PC sleep / hibernate)
+
+```
+Timers do not fire while the machine sleeps: the evaluator never decays and
+lastSeenAt never advances, so the first tick after wake-up would credit the
+whole gap as work. The daemon tracks lastAliveAt (refreshed by the poll tick
+and the 60s boundary timer) and checks it on both:
+
+  gap = now − lastAliveAt > max(3 × diffPollSeconds, 120s)
+
+On a gap:
+  1. Every open UNPAUSED session gets a retroactive IdleTimeout pause at its
+     own pre-gap lastSeenAt — the last moment work was actually observed.
+     Already-paused sessions keep their pause (it spans the gap naturally);
+     manual pauses are untouched.
+  2. Candidates are dropped and evaluator state is cleared — the scores are
+     pre-sleep leftovers; real activity re-earns both (touch floor).
+  3. Idle auto-close runs immediately: gap ≥ idleCloseHours → the session
+     closes right away with the honest end (last pre-sleep activity).
+
+Net effect: a short lid-close (< idleCloseHours) is a pause inside the same
+session, auto-resumed by activity; a night's sleep closes the session at the
+pre-sleep end and morning activity births a new one. The gap check also runs
+before rollover, so a sleep across the day boundary never closes sessions at
+the wake-up moment. A backwards clock jump (NTP) only re-anchors lastAliveAt.
+```
+
 ### Auto-pause: Superseded (lost leadership)
 
 ```

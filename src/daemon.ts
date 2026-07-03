@@ -7,6 +7,7 @@ import { readDailyLog, writeDailyLog, trimTrailingPauses } from './core/daily-lo
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
+import { checkGap } from './core/gap-detector.js';
 import { UpdateManager } from './core/update-manager.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
@@ -39,6 +40,9 @@ export class Daemon {
   private running: boolean = false;
   private foreground: boolean = false;
   private startedAt: number = 0;
+  // Last moment the process was known to be alive (any timer fired).
+  // Used to detect observation gaps: PC sleep / hibernate / suspend.
+  private lastAliveAt: number = 0;
   // Serializes scheduled and forced ticks so parallel calls do not race
   // over git polling, in-memory state or flush writes.
   private tickQueue: Promise<void> = Promise.resolve();
@@ -108,6 +112,7 @@ export class Daemon {
     }
 
     // First poll immediately, then on interval
+    this.lastAliveAt = Date.now();
     await this.pollTick();
     const pollMs = this.config.session.diffPollSeconds * 1000;
     this.pollTimer = setInterval(() => void this.pollTick(), pollMs);
@@ -234,9 +239,13 @@ export class Daemon {
     if (!this.running) return;
 
     try {
-      // 0. Idle auto-close (honest end) — before processing new activity, so
-      //    a long-idle session closes at its trimmed end and fresh activity
-      //    births a new session instead of resuming a stale pause.
+      // 0a. Observation gap (PC sleep) — retro-pause everything at pre-gap
+      //     lastSeenAt before any new activity is processed.
+      this.handleObservationGap(Date.now());
+
+      // 0b. Idle auto-close (honest end) — before processing new activity, so
+      //     a long-idle session closes at its trimmed end and fresh activity
+      //     births a new session instead of resuming a stale pause.
       this.sessionTracker.closeIdleSessions(Date.now());
 
       const baseShas = this.sessionTracker.getBaseShasPerRepoPath(this.config.repos);
@@ -270,6 +279,41 @@ export class Daemon {
       } else {
         console.error(`[poll] ${message}`);
       }
+    }
+  }
+
+  // ─── Observation gap (sleep / hibernate) ──────────────────────────────
+
+  /**
+   * Timers don't fire while the machine sleeps: the evaluator never decays
+   * and lastSeenAt never advances, so the first tick after wake-up would
+   * credit the whole gap as work. On a gap: every open unpaused session
+   * gets a retroactive idle pause at its pre-gap lastSeenAt; candidates and
+   * evaluator state are stale and dropped (real activity re-earns both);
+   * idle auto-close then immediately closes sessions whose gap already
+   * exceeds idleCloseHours — honest end at the last pre-sleep activity.
+   * A short gap stays a mid-session pause, auto-resumed by activity.
+   * Runs from both the poll tick and the day-boundary timer — whichever
+   * fires first after wake-up, and before rollover closes sessions.
+   */
+  private handleObservationGap(now: number): void {
+    const check = checkGap(now, this.lastAliveAt, this.config.session.diffPollSeconds);
+    this.lastAliveAt = now;
+    if (check.kind === 'none') return;
+
+    if (check.kind === 'clock_jump_back') {
+      console.warn(`[gap] clock jumped back ${Math.round(-check.gapMs / 1000)}s — re-anchored, no action`);
+      return;
+    }
+
+    const paused = this.sessionTracker.applyGapPauses();
+    this.sessionTracker.dropAllCandidates();
+    this.activityEvaluator.clear();
+    this.sessionTracker.closeIdleSessions(now);
+    this.sessionTracker.flush();
+
+    if (!this.statusRenderer) {
+      console.log(`[gap] ${Math.round(check.gapMs / 60_000)}min observation gap — ${paused} session(s) retro-paused`);
     }
   }
 
@@ -409,6 +453,11 @@ export class Daemon {
   // ─── Day boundary ─────────────────────────────────────────────────────
 
   private checkDayBoundary(): void {
+    // Gap check first: after a sleep across the boundary the sessions must
+    // be retro-paused/closed at their honest ends BEFORE rollover closes
+    // them at the wake-up moment.
+    this.handleObservationGap(Date.now());
+
     // Piggyback on the 60s boundary timer: pending updates wait here for a
     // quiet window instead of having their own restart poller.
     this.maybeRestartIntoUpdate();

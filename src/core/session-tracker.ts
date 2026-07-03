@@ -546,6 +546,25 @@ export class SessionTracker {
   }
 
   /**
+   * Retroactive idle pause after an observation gap (PC sleep / hibernate,
+   * suspended process). Every open, unpaused session gets an IdleTimeout
+   * pause opened at its own pre-gap lastSeenAt — the last moment work was
+   * actually observed — so the gap never counts as work. Sessions already
+   * paused keep their pause (it spans the gap naturally; the chain trim
+   * yields the honest end either way). Returns the number paused.
+   */
+  public applyGapPauses(): number {
+    let count = 0;
+    for (const session of this.dailyLog.sessions) {
+      if (session.closedBy) continue;
+      if (this.hasOpenPause(session)) continue;
+      session.pauses.push({ from: session.lastSeenAt, to: null, source: PauseSource.IdleTimeout });
+      count++;
+    }
+    return count;
+  }
+
+  /**
    * True when someone is plausibly mid-work: at least one open, unpaused
    * session OR a candidate (a session mid-birth — live by construction:
    * a drained candidate evaporates on the same tick). Used as the
@@ -570,7 +589,8 @@ export class SessionTracker {
     this.onSessionClosed?.(session.id);
   }
 
-  private dropAllCandidates(): void {
+  /** Evaporate every candidate (rollover, observation gap — state is stale). */
+  public dropAllCandidates(): void {
     for (const repoName of [...this.candidates.keys()]) {
       this.dropCandidate(repoName);
     }
