@@ -10,6 +10,7 @@
  *
  * Run: npx tsx tests/integration/commit-ledger.test.ts
  */
+import '../helpers/test-home.js'; // MUST be first — promotion flushes the daily log to disk
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
@@ -18,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { GitTracker } from '../../src/collectors/git-tracker.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
+import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import { ClosedBy } from '../../src/core/types.js';
 import type { AppConfig, PollResult, Secrets } from '../../src/core/types.js';
 
@@ -97,14 +99,20 @@ async function main(): Promise<void> {
   git('add .');
   git('commit -m "ATL-2 before daemon"', tenMinAgo);
 
-  const gitTracker = new GitTracker(config, secrets);
+  let gitTracker = new GitTracker(config, secrets);
   let sessions = new SessionTracker(config);
+  let evaluator = new ActivityEvaluator(config.session.diffPollSeconds);
+  sessions.onSessionClosed = (id) => evaluator.removeSession(id);
 
+  // Full daemon tick: poll → lifecycle → evaluator → promotion. In the lazy
+  // world a session is born from the first activity tick and (single repo,
+  // instant leadership) promoted the same tick.
   const tick = async (): Promise<PollResult | undefined> => {
     const baseShas = sessions.getBaseShasPerRepoPath(config.repos);
     const ledgerQueries = sessions.getLedgerQueries(config.repos);
     const results = await gitTracker.pollAll(baseShas, ledgerQueries);
     for (const r of results) sessions.processPollResult(r);
+    sessions.applyEvaluatorResult(evaluator.processAllTicks(sessions.buildTickInputs(results)));
     return results[0];
   };
 
@@ -114,13 +122,12 @@ async function main(): Promise<void> {
     return open[0].evidence;
   };
 
-  // ── Seed: a fresh session starts at zero ───────────────────────────────
+  // ── Lazy baseline: pre-session branch history births nothing ───────────
   await tick();
 
-  check('session starts at zero — pre-session branch work is not counted', () => {
-    const ev = evidence();
-    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
+  check('no session before the first activity (branch history is not activity)', () => {
+    assert.equal(sessions.getOpenSessions().length, 0);
+    assert.equal(sessions.getCandidates().length, 0);
   });
 
   // ── Commit + squash between two polls (the original bug) ──────────────
@@ -132,9 +139,9 @@ async function main(): Promise<void> {
   git('commit -m "ATL-2 c2"');
   git('reset --soft HEAD~2');
   git('commit -m "ATL-2 squashed"');
-  await tick(); // ONE tick sees all four operations
+  await tick(); // ONE tick births the session AND sees all four operations
 
-  check('commit + commit + squash inside one tick nets exactly +1', () => {
+  check('commit + commit + squash inside one tick nets exactly +1; pre-session work stays at zero', () => {
     const ev = evidence();
     assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
     assert.equal(ev.linesAdded, 20, `linesAdded = ${ev.linesAdded}`);
@@ -182,9 +189,6 @@ async function main(): Promise<void> {
   });
 
   // ── Daemon restart: work done while it was down is NOT counted ─────────
-  // Mark the session activated (the evaluator would have promoted it on the
-  // commit signals) so the crash-close keeps it — and its ledger — in the log.
-  sessions.getOpenSessions()[0].activatedAt = new Date().toISOString();
   sessions.closeAllSessions(ClosedBy.DaemonCrash);
   const persistedLog = sessions.getDailyLog();
 
@@ -197,13 +201,17 @@ async function main(): Promise<void> {
   git('reset --soft HEAD~2');
   git('commit -m "ATL-2 downtime squashed"', fiveMinAgo);
 
+  // A real restart loses ALL in-memory git state — recreate GitTracker too
+  // (its prev-snapshot/reflog pointers must not survive the "crash").
+  gitTracker = new GitTracker(config, secrets);
+  evaluator = new ActivityEvaluator(config.session.diffPollSeconds);
   sessions = new SessionTracker(config, persistedLog);
-  await tick();
+  sessions.onSessionClosed = (id) => evaluator.removeSession(id);
+  await tick(); // baseline tick after restart
 
-  check('after a restart the new session starts at zero (downtime not counted)', () => {
-    const ev = evidence();
-    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
+  check('after a restart downtime work births nothing (not counted at all)', () => {
+    assert.equal(sessions.getOpenSessions().length, 0);
+    assert.equal(sessions.getCandidates().length, 0);
   });
 
   writeFileSync(join(REPO, 'f6.ts'), 'six\n'.repeat(10));
@@ -233,12 +241,11 @@ async function main(): Promise<void> {
   await tick(); // closes the session (generic branch)
   git('merge --ff-only atemnov/ATL-2-ledger');
   git('checkout atemnov/ATL-2-ledger');
-  await tick(); // opens a NEW session — clean slate
+  await tick(); // lazy world: checkout back births NOTHING until activity
 
-  check('session reopened after merge starts at zero', () => {
-    const ev = evidence();
-    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
-    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
+  check('checkout back after merge births nothing without activity', () => {
+    assert.equal(sessions.getOpenSessions().length, 0);
+    assert.equal(sessions.getCandidates().length, 0);
   });
 
   writeFileSync(join(REPO, 'after-merge.ts'), 'post\n'.repeat(10));
@@ -246,7 +253,7 @@ async function main(): Promise<void> {
   git('commit -m "ATL-2 after merge"');
   await tick();
 
-  check('work after the merge counts in the new session', () => {
+  check('work after the merge counts in a clean new session (no inheritance)', () => {
     const ev = evidence();
     assert.equal(ev.commits, 1, `commits = ${ev.commits}`);
     assert.equal(ev.linesAdded, 10, `linesAdded = ${ev.linesAdded}`);

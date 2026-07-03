@@ -60,9 +60,6 @@ export class Daemon {
     const existingLog = readDailyLog(this.currentDate) ?? undefined;
     this.sessionTracker = new SessionTracker(this.config, existingLog);
 
-    // Set dayStartedAt if not already set (first daemon start of the day)
-    this.sessionTracker.setDayStartedAt(new Date().toISOString());
-
     const crashedCount = this.sessionTracker.closeCrashedSessions();
     if (crashedCount > 0) {
       this.sessionTracker.flush();
@@ -91,6 +88,7 @@ export class Daemon {
       getVersion: () => this.updateManager.getCurrentVersion(),
       checkUpdate: () => this.updateManager.checkForUpdate(),
       applyUpdate: () => this.applyUpdateNow(),
+      getWatchingRepos: () => this.gitTracker.getWatchingRepos(),
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();
@@ -251,8 +249,11 @@ export class Daemon {
       // 3. Evaluate activity scores and leadership
       const evaluatorResult = this.activityEvaluator.processAllTicks(tickInputs);
 
-      // 4. Apply evaluator decisions (auto-pause/resume, promotion)
+      // 4. Apply evaluator decisions (auto-pause/resume, candidate promotion)
       this.sessionTracker.applyEvaluatorResult(evaluatorResult);
+
+      // 5. Evaporate candidates that went quiet (TTL)
+      this.sessionTracker.sweepCandidates(Date.now());
 
       this.sessionTracker.flush();
 
@@ -412,18 +413,18 @@ export class Daemon {
     const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     if (newDate === this.currentDate) return;
 
-    const oldLog = this.sessionTracker.handleDayBoundary();
-    writeDailyLog(oldLog);
+    // Lazy rollover: an empty day writes nothing and says nothing.
+    const { oldLog, materialized } = this.sessionTracker.handleDayBoundary();
+    if (materialized) writeDailyLog(oldLog);
     this.activityEvaluator.clear();
 
-    const sessionCount = oldLog.sessions.length;
     this.currentDate = newDate;
 
     if (this.statusRenderer) {
       this.statusRenderer.updateDate(newDate);
       this.statusRenderer.render();
-    } else {
-      console.log(`[day] ${oldLog.date} closed (${sessionCount} sessions) → ${newDate}`);
+    } else if (materialized) {
+      console.log(`[day] ${oldLog.date} closed (${oldLog.sessions.length} sessions) → ${newDate}`);
     }
   }
 

@@ -2,16 +2,15 @@ import { basename } from 'node:path';
 import type {
   AppConfig,
   Secrets,
-  GitSnapshot,
   PollResult,
   ReflogEntry,
   RepoTracker,
+  WatchingRepo,
   EvidenceSnapshot,
   EvidenceBasis,
   LedgerQuery,
   LedgerUpdate,
 } from '../core/types.js';
-import { RepoState } from '../core/types.js';
 import { extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
@@ -168,6 +167,11 @@ export class GitTracker {
     const allEntries = this.reflogParser.parseEntries(raw.reflog);
     const newEntries = this.filterNewReflogEntries(allEntries, state);
 
+    // Branch-guard for prev-snapshot seeding (A-3): a snapshot taken on
+    // another branch must never seed a newborn candidate's baseline.
+    const branchChanged = state.currentBranch !== null && state.currentBranch !== raw.branch;
+    const prevEvidenceSnapshot = branchChanged ? null : state.prevEvidenceSnapshot;
+
     // Update stored state
     state.previousSnapshot = snapshot;
     state.currentBranch = raw.branch;
@@ -178,9 +182,6 @@ export class GitTracker {
     } else if (newEntries.length > 0) {
       state.lastReflogTs = newEntries[newEntries.length - 1].ts;
     }
-
-    // Determine repo state based on signals
-    this.updateRepoState(state, task, delta, newEntries);
 
     // PR-equivalent evidence snapshot (only when an evidence base was supplied
     // AND git accepted it — fetchRepoState transparently drops it on bad-ref).
@@ -196,6 +197,11 @@ export class GitTracker {
       };
       evidenceBasis = mergeBaseSha !== null ? 'merge_base' : 'base_sha';
     }
+
+    // Remember this tick's snapshot for the next tick's seeding — merge-base
+    // basis only (a base_sha snapshot is anchored differently and would
+    // corrupt a merge-base baseline).
+    state.prevEvidenceSnapshot = evidenceBasis === 'merge_base' ? evidenceSnapshot : null;
 
     // Commit ledger: replay branch-reflog transitions (exact per-operation
     // accounting) or seed a fresh ledger. Only on developer branches with a
@@ -219,6 +225,7 @@ export class GitTracker {
       evidenceSnapshot,
       evidenceBasis,
       mergeBaseSha,
+      prevEvidenceSnapshot,
       ledgerUpdate,
     };
   }
@@ -274,16 +281,33 @@ export class GitTracker {
     let state = this.repoStates.get(repoPath);
     if (!state) {
       state = {
-        state: RepoState.Idle,
         currentBranch: null,
         currentTask: null,
-        activeSessionId: null,
         previousSnapshot: null,
         lastReflogTs: 0,
+        prevEvidenceSnapshot: null,
       };
       this.repoStates.set(repoPath, state);
     }
     return state;
+  }
+
+  /**
+   * Live view for watching-card synthesis: configured repos currently on a
+   * task branch (as of their last poll), in config.repos order.
+   */
+  public getWatchingRepos(): readonly WatchingRepo[] {
+    const result: WatchingRepo[] = [];
+    for (const repoPath of this.config.repos) {
+      const state = this.repoStates.get(repoPath);
+      if (!state || state.currentTask === null || state.currentBranch === null) continue;
+      result.push({
+        repoName: basename(repoPath),
+        branch: state.currentBranch,
+        task: state.currentTask,
+      });
+    }
+    return result;
   }
 
   /** Filter reflog entries to only those newer than last seen timestamp */
@@ -293,50 +317,6 @@ export class GitTracker {
       return [];
     }
     return entries.filter(e => e.ts > state.lastReflogTs);
-  }
-
-  /**
-   * Update repo state based on collected signals.
-   * IDLE → PENDING on checkout to own branch.
-   * PENDING → ACTIVE on dynamics or commit.
-   */
-  private updateRepoState(
-    state: RepoTracker,
-    task: string | null,
-    delta: { readonly hasDynamics: boolean },
-    newEntries: ReflogEntry[],
-  ): void {
-    const hasCommit = newEntries.some(e => e.type === 'commit');
-    const hasCheckout = newEntries.some(e => e.type === 'checkout');
-
-    // Check if branch changed to a non-developer branch
-    if (task === null) {
-      if (state.state !== RepoState.Idle) {
-        state.state = RepoState.Idle;
-        state.activeSessionId = null;
-      }
-      return;
-    }
-
-    switch (state.state) {
-      case RepoState.Idle:
-        // Any signal on own branch → open PENDING
-        if (hasCheckout || hasCommit || delta.hasDynamics) {
-          state.state = RepoState.Pending;
-        }
-        break;
-
-      case RepoState.Pending:
-        // Dynamics or commit → promote to ACTIVE
-        if (delta.hasDynamics || hasCommit) {
-          state.state = RepoState.Active;
-        }
-        break;
-
-      case RepoState.Active:
-        // Stay active — session manager will handle lastSeenAt updates
-        break;
-    }
   }
 
   /** Enrich reflog entries with extracted task keys */

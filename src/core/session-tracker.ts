@@ -1,7 +1,9 @@
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
-import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery } from './types.js';
+import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery, CandidateEntry } from './types.js';
 import { applyLedgerUpdate, countSessionCommits, createEmptyLedger } from './commit-ledger.js';
+import { isDayMaterialized } from './day-lifecycle.js';
+import { CANDIDATE_TTL_MINUTES, MS_PER_MINUTE } from './constants.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -43,12 +45,20 @@ export class SessionTracker {
   private dailyLog: DailyLog;
   private readonly config: AppConfig;
   private lastEvaluatorResult: EvaluatorResult | null = null;
+  // In-memory candidate sessions (born from activity, not yet confirmed
+  // facts) keyed by repo name. Promoted to dailyLog.sessions by the
+  // evaluator (score > 0 && leader); evaporate on TTL / checkout / rollover.
+  private readonly candidates: Map<string, CandidateEntry> = new Map();
+  // Lazy-day gate: a day loaded from disk keeps being written; a fresh draft
+  // materializes only on the first confirmed fact (activation/manual entry).
+  private loadedFromDisk: boolean;
   public onSessionClosed: ((sessionId: string) => void) | null = null;
 
   public constructor(config: AppConfig, initialLog?: DailyLog) {
     const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
     this.config = config;
     this.dailyLog = initialLog ?? createEmptyLog(today, config);
+    this.loadedFromDisk = initialLog !== undefined;
 
     // Normalize old logs that lack new fields
     if (this.dailyLog.dayStartedAt === undefined) {
@@ -82,20 +92,21 @@ export class SessionTracker {
    * Process one poll tick for a single repo.
    *
    * Flow:
-   * 1. Credit reflog evidence to current open session (before any close)
-   * 2. Log signals (dynamics, commits, checkouts)
-   * 3. Handle session lifecycle (close/open/switch)
-   * 4. Update session tick (lastSeenAt, evidence, promote PENDING→ACTIVE)
+   * 1. Log signals (dynamics, commits, checkouts) — into the in-memory draft
+   * 2. Session lifecycle: open session → tick; task gone/changed → close
+   *    session AND drop the candidate
+   * 3. No session: activity births a candidate (in-memory Session, honest
+   *    startedAt = first signal); an existing candidate ticks like a session
    */
   public processPollResult(result: PollResult): void {
     const now = new Date().toISOString();
     const repoName = basename(result.repoPath);
     let openSession = this.findOpenSession(repoName);
+    const hasActivity = result.delta.hasDynamics || result.newReflogEntries.some(e => e.type === 'commit');
 
     // Pause handling
     if (openSession && this.hasOpenPause(openSession)) {
       const pauseSource = this.getOpenPauseSource(openSession);
-      const hasActivity = result.delta.hasDynamics || result.newReflogEntries.some(e => e.type === 'commit');
 
       if (pauseSource === PauseSource.Manual) {
         if (hasActivity) {
@@ -113,27 +124,47 @@ export class SessionTracker {
     //    each tick, not accumulated from reflog entries — see updateSessionTick).
     this.logSignals(repoName, result);
 
-    // 3. Handle session lifecycle
+    // 2. Session lifecycle
     if (result.task === null) {
-      // Not on developer's branch → close if open
+      // Not on developer's branch → close session, evaporate candidate
       if (openSession) {
         this.closeSession(openSession, ClosedBy.CheckoutOtherTask, now);
       }
+      this.dropCandidate(repoName);
       return;
     }
 
     if (openSession && openSession.task !== result.task) {
-      // Task changed → close old, will open new below
+      // Task changed → close old; a new candidate may be born below
       this.closeSession(openSession, ClosedBy.CheckoutOtherTask, now);
       openSession = null;
     }
 
-    if (!openSession) {
-      openSession = this.openSession(repoName, result.task, result.branch, now);
+    if (openSession) {
+      this.updateSessionTick(openSession, result, now);
+      return;
     }
 
-    // 4. Update session with current tick data
-    this.updateSessionTick(openSession, result, now);
+    // 3. Candidate lifecycle — sessions are born from activity, never from
+    //    the mere presence of a task branch (checkout alone is not activity).
+    let candidate = this.candidates.get(repoName);
+    if (candidate && candidate.session.task !== result.task) {
+      this.dropCandidate(repoName);
+      candidate = undefined;
+    }
+
+    if (!candidate) {
+      if (!hasActivity) return; // watching — nothing exists yet
+      candidate = {
+        session: this.createSession(repoName, result.task, result.branch, now),
+        lastActivityAt: Date.now(),
+      };
+      this.candidates.set(repoName, candidate);
+    } else if (hasActivity) {
+      candidate.lastActivityAt = Date.now();
+    }
+
+    this.updateSessionTick(candidate.session, result, now);
   }
 
   /**
@@ -172,6 +203,7 @@ export class SessionTracker {
         this.closeSession(session, ClosedBy.ManualStop, now);
       }
     }
+    this.dropCandidate(repoName);
     this.pruneEmptySessions();
   }
 
@@ -195,19 +227,25 @@ export class SessionTracker {
   }
 
   /**
-   * Handle day boundary: close all sessions, return completed log, start fresh.
-   * Caller should flush the returned log to disk.
+   * Handle day boundary: close all sessions, evaporate candidates, start a
+   * fresh in-memory draft. The caller writes the returned log to disk ONLY
+   * when it is materialized — an empty day leaves no file and no console
+   * noise (lazy day).
    */
-  public handleDayBoundary(): DailyLog {
+  public handleDayBoundary(): { oldLog: DailyLog; materialized: boolean } {
     this.closeAllSessions(ClosedBy.DayBoundary);
     const completedLog = this.dailyLog;
+    const materialized = isDayMaterialized(completedLog, this.loadedFromDisk);
+
+    this.dropAllCandidates();
 
     const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     this.dailyLog = createEmptyLog(newDate, this.config);
+    this.loadedFromDisk = false;
 
     this.lastEvaluatorResult = null;
 
-    return completedLog;
+    return { oldLog: completedLog, materialized };
   }
 
   /** Set dayStartedAt (called by daemon on startup) */
@@ -256,8 +294,12 @@ export class SessionTracker {
     return computeManualMinutes(session);
   }
 
-  /** Write current daily log to disk (atomic) */
+  /**
+   * Write current daily log to disk (atomic). No-op until the day is
+   * materialized: file exists ⇔ a confirmed fact happened (lazy day).
+   */
   public flush(): void {
+    if (!isDayMaterialized(this.dailyLog, this.loadedFromDisk)) return;
     writeDailyLog(this.dailyLog);
   }
 
@@ -275,7 +317,7 @@ export class SessionTracker {
     const map = new Map<string, string | null>();
     for (const repoPath of repoPaths) {
       const name = basename(repoPath);
-      const session = this.dailyLog.sessions.find(s => !s.closedBy && s.repo === name);
+      const session = this.findOpenOrCandidateSession(name);
       map.set(repoPath, session?.baseSha ?? null);
     }
     return map;
@@ -291,7 +333,7 @@ export class SessionTracker {
     const map = new Map<string, LedgerQuery | null>();
     for (const repoPath of repoPaths) {
       const name = basename(repoPath);
-      const session = this.dailyLog.sessions.find(s => !s.closedBy && s.repo === name);
+      const session = this.findOpenOrCandidateSession(name);
       if (!session?.ledger) {
         map.set(repoPath, null);
         continue;
@@ -307,14 +349,16 @@ export class SessionTracker {
 
   // ─── Evaluator integration ────────────────────────────────────────────
 
-  /** Build TickInput[] for all open sessions (except manually paused) */
+  /**
+   * Build TickInput[] for all open sessions (except manually paused) and
+   * all candidates — candidates compete for leadership like sessions do.
+   */
   public buildTickInputs(pollResults: readonly PollResult[]): readonly TickInput[] {
     const resultMap = new Map<string, PollResult>();
     for (const r of pollResults) {
       resultMap.set(basename(r.repoPath), r);
     }
 
-    const pollSeconds = this.config.session.diffPollSeconds;
     const ticks: TickInput[] = [];
     for (const session of this.dailyLog.sessions) {
       if (session.closedBy) continue;
@@ -324,30 +368,33 @@ export class SessionTracker {
         continue;
       }
 
-      const poll = resultMap.get(session.repo);
-      const signals: ActivitySignals = poll
-        ? {
-            hasDynamics: poll.delta.hasDynamics,
-            hasCommit: poll.newReflogEntries.some(e => e.type === 'commit'),
-            deltaMagnitude: poll.delta.magnitude,
-          }
-        : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
+      ticks.push(this.toTickInput(session, resultMap));
+    }
 
-      const level = getSensitivityForRepo(this.config, session.repo);
-      const { maxTicks, ignoreIdleTimeout } = resolveSensitivityTicks(level, pollSeconds);
-
-      ticks.push({
-        sessionId: session.id,
-        signals,
-        maxTicks,
-        ignoreIdleTimeout,
-      });
+    for (const entry of this.candidates.values()) {
+      ticks.push(this.toTickInput(entry.session, resultMap));
     }
 
     return ticks;
   }
 
-  /** Apply evaluator results: auto-pause, auto-resume, Pending→Active promotion */
+  private toTickInput(session: Session, resultMap: ReadonlyMap<string, PollResult>): TickInput {
+    const poll = resultMap.get(session.repo);
+    const signals: ActivitySignals = poll
+      ? {
+          hasDynamics: poll.delta.hasDynamics,
+          hasCommit: poll.newReflogEntries.some(e => e.type === 'commit'),
+          deltaMagnitude: poll.delta.magnitude,
+        }
+      : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
+
+    const level = getSensitivityForRepo(this.config, session.repo);
+    const { maxTicks, ignoreIdleTimeout } = resolveSensitivityTicks(level, this.config.session.diffPollSeconds);
+
+    return { sessionId: session.id, signals, maxTicks, ignoreIdleTimeout };
+  }
+
+  /** Apply evaluator results: auto-pause, auto-resume, candidate promotion */
   public applyEvaluatorResult(result: EvaluatorResult): void {
     this.lastEvaluatorResult = result;
     const now = new Date().toISOString();
@@ -372,13 +419,30 @@ export class SessionTracker {
           this.applyAutoPause(session, PauseSource.Superseded, now);
         }
       } else if (session.state === SessionState.Pending) {
-        // Pending → Active: score > 0 AND is leader
+        // Legacy PENDING sessions loaded from old logs: promote as before
         if (sessionScore.score > 0 && isLeader) {
           session.state = SessionState.Active;
           session.activatedAt = now;
         }
       }
     }
+
+    // Candidate promotion: score > 0 AND leadership — the first active tick
+    // when the repo leads. The session becomes a confirmed fact: pushed into
+    // the log and flushed immediately (the moment the day materializes).
+    let promoted = false;
+    for (const [repoName, entry] of [...this.candidates]) {
+      const sessionScore = result.scores.get(entry.session.id);
+      if (!sessionScore) continue;
+      if (sessionScore.score > 0 && result.leaderId === entry.session.id) {
+        entry.session.state = SessionState.Active;
+        entry.session.activatedAt = now;
+        this.dailyLog.sessions.push(entry.session);
+        this.candidates.delete(repoName);
+        promoted = true;
+      }
+    }
+    if (promoted) this.flush();
   }
 
   public getLastEvaluatorResult(): EvaluatorResult | null {
@@ -456,10 +520,45 @@ export class SessionTracker {
 
   /**
    * True when someone is plausibly mid-work: at least one open, unpaused
-   * session. Used as the quiet-window gate for self-update restarts.
+   * session OR a live candidate (a session mid-birth). Used as the
+   * quiet-window gate for self-update restarts.
    */
   public hasActiveWork(): boolean {
-    return this.getOpenSessions().some(s => !this.hasOpenPause(s));
+    return this.candidates.size > 0
+      || this.getOpenSessions().some(s => !this.hasOpenPause(s));
+  }
+
+  // ─── Candidates ──────────────────────────────────────────────────────
+
+  /** Candidate sessions (in-memory, not yet confirmed facts) in birth order. */
+  public getCandidates(): readonly Session[] {
+    return [...this.candidates.values()].map(entry => entry.session);
+  }
+
+  /**
+   * TTL evaporation: a candidate whose last activity is older than
+   * CANDIDATE_TTL_MINUTES vanishes without logs or traces (A-7).
+   */
+  public sweepCandidates(now: number): void {
+    const ttlMs = CANDIDATE_TTL_MINUTES * MS_PER_MINUTE;
+    for (const [repoName, entry] of [...this.candidates]) {
+      if (now - entry.lastActivityAt > ttlMs) {
+        this.dropCandidate(repoName);
+      }
+    }
+  }
+
+  private dropCandidate(repoName: string): void {
+    const entry = this.candidates.get(repoName);
+    if (!entry) return;
+    this.candidates.delete(repoName);
+    this.onSessionClosed?.(entry.session.id);
+  }
+
+  private dropAllCandidates(): void {
+    for (const repoName of [...this.candidates.keys()]) {
+      this.dropCandidate(repoName);
+    }
   }
 
   // ─── Private: session lifecycle ────────────────────────────────────────
@@ -470,14 +569,21 @@ export class SessionTracker {
     ) ?? null;
   }
 
-  private openSession(repo: string, task: string | null, branch: string, now: string): Session {
+  /** Open session first, then candidate — for baseSha/ledger poll context. */
+  private findOpenOrCandidateSession(repo: string): Session | null {
+    return this.findOpenSession(repo) ?? this.candidates.get(repo)?.session ?? null;
+  }
+
+  private createSession(repo: string, task: string | null, branch: string, now: string): Session {
     // Every session starts from a clean slate — nothing is inherited from
     // earlier sessions on the same repo+task. The counters are strictly
     // bounded by the session's lifetime: the first poll captures a fresh
     // line baseline and seeds the commit ledger with everything already on
     // the branch marked pre-session, so commits/lines produced while no
     // session was open (daemon down, session closed) are never counted.
-    const session: Session = {
+    // NOT pushed into dailyLog.sessions — the caller keeps it as a candidate
+    // until the evaluator promotes it.
+    return {
       id: generateSessionId(),
       repo,
       task,
@@ -496,8 +602,6 @@ export class SessionTracker {
       lastBranchCommits: null,
       ledger: null,
     };
-    this.dailyLog.sessions.push(session);
-    return session;
   }
 
   private closeSession(session: Session, reason: ClosedBy, now: string): void {
@@ -606,6 +710,12 @@ export class SessionTracker {
    * The baseline ratchets down when branch totals drop below it (own work
    * merged upstream, dropped commits) so evidence never goes negative and
    * subsequent work is counted from the new, lower base.
+   *
+   * First tick (baseline == null): seeded from the PREVIOUS tick's snapshot
+   * when available (A-3) — a candidate born from a burst would otherwise
+   * bake that burst into the baseline and lose it from the line counters.
+   * The prev snapshot is branch-guarded by GitTracker: null when the branch
+   * changed this tick, so edits carried over a checkout are never counted.
    */
   private applyMergeBaseEvidence(session: Session, snap: EvidenceSnapshot, result: PollResult): void {
     // Commit ledger first: a seed also delivers the day-start line baseline.
@@ -613,12 +723,18 @@ export class SessionTracker {
 
     let base = session.evidenceBaseline;
     if (base === null) {
+      const seed = result.prevEvidenceSnapshot ?? snap;
       base = {
-        linesAdded: snap.linesAdded,
-        linesRemoved: snap.linesRemoved,
-        filesChanged: snap.filesChanged,
+        linesAdded: seed.linesAdded,
+        linesRemoved: seed.linesRemoved,
+        filesChanged: seed.filesChanged,
       };
       session.evidenceBaseline = base;
+      // Ratchet against the current snapshot right away (prev may be higher
+      // after a revert between ticks — evidence must not go negative).
+      base.linesAdded = Math.min(base.linesAdded, snap.linesAdded);
+      base.linesRemoved = Math.min(base.linesRemoved, snap.linesRemoved);
+      base.filesChanged = Math.min(base.filesChanged, snap.filesChanged);
     } else {
       base.linesAdded = Math.min(base.linesAdded, snap.linesAdded);
       base.linesRemoved = Math.min(base.linesRemoved, snap.linesRemoved);

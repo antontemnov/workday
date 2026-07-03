@@ -80,6 +80,14 @@ export const TEMPO_TOLERANCE_SECONDS = 60;
 // ─── Daemon crash recovery ──────────────────────────────────────────────
 export const CRASH_RECOVERY_LOOKBACK_DAYS = 7;
 
+// ─── Candidate sessions (lazy birth) ────────────────────────────────────
+/**
+ * In-memory candidate lifetime since its last dynamics/commit tick. While
+ * activity continues (even without leadership) the TTL keeps resetting; a
+ * candidate that goes quiet evaporates silently — no disk traces.
+ */
+export const CANDIDATE_TTL_MINUTES = 30;
+
 // ─── HTTP body size limit ───────────────────────────────────────────────
 export const MAX_BODY_BYTES = 4096;
 

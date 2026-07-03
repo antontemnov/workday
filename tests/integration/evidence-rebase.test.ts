@@ -9,6 +9,7 @@
  * Run: npx tsx tests/integration/evidence-rebase.test.ts
  * Fast (< 10s): no daemon, no polling delays — ticks are driven manually.
  */
+import '../helpers/test-home.js'; // MUST be first — promotion flushes the daily log to disk
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
@@ -17,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { GitTracker } from '../../src/collectors/git-tracker.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
+import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import type { AppConfig, PollResult, Secrets } from '../../src/core/types.js';
 
 const TEST_DIR = join(tmpdir(), `workday-evidence-test-${randomBytes(4).toString('hex')}`);
@@ -80,12 +82,18 @@ async function main(): Promise<void> {
 
   const gitTracker = new GitTracker(config, secrets);
   const sessions = new SessionTracker(config);
+  const evaluator = new ActivityEvaluator(config.session.diffPollSeconds);
+  sessions.onSessionClosed = (id) => evaluator.removeSession(id);
 
+  // Full daemon tick: poll → lifecycle → evaluator → promotion. In the lazy
+  // world a session is born from the first activity tick and (single repo,
+  // instant leadership) promoted the same tick.
   const tick = async (): Promise<PollResult | undefined> => {
     const baseShas = sessions.getBaseShasPerRepoPath(config.repos);
     const ledgerQueries = sessions.getLedgerQueries(config.repos);
     const results = await gitTracker.pollAll(baseShas, ledgerQueries);
     for (const r of results) sessions.processPollResult(r);
+    sessions.applyEvaluatorResult(evaluator.processAllTicks(sessions.buildTickInputs(results)));
     return results[0];
   };
 
@@ -96,7 +104,12 @@ async function main(): Promise<void> {
   };
 
   // ── Baseline + work ────────────────────────────────────────────────────
-  await tick(); // opens the session, anchors the baseline
+  await tick(); // baseline tick — lazy world: nothing is born without activity
+
+  check('no session before the first activity', () => {
+    assert.equal(sessions.getOpenSessions().length, 0);
+    assert.equal(sessions.getCandidates().length, 0);
+  });
 
   writeFileSync(join(REPO, 'feature.ts'), 'code\n'.repeat(30));
   git('add .');

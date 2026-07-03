@@ -409,6 +409,10 @@ export interface PollResult {
   // Fresh `merge-base(HEAD, default branch)` for this tick. Null when no
   // default branch resolves.
   readonly mergeBaseSha: string | null;
+  // Previous tick's evidence snapshot (merge-base basis, same branch only —
+  // null when the branch changed this tick or no prior merge-base tick
+  // exists). Seeds a newborn candidate's baseline so the birth burst counts.
+  readonly prevEvidenceSnapshot: EvidenceSnapshot | null;
   // Commit-ledger input for this tick: seed / reflog transitions / resync.
   // Null when the branch reflog (or a merge-base) is unavailable — the
   // session then falls back to the positive-jump commit counter.
@@ -417,19 +421,32 @@ export interface PollResult {
 
 // ─── Daemon runtime state (per repo, not persisted) ─────────────────────
 
-export enum RepoState {
-  Idle = 'idle',
-  Pending = 'pending',
-  Active = 'active',
-}
-
 export interface RepoTracker {
-  state: RepoState;
   currentBranch: string | null;
   currentTask: string | null;
-  activeSessionId: string | null;
   previousSnapshot: GitSnapshot | null;
   lastReflogTs: number;
+  // Evidence snapshot of the previous tick (merge-base basis only). Used to
+  // seed a newborn candidate's baseline so the birth burst is counted.
+  // Nulled on branch change — a baseline from another branch would count the
+  // whole branch diff as today's work (the forbidden v0.4.3 bug class).
+  prevEvidenceSnapshot: EvidenceSnapshot | null;
+}
+
+// Candidate session: born from activity, lives only in memory until the
+// evaluator promotes it (score > 0 && leader). The session object is a
+// regular Session — all tick/evidence/ledger mechanics apply unchanged.
+export interface CandidateEntry {
+  readonly session: Session;
+  lastActivityAt: number; // Date.now() of the last dynamics/commit tick (TTL anchor)
+}
+
+// Live view of a configured repo sitting on a task branch with no session —
+// source for synthetic "watching" cards in the HTTP API.
+export interface WatchingRepo {
+  readonly repoName: string;
+  readonly branch: string;
+  readonly task: string;
 }
 
 // ─── HTTP API ───────────────────────────────────────────────────────────

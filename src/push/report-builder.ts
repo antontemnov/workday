@@ -1,6 +1,7 @@
 import { readDailyLog, computeFullEffectiveDuration } from '../core/daily-log.js';
-import { formatDate } from '../core/config.js';
-import type { AppConfig, TaskDayReport, ReportResponse } from '../core/types.js';
+import { formatDate, computeWorkingDate } from '../core/config.js';
+import { ClosedBy } from '../core/types.js';
+import type { AppConfig, TaskDayReport, ReportResponse, Session } from '../core/types.js';
 
 /** Iterate calendar dates from `from` to `to` (inclusive) */
 function* iterateDates(from: string, to: string): Generator<string> {
@@ -33,9 +34,27 @@ export function getDefaultToDate(config: AppConfig): string {
   return formatDate(Date.now(), config.timezone);
 }
 
+/**
+ * Report-side clamp: an open session on a PAST day ends at lastSeenAt, not
+ * Date.now(). Covers hard-killed daemons (Windows shutdown sends no signal)
+ * pushed before the next daemon start, and orphans older than the recovery
+ * lookback — mirrors exactly what crash recovery would write (session and
+ * its open pause closed at lastSeenAt). Today's live sessions still count
+ * to now.
+ */
+function clampPastOpenSession(session: Session, isPastDay: boolean): Session {
+  if (!isPastDay || session.closedBy !== null) return session;
+  return {
+    ...session,
+    closedBy: ClosedBy.DaemonCrash,
+    pauses: (session.pauses ?? []).map(p => (p.to === null ? { ...p, to: session.lastSeenAt } : p)),
+  };
+}
+
 /** Aggregate daily logs into per-task-per-day report entries */
 export function buildReport(from: string, to: string, config: AppConfig): TaskDayReport[] {
   const entries: TaskDayReport[] = [];
+  const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
 
   for (const date of iterateDates(from, to)) {
     const log = readDailyLog(date);
@@ -45,7 +64,7 @@ export function buildReport(from: string, to: string, config: AppConfig): TaskDa
     const taskMap = new Map<string, { totalMs: number; count: number }>();
     for (const session of log.sessions) {
       if (!session.task) continue;
-      const durationMs = computeFullEffectiveDuration(session);
+      const durationMs = computeFullEffectiveDuration(clampPastOpenSession(session, date < today));
       if (durationMs <= 0) continue;
 
       const existing = taskMap.get(session.task);

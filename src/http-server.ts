@@ -47,8 +47,9 @@ import type {
   AddRepoResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
+  WatchingRepo,
 } from './core/types.js';
-import { SensitivityLevel } from './core/types.js';
+import { SensitivityLevel, SessionState } from './core/types.js';
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
@@ -74,6 +75,53 @@ export interface HttpServerDeps {
   readonly checkUpdate: () => Promise<UpdateCheckResponse>;
   /** Install latest + graceful self-restart (skips the quiet window). */
   readonly applyUpdate: () => Promise<UpdateApplyResponse>;
+  /** Repos on a task branch as of the last poll — watching-card synthesis. */
+  readonly getWatchingRepos: () => readonly WatchingRepo[];
+}
+
+// ─── Watching-card synthesis (A-6) ─────────────────────────────────────
+//
+// The API session list is a live view: real sessions + candidates (honest
+// PENDING) + a synthetic card per configured repo sitting on a task branch
+// with neither. Synthetics exist ONLY in the response array — they never
+// reach totals, intervals or the day summary.
+
+/** Watching repos that still need a synthetic card (no session, no candidate). */
+export function selectWatchingRepos(
+  watching: readonly WatchingRepo[],
+  occupiedRepos: ReadonlySet<string>,
+): readonly WatchingRepo[] {
+  return watching.filter(w => !occupiedRepos.has(w.repoName));
+}
+
+/** Synthetic PENDING card for a watched repo — zeros, real sensitivity. */
+export function buildWatchingCard(
+  repo: WatchingRepo,
+  sensitivity: SensitivityLevel,
+  now: string,
+): SessionDetail {
+  return {
+    id: `watch:${repo.repoName}`,
+    repo: repo.repoName,
+    task: repo.task,
+    branch: repo.branch,
+    state: SessionState.Pending,
+    startedAt: now,
+    activatedAt: null,
+    lastSeenAt: now,
+    paused: false,
+    pauseSource: null,
+    effectiveDurationMs: 0,
+    manualMinutes: 0,
+    score: 0,
+    normalizedScore: 0,
+    isLeader: false,
+    sensitivity,
+    closedBy: null,
+    evidence: { commits: 0, reflogEvents: 0, linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
+    pauseCount: 0,
+    totalPauseDurationMs: 0,
+  };
 }
 
 export class HttpServer {
@@ -222,7 +270,12 @@ export class HttpServer {
   private handleStatus(): ApiResponse<StatusResponse> {
     const tracker = this.deps.sessionTracker;
     const openSessions = tracker.getOpenSessions();
-    const summaries: SessionSummary[] = openSessions.map(s => this.toSessionSummary(s, tracker));
+    const { candidates, watching, now } = this.collectLiveExtras();
+    const summaries: SessionSummary[] = [
+      ...openSessions.map(s => this.toSessionSummary(s, tracker)),
+      ...candidates.map(s => this.toSessionSummary(s, tracker)),
+      ...watching.map(w => buildWatchingCard(w, tracker.getSensitivity(w.repoName), now)),
+    ];
 
     return {
       ok: true,
@@ -242,13 +295,23 @@ export class HttpServer {
     const log = tracker.getDailyLog();
     const config = this.deps.config;
 
-    const sessions: SessionDetail[] = log.sessions.map(s => ({
+    const toDetail = (s: Session): SessionDetail => ({
       ...this.toSessionSummary(s, tracker),
       closedBy: s.closedBy,
       evidence: s.evidence,
       pauseCount: s.pauses.length,
       totalPauseDurationMs: computeTotalPauseDuration(s),
-    }));
+    });
+
+    // Live view: real sessions (log order) → candidates → watching cards.
+    // Totals below are computed from log.sessions only — synthetics and
+    // candidates never contribute time.
+    const { candidates, watching, now } = this.collectLiveExtras();
+    const sessions: SessionDetail[] = [
+      ...log.sessions.map(toDetail),
+      ...candidates.map(toDetail),
+      ...watching.map(w => buildWatchingCard(w, tracker.getSensitivity(w.repoName), now)),
+    ];
 
     const totalEffectiveMs = log.sessions.reduce(
       (sum, s) => sum + computeEffectiveDuration(s), 0,
@@ -603,6 +666,21 @@ export class HttpServer {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────
+
+  /** Candidates + watching repos that need synthetic cards (A-6). */
+  private collectLiveExtras(): { candidates: readonly Session[]; watching: readonly WatchingRepo[]; now: string } {
+    const tracker = this.deps.sessionTracker;
+    const candidates = tracker.getCandidates();
+    const occupied = new Set<string>([
+      ...tracker.getOpenSessions().map(s => s.repo),
+      ...candidates.map(s => s.repo),
+    ]);
+    return {
+      candidates,
+      watching: selectWatchingRepos(this.deps.getWatchingRepos(), occupied),
+      now: new Date().toISOString(),
+    };
+  }
 
   private toSessionSummary(session: Session, tracker: SessionTracker): SessionSummary {
     const evalResult = tracker.getLastEvaluatorResult();

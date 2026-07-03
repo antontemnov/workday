@@ -396,6 +396,8 @@ interface PollSpec {
   mergeBase?: string | null;
   head?: string;
   reflog?: ReflogEntry[];
+  // Lazy sessions: the poll that births a session must carry activity.
+  dyn?: boolean;
 }
 
 function poll(spec: PollSpec): PollResult {
@@ -411,12 +413,13 @@ function poll(spec: PollSpec): PollResult {
       timestamp: Date.now(),
       churnFiles: new Map(),
     },
-    delta: { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 },
+    delta: { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: spec.dyn ?? false, magnitude: 0 },
     newReflogEntries: spec.reflog ?? [],
     currentHead: spec.head ?? 'head1',
     evidenceSnapshot: spec.snap ?? null,
     evidenceBasis: spec.snap ? (spec.basis ?? 'merge_base') : null,
     mergeBaseSha: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
+    prevEvidenceSnapshot: null,
     ledgerUpdate: null,
   };
 }
@@ -425,15 +428,17 @@ function snap(commits: number, added: number, removed: number, files: number): E
   return { commits, linesAdded: added, linesRemoved: removed, filesChanged: files };
 }
 
+// Sessions here stay unpromoted candidates (the evaluator never runs) —
+// candidate = a regular Session, all evidence mechanics are identical.
 function openEvidence(tracker: SessionTracker) {
-  const session = tracker.getOpenSessions()[0];
-  assert.ok(session, 'expected an open session');
+  const session = tracker.getOpenSessions()[0] ?? tracker.getCandidates()[0];
+  assert.ok(session, 'expected an open session or candidate');
   return session.evidence;
 }
 
 test('first tick anchors the baseline — pre-existing branch totals are not counted', () => {
   const tracker = new SessionTracker(config);
-  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
   const ev = openEvidence(tracker);
   assert.deepEqual(
     [ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged],
@@ -444,7 +449,7 @@ test('first tick anchors the baseline — pre-existing branch totals are not cou
 
 test('work grows evidence as branch totals move past the baseline', () => {
   const tracker = new SessionTracker(config);
-  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
   tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
   const ev = openEvidence(tracker);
   assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [2, 50, 10, 2]);
@@ -452,7 +457,7 @@ test('work grows evidence as branch totals move past the baseline', () => {
 
 test('rebase: merge-base advances, totals stay — evidence survives intact', () => {
   const tracker = new SessionTracker(config);
-  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
   tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
   // rebase onto newer master: new merge-base, rewritten commits, same branch diff
   tracker.processPollResult(poll({
@@ -468,7 +473,7 @@ test('rebase: merge-base advances, totals stay — evidence survives intact', ()
 
 test('squash in Rider: commit count drop is ignored, next commit counts again', () => {
   const tracker = new SessionTracker(config);
-  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
   tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) })); // commits evidence = 2
   tracker.processPollResult(poll({ snap: snap(1, 150, 20, 7) })); // squash 5 → 1
   assert.equal(openEvidence(tracker).commits, 2, 'squash must not erase counted commits');
@@ -478,7 +483,7 @@ test('squash in Rider: commit count drop is ignored, next commit counts again', 
 
 test('own work merged upstream: baseline ratchets down, counters restart from zero', () => {
   const tracker = new SessionTracker(config);
-  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
   tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
   // PR squash-merged into master; rebase leaves only fresh work on the branch
   tracker.processPollResult(poll({ snap: snap(0, 20, 5, 3), mergeBase: 'mb3' }));
@@ -493,7 +498,7 @@ test('own work merged upstream: baseline ratchets down, counters restart from ze
 
 test('amend does not double-count (branch commit count unchanged)', () => {
   const tracker = new SessionTracker(config);
-  tracker.processPollResult(poll({ snap: snap(0, 0, 0, 0) }));
+  tracker.processPollResult(poll({ snap: snap(0, 0, 0, 0), dyn: true }));
   tracker.processPollResult(poll({ snap: snap(1, 30, 0, 2) }));
   assert.equal(openEvidence(tracker).commits, 1);
   tracker.processPollResult(poll({ snap: snap(1, 35, 0, 2), head: 'head-amended' }));
@@ -502,11 +507,12 @@ test('amend does not double-count (branch commit count unchanged)', () => {
 
 test('reopening the same task later today starts a clean session (no inheritance)', () => {
   const tracker = new SessionTracker(config);
-  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5) }));
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
   tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) })); // commits 2, +50
   tracker.processPollResult(poll({ task: null, snap: null }));    // checkout away → close
   assert.equal(tracker.getOpenSessions().length, 0);
-  tracker.processPollResult(poll({ snap: snap(6, 160, 25, 8) })); // back on the task
+  assert.equal(tracker.getCandidates().length, 0);
+  tracker.processPollResult(poll({ snap: snap(6, 160, 25, 8), dyn: true })); // back on the task + activity
   const ev = openEvidence(tracker);
   // Counters are session-scoped: the new session anchors a fresh baseline
   // at the current branch state and counts from zero.
@@ -521,7 +527,7 @@ test('reopening the same task later today starts a clean session (no inheritance
 test('fallback mode (no default branch): snapshot applied as-is, rebase re-anchors and zeroes', () => {
   const tracker = new SessionTracker(config);
   // first tick: anchor baseSha, snapshot not yet available
-  tracker.processPollResult(poll({ snap: null, basis: null, mergeBase: null }));
+  tracker.processPollResult(poll({ snap: null, basis: null, mergeBase: null, dyn: true }));
   tracker.processPollResult(poll({ snap: snap(2, 40, 5, 2), basis: 'base_sha', mergeBase: null }));
   let ev = openEvidence(tracker);
   assert.deepEqual([ev.commits, ev.linesAdded], [2, 40]);

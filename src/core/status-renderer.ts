@@ -72,8 +72,8 @@ export class StatusRenderer {
     lines.push(`  ${DIM}PID${RESET} ${process.pid}  ${DIM}Date${RESET} ${this.ctx.currentDate}  ${DIM}Start${RESET} ${dayStartTime}  ${DIM}Up${RESET} ${uptime} ${DIM}(#${this.tickCount})${RESET}`);
     lines.push('');
 
-    // Sessions
-    const openSessions = log.sessions.filter(s => !s.closedBy);
+    // Sessions: confirmed open ones + in-memory candidates (shown as PENDING)
+    const openSessions = [...log.sessions.filter(s => !s.closedBy), ...tracker.getCandidates()];
     const closedSessions = log.sessions.filter(s => s.closedBy);
     const evalResult = tracker.getLastEvaluatorResult();
 
@@ -87,7 +87,9 @@ export class StatusRenderer {
 
         for (let si = 0; si < openSessions.length; si++) {
           const session = openSessions[si];
+          // Candidates are not in the log — no CLI-addressable index yet.
           const globalIdx = log.sessions.indexOf(session) + 1;
+          const idxLabel = globalIdx > 0 ? `#${globalIdx}` : '#·';
           const sessionScore = evalResult?.scores.get(session.id);
           const isPaused = tracker.hasOpenPause(session);
           const openPause = getOpenPause(session);
@@ -113,7 +115,7 @@ export class StatusRenderer {
 
           const COL1 = 18; // first value column width
 
-          lines.push(`  ${DIM}#${globalIdx}${RESET} ${BOLD}${repoLabel}${RESET}${dot}  ${badge}${sens}`);
+          lines.push(`  ${DIM}${idxLabel}${RESET} ${BOLD}${repoLabel}${RESET}${dot}  ${badge}${sens}`);
           const L = (label: string): string => `${INDENT}${DIM}${label.padEnd(LABEL_WIDTH)}${RESET}`;
           const R = (label: string): string => `${DIM}${label}${RESET} `;
 
