@@ -38,6 +38,7 @@ import type {
   StopResponse,
   SensitivityResponse,
   AdjustResponse,
+  SessionDeleteResponse,
   ManualEntryResponse,
   ActivityTypesResponse,
   DaysResponse,
@@ -199,6 +200,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/adjust') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleAdjust(body));
+      }
+      if (method === 'POST' && path === '/api/session/delete') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleSessionDelete(body));
       }
       if (method === 'POST' && path === '/api/manual-entry') {
         const body = await this.readBody(req);
@@ -418,6 +423,31 @@ export class HttpServer {
         task: session.task,
         addedMinutes: minutes,
         totalManualMinutes: computeManualMinutes(session),
+      },
+    };
+  }
+
+  private handleSessionDelete(body: Record<string, unknown>): ApiResponse<SessionDeleteResponse> {
+    const target = typeof body.target === 'string' ? body.target : '';
+    if (!target) return { ok: false, error: 'Missing target (session index or id)' };
+
+    const tracker = this.deps.sessionTracker;
+    const wasPushed = tracker.getDailyLog().pushedAt !== null;
+    const result = tracker.deleteSession(target);
+    if (!result.ok || !result.deleted) {
+      return { ok: false, error: result.error };
+    }
+
+    const s = result.deleted;
+    return {
+      ok: true,
+      data: {
+        id: s.id,
+        repo: s.repo,
+        task: s.task,
+        effectiveDurationMs: computeEffectiveDuration(s),
+        dayFileDeleted: result.dayFileDeleted ?? false,
+        dayWasPushed: wasPushed,
       },
     };
   }

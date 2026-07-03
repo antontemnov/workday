@@ -7,6 +7,7 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   AdjustResponse,
+  SessionDeleteResponse,
   DaysResponse,
   MonthResponse,
   MonthDay,
@@ -254,6 +255,14 @@ export class MockWorkdayApiService extends WorkdayApiService {
       ok: true,
       data: { sessionId: target, repo: 'mock', task: null, addedMinutes: minutes,
               totalManualMinutes: minutes },
+    };
+  }
+
+  async deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>> {
+    return {
+      ok: true,
+      data: { id: target, repo: 'mock', task: null, effectiveDurationMs: 0,
+              dayFileDeleted: false, dayWasPushed: false },
     };
   }
 

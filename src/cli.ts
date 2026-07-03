@@ -16,9 +16,11 @@ import {
   MS_PER_MINUTE,
   DEFAULT_MANUAL_ACTIVITY,
 } from './core/constants.js';
+import { isEmptyDayLog } from './core/janitor.js';
 import {
   readDailyLog,
   writeDailyLog,
+  deleteDailyLog,
   resolveSessionTarget,
   addManualAdjustment,
   computeManualMinutes,
@@ -44,6 +46,7 @@ import type {
   StopResponse,
   SensitivityResponse,
   AdjustResponse,
+  SessionDeleteResponse,
   SessionDetail,
   SessionSummary,
   TaskDayReport,
@@ -53,7 +56,7 @@ import type {
   ManualEntryResponse,
   ActivityTypesResponse,
 } from './core/types.js';
-import { SensitivityLevel } from './core/types.js';
+import { SensitivityLevel, DayStatus } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -427,6 +430,65 @@ function handleAdjustOffline(date: string, target: string, minutes: number, reas
   writeDailyLog(log);
   console.log(`Adjusted ${session.repo} (${session.task ?? '—'}): +${minutes}m`);
   console.log(`Total manual for session: ${computeManualMinutes(session)}m`);
+}
+
+// ─── Session delete ───────────────────────────────────────────────────────
+
+async function handleSessionDelete(args: string[]): Promise<void> {
+  // workday session-delete <#index|id> [--date YYYY-MM-DD]
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const target = cmdArgs[0];
+  if (!target) {
+    console.log('Usage: workday session-delete <#index|id> [--date YYYY-MM-DD]');
+    return;
+  }
+
+  if (date) {
+    handleSessionDeleteOffline(date, target);
+    return;
+  }
+
+  const result = await apiPost<SessionDeleteResponse>('/api/session/delete', { target });
+  if (!result.ok) { console.log(result.error); return; }
+  const d = result.data!;
+  console.log(`Deleted session ${d.id} — ${d.repo} (${d.task ?? '—'}), ${formatDuration(d.effectiveDurationMs)} observed`);
+  if (d.dayFileDeleted) console.log('Day had no other facts — file removed.');
+  if (d.dayWasPushed) console.log('Day was already pushed — run `workday tempo --push` to re-sync.');
+}
+
+function handleSessionDeleteOffline(date: string, target: string): void {
+  const log = readDailyLog(date);
+  if (!log) {
+    console.log(`No data for ${date}`);
+    return;
+  }
+
+  const session = resolveSessionTarget(log, target);
+  if (!session) {
+    console.log(`Session not found: ${target}`);
+    return;
+  }
+
+  const wasPushed = !!log.pushedAt;
+  log.sessions = log.sessions.filter(s => s !== session);
+  console.log(`Deleted session ${session.id} on ${date} — ${session.repo} (${session.task ?? '—'}), ${formatDuration(computeEffectiveDuration(session))} observed`);
+
+  if (isEmptyDayLog(log)) {
+    deleteDailyLog(date);
+    console.log('Day had no other facts — file removed.');
+    return;
+  }
+
+  if (log.status !== DayStatus.Draft) log.status = DayStatus.Draft;
+  writeDailyLog(log);
+  if (wasPushed) console.log('Day was already pushed — run `workday tempo --push` to re-sync.');
 }
 
 // ─── Manual entries ──────────────────────────────────────────────────────
@@ -952,6 +1014,9 @@ async function main(): Promise<void> {
     case 'adjust':
       await handleAdjust(args.slice(1));
       break;
+    case 'session-delete':
+      await handleSessionDelete(args.slice(1));
+      break;
     case 'day':
       await handleDay(args.slice(1));
       break;
@@ -998,6 +1063,7 @@ Usage:
   workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday adjust <target> +<N> "<reason>"              Add manual time (today)
   workday adjust <target> +<N> "<reason>" --date DATE  Add manual time (past day)
+  workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
   workday log <task> <min> "<desc>" [--activity T]     Log manual time (today)
   workday log <task> <min> "<desc>" --date DATE        Log manual time (past day)
   workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry

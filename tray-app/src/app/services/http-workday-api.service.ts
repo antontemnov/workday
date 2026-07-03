@@ -11,6 +11,7 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   AdjustResponse,
+  SessionDeleteResponse,
   DaysResponse,
   EXPECTED_API_VERSION,
   MonthResponse,
@@ -161,6 +162,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>> {
     return this.post('/api/adjust', { target, minutes, reason });
+  }
+
+  override async deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>> {
+    return this.post('/api/session/delete', { target });
   }
 
   override async stop(): Promise<ApiResponse<unknown>> {

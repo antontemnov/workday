@@ -77,9 +77,6 @@ export const TEMPO_BASE_URL = 'https://api.tempo.io';
 export const TEMPO_RATE_LIMIT_MS = 210;
 export const TEMPO_TOLERANCE_SECONDS = 60;
 
-// ─── Daemon crash recovery ──────────────────────────────────────────────
-export const CRASH_RECOVERY_LOOKBACK_DAYS = 7;
-
 // ─── Idle auto-close ─────────────────────────────────────────────────────
 // Default for config session.idleCloseHours (0 = disabled).
 export const DEFAULT_IDLE_CLOSE_HOURS = 3;

@@ -102,6 +102,15 @@ export interface AdjustResponse {
   totalManualMinutes: number;
 }
 
+export interface SessionDeleteResponse {
+  readonly id: string;
+  readonly repo: string;
+  readonly task: string | null;
+  readonly effectiveDurationMs: number;
+  readonly dayFileDeleted: boolean;
+  readonly dayWasPushed: boolean;
+}
+
 export interface DaysResponse {
   readonly dates: readonly string[];
 }

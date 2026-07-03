@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { SessionState, ClosedBy, SignalType, PauseSource, SensitivityLevel } from './types.js';
+import { SessionState, ClosedBy, DayStatus, SignalType, PauseSource, SensitivityLevel } from './types.js';
 import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery } from './types.js';
 import { applyLedgerUpdate, countSessionCommits, createEmptyLedger } from './commit-ledger.js';
 import { isDayMaterialized } from './day-lifecycle.js';
@@ -8,6 +8,7 @@ import {
   createEmptyEvidence,
   createEmptyLog,
   writeDailyLog,
+  deleteDailyLog,
   addSignal,
   addManualAdjustment,
   addManualEntry,
@@ -250,6 +251,39 @@ export class SessionTracker {
     if (!this.dailyLog.dayStartedAt) {
       this.dailyLog.dayStartedAt = timestamp;
     }
+  }
+
+  /**
+   * Delete a session from today's log — a user decision at review time
+   * (junk from a stray touch), never automatic. The record is removed
+   * entirely; if the day loses its last confirmed fact the file goes too
+   * (storage invariant), unless the day was already pushed — then the file
+   * stays as the push marker and the status drops to Draft for re-sync.
+   * Deleting an open session is allowed: current activity simply re-births
+   * a fresh candidate on the next tick.
+   */
+  public deleteSession(target: string): { ok: boolean; error?: string; deleted?: Session; dayFileDeleted?: boolean } {
+    const session = resolveSessionTarget(this.dailyLog, target);
+    if (!session) {
+      return { ok: false, error: `Session not found: ${target}` };
+    }
+
+    this.dailyLog.sessions = this.dailyLog.sessions.filter(s => s !== session);
+    this.onSessionClosed?.(session.id);
+
+    if (this.dailyLog.sessions.length === 0
+      && (this.dailyLog.manualEntries ?? []).length === 0
+      && !this.dailyLog.pushedAt) {
+      deleteDailyLog(this.dailyLog.date);
+      this.loadedFromDisk = false; // day de-materializes back into a draft
+      return { ok: true, deleted: session, dayFileDeleted: true };
+    }
+
+    if (this.dailyLog.status !== DayStatus.Draft) {
+      this.dailyLog.status = DayStatus.Draft; // pushed day edited → re-sync on next push
+    }
+    this.flush();
+    return { ok: true, deleted: session, dayFileDeleted: false };
   }
 
   /** Add manual time adjustment to a session */

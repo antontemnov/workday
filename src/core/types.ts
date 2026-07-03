@@ -549,6 +549,17 @@ export interface AdjustResponse {
   readonly totalManualMinutes: number;
 }
 
+export interface SessionDeleteResponse {
+  readonly id: string;
+  readonly repo: string;
+  readonly task: string | null;
+  readonly effectiveDurationMs: number;
+  // Day lost its last confirmed fact — the file was removed (storage invariant).
+  readonly dayFileDeleted: boolean;
+  // Day was already pushed to Tempo — the next push re-syncs the remote.
+  readonly dayWasPushed: boolean;
+}
+
 export interface ManualEntryResponse {
   readonly id: string;
   readonly task: string;

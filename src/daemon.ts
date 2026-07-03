@@ -3,7 +3,8 @@ import { spawn } from 'node:child_process';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig } from './core/config.js';
-import { readDailyLog, writeDailyLog, trimTrailingPauses } from './core/daily-log.js';
+import { readDailyLog, writeDailyLog } from './core/daily-log.js';
+import { runStartupJanitor } from './core/janitor.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
@@ -16,7 +17,6 @@ import type { AppConfig, Secrets, ScheduleConfig, UpdateCheckResponse, UpdateApp
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
-  CRASH_RECOVERY_LOOKBACK_DAYS,
   UPDATE_CHECK_INTERVAL_HOURS,
   UPDATE_CHECK_JITTER_MINUTES,
 } from './core/constants.js';
@@ -57,8 +57,12 @@ export class Daemon {
     this.currentDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
     this.gitTracker = new GitTracker(this.config, this.secrets);
 
-    // Crash recovery: close orphaned sessions from previous days
-    this.recoverOrphanedLogs();
+    // Janitor: close orphaned sessions in past files (crash recovery),
+    // prune never-activated noise, delete factless day files.
+    const janitor = runStartupJanitor(this.currentDate);
+    if (janitor.recoveredSessions > 0 || janitor.prunedSessions > 0 || janitor.deletedFiles.length > 0) {
+      console.log(`  Janitor: closed ${janitor.recoveredSessions} orphan(s), pruned ${janitor.prunedSessions} never-activated, deleted ${janitor.deletedFiles.length} empty file(s)`);
+    }
 
     // Load today's log and close any orphaned sessions
     const existingLog = readDailyLog(this.currentDate) ?? undefined;
@@ -420,34 +424,6 @@ export class Daemon {
     });
     child.unref();
     process.exit(0);
-  }
-
-  // ─── Crash recovery ────────────────────────────────────────────────────
-
-  /** Scan recent daily logs for orphaned sessions (cross-day crash) */
-  private recoverOrphanedLogs(): void {
-    const lookbackDays = CRASH_RECOVERY_LOOKBACK_DAYS;
-
-    for (let i = 1; i <= lookbackDays; i++) {
-      const d = new Date(this.currentDate + 'T12:00:00Z');
-      d.setUTCDate(d.getUTCDate() - i);
-      const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-
-      const log = readDailyLog(dateStr);
-      if (!log) continue;
-
-      const openSessions = log.sessions.filter(s => !s.closedBy);
-      if (openSessions.length === 0) continue;
-
-      for (const session of openSessions) {
-        const trimmedEnd = trimTrailingPauses(session);
-        if (trimmedEnd) session.lastSeenAt = trimmedEnd;
-        session.closedBy = ClosedBy.DaemonCrash;
-      }
-
-      writeDailyLog(log);
-      console.log(`  Crash recovery: closed ${openSessions.length} orphaned session(s) from ${dateStr}`);
-    }
   }
 
   // ─── Day boundary ─────────────────────────────────────────────────────

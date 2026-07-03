@@ -36,6 +36,7 @@ workday pause [repo]                   Pause sessions
 workday resume                         Resume paused sessions
 workday autopause on|off [repo]        Toggle idle auto-pause
 workday adjust <target> +N "reason"    Add manual time
+workday session-delete <target>        Delete a junk session (add --date for past days)
 workday tempo                          Show report (month to date)
 workday tempo --push                   Push to Tempo
 workday daemon                         Run in foreground (live dashboard)

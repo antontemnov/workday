@@ -197,6 +197,18 @@ export function writeDailyLog(log: DailyLog): void {
   }
 }
 
+/**
+ * Delete a day file together with its backup and stray tmp — the .bak must
+ * go too, or readDailyLog would resurrect the day from it. Storage
+ * invariant: a file exists ⇔ the day had confirmed facts.
+ */
+export function deleteDailyLog(date: string): void {
+  const filePath = getDailyLogPath(date);
+  for (const p of [filePath, filePath + BACKUP_EXTENSION, filePath + TMP_EXTENSION]) {
+    try { unlinkSync(p); } catch { /* best effort */ }
+  }
+}
+
 /** Get or create today's daily log */
 export function getOrCreateTodayLog(config: AppConfig): DailyLog {
   const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
