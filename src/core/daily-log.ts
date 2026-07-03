@@ -221,6 +221,29 @@ export function getOpenPause(session: Session): Pause | null {
   return session.pauses.find(p => p.to === null) ?? null;
 }
 
+/**
+ * Trailing-pause trim: honest session end. When the session sits in an open
+ * pause, the real end of work is where that pause chain began — walk back
+ * through back-to-back pauses (auto-pause transitions like Superseded →
+ * IdleTimeout share the boundary timestamp), drop the chain from the record
+ * and return its start. A closed trailing pause means activity happened
+ * after it — nothing to trim, returns null. Effective duration is unchanged
+ * either way (trimmed pauses were already subtracted).
+ */
+export function trimTrailingPauses(session: Session): string | null {
+  const pauses = session.pauses;
+  if (pauses.length === 0) return null;
+  if (pauses[pauses.length - 1].to !== null) return null;
+
+  let start = pauses.length - 1;
+  while (start > 0 && pauses[start - 1].to === pauses[start].from) {
+    start--;
+  }
+  const chainStart = pauses[start].from;
+  session.pauses = pauses.slice(0, start);
+  return chainStart;
+}
+
 // ─── Duration helpers ───────────────────────────────────────────────────
 
 /** Total pause duration for a session in milliseconds */

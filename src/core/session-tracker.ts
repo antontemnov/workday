@@ -15,6 +15,7 @@ import {
   resolveSessionTarget,
   computeManualMinutes,
   getOpenPause,
+  trimTrailingPauses,
 } from './daily-log.js';
 import { computeWorkingDate, getSensitivityForRepo, resolveSensitivityTicks, writeConfig } from './config.js';
 
@@ -170,7 +171,8 @@ export class SessionTracker {
     let count = 0;
     for (const session of this.dailyLog.sessions) {
       if (!session.closedBy) {
-        this.closeOpenPause(session, session.lastSeenAt);
+        const trimmedEnd = trimTrailingPauses(session);
+        if (trimmedEnd) session.lastSeenAt = trimmedEnd;
         session.closedBy = ClosedBy.DaemonCrash;
         count++;
       }
@@ -520,6 +522,30 @@ export class SessionTracker {
   }
 
   /**
+   * Idle auto-close (honest session end): a session sitting in an open
+   * IdleTimeout pause longer than session.idleCloseHours closes with a
+   * trimmed end (= where the pause chain began). Manual pauses are exempt —
+   * a frozen session waits for the user; Superseded transitions into
+   * IdleTimeout once the score drains, so it is covered transitively.
+   * Runs at the start of each daemon tick, so after a PC-sleep gap the
+   * stale session closes before wake-up activity births a new one.
+   */
+  public closeIdleSessions(now: number): void {
+    const thresholdMs = this.config.session.idleCloseHours * 3_600_000;
+    if (thresholdMs <= 0) return;
+
+    const nowIso = new Date(now).toISOString();
+    for (const session of this.dailyLog.sessions) {
+      if (session.closedBy) continue;
+      const pause = getOpenPause(session);
+      if (!pause || pause.source !== PauseSource.IdleTimeout) continue;
+      if (now - Date.parse(pause.from) >= thresholdMs) {
+        this.closeSession(session, ClosedBy.IdleTimeout, nowIso);
+      }
+    }
+  }
+
+  /**
    * True when someone is plausibly mid-work: at least one open, unpaused
    * session OR a candidate (a session mid-birth — live by construction:
    * a drained candidate evaporates on the same tick). Used as the
@@ -596,11 +622,12 @@ export class SessionTracker {
   private closeSession(session: Session, reason: ClosedBy, now: string): void {
     if (session.closedBy) return; // already closed
 
-    // Close any open pause before closing the session
-    this.closeOpenPause(session, now);
+    // Honest end: an open trailing pause chain means work actually stopped
+    // where the chain began — trim it and end the session there.
+    const trimmedEnd = trimTrailingPauses(session);
 
     session.closedBy = reason;
-    session.lastSeenAt = now;
+    session.lastSeenAt = trimmedEnd ?? now;
     // state stays as 'pending' or 'active' — preserved for reporting
 
     this.onSessionClosed?.(session.id);

@@ -47,6 +47,9 @@ export interface SessionConfig {
   readonly signalDeduplicationSeconds: number;
   readonly dayBoundaryCheckSeconds: number;
   readonly reflogCount: number;
+  // Auto-close a session after this many hours of continuous idle pause
+  // (honest trimmed end). 0 disables — sessions then hang until rollover.
+  readonly idleCloseHours: number;
 }
 
 export interface ReportConfig {
@@ -88,6 +91,7 @@ export enum ClosedBy {
   DaemonStop = 'daemon_stop',
   DaemonCrash = 'daemon_crash',
   ManualStop = 'manual_stop',
+  IdleTimeout = 'idle_timeout',
   // Legacy — never produced since budget v2; kept so old day files still read.
   BudgetExhausted = 'budget_exhausted',
 }

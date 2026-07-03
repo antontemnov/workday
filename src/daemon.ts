@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig } from './core/config.js';
-import { readDailyLog, writeDailyLog, getOpenPause } from './core/daily-log.js';
+import { readDailyLog, writeDailyLog, trimTrailingPauses } from './core/daily-log.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
@@ -234,6 +234,11 @@ export class Daemon {
     if (!this.running) return;
 
     try {
+      // 0. Idle auto-close (honest end) — before processing new activity, so
+      //    a long-idle session closes at its trimmed end and fresh activity
+      //    births a new session instead of resuming a stale pause.
+      this.sessionTracker.closeIdleSessions(Date.now());
+
       const baseShas = this.sessionTracker.getBaseShasPerRepoPath(this.config.repos);
       const ledgerQueries = this.sessionTracker.getLedgerQueries(this.config.repos);
       const results = await this.gitTracker.pollAll(baseShas, ledgerQueries);
@@ -391,8 +396,8 @@ export class Daemon {
       if (openSessions.length === 0) continue;
 
       for (const session of openSessions) {
-        const pause = getOpenPause(session);
-        if (pause) pause.to = session.lastSeenAt;
+        const trimmedEnd = trimTrailingPauses(session);
+        if (trimmedEnd) session.lastSeenAt = trimmedEnd;
         session.closedBy = ClosedBy.DaemonCrash;
       }
 

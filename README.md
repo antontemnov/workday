@@ -54,7 +54,8 @@ workday daemon                         Run in foreground (live dashboard)
   "session": {
     "diffPollSeconds": 30,
     "signalDeduplicationSeconds": 300,
-    "reflogCount": 20
+    "reflogCount": 20,
+    "idleCloseHours": 3
   },
   "report": { "roundingMinutes": 15 },
   "workDays": [1, 2, 3, 4, 5]

@@ -80,6 +80,10 @@ export const TEMPO_TOLERANCE_SECONDS = 60;
 // ─── Daemon crash recovery ──────────────────────────────────────────────
 export const CRASH_RECOVERY_LOOKBACK_DAYS = 7;
 
+// ─── Idle auto-close ─────────────────────────────────────────────────────
+// Default for config session.idleCloseHours (0 = disabled).
+export const DEFAULT_IDLE_CLOSE_HOURS = 3;
+
 // ─── HTTP body size limit ───────────────────────────────────────────────
 export const MAX_BODY_BYTES = 4096;
 

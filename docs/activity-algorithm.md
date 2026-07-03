@@ -476,6 +476,26 @@ On IdleTimeout (Active session, score reached 0):
   Resume: when dynamics/commit arrives → score > 0 → may become leader again
 ```
 
+### Idle auto-close + trailing trim (honest session end)
+
+```
+An open IdleTimeout pause older than config session.idleCloseHours
+(default 3, 0 disables) closes the session: ClosedBy.IdleTimeout.
+Checked at the start of every daemon tick — after a PC-sleep gap the stale
+session closes before wake-up activity births a new one.
+
+Every close path (checkout, rollover, stop, crash recovery, idle auto-close)
+trims the trailing pause chain: session end = where the chain began (last
+real activity), the chain is dropped from the record. Back-to-back pauses
+(Superseded → IdleTimeout transition) trim as one chain. A closed trailing
+pause (activity followed it) is never trimmed. Effective duration is
+unchanged — trimmed pauses were already subtracted.
+
+Manual pause is exempt from auto-close (a frozen session waits for the
+user) but its trailing chain is trimmed on close like any other.
+New activity after an auto-close births a fresh session (lazy sessions).
+```
+
 ### Auto-pause: Superseded (lost leadership)
 
 ```

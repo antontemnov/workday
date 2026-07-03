@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { AppConfig, Secrets, SensitivityConfig } from './types.js';
 import { SensitivityLevel } from './types.js';
-import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
+import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
 /** Find the directory containing this package's package.json */
 function findPackageRoot(): string {
@@ -82,6 +82,11 @@ export function validateConfig(config: AppConfig): void {
     throw new Error('config.json: session.diffPollSeconds must be >= 5');
   }
 
+  const idleCloseHours = config.session.idleCloseHours;
+  if (typeof idleCloseHours !== 'number' || !Number.isFinite(idleCloseHours) || idleCloseHours < 0) {
+    throw new Error('config.json: session.idleCloseHours must be a number >= 0 (0 disables auto-close)');
+  }
+
   if (!isValidSensitivity(config.sensitivity.default)) {
     throw new Error(`config.json: invalid sensitivity.default "${config.sensitivity.default}"`);
   }
@@ -141,12 +146,17 @@ export function loadConfig(): AppConfig {
     perRepo: rawSensitivity.perRepo ?? {},
   };
 
+  const rawSession = (raw.session ?? {}) as Record<string, unknown>;
   const config = {
     ...raw,
     schedule: raw.schedule ?? { start: 10, end: 4 },
     apiPort: raw.apiPort ?? DEFAULT_API_PORT,
     timezone: raw.timezone ?? systemTimezone,
     sensitivity,
+    session: {
+      ...rawSession,
+      idleCloseHours: rawSession.idleCloseHours ?? DEFAULT_IDLE_CLOSE_HOURS,
+    },
   } as AppConfig;
   validateConfig(config);
   return config;
