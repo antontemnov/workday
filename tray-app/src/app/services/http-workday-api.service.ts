@@ -181,6 +181,26 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     }
   }
 
+  override async isDaemonManuallyStopped(): Promise<boolean> {
+    try {
+      return await invoke<boolean>('daemon_stop_marker_present');
+    } catch {
+      return false; // outside Tauri — no marker to consult
+    }
+  }
+
+  override async getAutostartEnabled(): Promise<boolean> {
+    try {
+      return await invoke<boolean>('get_autostart_enabled');
+    } catch {
+      return false;
+    }
+  }
+
+  override async setAutostartEnabled(enabled: boolean): Promise<void> {
+    await invoke('set_autostart_enabled', { enabled });
+  }
+
   // ─── Manual entries ──────────────────────────────────────────────────
   // The daemon targets the currently-tracked day; no date param. The UI
   // gates add/edit on "today" so a past day is never mutated.

@@ -32,7 +32,8 @@
   }
 }
 
-// Start screen
+// Daemon-offline screen (no Start button — the watchdog self-heals;
+// a deliberate stop is reverted from Settings)
 .start-screen {
   height: 100%;
   display: flex;
@@ -42,27 +43,14 @@
   gap: 12px;
 }
 
-.start-btn {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  border: 3px solid #89b4fa;
-  background: transparent;
+.daemon-state {
   color: #89b4fa;
-  font-family: inherit;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 
-  &:hover:not(:disabled) {
-    background: rgba(137, 180, 250, 0.1);
-    transform: scale(1.05);
-  }
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
+  &.stopped {
+    color: #6c7086;
   }
 }
 

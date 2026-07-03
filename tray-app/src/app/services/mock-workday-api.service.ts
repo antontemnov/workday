@@ -274,6 +274,20 @@ export class MockWorkdayApiService extends WorkdayApiService {
     // no-op in mock
   }
 
+  private mockAutostart = true;
+
+  async isDaemonManuallyStopped(): Promise<boolean> {
+    return false;
+  }
+
+  async getAutostartEnabled(): Promise<boolean> {
+    return this.mockAutostart;
+  }
+
+  async setAutostartEnabled(enabled: boolean): Promise<void> {
+    this.mockAutostart = enabled;
+  }
+
   // ─── Manual entries mocks ─────────────────────────────────────────────
 
   private mockManualMinutes(): number {

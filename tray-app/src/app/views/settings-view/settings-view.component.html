@@ -86,15 +86,6 @@
       </div>
       <div class="opt-row">
         <div class="left">
-          <span class="name">Auto-start with OS</span>
-          <span class="hint">Launch the daemon on login.</span>
-        </div>
-        <div class="right">
-          <div class="toggle disabled" [class.on]="autoStartWithOs" title="Not implemented yet"></div>
-        </div>
-      </div>
-      <div class="opt-row">
-        <div class="left">
           <span class="name">Notify on idle timeout</span>
           <span class="hint">Toast when a session is auto-paused.</span>
         </div>
@@ -103,42 +94,66 @@
         </div>
       </div>
     </div>
+  </ng-container>
 
-    <!-- Daemon -->
-    <div class="settings-section">
-      <h3>Daemon</h3>
-      <div class="opt-row">
-        <div class="left">
-          <span class="name">Version <span class="version-tag">{{ daemonVersionLabel }}</span></span>
-          <span class="hint" [ngClass]="{'update-error': updateState === 'error'}">
-            {{ updateLabel || 'Background tracker · updates itself twice a day' }}
-          </span>
-        </div>
-        <div class="right">
-          <button class="btn small"
-                  *ngIf="updateState !== 'available'"
-                  [disabled]="updateBusy"
-                  (click)="checkUpdates()">
-            {{ updateBusy ? 'Working...' : 'Check updates' }}
-          </button>
-          <button class="btn small primary"
-                  *ngIf="updateState === 'available'"
-                  (click)="applyUpdate()">
-            Update now
-          </button>
-        </div>
+  <!-- Daemon: rendered даже без settings — the Start toggle must work while
+       the daemon is down. -->
+  <div class="settings-section" *ngIf="!loading">
+    <h3>Daemon</h3>
+    <div class="opt-row">
+      <div class="left">
+        <span class="name">Daemon</span>
+        <span class="hint">
+          {{ daemonReachable
+              ? 'Running — tracking git activity.'
+              : 'Stopped — tracking is off until you start it (or the next login).' }}
+        </span>
       </div>
-      <div class="opt-row">
-        <div class="left">
-          <span class="name">Stop daemon</span>
-          <span class="hint">Stops all of today's sessions and force-ends the working day.</span>
-        </div>
-        <div class="right">
-          <button class="btn small danger" (click)="stopDaemonRequested.emit()">Stop</button>
-        </div>
+      <div class="right">
+        <button class="btn small danger"
+                *ngIf="daemonReachable"
+                (click)="stopDaemonRequested.emit()">Stop</button>
+        <button class="btn small primary"
+                *ngIf="!daemonReachable"
+                [disabled]="daemonStarting"
+                (click)="startDaemonRequested.emit()">
+          {{ daemonStarting ? 'Starting…' : 'Start' }}
+        </button>
       </div>
     </div>
+    <div class="opt-row">
+      <div class="left">
+        <span class="name">Auto-start with OS</span>
+        <span class="hint">Launch Workday (tray + daemon) on login.</span>
+      </div>
+      <div class="right">
+        <div class="toggle" [class.on]="autoStartWithOs" (click)="toggleAutostart()"></div>
+      </div>
+    </div>
+    <div class="opt-row">
+      <div class="left">
+        <span class="name">Version <span class="version-tag">{{ daemonVersionLabel }}</span></span>
+        <span class="hint" [ngClass]="{'update-error': updateState === 'error'}">
+          {{ updateLabel || 'Background tracker · updates itself twice a day' }}
+        </span>
+      </div>
+      <div class="right">
+        <button class="btn small"
+                *ngIf="updateState !== 'available'"
+                [disabled]="updateBusy || !daemonReachable"
+                (click)="checkUpdates()">
+          {{ updateBusy ? 'Working...' : 'Check updates' }}
+        </button>
+        <button class="btn small primary"
+                *ngIf="updateState === 'available'"
+                (click)="applyUpdate()">
+          Update now
+        </button>
+      </div>
+    </div>
+  </div>
 
+  <ng-container *ngIf="!loading && settings">
     <!-- Integrations -->
     <div class="settings-section">
       <h3>Integrations <span class="sub">API tokens · stored in <code>~/.workday/secrets.json</code></span></h3>

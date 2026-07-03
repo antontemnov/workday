@@ -1,14 +1,16 @@
 <!-- Loading -->
 <div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
 
-<!-- Daemon not running: Start button (only when on "today" view) -->
+<!-- Daemon offline (only on "today" view). No Start button here: the
+     watchdog brings a crashed daemon back on its own; a deliberate stop is
+     reverted from Settings. -->
 <div class="start-screen" *ngIf="error && !loading && isViewingToday">
-  <button class="start-btn"
-          (click)="startDaemonRequested.emit()"
-          [disabled]="daemonStarting">
-    {{ daemonStarting ? '...' : 'Start' }}
-  </button>
-  <div class="start-hint">Launch the workday daemon</div>
+  <div class="daemon-state" [class.stopped]="daemonUserStopped">
+    {{ daemonUserStopped ? 'Daemon stopped' : 'Daemon unreachable' }}
+  </div>
+  <div class="start-hint">
+    {{ daemonUserStopped ? 'Start it again from Settings' : 'Restarting automatically…' }}
+  </div>
 </div>
 
 <!-- No data for past day -->

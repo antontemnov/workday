@@ -74,14 +74,13 @@
       [isViewingToday]="isViewingToday"
       [dateLabel]="formattedDate"
       [actionPending]="actionPending"
-      [daemonStarting]="daemonStarting"
+      [daemonUserStopped]="daemonUserStopped"
       [currentTimeMs]="currentTimeMs"
       [sensitivityPills]="sensitivityPills"
       [activityTypes]="activityTypes"
       (pillSelected)="onPillSelected($event)"
       (addTimeSubmitted)="onAddTime($event)"
       (goTodayRequested)="goToday()"
-      (startDaemonRequested)="startDaemon()"
       (logSubmitted)="submitLog($event)"
       (entryEditSubmitted)="submitEntryEdit($event)" />
 
@@ -89,7 +88,10 @@
       (daySelected)="onDaySelected($event)" />
 
     <app-settings-view *ngSwitchCase="'set'"
-      (stopDaemonRequested)="endDayModalOpen = true" />
+      [daemonReachable]="daemonReachable"
+      [daemonStarting]="daemonStarting"
+      (stopDaemonRequested)="endDayModalOpen = true"
+      (startDaemonRequested)="startDaemon()" />
   </ng-container>
 
   <!-- Toast -->
@@ -102,7 +104,8 @@
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>Stop daemon?</h3>
       <div class="modal-sub">
-        All of today's sessions will be closed and the daemon will stop.
+        Open sessions close now and tracking stops. The daemon stays down
+        until you start it again — or the next login.
       </div>
       <div class="modal-actions">
         <button (click)="endDayModalOpen = false">Cancel</button>

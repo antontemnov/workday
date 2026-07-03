@@ -2,7 +2,6 @@ use std::process::Command;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -12,25 +11,13 @@ use tauri::{
     AppHandle,
     Emitter,
     Manager,
-    RunEvent,
     WindowEvent,
 };
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
 
 mod tray_icon;
 use tray_icon::TrayStatus;
-
-/// Set when the user clicks "Quit" in the tray context menu — signals the
-/// ExitRequested handler to leave the daemon running. Crash / OS shutdown
-/// paths reach ExitRequested without this flag set, so they keep stopping
-/// the daemon as before.
-static MANUAL_QUIT: AtomicBool = AtomicBool::new(false);
-
-/// Set right before the user-approved update download/install. On Windows
-/// the updater kills the process to run the installer; on other platforms we
-/// call restart() ourselves. Either way the exit must NOT stop the daemon —
-/// the tray is coming right back.
-static SELF_UPDATING: AtomicBool = AtomicBool::new(false);
 
 /// Version found by the last background update check. The webview may not be
 /// listening yet when the launch check fires, so the frontend also pulls this
@@ -61,10 +48,6 @@ fn enriched_path() -> String {
     }
 
     path
-}
-
-fn stop_daemon() {
-    let _ = shell_run("workday stop", &enriched_path());
 }
 
 /// Run a shell command (cmd.exe /c on Windows, sh -c on Unix).
@@ -156,10 +139,6 @@ async fn install_app_update(app: AppHandle) -> Result<(), String> {
         }
     };
 
-    // The updater exit (Windows: installer kills the process; elsewhere:
-    // restart() below) must not stop the daemon.
-    SELF_UPDATING.store(true, Ordering::Relaxed);
-
     let install_result = update
         .download_and_install(
             |_chunk, _total| {},
@@ -169,9 +148,6 @@ async fn install_app_update(app: AppHandle) -> Result<(), String> {
         )
         .await;
     if let Err(e) = install_result {
-        // Failed mid-download — this process is staying alive, so exits must
-        // go back to stopping the daemon as usual.
-        SELF_UPDATING.store(false, Ordering::Relaxed);
         return Err(e.to_string());
     }
 
@@ -186,6 +162,35 @@ async fn start_daemon() -> Result<String, String> {
     let path = enriched_path();
     shell_spawn("workday start", &path);
     Ok("Daemon starting...".to_string())
+}
+
+/// Manual-stop marker written by the daemon on an explicit stop. The
+/// frontend watchdog checks it before respawning: a deliberately stopped
+/// daemon stays stopped until the user starts it (or the next login).
+fn stop_marker_path() -> Option<PathBuf> {
+    workday_home().map(|h| h.join("daemon.stopped"))
+}
+
+#[tauri::command]
+fn daemon_stop_marker_present() -> bool {
+    stop_marker_path().map(|p| p.exists()).unwrap_or(false)
+}
+
+/// Autostart toggle for the Settings view. Wrapped in commands (instead of
+/// the plugin's JS guest API) so no extra capability or npm package is needed.
+#[tauri::command]
+fn get_autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|e| e.to_string())
+    } else {
+        manager.disable().map_err(|e| e.to_string())
+    }
 }
 
 /// Update the tray icon's status dot and tooltip.
@@ -281,7 +286,11 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status])
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart-launch"]),
+        ))
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -289,6 +298,35 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            // Autostart default-on: enabled once on the first run (marker in
+            // ~/.workday), then the user's choice in Settings is respected.
+            if let Some(home) = workday_home() {
+                let initialized = home.join("tray.autostart-initialized");
+                if !initialized.exists() {
+                    match app.autolaunch().enable() {
+                        Ok(()) => {
+                            let _ = fs::create_dir_all(&home);
+                            let _ = fs::write(&initialized, "1");
+                        }
+                        Err(e) => eprintln!("workday: failed to enable autostart: {}", e),
+                    }
+                }
+            }
+
+            // The 24/7 contract: a login always starts tracking. An autostart
+            // launch voids any manual-stop intent left from the previous
+            // session; any launch spawns the daemon unless deliberately
+            // stopped (workday's single-instance guard makes extra spawns
+            // no-ops). The frontend watchdog keeps guarding it afterwards.
+            if env::args().any(|a| a == "--autostart-launch") {
+                if let Some(marker) = stop_marker_path() {
+                    let _ = fs::remove_file(marker);
+                }
+            }
+            if !daemon_stop_marker_present() {
+                shell_spawn("workday start", &enriched_path());
             }
 
             // Check for UI updates in background (check-only, banner-driven
@@ -333,10 +371,8 @@ pub fn run() {
             let menu_window = window.clone();
             tray.on_menu_event(move |_tray, event| {
                 if event.id() == "quit" {
-                    // Manual quit leaves the daemon running so background
-                    // tracking survives a tray restart. Crash/shutdown paths
-                    // still tear it down via ExitRequested.
-                    MANUAL_QUIT.store(true, Ordering::Relaxed);
+                    // Quit closes only the tray — the daemon is 24/7 and
+                    // never dies with its window.
                     app_handle.exit(0);
                 } else if event.id() == "show" {
                     let _ = menu_window.show();
@@ -372,15 +408,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_handle, event| {
-        // Manual Quit and self-update exits skip the stop — the daemon stays
-        // alive across tray restarts. Crash / OS shutdown still stop it.
-        if let RunEvent::ExitRequested { .. } = event {
-            if !MANUAL_QUIT.load(Ordering::Relaxed) && !SELF_UPDATING.load(Ordering::Relaxed) {
-                stop_daemon();
-            }
-        }
-    });
+    // No exit hook on purpose: the daemon is a 24/7 service, fully decoupled
+    // from the tray's lifecycle. Tray quit/crash/OS shutdown never stop it —
+    // stopping is an explicit user action (Settings toggle / workday stop).
+    app.run(|_handle, _event| {});
 }
 
 /// Background check — never installs. A found update is remembered and

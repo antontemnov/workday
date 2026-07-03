@@ -40,6 +40,13 @@ export abstract class WorkdayApiService {
   abstract stop(): Promise<ApiResponse<unknown>>;
   abstract startDaemon(): Promise<void>;
 
+  // Supervisor surface (tray-local Tauri commands, not daemon HTTP):
+  // manual-stop marker written by the daemon — the watchdog never respawns
+  // a deliberately stopped daemon; autostart = launch-at-login toggle.
+  abstract isDaemonManuallyStopped(): Promise<boolean>;
+  abstract getAutostartEnabled(): Promise<boolean>;
+  abstract setAutostartEnabled(enabled: boolean): Promise<void>;
+
   // Manual entries — standalone time on a task (HTTP add/edit target the
   // currently-tracked day only; past days are read-only from the UI).
   abstract getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;

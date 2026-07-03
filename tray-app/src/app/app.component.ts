@@ -55,6 +55,15 @@ export class AppComponent implements OnInit, OnDestroy {
   loading = true;
   daemonStarting = false;
 
+  // Supervisor state (package E): reachability comes from the watchdog's
+  // health checks; userStopped mirrors the daemon's manual-stop marker —
+  // a deliberately stopped daemon is never respawned by the watchdog.
+  daemonReachable = true;
+  daemonUserStopped = false;
+  private watchdogFailures = 0;
+  private lastDaemonSpawnAt = 0;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+
   // Sensitivity = idle-patience scale. Pause/Resume is a separate per-card
   // button now, so it's no longer a pill here. Labels are display-only; the
   // backing enum values (low/normal/patient/always_on) are unchanged.
@@ -116,13 +125,50 @@ export class AppComponent implements OnInit, OnDestroy {
     this.tickTimer = setInterval(() => {
       if (this.isViewingToday) this.currentTimeMs = Date.now();
     }, 30_000);
+    void this.watchdogTick();
+    this.watchdogTimer = setInterval(() => void this.watchdogTick(), 15_000);
   }
 
   ngOnDestroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.tickTimer) clearInterval(this.tickTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     if (this.unlistenAppUpdate) this.unlistenAppUpdate();
+  }
+
+  // ─── Daemon watchdog ─────────────────────────────────────────────────────
+
+  // The tray is the daemon's supervisor: health-check every 15s, respawn
+  // after 2 consecutive failures — unless the stop marker says the user
+  // stopped it on purpose. The spawn cooldown rides out the daemon's own
+  // self-update restart window; a spurious spawn is a no-op anyway
+  // (single-instance guard daemon-side).
+  private async watchdogTick(): Promise<void> {
+    const res = await this.api.getStatus();
+    if (res.ok) {
+      this.daemonReachable = true;
+      this.daemonUserStopped = false;
+      this.watchdogFailures = 0;
+      return;
+    }
+
+    this.daemonReachable = false;
+    this.daemonUserStopped = await this.api.isDaemonManuallyStopped();
+    if (this.daemonUserStopped) {
+      this.watchdogFailures = 0;
+      return;
+    }
+
+    this.watchdogFailures++;
+    if (this.watchdogFailures < 2) return;
+    if (Date.now() - this.lastDaemonSpawnAt < 60_000) return;
+    this.lastDaemonSpawnAt = Date.now();
+    try {
+      await this.api.startDaemon();
+    } catch {
+      // Outside Tauri (browser dev) — nothing to spawn.
+    }
   }
 
   // ─── App self-update ─────────────────────────────────────────────────────
@@ -408,20 +454,35 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async confirmEndDay(): Promise<void> {
     const ok = await this.runAction(() => this.api.stop());
-    if (ok) this.endDayModalOpen = false;
+    if (ok) {
+      this.endDayModalOpen = false;
+      // The daemon writes its manual-stop marker; reflect it immediately so
+      // the watchdog stands down and the Settings toggle flips to Start.
+      this.daemonReachable = false;
+      this.daemonUserStopped = true;
+      this.watchdogFailures = 0;
+    }
   }
 
   // ─── Daemon lifecycle ──────────────────────────────────────────────────
 
   async startDaemon(): Promise<void> {
     this.daemonStarting = true;
+    this.daemonUserStopped = false;
+    // The spawn counts as the watchdog's attempt — no double start.
+    this.lastDaemonSpawnAt = Date.now();
+    this.watchdogFailures = 0;
     try {
       await this.api.startDaemon();
-      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 2000);
+      // Spinner holds until the first post-spawn health check answers.
+      setTimeout(() => {
+        void this.watchdogTick().finally(() => { this.daemonStarting = false; });
+        void this.refresh();
+        void this.refreshAvailableDates();
+      }, 2000);
       setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 5000);
     } catch (e: unknown) {
       this.showToast(e instanceof Error ? e.message : 'Failed to start daemon');
-    } finally {
       this.daemonStarting = false;
     }
   }

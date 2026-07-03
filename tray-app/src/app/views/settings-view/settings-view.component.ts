@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
@@ -19,9 +19,15 @@ interface PendingPatch {
   templateUrl: './settings-view.component.html',
   styleUrl: './settings-view.component.scss',
 })
-export class SettingsViewComponent implements OnInit, OnDestroy {
-  // End-workday lives in the app shell's modal; settings just asks for it.
+export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
+  // Daemon lifecycle lives in the app shell (stop = confirm modal there,
+  // start = spawn + watchdog resume); settings just asks for it.
   @Output() stopDaemonRequested = new EventEmitter<void>();
+  @Output() startDaemonRequested = new EventEmitter<void>();
+
+  // Supervisor state from the shell's watchdog — drives the Start/Stop toggle.
+  @Input() daemonReachable = true;
+  @Input() daemonStarting = false;
 
   settings: SettingsResponse | null = null;
   loading = true;
@@ -41,8 +47,12 @@ export class SettingsViewComponent implements OnInit, OnDestroy {
     { key: SensitivityLevel.AlwaysOn, label: 'Nonstop' },
   ];
 
-  // Visual-only toggles (no backend yet — kept disabled in template)
+  // Launch-at-login (Tauri autostart plugin via Rust commands). Loaded on
+  // init; toggling is optimistic with revert on failure.
   autoStartWithOs = true;
+  private autostartBusy = false;
+
+  // Visual-only toggle (no backend yet — kept disabled in template)
   notifyOnIdle = false;
 
   // Daemon update flow (the "Check updates" button)
@@ -59,8 +69,33 @@ export class SettingsViewComponent implements OnInit, OnDestroy {
   constructor(private api: WorkdayApiService) {}
 
   async ngOnInit(): Promise<void> {
+    this.autoStartWithOs = await this.api.getAutostartEnabled();
     await this.refresh();
     this.loading = false;
+  }
+
+  // Self-heal: settings failed to load while the daemon was down — re-pull
+  // the moment the watchdog reports it back.
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['daemonReachable'] && this.daemonReachable && !this.settings && !this.loading) {
+      void this.refresh();
+    }
+  }
+
+  async toggleAutostart(): Promise<void> {
+    if (this.autostartBusy) return;
+    this.autostartBusy = true;
+    const next = !this.autoStartWithOs;
+    this.autoStartWithOs = next;
+    try {
+      await this.api.setAutostartEnabled(next);
+    } catch (e) {
+      this.autoStartWithOs = !next;
+      this.setIndicator('error', 'Failed to change autostart');
+      console.error('Autostart toggle failed', e);
+    } finally {
+      this.autostartBusy = false;
+    }
   }
 
   ngOnDestroy(): void {

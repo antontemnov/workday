@@ -40,14 +40,13 @@ export class DayViewComponent {
   @Input() isViewingToday = true;
   @Input() dateLabel = '';
   @Input() actionPending = false;
-  @Input() daemonStarting = false;
+  @Input() daemonUserStopped = false;
   @Input() currentTimeMs: number = Date.now();
   @Input() sensitivityPills: readonly SensitivityPillOption[] = [];
   @Input() activityTypes: readonly ActivityType[] = [];
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
-  @Output() startDaemonRequested = new EventEmitter<void>();
   @Output() goTodayRequested = new EventEmitter<void>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();
