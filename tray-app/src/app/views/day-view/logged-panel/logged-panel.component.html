@@ -6,7 +6,6 @@
             (click)="onMiniClick($event)"
             [disabled]="actionPending"
             title="Log time…">＋<span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
-    <span class="caret">▼</span>
     <span class="sum" [class.flash]="sumFlash">{{ formatDurationHm(sumMs) }}</span>
   </div>
 
@@ -21,7 +20,7 @@
         </div>
 
         <div class="log-row"
-             *ngFor="let e of entries; trackBy: trackByEntry"
+             *ngFor="let e of displayEntries; trackBy: trackByEntry"
              [class.fresh]="isFresh(e)">
           <span class="l-task">{{ e.task }}</span>
           <span class="l-act" [class]="'l-act tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>

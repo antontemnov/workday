@@ -39,14 +39,6 @@
 
   .label { order: 0; color: #cba6f7; }
 
-  .caret {
-    order: 2;
-    font-size: 7px;
-    color: #6c7086;
-    transition: transform 0.24s ease;
-    margin-top: 1px;
-  }
-
   .sum {
     order: 3;
     margin-left: auto;
@@ -61,10 +53,9 @@
 }
 
 .logged-pane.collapsed .lp-head { padding-bottom: 2px; }
-.logged-pane.collapsed .lp-head .caret { transform: rotate(180deg); }
 
-// Mini ＋ button: collapsed-only — LOGGED ＋ ▲, caret to its right. Expanded
-// state shrinks it to zero width so the header doesn't jump.
+// Mini ＋ button: collapsed-only. Expanded state shrinks it to zero width so
+// the header doesn't jump.
 .lp-mini {
   order: 1;
   position: relative;

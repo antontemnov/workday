@@ -86,6 +86,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.logRequested.emit();
   }
 
+  // Newest first — a fresh log lands at the top, right under the ghost row.
+  get displayEntries(): readonly ManualEntry[] {
+    return [...this.entries].reverse();
+  }
+
   private get entriesSumMinutes(): number {
     return this.entries.reduce((sum, e) => sum + e.minutes, 0);
   }
