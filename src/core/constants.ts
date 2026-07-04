@@ -42,8 +42,8 @@ export const LOCK_STALE_MS = 10_000;
 export const GIT_BATCH_SEPARATOR = '---WORKDAY-SEP---';
 export const GIT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
-// ─── Budget / Manual adjustment ─────────────────────────────────────────
-export const MAX_ADJUSTMENT_MINUTES = 480;
+// ─── Manual entry cap (per-item typo guard) ─────────────────────────────
+export const MAX_ENTRY_MINUTES = 480;
 
 // ─── Manual entry / Activity types ──────────────────────────────────────
 export const ACTIVITY_ATTRIBUTE_KEY = '_Activity_';

@@ -151,12 +151,6 @@ export class SessionCardComponent {
     return this.formatDurationHm(this.session.effectiveDurationMs);
   }
 
-  get manualLabel(): string | null {
-    return this.session.manualMinutes > 0
-      ? `+${this.formatDurationHm(this.session.manualMinutes * 60_000)}`
-      : null;
-  }
-
   // Total time this session spent paused — duration only, no count. Shown in the
   // time chip when there was any pause (mirrors how +manual only shows when > 0).
   get pauseLabel(): string | null {
@@ -197,8 +191,14 @@ export class SessionCardComponent {
   // Tops up this session's tracked time. Mirrors the LOG TIME composer (shared
   // DurationFieldComponent: free-text "1h 30m", quick-picks, wheel).
 
+  // A session without a task can't produce an entry — the chip is disabled
+  // in the template; use the dock "Log" button with an explicit task instead.
+  get canAddTime(): boolean {
+    return this.isViewingToday && !!this.session.task;
+  }
+
   onTimeClick(): void {
-    if (!this.isViewingToday || this.actionPending) return;
+    if (!this.canAddTime || this.actionPending) return;
     if (this.addPopoverOpen) { this.closeAddPopover(); return; }
     this.addTimeStr = '30m';
     this.attemptedAdd = false;

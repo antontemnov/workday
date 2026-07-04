@@ -107,8 +107,9 @@
         <span class="log-activity" [class]="'log-activity tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>
         <span class="log-desc" [title]="e.description">{{ e.description }}</span>
         <span class="log-min">{{ formatDurationHm(e.minutes * 60000) }}</span>
+        <!-- Session-born entries are not editable — no pencil for them. -->
         <button class="log-edit"
-                *ngIf="isViewingToday"
+                *ngIf="isViewingToday && !e.sourceSessionId"
                 [disabled]="actionPending"
                 (click)="openEditPopover(e)"
                 aria-label="Edit entry" title="Edit entry">✎</button>

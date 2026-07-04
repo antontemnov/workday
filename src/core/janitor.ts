@@ -1,9 +1,10 @@
 import { readdirSync, rmdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from './config.js';
-import { readDailyLog, writeDailyLog, deleteDailyLog, trimTrailingPauses } from './daily-log.js';
+import { readDailyLog, writeDailyLog, deleteDailyLog, trimTrailingPauses, generateSessionId } from './daily-log.js';
 import { ClosedBy } from './types.js';
-import type { DailyLog } from './types.js';
+import { DEFAULT_ACTIVITY } from './constants.js';
+import type { DailyLog, ManualEntry, Session } from './types.js';
 
 /**
  * Janitor — maintains the storage invariant: a day file exists ⇔ that day
@@ -28,6 +29,52 @@ export interface JanitorResult {
   readonly recoveredSessions: number;
   readonly prunedSessions: number;
   readonly deletedFiles: readonly string[];
+  readonly migratedAdjustments: number;
+}
+
+// Pre-SQ-1 files: sessions carried manualAdjustments {minutes, reason, addedAt}.
+interface LegacyAdjustment {
+  readonly minutes?: number;
+  readonly addedAt?: string;
+}
+type LegacySession = Session & { manualAdjustments?: LegacyAdjustment[] };
+
+/**
+ * One-time migration: legacy per-session manualAdjustments become one
+ * session-born ManualEntry per session (minutes summed, reasons dropped as
+ * noise, createdAt = first addedAt). Totals are unchanged and session-born
+ * entries fold back into the session aggregate at push time, so the day
+ * status is deliberately NOT flipped to Draft — a re-push produces the exact
+ * same worklogs. Idempotent: the legacy field is removed from the file.
+ */
+function migrateAdjustments(log: DailyLog): number {
+  let migrated = 0;
+  for (const session of log.sessions as LegacySession[]) {
+    const adjustments = session.manualAdjustments;
+    if (!Array.isArray(adjustments)) continue;
+
+    const minutes = adjustments.reduce((sum, a) => sum + (a.minutes ?? 0), 0);
+    // Task-less sessions can't become entries (and were never pushable) —
+    // leave their legacy field untouched rather than dropping data.
+    if (minutes > 0 && session.task) {
+      const entry: ManualEntry = {
+        id: generateSessionId(),
+        task: session.task,
+        minutes,
+        description: '',
+        activity: DEFAULT_ACTIVITY,
+        createdAt: adjustments[0]?.addedAt ?? session.lastSeenAt,
+        sourceSessionId: session.id,
+      };
+      if (!log.manualEntries) log.manualEntries = [];
+      log.manualEntries.push(entry);
+      migrated += adjustments.length;
+      delete session.manualAdjustments;
+    } else if (minutes === 0) {
+      delete session.manualAdjustments; // empty legacy array — plain cleanup
+    }
+  }
+  return migrated;
 }
 
 /** A day record with zero confirmed facts — safe to delete. */
@@ -107,6 +154,7 @@ function removeEmptyMonthDirs(): void {
 export function runStartupJanitor(currentDate: string): JanitorResult {
   let recovered = 0;
   let pruned = 0;
+  let migrated = 0;
   const deletedFiles: string[] = [];
 
   for (const date of listAllStoredDates()) {
@@ -119,18 +167,20 @@ export function runStartupJanitor(currentDate: string): JanitorResult {
 
     const closedHere = closeOrphans(log);
     const prunedHere = pruneNeverActivated(log);
+    const migratedHere = migrateAdjustments(log);
     recovered += closedHere;
     pruned += prunedHere;
+    migrated += migratedHere;
 
     if (isEmptyDayLog(log)) {
       deleteDailyLog(date);
       deletedFiles.push(date);
-    } else if (closedHere > 0 || prunedHere > 0) {
+    } else if (closedHere > 0 || prunedHere > 0 || migratedHere > 0) {
       writeDailyLog(log);
     }
   }
 
   if (deletedFiles.length > 0) removeEmptyMonthDirs();
 
-  return { recoveredSessions: recovered, prunedSessions: pruned, deletedFiles };
+  return { recoveredSessions: recovered, prunedSessions: pruned, deletedFiles, migratedAdjustments: migrated };
 }

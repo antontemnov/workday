@@ -57,7 +57,6 @@ function makeSession(over: Partial<Session> = {}): Session {
     closedBy: over.closedBy ?? null,
     evidence: { commits: 0, reflogEvents: 0, linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
     pauses: [],
-    manualAdjustments: [],
     baseSha: null,
     mergeBaseSha: null,
     evidenceBaseline: null,

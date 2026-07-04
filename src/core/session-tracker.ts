@@ -10,15 +10,14 @@ import {
   writeDailyLog,
   deleteDailyLog,
   addSignal,
-  addManualAdjustment,
   addManualEntry,
   editManualEntry,
   resolveSessionTarget,
-  computeManualMinutes,
   getOpenPause,
   trimTrailingPauses,
 } from './daily-log.js';
 import { computeWorkingDate, getSensitivityForRepo, resolveSensitivityTicks, writeConfig } from './config.js';
+import { DEFAULT_ACTIVITY } from './constants.js';
 
 /**
  * Manages session lifecycle within a DailyLog.
@@ -70,7 +69,6 @@ export class SessionTracker {
     // Normalize old sessions that lack new fields
     for (const session of this.dailyLog.sessions) {
       if (!session.pauses) session.pauses = [];
-      if (!session.manualAdjustments) session.manualAdjustments = [];
       if (session.activatedAt === undefined) (session as Session).activatedAt = null;
       if (session.evidence.linesAdded === undefined) session.evidence.linesAdded = 0;
       if (session.evidence.linesRemoved === undefined) session.evidence.linesRemoved = 0;
@@ -276,15 +274,27 @@ export class SessionTracker {
     return { ok: true, deleted: session, dayFileDeleted: false };
   }
 
-  /** Add manual time adjustment to a session */
-  public addAdjustment(target: string, minutes: number, reason: string): { ok: boolean; error?: string; sessionId?: string } {
+  /**
+   * "+ Add time" on a session card: a session-born manual entry. Task comes
+   * from the session, activity is Development, no description by design.
+   */
+  public addSessionEntry(target: string, minutes: number): { ok: boolean; error?: string; entry?: ManualEntry } {
     const session = resolveSessionTarget(this.dailyLog, target);
     if (!session) {
       return { ok: false, error: `Session not found: ${target}` };
     }
+    if (!session.task) {
+      return { ok: false, error: 'Session has no task — log the time with `workday log <task> ...`' };
+    }
     try {
-      addManualAdjustment(this.dailyLog, session.id, minutes, reason, this.config);
-      return { ok: true, sessionId: session.id };
+      const entry = addManualEntry(this.dailyLog, {
+        task: session.task,
+        minutes,
+        description: '',
+        activity: DEFAULT_ACTIVITY,
+        sourceSessionId: session.id,
+      }, this.config);
+      return { ok: true, entry };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -308,11 +318,6 @@ export class SessionTracker {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-  }
-
-  /** Get manual minutes for a session */
-  public getManualMinutes(session: Session): number {
-    return computeManualMinutes(session);
   }
 
   /**
@@ -654,7 +659,6 @@ export class SessionTracker {
       closedBy: null,
       evidence: createEmptyEvidence(),
       pauses: [],
-      manualAdjustments: [],
       baseSha: null,
       mergeBaseSha: null,
       evidenceBaseline: null,

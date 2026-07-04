@@ -100,7 +100,7 @@
       flex-shrink: 0;
     }
 
-    // Divider between paired values (time│manual, commits│diff). Only rendered
+    // Divider between paired values (time│paused, commits│diff). Only rendered
     // when the second value exists, so it never sits alone. Extra side margin
     // (on top of the chip gap) gives the values room to breathe.
     .sep {
@@ -125,8 +125,6 @@
       text-underline-offset: 3px;
       transition: color 0.15s ease, text-decoration-color 0.15s ease;
     }
-    .manual { color: #cba6f7; }
-
     // Total paused time — muted, static; the smaller bars sit below the clock's
     // weight so it reads as secondary info, not the action-Pause in the badge.
     .paused {

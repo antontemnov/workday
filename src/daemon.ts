@@ -61,8 +61,8 @@ export class Daemon {
     // Janitor: close orphaned sessions in past files (crash recovery),
     // prune never-activated noise, delete factless day files.
     const janitor = runStartupJanitor(this.currentDate);
-    if (janitor.recoveredSessions > 0 || janitor.prunedSessions > 0 || janitor.deletedFiles.length > 0) {
-      console.log(`  Janitor: closed ${janitor.recoveredSessions} orphan(s), pruned ${janitor.prunedSessions} never-activated, deleted ${janitor.deletedFiles.length} empty file(s)`);
+    if (janitor.recoveredSessions > 0 || janitor.prunedSessions > 0 || janitor.deletedFiles.length > 0 || janitor.migratedAdjustments > 0) {
+      console.log(`  Janitor: closed ${janitor.recoveredSessions} orphan(s), pruned ${janitor.prunedSessions} never-activated, deleted ${janitor.deletedFiles.length} empty file(s), migrated ${janitor.migratedAdjustments} adjustment(s)`);
     }
 
     // Load today's log and close any orphaned sessions

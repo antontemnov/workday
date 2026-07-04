@@ -434,12 +434,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ─── Add time ──────────────────────────────────────────────────────────
 
-  // The session card's add-time popover emits the parsed minutes directly. The
-  // daemon's /api/adjust still requires a non-empty reason, but the per-entry
-  // reason text was dead (never displayed, never pushed to Tempo), so we dropped
-  // the UI field and send a fixed placeholder.
+  // Session-born manual entry: the daemon takes the task from the session,
+  // activity is Development, no description by design. Shows up in Logged
+  // and folds into the session aggregate at push time.
   async onAddTime(e: { session: SessionDetail; minutes: number }): Promise<void> {
-    await this.runAction(() => this.api.adjust(e.session.id, e.minutes, 'manual via tray'));
+    await this.runAction(() => this.api.addSessionTime(e.session.id, e.minutes));
   }
 
   // ─── Manual entries ────────────────────────────────────────────────────

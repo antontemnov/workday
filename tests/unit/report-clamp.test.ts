@@ -64,7 +64,6 @@ function session(over: Partial<Session>): Session {
     closedBy: over.closedBy ?? null,
     evidence: { commits: 0, reflogEvents: 0, linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
     pauses: over.pauses ?? [],
-    manualAdjustments: [],
     baseSha: null,
     mergeBaseSha: null,
     evidenceBaseline: null,
@@ -138,6 +137,62 @@ test('closed sessions of past days are untouched by the clamp', () => {
   const entry = entries.find(e => e.task === 'ATL-12');
   assert.ok(entry, 'entry exists');
   assert.equal(entry.totalSeconds, 3600, `totalSeconds = ${entry.totalSeconds}, expected 3600`);
+});
+
+console.log('\nSession-born entries fold into the task aggregate');
+
+test('session-born minutes merge into the session line before rounding', () => {
+  const log = createEmptyLog(YESTERDAY, config);
+  // Closed 1h session + 30m session-born entry → one 1.5h session-kind line
+  log.sessions.push(session({
+    id: 'sb1',
+    task: 'ATL-20',
+    activatedAt: new Date(NOW - 27 * HOUR).toISOString(),
+    lastSeenAt: new Date(NOW - 26 * HOUR).toISOString(),
+    closedBy: 'daemon_stop' as Session['closedBy'],
+  }));
+  log.manualEntries.push({
+    id: 'e1', task: 'ATL-20', minutes: 30, description: '', activity: 'Development',
+    createdAt: new Date(NOW - 25 * HOUR).toISOString(), sourceSessionId: 'sb1',
+  });
+  writeDailyLog(log);
+
+  const entries = buildReport(YESTERDAY, YESTERDAY, config);
+  const matches = entries.filter(e => e.task === 'ATL-20');
+  assert.equal(matches.length, 1, 'no separate manual line');
+  assert.equal(matches[0].kind, 'session');
+  assert.equal(matches[0].totalSeconds, 1.5 * 3600);
+});
+
+test('dangling sourceSessionId still lands the minutes on the task aggregate', () => {
+  const log = createEmptyLog(YESTERDAY, config);
+  log.manualEntries.push({
+    id: 'e2', task: 'ATL-21', minutes: 45, description: '', activity: 'Development',
+    createdAt: new Date(NOW - 25 * HOUR).toISOString(), sourceSessionId: 'gone',
+  });
+  writeDailyLog(log);
+
+  const entries = buildReport(YESTERDAY, YESTERDAY, config);
+  const entry = entries.find(e => e.task === 'ATL-21');
+  assert.ok(entry, 'entry exists');
+  assert.equal(entry.kind, 'session');
+  assert.equal(entry.totalSeconds, 45 * 60);
+});
+
+test('standalone entries stay separate manual lines (never collapsed)', () => {
+  const log = createEmptyLog(YESTERDAY, config);
+  log.manualEntries.push(
+    { id: 'e3', task: 'ATL-22', minutes: 30, description: 'standup', activity: 'Other',
+      createdAt: new Date(NOW - 25 * HOUR).toISOString() },
+    { id: 'e4', task: 'ATL-22', minutes: 30, description: 'standup', activity: 'Other',
+      createdAt: new Date(NOW - 24 * HOUR).toISOString() },
+  );
+  writeDailyLog(log);
+
+  const entries = buildReport(YESTERDAY, YESTERDAY, config);
+  const matches = entries.filter(e => e.task === 'ATL-22');
+  assert.equal(matches.length, 2, 'identical user-logged duplicates ship as-is');
+  assert.ok(matches.every(e => e.kind === 'manual'));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

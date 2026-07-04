@@ -2,8 +2,8 @@ import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdi
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
-import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualAdjustment, type ManualEntry, type ActiveInterval } from './types.js';
-import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ADJUSTMENT_MINUTES, MS_PER_MINUTE } from './constants.js';
+import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualEntry, type ActiveInterval } from './types.js';
+import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ENTRY_MINUTES, MS_PER_MINUTE, DEFAULT_ACTIVITY } from './constants.js';
 
 /** Generate short unique session id */
 export function generateSessionId(): string {
@@ -354,17 +354,6 @@ export function resolveSessionTarget(log: DailyLog, target: string): Session | n
 
 // ─── Budget computation ─────────────────────────────────────────────────
 
-/** Sum of manual adjustment minutes for a session */
-export function computeManualMinutes(session: Session): number {
-  if (!session.manualAdjustments || session.manualAdjustments.length === 0) return 0;
-  return session.manualAdjustments.reduce((sum, a) => sum + a.minutes, 0);
-}
-
-/** Effective duration including manual adjustments (ms) */
-export function computeFullEffectiveDuration(session: Session): number {
-  return computeEffectiveDuration(session) + computeManualMinutes(session) * MS_PER_MINUTE;
-}
-
 /**
  * UI-only resolver for the day-start indicator. Returns null when no session
  * has reached ACTIVE yet, so the client hides the indicator until then.
@@ -412,9 +401,9 @@ export function computeTotalManualEntryMs(log: DailyLog): number {
   return (log.manualEntries ?? []).reduce((sum, e) => sum + e.minutes * MS_PER_MINUTE, 0);
 }
 
-/** Sum of all sessions' full effective duration + manual entries (ms) */
+/** Sum of all sessions' observed duration + manual entries (ms) */
 export function computeTotalClaimedMs(log: DailyLog): number {
-  const sessionsMs = log.sessions.reduce((sum, s) => sum + computeFullEffectiveDuration(s), 0);
+  const sessionsMs = log.sessions.reduce((sum, s) => sum + computeEffectiveDuration(s), 0);
   return sessionsMs + computeTotalManualEntryMs(log);
 }
 
@@ -473,42 +462,6 @@ function unsealForEdit(log: DailyLog): void {
   }
 }
 
-/** Add manual adjustment to a session. Throws on validation failure. */
-export function addManualAdjustment(log: DailyLog, sessionId: string, minutes: number, reason: string, config: AppConfig): void {
-  const session = log.sessions.find(s => s.id === sessionId);
-  if (!session) {
-    throw new Error(`Session not found: ${sessionId}`);
-  }
-
-  if (minutes <= 0) {
-    throw new Error('Minutes must be positive');
-  }
-
-  if (minutes > MAX_ADJUSTMENT_MINUTES) {
-    throw new Error(`Max adjustment is ${MAX_ADJUSTMENT_MINUTES} minutes (8h)`);
-  }
-
-  // Check budget
-  const currentClaimed = computeTotalClaimedMs(log);
-  const addMs = minutes * MS_PER_MINUTE;
-  const budget = computeBudgetMs(log, config);
-  if (currentClaimed + addMs > budget) {
-    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
-    throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
-  }
-
-  if (!session.manualAdjustments) {
-    session.manualAdjustments = [];
-  }
-
-  unsealForEdit(log);
-  session.manualAdjustments.push({
-    minutes,
-    reason,
-    addedAt: new Date().toISOString(),
-  });
-}
-
 // ─── Manual entries ───────────────────────────────────────────────────────
 
 /** Find a manual entry by id */
@@ -535,13 +488,14 @@ function assertValidTask(task: string, config: AppConfig): void {
 }
 
 /**
- * Add a manual entry — standalone time on a task, no session involved.
- * Same budget invariant as manual adjustments: total claimed ≤ day window.
- * Throws on validation failure.
+ * Add a manual entry — declared time on a task. Session-born entries
+ * (sourceSessionId set) have no description and are always Development;
+ * standalone entries require description and activity.
+ * Budget invariant: total claimed ≤ day window. Throws on validation failure.
  */
 export function addManualEntry(
   log: DailyLog,
-  input: { task: string; minutes: number; description: string; activity: string },
+  input: { task: string; minutes: number; description: string; activity: string; sourceSessionId?: string },
   config: AppConfig,
 ): ManualEntry {
   const task = input.task.trim();
@@ -551,14 +505,15 @@ export function addManualEntry(
   if (!Number.isFinite(input.minutes) || input.minutes <= 0) {
     throw new Error('Minutes must be positive');
   }
-  if (input.minutes > MAX_ADJUSTMENT_MINUTES) {
-    throw new Error(`Max is ${MAX_ADJUSTMENT_MINUTES} minutes (8h)`);
+  if (input.minutes > MAX_ENTRY_MINUTES) {
+    throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h)`);
   }
 
-  const description = input.description.trim();
-  if (!description) throw new Error('Description is required');
+  const sessionBorn = !!input.sourceSessionId;
+  const description = sessionBorn ? '' : input.description.trim();
+  if (!sessionBorn && !description) throw new Error('Description is required');
 
-  const activity = input.activity.trim();
+  const activity = sessionBorn ? DEFAULT_ACTIVITY : input.activity.trim();
   if (!activity) throw new Error('Activity is required');
 
   const addMs = input.minutes * MS_PER_MINUTE;
@@ -576,6 +531,7 @@ export function addManualEntry(
     description,
     activity,
     createdAt: new Date().toISOString(),
+    ...(sessionBorn ? { sourceSessionId: input.sourceSessionId } : {}),
   };
   log.manualEntries.push(entry);
   return entry;
@@ -593,13 +549,16 @@ export function editManualEntry(
 ): void {
   const entry = findManualEntry(log, id);
   if (!entry) throw new Error(`Manual entry not found: ${id}`);
+  if (entry.sourceSessionId) {
+    throw new Error('Session-born entry is not editable');
+  }
 
   if (patch.minutes !== undefined) {
     if (!Number.isFinite(patch.minutes) || patch.minutes <= 0) {
       throw new Error('Minutes must be positive');
     }
-    if (patch.minutes > MAX_ADJUSTMENT_MINUTES) {
-      throw new Error(`Max is ${MAX_ADJUSTMENT_MINUTES} minutes (8h)`);
+    if (patch.minutes > MAX_ENTRY_MINUTES) {
+      throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h)`);
     }
     const deltaMs = (patch.minutes - entry.minutes) * MS_PER_MINUTE;
     if (deltaMs > 0 && computeTotalClaimedMs(log) + deltaMs > computeBudgetMs(log, config)) {

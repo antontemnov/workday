@@ -6,7 +6,6 @@ import {
   StatusResponse,
   SensitivityResponse,
   SensitivityLevel,
-  AdjustResponse,
   SessionDeleteResponse,
   DaysResponse,
   MonthResponse,
@@ -82,7 +81,6 @@ export class MockWorkdayApiService extends WorkdayApiService {
           paused: false,
           pauseSource: null,
           effectiveDurationMs: 4 * 3600_000 + 12 * 60_000,
-          manualMinutes: 0,
           score: 0.62,
           normalizedScore: 0.62,
           isLeader: true,
@@ -104,7 +102,6 @@ export class MockWorkdayApiService extends WorkdayApiService {
           paused: false,
           pauseSource: null,
           effectiveDurationMs: 5 * 60_000,
-          manualMinutes: 45,
           score: 0.1,
           normalizedScore: 0.1,
           isLeader: false,
@@ -126,7 +123,6 @@ export class MockWorkdayApiService extends WorkdayApiService {
           paused: true,
           pauseSource: 'idle_timeout',
           effectiveDurationMs: 22 * 60_000,
-          manualMinutes: 0,
           score: 0.18,
           normalizedScore: 0.18,
           isLeader: false,
@@ -149,7 +145,6 @@ export class MockWorkdayApiService extends WorkdayApiService {
           paused: false,
           pauseSource: null,
           effectiveDurationMs: 1 * 3600_000 + 27 * 60_000,
-          manualMinutes: 0,
           score: 0.6,
           normalizedScore: 0.6,
           isLeader: false,
@@ -171,7 +166,6 @@ export class MockWorkdayApiService extends WorkdayApiService {
           paused: false,
           pauseSource: null,
           effectiveDurationMs: 1 * 3600_000 + 15 * 60_000,
-          manualMinutes: 0,
           score: 0.7,
           normalizedScore: 0.7,
           isLeader: false,
@@ -193,7 +187,6 @@ export class MockWorkdayApiService extends WorkdayApiService {
           paused: false,
           pauseSource: null,
           effectiveDurationMs: 20 * 60_000,
-          manualMinutes: 0,
           score: 0.2,
           normalizedScore: 0.2,
           isLeader: false,
@@ -249,12 +242,19 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: { repo: null, level } };
   }
 
-  async adjust(target: string, minutes: number): Promise<ApiResponse<AdjustResponse>> {
-    return {
-      ok: true,
-      data: { sessionId: target, repo: 'mock', task: null, addedMinutes: minutes,
-              totalManualMinutes: minutes },
+  async addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>> {
+    await delay(150);
+    const entry: ManualEntry = {
+      id: `m${this.mockEntrySeq++}`,
+      task: 'ATL-6781',
+      minutes,
+      description: '',
+      activity: 'Development',
+      createdAt: this.iso(12, 0),
+      sourceSessionId: sessionId,
     };
+    this.mockManualEntries = [...this.mockManualEntries, entry];
+    return { ok: true, data: this.toEntryResponse(entry) };
   }
 
   async deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>> {

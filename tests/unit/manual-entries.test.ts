@@ -187,6 +187,28 @@ test('budget v2: 24h window fits exactly, +1m overflows', () => {
   assert.throws(() => addStd(log, config, { minutes: 1 }), /Exceeds 24h day window/);
 });
 
+test('session-born entry: forced Development, empty description, marker kept', () => {
+  const config = makeConfig();
+  const log = makeLog(config);
+  const e = addManualEntry(log, {
+    task: 'ATL-10', minutes: 30, description: 'ignored', activity: 'CodeReview',
+    sourceSessionId: 'sess1',
+  }, config);
+  assert.equal(e.activity, 'Development');
+  assert.equal(e.description, '');
+  assert.equal(e.sourceSessionId, 'sess1');
+});
+
+test('session-born entry is not editable', () => {
+  const config = makeConfig();
+  const log = makeLog(config);
+  const e = addManualEntry(log, {
+    task: 'ATL-10', minutes: 30, description: '', activity: '',
+    sourceSessionId: 'sess1',
+  }, config);
+  assert.throws(() => editManualEntry(log, e.id, { minutes: 60 }, config), /not editable/);
+});
+
 test('budget v2: late-day entries fit the full window', () => {
   const config = makeConfig();
   const log = makeLog(config);

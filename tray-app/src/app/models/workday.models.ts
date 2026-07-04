@@ -38,7 +38,6 @@ export interface SessionDetail {
   paused: boolean;
   pauseSource: string | null;
   effectiveDurationMs: number;
-  manualMinutes: number;
   score: number;
   normalizedScore: number;
   isLeader: boolean;
@@ -56,15 +55,18 @@ export interface ActiveInterval {
   readonly repo: string;
 }
 
-// Standalone time logged on a task with no tracked git session (meeting, code
-// review, planning). Mirrors the daemon's ManualEntry — its own Tempo worklog.
+// Declared time on a task. Mirrors the daemon's ManualEntry. Standalone
+// entries (via "Log") become their own Tempo worklogs; session-born entries
+// (via "+ Add time", sourceSessionId set) fold into the session aggregate at
+// push time and are not editable.
 export interface ManualEntry {
   readonly id: string;
   readonly task: string;
   readonly minutes: number;
-  readonly description: string;
+  readonly description: string;     // '' for session-born
   readonly activity: string;        // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;
+  readonly sourceSessionId?: string;
 }
 
 export interface TodayResponse {
@@ -92,14 +94,6 @@ export interface StatusResponse {
 export interface SensitivityResponse {
   repo: string | null;
   level: SensitivityLevel;
-}
-
-export interface AdjustResponse {
-  sessionId: string;
-  repo: string;
-  task: string | null;
-  addedMinutes: number;
-  totalManualMinutes: number;
 }
 
 export interface SessionDeleteResponse {

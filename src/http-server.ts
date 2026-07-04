@@ -5,7 +5,6 @@ import type { SessionTracker } from './core/session-tracker.js';
 import {
   computeEffectiveDuration,
   computeTotalPauseDuration,
-  computeManualMinutes,
   computeTotalClaimedMs,
   computeTotalManualEntryMs,
   computeActiveIntervals,
@@ -37,8 +36,8 @@ import type {
   ResumeResponse,
   StopResponse,
   SensitivityResponse,
-  AdjustResponse,
   SessionDeleteResponse,
+  ManualEntry,
   ManualEntryResponse,
   ActivityTypesResponse,
   DaysResponse,
@@ -113,7 +112,6 @@ export function buildWatchingCard(
     paused: false,
     pauseSource: null,
     effectiveDurationMs: 0,
-    manualMinutes: 0,
     score: 0,
     normalizedScore: 0,
     isLeader: false,
@@ -196,10 +194,6 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/sensitivity') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleSensitivity(body));
-      }
-      if (method === 'POST' && path === '/api/adjust') {
-        const body = await this.readBody(req);
-        return this.sendJson(res, 200, await this.handleAdjust(body));
       }
       if (method === 'POST' && path === '/api/session/delete') {
         const body = await this.readBody(req);
@@ -396,36 +390,6 @@ export class HttpServer {
     return { ok: true, data: { resumed: before.map(s => s.repo) } };
   }
 
-  private async handleAdjust(body: Record<string, unknown>): Promise<ApiResponse<AdjustResponse>> {
-    const target = typeof body.target === 'string' ? body.target : '';
-    const minutes = typeof body.minutes === 'number' ? body.minutes : 0;
-    const reason = typeof body.reason === 'string' ? body.reason : '';
-
-    if (!target) return { ok: false, error: 'Missing target (session index or id)' };
-    if (!reason) return { ok: false, error: 'Missing reason' };
-
-    const tracker = this.deps.sessionTracker;
-    const result = tracker.addAdjustment(target, minutes, reason);
-    if (!result.ok) {
-      return { ok: false, error: result.error };
-    }
-
-    tracker.flush();
-
-    const log = tracker.getDailyLog();
-    const session = log.sessions.find(s => s.id === result.sessionId)!;
-    return {
-      ok: true,
-      data: {
-        sessionId: session.id,
-        repo: session.repo,
-        task: session.task,
-        addedMinutes: minutes,
-        totalManualMinutes: computeManualMinutes(session),
-      },
-    };
-  }
-
   private handleSessionDelete(body: Record<string, unknown>): ApiResponse<SessionDeleteResponse> {
     const target = typeof body.target === 'string' ? body.target : '';
     if (!target) return { ok: false, error: 'Missing target (session index or id)' };
@@ -454,18 +418,27 @@ export class HttpServer {
   // ─── Manual entries ──────────────────────────────────────────────
 
   private async handleAddManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
-    const task = typeof body.task === 'string' ? body.task : '';
-    const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
-    const description = typeof body.description === 'string' ? body.description : '';
-    const activity = typeof body.activity === 'string' && body.activity.trim()
-      ? body.activity
-      : DEFAULT_MANUAL_ACTIVITY;
-
-    if (!task) return { ok: false, error: 'Missing task' };
-    if (!description) return { ok: false, error: 'Missing description' };
-
     const tracker = this.deps.sessionTracker;
-    const result = tracker.addManualEntry({ task, minutes, description, activity });
+    const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
+
+    // Session-born ("+ Add time" on a card): the session is the source of
+    // truth for the task; activity/description are fixed by the domain rule.
+    const sourceSessionId = typeof body.sourceSessionId === 'string' ? body.sourceSessionId : '';
+    let result: { ok: boolean; error?: string; entry?: ManualEntry };
+    if (sourceSessionId) {
+      result = tracker.addSessionEntry(sourceSessionId, minutes);
+    } else {
+      const task = typeof body.task === 'string' ? body.task : '';
+      const description = typeof body.description === 'string' ? body.description : '';
+      const activity = typeof body.activity === 'string' && body.activity.trim()
+        ? body.activity
+        : DEFAULT_MANUAL_ACTIVITY;
+
+      if (!task) return { ok: false, error: 'Missing task' };
+      if (!description) return { ok: false, error: 'Missing description' };
+      result = tracker.addManualEntry({ task, minutes, description, activity });
+    }
+
     if (!result.ok || !result.entry) {
       return { ok: false, error: result.error };
     }
@@ -656,7 +629,6 @@ export class HttpServer {
       paused: false,
       pauseSource: null,
       effectiveDurationMs: computeEffectiveDuration(s),
-      manualMinutes: computeManualMinutes(s),
       score: 0,
       normalizedScore: 0,
       isLeader: false,
@@ -727,7 +699,6 @@ export class HttpServer {
       paused: tracker.hasOpenPause(session),
       pauseSource: openPause?.source ?? null,
       effectiveDurationMs: computeEffectiveDuration(session),
-      manualMinutes: computeManualMinutes(session),
       score: sessionScore?.score ?? 0,
       normalizedScore: sessionScore?.normalizedScore ?? 0,
       isLeader: evalResult?.leaderId === session.id,

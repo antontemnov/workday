@@ -10,7 +10,6 @@ import {
   StatusResponse,
   SensitivityResponse,
   SensitivityLevel,
-  AdjustResponse,
   SessionDeleteResponse,
   DaysResponse,
   EXPECTED_API_VERSION,
@@ -160,8 +159,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/sensitivity', repo ? { level, repo } : { level });
   }
 
-  override async adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>> {
-    return this.post('/api/adjust', { target, minutes, reason });
+  override async addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>> {
+    return this.post('/api/manual-entry', { sourceSessionId: sessionId, minutes });
   }
 
   override async deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>> {
@@ -323,7 +322,6 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       paused: false, // past day → no live open pause
       pauseSource: null,
       effectiveDurationMs: this.computeEffectiveDuration(s),
-      manualMinutes: this.computeManualMinutes(s),
       score: 0,
       normalizedScore: 0,
       isLeader: false,
@@ -348,10 +346,6 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       const to = p.to ? new Date(p.to).getTime() : new Date(s.lastSeenAt).getTime();
       return sum + Math.max(0, to - from);
     }, 0);
-  }
-
-  private computeManualMinutes(s: RawSession): number {
-    return (s.manualAdjustments ?? []).reduce((sum, a) => sum + (a.minutes ?? 0), 0);
   }
 
   private computeActiveIntervals(sessions: readonly RawSession[]): ActiveInterval[] {
@@ -439,5 +433,4 @@ interface RawSession {
     readonly filesChanged: number;
   };
   readonly pauses?: { readonly from: string; readonly to: string | null; readonly source: string }[];
-  readonly manualAdjustments?: { readonly minutes: number; readonly reason: string; readonly addedAt: string }[];
 }

@@ -310,7 +310,7 @@ export class DayViewComponent {
   }
 
   openEditPopover(entry: ManualEntry): void {
-    if (!this.isViewingToday) return;
+    if (!this.isViewingToday || entry.sourceSessionId) return;
     this.editingId = entry.id;
     this.logTask = entry.task;
     this.logTimeStr = formatDurationLabel(entry.minutes);

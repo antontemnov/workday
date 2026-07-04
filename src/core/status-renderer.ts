@@ -5,7 +5,6 @@ import {
   computeEffectiveDuration,
   computeTotalPauseDuration,
   computeDaySummary,
-  computeManualMinutes,
   computeTotalClaimedMs,
   resolveUiDayStart,
   getOpenPause,
@@ -96,8 +95,6 @@ export class StatusRenderer {
 
           const repoLabel = basename(session.repo);
           const dur = formatDuration(computeEffectiveDuration(session));
-          const manualMin = computeManualMinutes(session);
-          const manualStr = manualMin > 0 ? ` ${MAGENTA}+ ${manualMin}m manual${RESET}` : '';
           const ema = sessionScore?.ema ?? 0;
           const normalizedScore = sessionScore?.normalizedScore ?? 0;
 
@@ -122,7 +119,7 @@ export class StatusRenderer {
           lines.push(`${L('Task')}${(session.task ?? '—').padEnd(COL1)}${R('branch')}${session.branch}`);
           const sinceTs = session.activatedAt ?? session.startedAt;
           const sinceTime = formatTime(new Date(sinceTs).getTime(), this.ctx.timezone);
-          lines.push(`${L('Time')}${dur}${manualStr}${''.padEnd(Math.max(0, COL1 - dur.length))}${R('since')}${sinceTime}`);
+          lines.push(`${L('Time')}${dur}${''.padEnd(Math.max(0, COL1 - dur.length))}${R('since')}${sinceTime}`);
 
           // Stamina bar (normalizedScore — same value as the tray app) with
           // activity frequency (EMA) and autopause countdown alongside.
@@ -170,7 +167,7 @@ export class StatusRenderer {
     lines.push(`${DIM}${'─'.repeat(LINE_WIDTH)}${RESET}`);
     lines.push(`  ${BOLD}Worktime${RESET} ${formatDuration(workMs)}  ${BOLD}Idle${RESET} ${formatDuration(downtimeMs)}  ${BOLD}Total${RESET} ${formatDuration(spanMs)}`);
 
-    // Claimed = sessions (tracked + adjustments) + manual entries
+    // Claimed = sessions (observed) + manual entries
     const claimedMs = computeTotalClaimedMs(log);
     const sessionsMs = log.sessions.reduce((sum, s) => sum + computeEffectiveDuration(s), 0);
     const manualMs = claimedMs - sessionsMs;

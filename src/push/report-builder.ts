@@ -1,7 +1,8 @@
-import { readDailyLog, computeFullEffectiveDuration } from '../core/daily-log.js';
+import { readDailyLog, computeEffectiveDuration } from '../core/daily-log.js';
 import { formatDate, computeWorkingDate } from '../core/config.js';
 import { ClosedBy } from '../core/types.js';
-import type { AppConfig, TaskDayReport, ReportResponse, Session } from '../core/types.js';
+import { MS_PER_MINUTE } from '../core/constants.js';
+import type { AppConfig, TaskDayReport, ReportResponse, Session, ManualEntry } from '../core/types.js';
 
 /** Iterate calendar dates from `from` to `to` (inclusive) */
 function* iterateDates(from: string, to: string): Generator<string> {
@@ -64,7 +65,7 @@ export function buildReport(from: string, to: string, config: AppConfig): TaskDa
     const taskMap = new Map<string, { totalMs: number; count: number }>();
     for (const session of log.sessions) {
       if (!session.task) continue;
-      const durationMs = computeFullEffectiveDuration(clampPastOpenSession(session, date < today));
+      const durationMs = computeEffectiveDuration(clampPastOpenSession(session, date < today));
       if (durationMs <= 0) continue;
 
       const existing = taskMap.get(session.task);
@@ -73,6 +74,25 @@ export function buildReport(from: string, to: string, config: AppConfig): TaskDa
         existing.count++;
       } else {
         taskMap.set(session.task, { totalMs: durationMs, count: 1 });
+      }
+    }
+
+    // Session-born entries ("+ Add time") fold into the task aggregate before
+    // rounding — one Tempo worklog per (date, task), never a separate line.
+    // Merge is by task: a dangling sourceSessionId (session deleted) still
+    // lands the declared minutes on the right worklog.
+    const standalone: ManualEntry[] = [];
+    for (const entry of log.manualEntries ?? []) {
+      if (!entry.sourceSessionId) {
+        standalone.push(entry);
+        continue;
+      }
+      const addMs = entry.minutes * MS_PER_MINUTE;
+      const existing = taskMap.get(entry.task);
+      if (existing) {
+        existing.totalMs += addMs;
+      } else {
+        taskMap.set(entry.task, { totalMs: addMs, count: 0 });
       }
     }
 
@@ -86,9 +106,11 @@ export function buildReport(from: string, to: string, config: AppConfig): TaskDa
       entries.push({ date, task, totalSeconds, sessionCount: count, kind: 'session' });
     }
 
-    // Manual entries: each is its own unit (becomes its own worklog). Exact minutes —
-    // user-entered time is precise, unlike noisy session tracking, so no rounding.
-    for (const entry of log.manualEntries ?? []) {
+    // Standalone manual entries: each is its own unit (becomes its own worklog).
+    // Exact minutes — user-entered time is precise, so no rounding. Never
+    // collapsed with each other: what the user logged is what ships (SQ-2
+    // cancelled by design).
+    for (const entry of standalone) {
       const totalSeconds = entry.minutes * 60;
       if (totalSeconds <= 0) continue;
       entries.push({

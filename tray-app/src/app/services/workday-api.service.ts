@@ -5,7 +5,6 @@ import {
   StatusResponse,
   SensitivityResponse,
   SensitivityLevel,
-  AdjustResponse,
   SessionDeleteResponse,
   DaysResponse,
   MonthResponse,
@@ -34,7 +33,9 @@ export abstract class WorkdayApiService {
   abstract pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>>;
   abstract resume(): Promise<ApiResponse<{ resumed: string[] }>>;
   abstract sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>>;
-  abstract adjust(target: string, minutes: number, reason: string): Promise<ApiResponse<AdjustResponse>>;
+  // "+ Add time" on a session card → session-born manual entry: the daemon
+  // takes the task from the session, activity is Development, no description.
+  abstract addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>>;
   // Review-time cleanup: delete a junk session from the tracked day (no UI yet).
   abstract deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;

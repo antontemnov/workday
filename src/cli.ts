@@ -22,8 +22,6 @@ import {
   writeDailyLog,
   deleteDailyLog,
   resolveSessionTarget,
-  addManualAdjustment,
-  computeManualMinutes,
   computeEffectiveDuration,
   computeTotalPauseDuration,
   computeTotalClaimedMs,
@@ -45,7 +43,6 @@ import type {
   ResumeResponse,
   StopResponse,
   SensitivityResponse,
-  AdjustResponse,
   SessionDeleteResponse,
   SessionDetail,
   SessionSummary,
@@ -154,10 +151,9 @@ function printStatusData(data: StatusResponse): void {
     const s = data.openSessions[i];
     const task = s.task ?? '—';
     const dur = formatDuration(s.effectiveDurationMs);
-    const manualStr = s.manualMinutes > 0 ? ` + ${s.manualMinutes}m manual` : '';
     const status = formatSessionStatus(s);
     const scoreStr = `score:${s.normalizedScore.toFixed(2)}`;
-    console.log(`    #${i + 1} ${s.repo}  ${task}  ${s.branch}  ${s.state}  ${dur}${manualStr}  ${scoreStr}${status}`);
+    console.log(`    #${i + 1} ${s.repo}  ${task}  ${s.branch}  ${s.state}  ${dur}  ${scoreStr}${status}`);
   }
 }
 
@@ -193,7 +189,6 @@ function printManualEntries(entries: readonly ManualEntry[]): void {
 function printSessionDetail(s: SessionDetail, index?: number): void {
   const task = s.task ?? '—';
   const dur = formatDuration(s.effectiveDurationMs);
-  const manualStr = s.manualMinutes > 0 ? ` + ${s.manualMinutes}m manual` : '';
   const status = s.closedBy ? `closed(${s.closedBy})` : (s.paused ? 'paused' : s.state);
   const ev = s.evidence;
   const added = ev.linesAdded ?? 0;
@@ -201,7 +196,7 @@ function printSessionDetail(s: SessionDetail, index?: number): void {
   const files = ev.filesChanged ?? 0;
 
   const prefix = index !== undefined ? `#${index}` : s.id;
-  console.log(`  [${prefix}] ${s.repo}  ${task}  ${dur}${manualStr}  ${status}`);
+  console.log(`  [${prefix}] ${s.repo}  ${task}  ${dur}  ${status}`);
   console.log(`         branch: ${s.branch}  ${ev.commits} commits  +${added} -${removed}  ${files} files`);
 
   if (s.pauseCount > 0) {
@@ -359,77 +354,6 @@ async function handleSensitivity(args: string[]): Promise<void> {
 
   const target = result.data!.repo ?? 'global default';
   console.log(`Sensitivity for ${target}: ${result.data!.level}.`);
-}
-
-async function handleAdjust(args: string[]): Promise<void> {
-  // workday adjust <target> +<N> "<reason>" [--date YYYY-MM-DD]
-  const dateIdx = args.indexOf('--date');
-  let date: string | null = null;
-  let cmdArgs = args;
-  if (dateIdx !== -1) {
-    date = args[dateIdx + 1];
-    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
-  }
-
-  const target = cmdArgs[0];
-  const minutesStr = cmdArgs[1];
-  const reason = cmdArgs.slice(2).join(' ');
-
-  if (!target || !minutesStr) {
-    console.log('Usage: workday adjust <target> +<N> "<reason>" [--date YYYY-MM-DD]');
-    return;
-  }
-
-  const minutes = parseInt(minutesStr.replace('+', ''), 10);
-  if (isNaN(minutes) || minutes <= 0) {
-    console.log('Minutes must be a positive number (e.g. +30)');
-    return;
-  }
-
-  if (!reason) {
-    console.log('Reason is required');
-    return;
-  }
-
-  if (date) {
-    // Offline mode — past day
-    handleAdjustOffline(date, target, minutes, reason);
-  } else {
-    // Online mode — via HTTP
-    const result = await apiPost<AdjustResponse>('/api/adjust', { target, minutes, reason });
-    if (!result.ok) {
-      console.log(result.error);
-      return;
-    }
-    const d = result.data!;
-    console.log(`Adjusted ${d.repo} (${d.task ?? '—'}): +${d.addedMinutes}m (total manual: ${d.totalManualMinutes}m)`);
-  }
-}
-
-function handleAdjustOffline(date: string, target: string, minutes: number, reason: string): void {
-  const config = loadConfig();
-  const log = readDailyLog(date);
-  if (!log) {
-    console.log(`No data for ${date}`);
-    return;
-  }
-
-  const session = resolveSessionTarget(log, target);
-  if (!session) {
-    console.log(`Session not found: ${target}`);
-    return;
-  }
-
-  try {
-    addManualAdjustment(log, session.id, minutes, reason, config);
-  } catch (err) {
-    console.log(err instanceof Error ? err.message : String(err));
-    return;
-  }
-
-  writeDailyLog(log);
-  console.log(`Adjusted ${session.repo} (${session.task ?? '—'}): +${minutes}m`);
-  console.log(`Total manual for session: ${computeManualMinutes(session)}m`);
 }
 
 // ─── Session delete ───────────────────────────────────────────────────────
@@ -687,7 +611,6 @@ async function handleDay(args: string[]): Promise<void> {
     paused: false,
     pauseSource: null,
     effectiveDurationMs: computeEffectiveDuration(s),
-    manualMinutes: computeManualMinutes(s),
     score: 0,
     normalizedScore: 0,
     isLeader: false,
@@ -1010,9 +933,6 @@ async function main(): Promise<void> {
     case 'sensitivity':
       await handleSensitivity(args.slice(1));
       break;
-    case 'adjust':
-      await handleAdjust(args.slice(1));
-      break;
     case 'session-delete':
       await handleSessionDelete(args.slice(1));
       break;
@@ -1060,8 +980,6 @@ Usage:
   workday resume             Resume all paused sessions
   workday sensitivity <level>             Set global default (low|normal|patient|always_on)
   workday sensitivity <level> <repo>      Set per-repo sensitivity
-  workday adjust <target> +<N> "<reason>"              Add manual time (today)
-  workday adjust <target> +<N> "<reason>" --date DATE  Add manual time (past day)
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
   workday log <task> <min> "<desc>" [--activity T]     Log manual time (today)
   workday log <task> <min> "<desc>" --date DATE        Log manual time (past day)

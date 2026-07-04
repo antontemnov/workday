@@ -93,25 +93,25 @@ export enum ClosedBy {
   BudgetExhausted = 'budget_exhausted',
 }
 
-// ─── Manual Adjustment ──────────────────────────────────────────────────
-
-export interface ManualAdjustment {
-  readonly minutes: number;     // > 0, max 480
-  readonly reason: string;
-  readonly addedAt: string;     // ISO timestamp
-}
-
 // ─── Manual Entry ─────────────────────────────────────────────────────────
 
-// Standalone time logged on a task with no tracked session (meeting, code
-// review, planning). Becomes its own Tempo worklog. Mutable while day Draft.
+// Declared time on a task. Two kinds:
+// - standalone (via "Log" / `workday log`): meeting, review, planning —
+//   becomes its own Tempo worklog;
+// - session-born (via "+ Add time" on a session card): carries
+//   sourceSessionId, has no description, activity is always Development,
+//   and its minutes fold into the session aggregate worklog at push time.
+//   Not editable — delete-and-redo is the correction path.
 export interface ManualEntry {
   readonly id: string;
   readonly task: string;          // matches config.taskPattern, e.g. ATL-10
-  minutes: number;                // > 0, max MAX_ADJUSTMENT_MINUTES
-  description: string;            // → worklog.description
+  minutes: number;                // > 0, max MAX_ENTRY_MINUTES
+  description: string;            // → worklog.description ('' for session-born)
   activity: string;              // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;     // ISO timestamp
+  // Origin marker only — push merges by task, never by this id, so a
+  // dangling id (session later deleted) is harmless.
+  readonly sourceSessionId?: string;
 }
 
 // ─── Evidence & Sessions ─────────────────────────────────────────────────
@@ -137,7 +137,6 @@ export interface Session {
   closedBy: ClosedBy | null;
   evidence: Evidence;
   pauses: Pause[];
-  manualAdjustments: ManualAdjustment[];
   // Commit SHA captured at session open (or copied from a prior session
   // on the same repo+task today). Only used as the evidence base on repos
   // where no default branch resolves (fallback mode): evidence is then
@@ -483,7 +482,6 @@ export interface SessionSummary {
   readonly paused: boolean;
   readonly pauseSource: string | null;
   readonly effectiveDurationMs: number;
-  readonly manualMinutes: number;
   readonly score: number;
   readonly normalizedScore: number;
   readonly isLeader: boolean;
@@ -536,14 +534,6 @@ export interface StopResponse {
 export interface SensitivityResponse {
   readonly repo: string | null;
   readonly level: SensitivityLevel;
-}
-
-export interface AdjustResponse {
-  readonly sessionId: string;
-  readonly repo: string;
-  readonly task: string | null;
-  readonly addedMinutes: number;
-  readonly totalManualMinutes: number;
 }
 
 export interface SessionDeleteResponse {

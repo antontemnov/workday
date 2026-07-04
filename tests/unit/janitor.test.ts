@@ -77,7 +77,6 @@ function makeSession(overrides: Partial<Session>): Session {
     closedBy: ClosedBy.DayBoundary,
     evidence: createEmptyEvidence(),
     pauses: [],
-    manualAdjustments: [],
     baseSha: null,
     mergeBaseSha: null,
     evidenceBaseline: null,
@@ -180,6 +179,37 @@ test('idempotent: second run is a no-op', () => {
   assert.equal(result.recoveredSessions, 0);
   assert.equal(result.prunedSessions, 0);
   assert.equal(result.deletedFiles.length, 0);
+  assert.equal(result.migratedAdjustments, 0);
+});
+
+test('legacy manualAdjustments migrate into one session-born entry (merged, status kept)', () => {
+  const s = makeSession({});
+  (s as Session & { manualAdjustments?: unknown }).manualAdjustments = [
+    { minutes: 60, reason: 'manual via tray', addedAt: '2026-06-14T12:00:00.000Z' },
+    { minutes: 30, reason: 'manual via tray', addedAt: '2026-06-14T13:00:00.000Z' },
+  ];
+  writeDay('2026-06-14', log => {
+    log.sessions.push(s);
+    log.status = DayStatus.Pushed;
+    log.pushedAt = '2026-06-15T10:00:00.000Z';
+  });
+
+  const result = runStartupJanitor(CURRENT_DATE);
+  assert.equal(result.migratedAdjustments, 2);
+
+  const log = readDailyLog('2026-06-14')!;
+  assert.equal(log.manualEntries.length, 1, 'merged into one entry per session');
+  const entry = log.manualEntries[0];
+  assert.equal(entry.minutes, 90);
+  assert.equal(entry.activity, 'Development');
+  assert.equal(entry.description, '');
+  assert.equal(entry.sourceSessionId, s.id);
+  assert.equal(entry.createdAt, '2026-06-14T12:00:00.000Z', 'first addedAt');
+  assert.equal(log.status, DayStatus.Pushed, 'status NOT flipped — totals unchanged');
+  assert.equal((log.sessions[0] as Session & { manualAdjustments?: unknown }).manualAdjustments, undefined, 'legacy field removed');
+
+  // Idempotent: nothing left to migrate
+  assert.equal(runStartupJanitor(CURRENT_DATE).migratedAdjustments, 0);
 });
 
 // ─── SessionTracker.deleteSession ────────────────────────────────────────

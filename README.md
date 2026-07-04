@@ -2,7 +2,7 @@
 
 Background daemon that tracks developer activity via git and pushes timesheets to Tempo.
 
-Polls git repos every 30s, detects work sessions from diffs/reflog/commits, scores activity, and produces daily JSON logs. Supports multi-repo tracking with automatic leader election, adaptive idle timeouts, and manual time adjustments.
+Polls git repos every 30s, detects work sessions from diffs/reflog/commits, scores activity, and produces daily JSON logs. Supports multi-repo tracking with automatic leader election, adaptive idle timeouts, and manual log entries.
 
 ## Install
 
@@ -35,7 +35,7 @@ workday day YYYY-MM-DD                 Past day summary
 workday pause [repo]                   Pause sessions
 workday resume                         Resume paused sessions
 workday autopause on|off [repo]        Toggle idle auto-pause
-workday adjust <target> +N "reason"    Add manual time
+workday log <task> <min> "<desc>"      Log manual time on a task
 workday session-delete <target>        Delete a junk session (add --date for past days)
 workday tempo                          Show report (month to date)
 workday tempo --push                   Push to Tempo
@@ -49,7 +49,7 @@ workday daemon                         Run in foreground (live dashboard)
 ```json
 {
   "repos": ["/path/to/repo-a", "/path/to/repo-b"],
-  "dayBoundaryHour": 4,
+  "boundaryHour": 4,
   "taskPattern": "PROJ-\\d+",
   "genericBranches": ["develop", "main", "master"],
   "session": {
