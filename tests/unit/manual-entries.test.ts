@@ -36,7 +36,7 @@ function test(name: string, fn: () => void): void {
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     repos: [],
-    schedule: { start: 0, end: 0 },
+    boundaryHour: 0,
     timezone: 'UTC',
     taskPattern: 'ATL-\\d+',
     genericBranches: [],
@@ -180,18 +180,17 @@ test('edit on pushed day unseals back to Draft', () => {
 test('budget v2: 24h window fits exactly, +1m overflows', () => {
   const config = makeConfig();
   const log = makeLog(config);
-  // Window is the full day (24h = 1440m), regardless of dayStartedAt/sessions.
+  // Window is the full day (24h = 1440m), regardless of sessions.
   addStd(log, config, { minutes: 480 });
   addStd(log, config, { minutes: 480 });
   addStd(log, config, { minutes: 480 });         // ok: exactly 1440m (check is strict >)
   assert.throws(() => addStd(log, config, { minutes: 1 }), /Exceeds 24h day window/);
 });
 
-test('budget v2: dayStartedAt does not shrink the window', () => {
+test('budget v2: late-day entries fit the full window', () => {
   const config = makeConfig();
   const log = makeLog(config);
-  log.dayStartedAt = '2026-06-13T23:00:00.000Z'; // v1 would leave a 1h window
-  const e = addStd(log, config, { minutes: 480 }); // far beyond 1h — must pass now
+  const e = addStd(log, config, { minutes: 480 }); // v1 git-anchored window would reject
   assert.equal(e.minutes, 480);
 });
 

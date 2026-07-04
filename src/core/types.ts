@@ -1,13 +1,10 @@
 // ─── Config ──────────────────────────────────────────────────────────────
 
-export interface ScheduleConfig {
-  readonly start: number; // 0-23, hour when work schedule begins
-  readonly end: number;   // 0-23, hour when work schedule ends (next day if < start)
-}
-
 export interface AppConfig {
   readonly repos: readonly string[];
-  readonly schedule: ScheduleConfig;
+  // 0-23, hour when the working day rolls over (04 = night work before
+  // 04:00 belongs to the previous day). Date attribution + budget window.
+  readonly boundaryHour: number;
   readonly timezone: string;        // IANA timezone, e.g. "Europe/Moscow"
   readonly taskPattern: string;
   readonly genericBranches: readonly string[];
@@ -225,7 +222,6 @@ export interface DailyLog {
   readonly date: string;
   status: DayStatus;
   dayType: DayType;
-  dayStartedAt: string | null;
   sessions: Session[];
   signals: Signal[];
   manualEntries: ManualEntry[];
@@ -510,8 +506,9 @@ export interface TodayResponse {
   readonly totalEffectiveMs: number;
   readonly signalCount: number;
   readonly claimedMs: number;
-  readonly dayStartedAt: string | null;
-  readonly schedule: ScheduleConfig;
+  // Derived-only: earliest activatedAt across sessions (null until first
+  // confirmed work). Presentation label, consumed by no algorithm.
+  readonly dayStart: string | null;
   readonly activeIntervals: readonly ActiveInterval[];
   // Time when no session was active (union of work intervals subtracted from full span).
   readonly downtimeMs: number;
@@ -590,7 +587,7 @@ export interface DaysResponse {
 /** Subset of AppConfig exposed via GET /api/settings (UI-editable surface). */
 export interface SettingsConfigSubset {
   readonly repos: readonly string[];
-  readonly schedule: { readonly start: number; readonly end: number };
+  readonly boundaryHour: number;
   readonly timezone: string;
   readonly taskPattern: string;
   readonly sensitivity: {

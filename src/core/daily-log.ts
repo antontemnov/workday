@@ -48,7 +48,6 @@ export function createEmptyLog(date: string, config: AppConfig): DailyLog {
     date,
     status: DayStatus.Draft,
     dayType: determineDayType(date, config),
-    dayStartedAt: null,
     sessions: [],
     signals: [],
     manualEntries: [],
@@ -211,7 +210,7 @@ export function deleteDailyLog(date: string): void {
 
 /** Get or create today's daily log */
 export function getOrCreateTodayLog(config: AppConfig): DailyLog {
-  const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
+  const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
   const existing = readDailyLog(today);
   if (existing) {
     return existing;
@@ -397,14 +396,14 @@ export function computeDayEnd(date: string, dayBoundaryHour: number, timezone: s
 
 /**
  * Budget v2: the full physical day window (boundary hour → next boundary
- * hour, ~24h). Depends only on log.date and config — never on sessions,
- * dayStartedAt or the daemon lifecycle, so restarts mid-day don't shrink it.
+ * hour, ~24h). Depends only on log.date and config — never on sessions or
+ * the daemon lifecycle, so restarts mid-day don't shrink it.
  * On DST transition days the window is honestly 23/25h — the physical day
  * length, not a bug.
  */
 export function computeBudgetMs(log: DailyLog, config: AppConfig): number {
-  const dayStart = parseDateWithHour(log.date, config.schedule.end, config.timezone);
-  const dayEnd = computeDayEnd(log.date, config.schedule.end, config.timezone);
+  const dayStart = parseDateWithHour(log.date, config.boundaryHour, config.timezone);
+  const dayEnd = computeDayEnd(log.date, config.boundaryHour, config.timezone);
   return Math.max(0, dayEnd - dayStart);
 }
 

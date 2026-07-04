@@ -90,7 +90,7 @@ export class DayViewComponent {
   // leave it null, so mirror the same earliest-activatedAt logic locally.
   get dayStartIso(): string | null {
     if (!this.data) return null;
-    if (this.data.dayStartedAt) return this.data.dayStartedAt;
+    if (this.data.dayStart) return this.data.dayStart;
     let earliest: string | null = null;
     for (const s of this.data.sessions) {
       if (!s.activatedAt) continue;

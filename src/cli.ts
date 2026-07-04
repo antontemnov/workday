@@ -538,7 +538,7 @@ async function handleLog(args: string[]): Promise<void> {
 
 function handleLogOffline(date: string, task: string, minutes: number, description: string, activity: string): void {
   const config = loadConfig();
-  const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
+  const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
   if (date > today) {
     console.log(`Cannot log on a future date (${date} > ${today})`);
     return;
@@ -711,8 +711,7 @@ async function handleDay(args: string[]): Promise<void> {
     totalEffectiveMs,
     signalCount: log.signals.length,
     claimedMs: computeTotalClaimedMs(log),
-    dayStartedAt: resolveUiDayStart(log),
-    schedule: { start: config.schedule.start, end: config.schedule.end },
+    dayStart: resolveUiDayStart(log),
     activeIntervals: computeActiveIntervals(log.sessions),
     downtimeMs: computeDaySummary(log.sessions).downtimeMs,
   });
@@ -730,7 +729,7 @@ function handleInit(): void {
   if (!existsSync(configPath)) {
     const template = {
       repos: [],
-      schedule: { start: 10, end: 4 },
+      boundaryHour: 4,
       taskPattern: 'PROJ-\\d+',
       genericBranches: ['develop', 'main', 'master'],
       session: {

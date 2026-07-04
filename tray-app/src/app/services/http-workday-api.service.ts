@@ -292,12 +292,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       // Disk fallback: claimed is daemon-computed, surface as zero. Past-day
       // UI does not render against it anyway.
       claimedMs: 0,
-      // Mirror the daemon's resolveUiDayStart: earliest activatedAt. The raw
-      // log.dayStartedAt on old files is "the moment the daemon launched".
-      dayStartedAt: this.earliestActivatedAt(log.sessions ?? []),
-      // Schedule is config-driven and not persisted in the log. Kept only to
-      // satisfy the response shape — the day view no longer renders against it.
-      schedule: { start: 10, end: 4 },
+      // Mirror the daemon's resolveUiDayStart: earliest activatedAt.
+      dayStart: this.earliestActivatedAt(log.sessions ?? []),
       activeIntervals,
       downtimeMs: this.computeDowntime(activeIntervals),
     };
@@ -420,7 +416,6 @@ interface RawDailyLog {
   readonly date: string;
   readonly status?: string;
   readonly dayType?: string;
-  readonly dayStartedAt?: string | null;
   readonly sessions?: RawSession[];
   readonly signals?: unknown[];
   readonly manualEntries?: ManualEntry[];

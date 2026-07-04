@@ -64,14 +64,8 @@ export function validateConfig(config: AppConfig): void {
     throw new Error('config.json: taskPattern is required');
   }
 
-  if (!config.schedule || typeof config.schedule.start !== 'number' || typeof config.schedule.end !== 'number') {
-    throw new Error('config.json: schedule must have numeric start and end');
-  }
-  if (!Number.isInteger(config.schedule.start) || config.schedule.start < 0 || config.schedule.start > 23) {
-    throw new Error('config.json: schedule.start must be an integer 0-23');
-  }
-  if (!Number.isInteger(config.schedule.end) || config.schedule.end < 0 || config.schedule.end > 23) {
-    throw new Error('config.json: schedule.end must be an integer 0-23');
+  if (!Number.isInteger(config.boundaryHour) || config.boundaryHour < 0 || config.boundaryHour > 23) {
+    throw new Error('config.json: boundaryHour must be an integer 0-23');
   }
 
   if (!isValidTimezone(config.timezone)) {
@@ -134,11 +128,18 @@ export function loadConfig(): AppConfig {
   const raw = readJson<Record<string, unknown>>(configPath);
   const systemTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  // Backward compat: dayBoundaryHour → schedule.end
-  if (!raw.schedule && typeof raw.dayBoundaryHour === 'number') {
-    raw.schedule = { start: 10, end: raw.dayBoundaryHour };
-    delete raw.dayBoundaryHour;
+  // Backward compat: schedule {start,end} → boundaryHour (start was never
+  // read by any algorithm), and the even older dayBoundaryHour.
+  if (raw.boundaryHour === undefined) {
+    const schedule = raw.schedule as { end?: number } | undefined;
+    if (typeof schedule?.end === 'number') {
+      raw.boundaryHour = schedule.end;
+    } else if (typeof raw.dayBoundaryHour === 'number') {
+      raw.boundaryHour = raw.dayBoundaryHour;
+    }
   }
+  delete raw.schedule;
+  delete raw.dayBoundaryHour;
 
   const rawSensitivity = (raw.sensitivity ?? {}) as Partial<SensitivityConfig>;
   const sensitivity: SensitivityConfig = {
@@ -149,7 +150,7 @@ export function loadConfig(): AppConfig {
   const rawSession = (raw.session ?? {}) as Record<string, unknown>;
   const config = {
     ...raw,
-    schedule: raw.schedule ?? { start: 10, end: 4 },
+    boundaryHour: raw.boundaryHour ?? 4,
     apiPort: raw.apiPort ?? DEFAULT_API_PORT,
     timezone: raw.timezone ?? systemTimezone,
     sensitivity,
@@ -186,7 +187,6 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
   const merged: AppConfig = {
     ...current,
     ...patch,
-    schedule: { ...current.schedule, ...(patch.schedule ?? {}) },
     sensitivity: {
       default: patch.sensitivity?.default ?? current.sensitivity.default,
       perRepo: patch.sensitivity?.perRepo ?? current.sensitivity.perRepo,
@@ -282,12 +282,12 @@ export function formatDate(timestamp: number, timezone: string): string {
 
 /**
  * Compute working date in the configured timezone.
- * If current hour < dayBoundaryHour, attribute activity to previous calendar day.
- * dayBoundaryHour is 24h format (e.g. 4 = 04:00 AM).
+ * If current hour < boundaryHour, attribute activity to previous calendar day.
+ * boundaryHour is 24h format (e.g. 4 = 04:00 AM).
  */
-export function computeWorkingDate(timestamp: number, dayBoundaryHour: number, timezone: string): string {
+export function computeWorkingDate(timestamp: number, boundaryHour: number, timezone: string): string {
   const hour = getHourInTimezone(timestamp, timezone);
-  if (hour < dayBoundaryHour) {
+  if (hour < boundaryHour) {
     return formatDate(timestamp - 86_400_000, timezone);
   }
   return formatDate(timestamp, timezone);

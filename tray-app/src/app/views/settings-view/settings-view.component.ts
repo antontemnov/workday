@@ -191,8 +191,8 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   onDayBoundaryChange(value: string): void {
     const hour = parseInt(value.split(':')[0] ?? '4', 10);
     if (!Number.isFinite(hour) || hour < 0 || hour > 23) return;
-    this.applyLocal(c => ({ ...c, schedule: { ...c.schedule, end: hour } }));
-    this.queue({ schedule: { start: this.settings!.config.schedule.start, end: hour } }, 'debounced', 300);
+    this.applyLocal(c => ({ ...c, boundaryHour: hour }));
+    this.queue({ boundaryHour: hour }, 'debounced', 300);
   }
 
   onTaskPatternChange(value: string): void {
@@ -360,7 +360,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   get dayBoundaryLabel(): string {
-    return this.settings ? `${String(this.settings.config.schedule.end).padStart(2, '0')}:00` : '';
+    return this.settings ? `${String(this.settings.config.boundaryHour).padStart(2, '0')}:00` : '';
   }
 
   isSensitivityActive(level: SensitivityLevel): boolean {
@@ -375,10 +375,6 @@ function mergeConfigPatch(
   return {
     ...(a ?? {}),
     ...b,
-    schedule:
-      a?.schedule || b.schedule
-        ? ({ ...(a?.schedule ?? {}), ...(b.schedule ?? {}) } as { start: number; end: number })
-        : undefined,
     sensitivity: b.sensitivity ?? a?.sensitivity,
   };
 }

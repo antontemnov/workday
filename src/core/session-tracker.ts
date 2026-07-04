@@ -57,15 +57,12 @@ export class SessionTracker {
   public onSessionClosed: ((sessionId: string) => void) | null = null;
 
   public constructor(config: AppConfig, initialLog?: DailyLog) {
-    const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
+    const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
     this.config = config;
     this.dailyLog = initialLog ?? createEmptyLog(today, config);
     this.loadedFromDisk = initialLog !== undefined;
 
     // Normalize old logs that lack new fields
-    if (this.dailyLog.dayStartedAt === undefined) {
-      (this.dailyLog as DailyLog).dayStartedAt = null;
-    }
     if (!this.dailyLog.manualEntries) {
       this.dailyLog.manualEntries = [];
     }
@@ -237,20 +234,13 @@ export class SessionTracker {
 
     this.dropAllCandidates();
 
-    const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
+    const newDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
     this.dailyLog = createEmptyLog(newDate, this.config);
     this.loadedFromDisk = false;
 
     this.lastEvaluatorResult = null;
 
     return { oldLog: completedLog, materialized };
-  }
-
-  /** Set dayStartedAt (called by daemon on startup) */
-  public setDayStartedAt(timestamp: string): void {
-    if (!this.dailyLog.dayStartedAt) {
-      this.dailyLog.dayStartedAt = timestamp;
-    }
   }
 
   /**

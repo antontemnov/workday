@@ -14,7 +14,7 @@ import { UpdateManager } from './core/update-manager.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { AppConfig, Secrets, ScheduleConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
+import type { AppConfig, Secrets, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
@@ -55,7 +55,7 @@ export class Daemon {
 
     await this.ensureSingleInstance();
 
-    this.currentDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
+    this.currentDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
     this.gitTracker = new GitTracker(this.config, this.secrets);
 
     // Janitor: close orphaned sessions in past files (crash recovery),
@@ -129,12 +129,9 @@ export class Daemon {
     this.scheduleUpdateCheck(true);
 
     if (!this.foreground) {
-      console.log(`Daemon started (PID ${process.pid})`);
-      console.log(`  API: http://127.0.0.1:${this.config.apiPort}`);
-      console.log(`  Timezone: ${this.config.timezone}`);
+      console.log(`Daemon started (PID ${process.pid}) — http://127.0.0.1:${this.config.apiPort}`);
       console.log(`  Repos: ${this.config.repos.map(r => r.split('/').pop()).join(', ')}`);
-      console.log(`  Poll: ${this.config.session.diffPollSeconds}s`);
-      console.log(`  Schedule: ${this.config.schedule.start}:00 — ${this.config.schedule.end}:00`);
+      console.log(`  Poll: ${this.config.session.diffPollSeconds}s · Day boundary: ${String(this.config.boundaryHour).padStart(2, '0')}:00 (${this.config.timezone})`);
       console.log(`  Date: ${this.currentDate}`);
     }
   }
@@ -171,18 +168,18 @@ export class Daemon {
       (this.config as { taskPattern: string }).taskPattern = patch.taskPattern;
     }
 
-    // schedule
-    if (patch.schedule) {
-      (this.config as { schedule: ScheduleConfig }).schedule = { ...this.config.schedule, ...patch.schedule };
-      // Re-check day boundary in case the new end-hour crosses now.
-      const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
+    // boundaryHour
+    if (patch.boundaryHour !== undefined && patch.boundaryHour !== this.config.boundaryHour) {
+      (this.config as { boundaryHour: number }).boundaryHour = patch.boundaryHour;
+      // Re-check day boundary in case the new hour crosses now.
+      const newDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
       if (newDate !== this.currentDate) this.checkDayBoundary();
     }
 
     // timezone
     if (patch.timezone !== undefined && patch.timezone !== this.config.timezone) {
       (this.config as { timezone: string }).timezone = patch.timezone;
-      const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
+      const newDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
       if (newDate !== this.currentDate) this.checkDayBoundary();
     }
 
@@ -449,7 +446,7 @@ export class Daemon {
     // quiet window instead of having their own restart poller.
     this.maybeRestartIntoUpdate();
 
-    const newDate = computeWorkingDate(Date.now(), this.config.schedule.end, this.config.timezone);
+    const newDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
     if (newDate === this.currentDate) return;
 
     // Lazy rollover: an empty day writes nothing and says nothing.

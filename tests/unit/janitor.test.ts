@@ -43,7 +43,7 @@ function test(name: string, fn: () => void): void {
 function makeConfig(): AppConfig {
   return {
     repos: ['/tmp/repoA'],
-    schedule: { start: 10, end: 4 },
+    boundaryHour: 4,
     timezone: 'UTC',
     taskPattern: 'ATL-\\d+',
     genericBranches: [],

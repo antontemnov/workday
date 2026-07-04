@@ -36,7 +36,7 @@ function git(args: string): string {
 
 const config = {
   repos: [REPO],
-  schedule: { start: 10, end: 4 },
+  boundaryHour: 4,
   timezone: 'UTC',
   taskPattern: 'ATL-\\d+',
   genericBranches: ['master'],

@@ -39,7 +39,7 @@ function test(name: string, fn: () => void): void {
 
 const config = {
   repos: ['/tmp/repoA', '/tmp/repoB'],
-  schedule: { start: 10, end: 4 },
+  boundaryHour: 4,
   timezone: 'UTC',
   taskPattern: 'ATL-\\d+',
   genericBranches: [],

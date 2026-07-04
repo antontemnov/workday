@@ -28,10 +28,10 @@ function test(name: string, fn: () => void): void {
 
 const DATE = '2026-06-13';
 
-function makeConfig(startHour: number = 0): AppConfig {
+function makeConfig(): AppConfig {
   return {
     repos: [],
-    schedule: { start: startHour, end: 4 },
+    boundaryHour: 4,
     timezone: 'UTC',
     taskPattern: 'ATL-\\d+',
     genericBranches: [],
@@ -113,13 +113,12 @@ test('window is the full 24h day (UTC config)', () => {
   assert.equal(computeBudgetMs(log, config), 24 * 3600_000);
 });
 
-test('window ignores sessions and dayStartedAt', () => {
+test('window ignores sessions', () => {
   const config = makeConfig();
   const empty = makeLog(config, []);
   const busy = makeLog(config, [
     makeSession({ activatedAt: `${DATE}T18:00:00.000Z` }),
   ]);
-  busy.dayStartedAt = `${DATE}T17:55:00.000Z`; // daemon started in the evening
   assert.equal(computeBudgetMs(busy, config), computeBudgetMs(empty, config));
   assert.equal(computeBudgetMs(busy, config), 24 * 3600_000);
 });

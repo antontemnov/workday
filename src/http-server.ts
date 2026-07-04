@@ -333,8 +333,7 @@ export class HttpServer {
         totalEffectiveMs,
         signalCount: log.signals.length,
         claimedMs: computeTotalClaimedMs(log),
-        dayStartedAt: resolveUiDayStart(log),
-        schedule: { start: config.schedule.start, end: config.schedule.end },
+        dayStart: resolveUiDayStart(log),
         activeIntervals: computeActiveIntervals(log.sessions),
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
       },
@@ -547,7 +546,7 @@ export class HttpServer {
       data: {
         config: {
           repos: [...c.repos],
-          schedule: { start: c.schedule.start, end: c.schedule.end },
+          boundaryHour: c.boundaryHour,
           timezone: c.timezone,
           taskPattern: c.taskPattern,
           sensitivity: {
@@ -634,7 +633,7 @@ export class HttpServer {
     const config = this.deps.config;
 
     // If requesting today, delegate to handleToday
-    const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
+    const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
     if (date === today) {
       return this.handleToday();
     }
@@ -683,8 +682,7 @@ export class HttpServer {
         totalEffectiveMs,
         signalCount: log.signals.length,
         claimedMs: computeTotalClaimedMs(log),
-        dayStartedAt: resolveUiDayStart(log),
-        schedule: { start: config.schedule.start, end: config.schedule.end },
+        dayStart: resolveUiDayStart(log),
         activeIntervals: computeActiveIntervals(log.sessions),
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
       },

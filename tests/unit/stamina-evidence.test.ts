@@ -373,7 +373,7 @@ console.log('\nEvidence (SessionTracker, merge-base + baseline-delta)');
 
 const config = {
   repos: ['/tmp/repoA'],
-  schedule: { start: 10, end: 4 },
+  boundaryHour: 4,
   timezone: 'UTC',
   taskPattern: 'ATL-\\d+',
   genericBranches: [],

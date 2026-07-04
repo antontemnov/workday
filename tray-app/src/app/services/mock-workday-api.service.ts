@@ -35,7 +35,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockSensitivity: SensitivityLevel = SensitivityLevel.Normal;
   private mockJiraConfigured = true;
   private mockTempoConfigured = true;
-  private mockSchedule: { start: number; end: number } = { start: 9, end: 4 };
+  private mockBoundaryHour = 4;
   private mockTimezone = 'Europe/Moscow';
   private mockTaskPattern = 'ATL-\\d+';
 
@@ -208,8 +208,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       totalEffectiveMs: 7 * 3600_000,
       signalCount: 42,
       claimedMs: this.mockManualMinutes() * 60_000,
-      dayStartedAt: this.iso(9, 18),
-      schedule: { start: 9, end: 23 },
+      dayStart: this.iso(9, 18),
       activeIntervals: [
         { from: this.iso(9, 18),  to: this.iso(10, 45), sessionId: 'c1', repo: 'D:/work/atlas-frontend' },
         { from: this.iso(11, 0),  to: this.iso(11, 30), sessionId: 's1', repo: 'D:/work/atlas-frontend' },
@@ -360,7 +359,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       data: {
         config: {
           repos: [...this.mockRepos],
-          schedule: { ...this.mockSchedule },
+          boundaryHour: this.mockBoundaryHour,
           timezone: this.mockTimezone,
           taskPattern: this.mockTaskPattern,
           sensitivity: { default: this.mockSensitivity },
@@ -374,7 +373,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     await delay(200);
     if (patch.config) {
       if (patch.config.repos) this.mockRepos = [...patch.config.repos];
-      if (patch.config.schedule) this.mockSchedule = { ...this.mockSchedule, ...patch.config.schedule };
+      if (patch.config.boundaryHour !== undefined) this.mockBoundaryHour = patch.config.boundaryHour;
       if (patch.config.timezone) this.mockTimezone = patch.config.timezone;
       if (patch.config.taskPattern !== undefined) this.mockTaskPattern = patch.config.taskPattern;
       if (patch.config.sensitivity?.default) this.mockSensitivity = patch.config.sensitivity.default;

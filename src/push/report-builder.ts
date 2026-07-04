@@ -54,7 +54,7 @@ function clampPastOpenSession(session: Session, isPastDay: boolean): Session {
 /** Aggregate daily logs into per-task-per-day report entries */
 export function buildReport(from: string, to: string, config: AppConfig): TaskDayReport[] {
   const entries: TaskDayReport[] = [];
-  const today = computeWorkingDate(Date.now(), config.schedule.end, config.timezone);
+  const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
 
   for (const date of iterateDates(from, to)) {
     const log = readDailyLog(date);

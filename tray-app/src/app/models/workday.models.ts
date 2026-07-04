@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 7;
+export const EXPECTED_API_VERSION = 8;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -76,8 +76,8 @@ export interface TodayResponse {
   totalEffectiveMs: number;
   signalCount: number;
   claimedMs: number;
-  dayStartedAt: string | null;
-  schedule: { start: number; end: number };
+  // Derived-only: earliest activatedAt across sessions (daemon-resolved).
+  dayStart: string | null;
   activeIntervals: ActiveInterval[];
   downtimeMs?: number;
 }
@@ -182,7 +182,7 @@ export interface MonthResponse {
 // Subset of AppConfig the UI exposes — keeps the surface small for MVP.
 export interface SettingsConfigSubset {
   readonly repos: readonly string[];
-  readonly schedule: { readonly start: number; readonly end: number };
+  readonly boundaryHour: number;
   readonly timezone: string;
   readonly taskPattern: string;
   readonly sensitivity: {
