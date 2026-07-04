@@ -49,9 +49,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['freshEntryId'] && this.freshEntryId && this.isViewingToday) {
       this.freeze(); // a new pick supersedes any still-open draft
-      this.freshId = this.freshEntryId;
-      this.freshMinutes = null;
-      this.armFreeze();
+      // Draft window (mauve stepper) is an expanded-panel affordance only. A
+      // pick into a collapsed panel fixes the time immediately and lands as a
+      // static row — mirrors the mockup's addStaticRow path; the panel stays
+      // collapsed (quiet landing: chip fly + Σ flash).
+      if (!this.collapsed) {
+        this.freshId = this.freshEntryId;
+        this.freshMinutes = null;
+        this.armFreeze();
+      }
     }
     if (changes['entries']) {
       // The fresh entry lands with the refresh that follows the POST — pick up
@@ -62,9 +68,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       }
       const sum = this.entriesSumMinutes;
       if (this.prevSumMinutes !== null && sum !== this.prevSumMinutes) this.flashSum();
-      // First entry of the day lands into an empty collapsed panel → open it.
-      const prev = (changes['entries'].previousValue as readonly ManualEntry[] | undefined)?.length ?? 0;
-      if (this.collapsed && prev === 0 && this.entries.length > 0) this.collapsed = false;
       this.prevSumMinutes = sum;
     }
   }
