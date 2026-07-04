@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · day view — итерация 9 (финал: collapse Logged)</title>
+<style>
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --struct:#26263a;
+    --surface0:#313244; --surface1:#45475a; --overlay0:#6c7086;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --blue:#89b4fa; --peach:#fab387; --teal:#94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0c0c14; color:var(--text);
+    font-family:'Cascadia Code','Consolas',monospace;
+    padding:26px 20px 60px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .page-title { font-size:13px; color:var(--subtext0); letter-spacing:.4px; margin-bottom:6px; }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--overlay0); margin-bottom:22px; text-align:center; line-height:1.6; }
+  .page-sub .k { color:var(--subtext1); background:var(--struct); border-radius:4px; padding:1px 6px; }
+
+  .variant-note { width:500px; font-size:10.5px; line-height:1.6; color:var(--overlay0); margin:12px 2px 0; }
+  .variant-note b { color:var(--subtext0); font-weight:600; }
+  .variant-note .m { color:var(--mauve); }
+
+  .frame {
+    width:500px; height:560px; background:var(--base);
+    border:1px solid #2c2c40; border-radius:10px; overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .banner { flex-shrink:0; display:flex; align-items:center; padding:8px 12px; background:var(--mantle); border-bottom:1px solid var(--struct); font-size:10px; color:var(--overlay0); letter-spacing:2px; }
+  .banner .wd { display:flex; gap:8px; }
+  .banner .wd .on { color:var(--text); border-bottom:2px solid var(--mauve); padding-bottom:2px; }
+  .banner .nav { margin-left:auto; letter-spacing:4px; font-size:11px; }
+
+  .scroll-zone { flex:1; min-height:0; overflow-y:auto; padding:0 12px; }
+  .scroll-zone::-webkit-scrollbar { width:4px; }
+  .scroll-zone::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .day-block { padding:12px 0 12px; border-bottom:1px solid var(--struct); }
+  .day-line { display:flex; align-items:baseline; }
+  .day-date { font-size:15px; font-weight:600; letter-spacing:.2px; }
+  .day-total { margin-left:auto; display:flex; align-items:baseline; gap:7px; font-variant-numeric:tabular-nums; }
+  .day-total .num { font-size:18px; font-weight:700; }
+  .day-total .cap { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:var(--overlay0); }
+
+  .sec-head { display:flex; align-items:center; gap:7px; padding:12px 0 10px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums; }
+  .sec-head .label-auto { color:var(--subtext1); }
+  .sec-head .live-dot { width:5px; height:5px; border-radius:50%; background:var(--green); animation:pulse 1.6s ease-in-out infinite; }
+  .sec-head .idle-dot { width:4px; height:4px; border-radius:1px; background:var(--surface1); }
+  .sec-head .idle-in { font-weight:400; text-transform:none; color:var(--overlay0); font-size:10.5px; }
+  .sec-head .idle-in .v { color:var(--subtext0); }
+  .sec-head .sum { margin-left:auto; font-weight:700; text-transform:none; color:var(--text); }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  .card { position:relative; background:var(--mantle); border:1px solid var(--struct); border-radius:8px; padding:9px 11px 11px; margin-bottom:8px; }
+  .card .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .card .repo { font-size:12px; font-weight:700; color:var(--blue); }
+  .card .head .sep { width:1px; height:12px; background:var(--surface0); }
+  .card .branch { font-size:11px; color:var(--overlay0); white-space:nowrap; overflow:hidden; flex:1; min-width:0; -webkit-mask-image:linear-gradient(90deg,#000 82%,transparent); mask-image:linear-gradient(90deg,#000 82%,transparent); }
+  .badge { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; padding:3px 9px; border-radius:999px; }
+  .badge .dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .badge.live { color:var(--green); background:rgba(166,227,161,.10); }
+  .badge.live .dot { animation:pulse 1.6s ease-in-out infinite; }
+  .badge.idle { color:var(--peach); background:rgba(250,179,135,.10); }
+  .metrics { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 9px; border-radius:6px; background:rgba(17,17,27,.6); border:1px solid var(--struct); color:var(--subtext0); }
+  .chip .ic { font-size:10px; color:var(--overlay0); }
+  .chip.time .v { color:var(--text); font-weight:700; }
+  .chip .plus { color:var(--green); } .chip .minus { color:var(--red); }
+  .chip .csep { width:1px; height:10px; background:var(--struct); }
+  .mode { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px; }
+  .mode.normal { color:var(--green); background:rgba(166,227,161,.08); border:1px solid rgba(166,227,161,.25); }
+  .mode.relaxed { color:var(--blue); background:rgba(137,180,250,.08); border:1px solid rgba(137,180,250,.25); }
+  .mode .car { font-size:8px; opacity:.7; }
+  .edge { position:absolute; left:10px; right:10px; bottom:0; height:3px; border-radius:2px; background:var(--struct); overflow:hidden; }
+  .edge .fill { display:block; height:100%; border-radius:2px; }
+
+  .earlier-toggle { display:flex; align-items:center; gap:7px; padding:8px 2px 6px; font-size:10.5px; color:var(--overlay0); font-variant-numeric:tabular-nums; cursor:pointer; user-select:none; }
+  .earlier-toggle .chev { font-size:8px; width:9px; transition:transform .15s ease; }
+  .earlier-toggle.open .chev { transform:rotate(90deg); }
+  .earlier-toggle .e-sum { margin-left:auto; }
+  .earlier-body { display:none; padding:2px 0 10px; }
+  .earlier-toggle.open + .earlier-body { display:block; }
+  .e-row { display:flex; align-items:center; gap:10px; font-size:11px; color:var(--overlay0); padding:4px 8px; border-radius:4px; font-variant-numeric:tabular-nums; }
+  .e-row:hover { background:rgba(24,24,37,.55); }
+  .e-row .r-repo { min-width:104px; color:var(--subtext0); }
+  .e-row .r-task { min-width:70px; color:var(--subtext1); }
+  .e-row .r-int { color:#565973; }
+  .e-row .r-reason { margin-left:auto; font-size:10px; color:#565973; font-style:italic; }
+  .e-row .r-dur { min-width:50px; text-align:right; color:var(--subtext1); font-weight:700; }
+
+  /* ══ Logged pane + collapse ══ */
+  .logged-pane {
+    flex-shrink:0; max-height:55%;
+    display:flex; flex-direction:column;
+    background:var(--mantle);
+    border-top:1px solid var(--surface0);
+    box-shadow:0 -6px 16px rgba(0,0,0,.28);
+    padding:9px 12px 10px;
+    position:relative; z-index:10;
+    transition:padding .24s ease;
+  }
+  .logged-pane.collapsed { padding-bottom:9px; }
+
+  .lp-head {
+    flex-shrink:0; display:flex; align-items:center; gap:7px;
+    padding:2px 0 9px; font-size:11px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums;
+    cursor:pointer; user-select:none;
+  }
+  .logged-pane.collapsed .lp-head { padding-bottom:2px; }
+  .lp-head .glyph { color:var(--mauve); font-size:10px; }
+  .lp-head .label { color:var(--mauve); }
+  .lp-head .caret { font-size:7px; color:var(--overlay0); transition:transform .24s ease; margin-top:1px; }
+  .logged-pane.collapsed .lp-head .caret { transform:rotate(180deg); }
+  .lp-head .sum { margin-left:auto; font-weight:700; text-transform:none; color:var(--text); transition:color .3s ease; }
+  .lp-head .sum.flash { color:var(--mauve); }
+
+  /* мини-кнопка Log — живёт в header, проявляется только в collapsed */
+  .lp-mini {
+    display:inline-flex; align-items:center; gap:4px;
+    background:rgba(203,166,247,.12); border:1px solid rgba(203,166,247,.34);
+    color:var(--mauve); font-family:inherit; font-size:10px; font-weight:600;
+    padding:2px 10px; border-radius:999px; cursor:pointer;
+    opacity:0; transform:scale(.7); pointer-events:none;
+    transition:opacity .2s ease .1s, transform .2s cubic-bezier(.2,1.3,.4,1) .1s, background .15s ease;
+    margin-left:8px;
+  }
+  .logged-pane.collapsed .lp-mini { opacity:1; transform:none; pointer-events:auto; }
+  .lp-mini:hover { background:rgba(203,166,247,.22); border-color:var(--mauve); }
+  .lp-mini .ms { display:inline-flex; align-items:center; gap:4px; font-size:9.5px; color:var(--teal); }
+  .lp-mini .ms .sdot { width:4px; height:4px; border-radius:50%; background:var(--teal); animation:pulse 1.6s ease-in-out infinite; }
+
+  /* тело панели: grid-rows трюк = плавный схлоп без измерений; внутренность съезжает ВНИЗ */
+  .lp-body {
+    display:grid; grid-template-rows:1fr;
+    transition:grid-template-rows .26s cubic-bezier(.4,0,.2,1);
+    min-height:0;
+  }
+  .logged-pane.collapsed .lp-body { grid-template-rows:0fr; }
+  .lp-clip { overflow:hidden; min-height:0; }
+  .lp-table {
+    max-height:100%; overflow-y:auto;
+    transition:transform .26s cubic-bezier(.4,0,.2,1), opacity .22s ease;
+  }
+  .logged-pane.collapsed .lp-table { transform:translateY(60%); opacity:0; }
+  .lp-table::-webkit-scrollbar { width:4px; }
+  .lp-table::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .ghost-row {
+    display:flex; align-items:center; gap:8px;
+    padding:5px 8px; margin-bottom:4px;
+    border:1px dashed rgba(203,166,247,.3); border-radius:5px;
+    color:var(--overlay0); font-size:11px; cursor:pointer; user-select:none;
+    transition:border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .ghost-row:hover { border-color:var(--mauve); background:rgba(203,166,247,.05); color:var(--subtext0); }
+  .ghost-row .g-plus { color:var(--mauve); font-weight:700; }
+  .ghost-row .g-sugg { margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-size:10px; color:var(--teal); }
+  .ghost-row .g-sugg .sdot { width:5px; height:5px; border-radius:50%; background:var(--teal); animation:pulse 1.6s ease-in-out infinite; }
+
+  .log-row { display:flex; align-items:center; gap:9px; padding:4px 8px; border-radius:4px; font-size:11px; font-variant-numeric:tabular-nums; }
+  .log-row:hover { background:rgba(203,166,247,.05); }
+  .log-row .l-task { color:var(--mauve); font-weight:600; background:rgba(203,166,247,.12); padding:1px 7px; border-radius:4px; flex-shrink:0; }
+  .log-row .l-act { font-size:10px; padding:1px 7px; border-radius:4px; flex-shrink:0; color:#9399b2; background:rgba(147,153,178,.10); }
+  .log-row .l-act.rev { color:var(--blue); background:rgba(137,180,250,.10); }
+  .log-row .l-desc { color:#7f849c; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .log-row .l-min { min-width:50px; text-align:right; color:var(--text); font-weight:700; flex-shrink:0; }
+  .log-row .l-edit { color:var(--overlay0); font-size:12px; flex-shrink:0; cursor:default; opacity:0; transition:opacity .12s ease; }
+  .log-row:hover .l-edit { opacity:1; }
+  .log-row.fresh { animation:row-in .45s cubic-bezier(.2,1.2,.4,1); background:rgba(203,166,247,.10); }
+  @keyframes row-in { 0% { transform:translateY(6px) scale(.96); opacity:0; } 100% { transform:none; opacity:1; } }
+  .stepper { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; }
+  .stepper button {
+    width:16px; height:16px; border-radius:4px; border:1px solid rgba(203,166,247,.4);
+    background:rgba(203,166,247,.1); color:var(--mauve); font-family:inherit; font-size:10px;
+    line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+  }
+  .stepper button:hover { background:rgba(203,166,247,.25); }
+  .stepper .s-val { min-width:44px; text-align:center; color:var(--mauve); font-weight:700; cursor:ns-resize; }
+  .stepper .s-undo { border-color:var(--surface1); background:transparent; color:var(--overlay0); margin-left:2px; }
+  .stepper .s-undo:hover { color:var(--red); border-color:var(--red); background:rgba(243,139,168,.08); }
+
+  /* ══ Облако ══ */
+  .cloud-backdrop {
+    position:absolute; inset:0; z-index:30;
+    background:rgba(12,12,20,.45); backdrop-filter:blur(1.5px);
+    opacity:0; pointer-events:none; transition:opacity .2s ease;
+  }
+  .frame.cloud-open .cloud-backdrop { opacity:1; pointer-events:auto; }
+
+  .cloud {
+    position:absolute; left:10px; right:10px; z-index:31;
+    bottom:0;
+    background:#191926;
+    border:1px solid rgba(203,166,247,.22);
+    border-radius:12px;
+    box-shadow:0 -10px 34px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.3);
+    padding:10px;
+    transform-origin:24px 100%;
+    transform:scale(.3) translateY(16px);
+    opacity:0; pointer-events:none;
+    transition:transform .22s cubic-bezier(.2,1.3,.35,1), opacity .16s ease;
+  }
+  .frame.cloud-open .cloud { transform:none; opacity:1; pointer-events:auto; }
+
+  .cloud-filter { display:flex; align-items:center; gap:7px; margin-bottom:9px; }
+  .cloud-filter .f-ic { color:var(--overlay0); font-size:11px; }
+  .cloud-filter input { flex:1; background:transparent; border:none; outline:none; color:var(--text); font-family:inherit; font-size:11.5px; }
+  .cloud-filter input::placeholder { color:#4b4d63; }
+  .cloud-filter .f-esc { font-size:8.5px; color:#4b4d63; border:1px solid var(--struct); border-radius:3px; padding:1px 5px; }
+
+  .cloud-body { max-height:212px; overflow:hidden; transition:max-height .13s ease; }
+  .cloud-chips {
+    display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start;
+    max-height:212px; overflow-y:auto;
+    transition:opacity .1s ease;
+  }
+  .cloud-chips::-webkit-scrollbar { width:4px; }
+  .cloud-chips::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .row-label { width:100%; font-size:8.5px; text-transform:uppercase; letter-spacing:.6px; font-weight:600; color:#4b4d63; margin:2px 0 1px; }
+  .row-label.sugg { color:rgba(148,226,213,.75); }
+  .row-label.jira { color:rgba(137,180,250,.75); }
+
+  .fav {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:5px 11px; border-radius:999px;
+    background:rgba(203,166,247,.05); border:1px solid rgba(203,166,247,.2);
+    font-size:10.5px; font-variant-numeric:tabular-nums; cursor:pointer; user-select:none;
+    transition:background .12s ease, border-color .12s ease, transform .12s ease, opacity .12s ease;
+  }
+  .fav:hover { background:rgba(203,166,247,.14); border-color:rgba(203,166,247,.55); transform:translateY(-1px); }
+  .fav .f-task { color:rgba(203,166,247,.75); font-weight:600; font-size:9.5px; }
+  .fav .f-name { color:var(--subtext1); font-weight:600; }
+  .fav:hover .f-name { color:var(--mauve); }
+  .fav .f-min { color:var(--overlay0); font-weight:600; }
+  .fav.hidden { display:none; }
+
+  .fav.custom { border:1px solid rgba(203,166,247,.5); background:rgba(203,166,247,.12); }
+  .fav.custom .f-name { color:var(--mauve); }
+  .fav.custom:hover { background:rgba(203,166,247,.2); border-color:var(--mauve); }
+
+  .fav.sugg { border:1px solid rgba(148,226,213,.4); background:rgba(148,226,213,.06); }
+  .fav.sugg .f-spark { color:var(--teal); font-size:10px; }
+  .fav.sugg .f-task { color:rgba(148,226,213,.8); }
+  .fav.sugg .f-min { color:rgba(148,226,213,.8); }
+  .fav.sugg:hover { background:rgba(148,226,213,.13); border-color:var(--teal); }
+
+  .fav.jira {
+    border:1px solid rgba(137,180,250,.32); background:rgba(137,180,250,.05);
+    border-radius:8px; max-width:100%;
+  }
+  .fav.jira .f-task { color:var(--blue); font-size:10px; flex-shrink:0; }
+  .fav.jira .f-name {
+    color:var(--subtext0); font-weight:400; font-style:italic;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px;
+  }
+  .fav.jira:hover { background:rgba(137,180,250,.12); border-color:rgba(137,180,250,.6); }
+  .fav.jira:hover .f-name { color:var(--text); }
+
+  .jira-status { width:100%; display:flex; align-items:center; gap:7px; font-size:10px; color:var(--overlay0); padding:3px 2px; }
+  .jira-status .spin { display:inline-block; animation:spin 1s linear infinite; color:var(--blue); }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .fav.arm { border-color:var(--red); background:rgba(243,139,168,.1); animation:arm-shake .3s ease; }
+  .fav.arm .f-task, .fav.arm .f-name, .fav.arm .f-min { color:var(--red) !important; }
+  @keyframes arm-shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-2px);} 75%{transform:translateX(2px);} }
+
+  /* волна ТОЛЬКО при открытии облака (.spawn), не при каждом ререндере фильтра */
+  .cloud.spawn .fav { animation:chip-pop .3s cubic-bezier(.2,1.5,.4,1) backwards; }
+  @keyframes chip-pop { 0% { transform:scale(.4); opacity:0; } 100% { transform:scale(1); opacity:1; } }
+
+  .cloud.form-mode .cloud-filter { opacity:0; pointer-events:none; position:absolute; }
+  .cloud.form-mode .cloud-body { max-height:30px; }
+  .cloud.form-mode .cloud-chips { opacity:0; pointer-events:none; }
+  .cloud-form {
+    position:absolute; left:10px; right:10px; bottom:10px;
+    display:flex; gap:7px; align-items:center;
+    opacity:0; pointer-events:none; transform:scaleX(.35);
+    transform-origin:0 50%;
+    transition:opacity .1s ease, transform .13s cubic-bezier(.2,1.2,.4,1);
+  }
+  .cloud.form-mode .cloud-form { opacity:1; pointer-events:auto; transform:none; transition-delay:.05s; }
+  .cloud-form input {
+    background:rgba(17,17,27,.85); border:1px solid var(--surface0); border-radius:6px;
+    color:var(--text); font-family:inherit; font-size:11px; padding:5px 8px; outline:none;
+  }
+  .cloud-form input:focus { border-color:var(--mauve); }
+  .cloud-form .cf-task { width:96px; flex-shrink:0; }
+  .cloud-form .cf-min { width:58px; flex-shrink:0; }
+  .cloud-form .cf-desc { flex:1; min-width:0; }
+  .cloud-form .cf-submit {
+    flex-shrink:0; background:var(--mauve); color:#1e1e2e; border:none; border-radius:6px;
+    font-family:inherit; font-size:11px; font-weight:700; padding:5px 13px; cursor:pointer;
+  }
+  .cloud-form .cf-submit:hover { background:#b894ee; }
+  .cloud-form .cf-back { flex-shrink:0; background:none; border:none; color:var(--overlay0); font-family:inherit; font-size:12px; cursor:pointer; padding:2px 3px; }
+  .cloud-form .cf-back:hover { color:var(--subtext0); }
+
+  .fly {
+    position:fixed; z-index:60; pointer-events:none;
+    display:inline-flex; align-items:center; gap:6px;
+    padding:5px 11px; border-radius:999px;
+    background:rgba(203,166,247,.16); border:1px solid rgba(203,166,247,.5);
+    font-size:10.5px;
+    transition:transform .42s cubic-bezier(.35,.9,.3,1), opacity .42s ease;
+  }
+  .fly .f-name { color:var(--mauve); font-weight:600; }
+  .fly .f-min { color:var(--subtext0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title"><b>day view · итерация 9 — финал: collapse Logged</b></div>
+<div class="page-sub">
+  клик по заголовку <span class="k">✎ LOGGED</span> — строки съезжают вниз за край, остаётся header с Σ и мини-кнопкой
+  <span class="k">＋ Log</span> ·<br>первая запись в закрытую секцию раскрывает её · волна балунов — только при открытии облака
+</div>
+
+<div class="frame" id="frame">
+  <div class="banner">
+    <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+    <span class="nav">◷ ▦ ⚙</span>
+  </div>
+
+  <div class="scroll-zone">
+    <div class="day-block">
+      <div class="day-line">
+        <span class="day-date">4 July 2026</span>
+        <span class="day-total"><span class="num" id="day-total">9h 11m</span><span class="cap">today</span></span>
+      </div>
+    </div>
+
+    <div class="sec-head">
+      <span class="live-dot"></span>
+      <span class="label-auto">Tracked</span>
+      <span class="idle-dot"></span>
+      <span class="idle-in"><span class="v">1h 12m</span> idle</span>
+      <span class="sum">7h 41m</span>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <span class="repo">atlas-frontend</span><span class="sep"></span>
+        <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+        <span class="badge live"><span class="dot"></span>Live</span>
+      </div>
+      <div class="metrics">
+        <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+        <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+        <span class="mode normal">Normal <span class="car">▾</span></span>
+      </div>
+      <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <span class="repo">appone-backend</span><span class="sep"></span>
+        <span class="branch">APP-1024-refactor-pricing-engine</span>
+        <span class="badge idle"><span class="dot"></span>Idle</span>
+      </div>
+      <div class="metrics">
+        <span class="chip time"><span class="ic">◔</span><span class="v">22m</span></span>
+        <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+18</span><span class="minus">−4</span></span>
+        <span class="mode relaxed">Relaxed <span class="car">▾</span></span>
+      </div>
+      <span class="edge"><span class="fill" style="width:18%;background:var(--peach)"></span></span>
+    </div>
+
+    <div class="earlier-toggle" id="earlier">
+      <span class="chev">▶</span><span>3 earlier sessions</span><span class="e-sum">3h 02m</span>
+    </div>
+    <div class="earlier-body">
+      <div class="e-row"><span class="r-repo">atlas-frontend</span><span class="r-task">ATL-6712</span><span class="r-int">09:18 → 10:45</span><span class="r-reason">switched</span><span class="r-dur">1h 27m</span></div>
+      <div class="e-row"><span class="r-repo">appone-backend</span><span class="r-task">APP-1019</span><span class="r-int">11:35 → 12:50</span><span class="r-reason">switched</span><span class="r-dur">1h 15m</span></div>
+      <div class="e-row"><span class="r-repo">infra-scripts</span><span class="r-task">—</span><span class="r-int">14:10 → 14:30</span><span class="r-reason">manual</span><span class="r-dur">20m</span></div>
+    </div>
+  </div>
+
+  <div class="logged-pane" id="pane">
+    <div class="lp-head" id="lp-head" title="Свернуть / развернуть">
+      <span class="glyph">✎</span><span class="label">Logged</span>
+      <span class="caret">▼</span>
+      <button class="lp-mini" id="lp-mini">＋ Log<span class="ms" id="mini-sugg"><span class="sdot"></span>1</span></button>
+      <span class="sum" id="lp-sum">1h 30m</span>
+    </div>
+    <div class="lp-body">
+      <div class="lp-clip">
+        <div class="lp-table" id="lp-table">
+          <div class="ghost-row" id="ghost">
+            <span class="g-plus">＋</span><span>Log time…</span>
+            <span class="g-sugg" id="g-sugg"><span class="sdot"></span>1 suggested</span>
+          </div>
+          <div class="log-row"><span class="l-task">ATL-6802</span><span class="l-act">Estimation</span><span class="l-desc">estimation</span><span class="l-min">45m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">OPS-133</span><span class="l-act">Other</span><span class="l-desc">release mgmt</span><span class="l-min">30m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">ATL-6781</span><span class="l-act">Other</span><span class="l-desc">daily standup</span><span class="l-min">15m</span><span class="l-edit">✎</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cloud-backdrop" id="backdrop"></div>
+  <div class="cloud" id="cloud">
+    <div class="cloud-filter">
+      <span class="f-ic">⌕</span>
+      <input id="filter" type="text" placeholder="favorites · no match → search Jira" autocomplete="off" />
+      <span class="f-esc">esc</span>
+    </div>
+    <div class="cloud-body" id="cloud-body">
+      <div class="cloud-chips" id="chips"></div>
+    </div>
+    <div class="cloud-form" id="form">
+      <button class="cf-back" id="cf-back" title="назад">←</button>
+      <input class="cf-task" id="cf-task" placeholder="ATL-1234" />
+      <input class="cf-min" id="cf-min" value="30m" />
+      <input class="cf-desc" id="cf-desc" placeholder="description" />
+      <button class="cf-submit" id="cf-submit">Log</button>
+    </div>
+  </div>
+</div>
+
+<p class="variant-note">
+  <b>Collapse:</b> grid-rows схлопывает тело (без измерения высот), строки при этом <b>съезжают вниз</b>
+  (translateY 60%) и гаснут — «уезжают за нижний край», 260мс. Остаётся header: Σ на месте, из-под лейбла
+  выпрыгивает мини-<span class="m">＋ Log</span> с teal-бейджем suggestions. Облако при этом открывается из
+  той же кнопки. <b>Первая запись в закрытую панель раскрывает её сама</b> (полёт чипа → панель распахивается →
+  строка приземляется fresh). <b>Волна чипов</b> — только в момент открытия облака (класс .spawn на 450мс);
+  ререндеры фильтра — без анимации.
+</p>
+
+<script>
+  const FAVS = [
+    { name:'standup',      task:'ATL-10',   min:15, act:'Other' },
+    { name:'code review',  task:'ATL-6712', min:30, act:'CodeReview' },
+    { name:'1:1 sync',     task:'ATL-10',   min:30, act:'Other' },
+    { name:'planning',     task:'ATL-10',   min:60, act:'Other' },
+    { name:'retro',        task:'ATL-10',   min:30, act:'Other' },
+    { name:'estimation',   task:'ATL-6802', min:45, act:'Estimation' },
+    { name:'QA sync',      task:'ATL-10',   min:15, act:'Other' },
+    { name:'release mgmt', task:'OPS-133',  min:30, act:'Other' },
+    { name:'interview',    task:'HR-77',    min:60, act:'Other' },
+    { name:'mentoring',    task:'ATL-10',   min:30, act:'Other' },
+    { name:'arch review',  task:'ATL-6900', min:45, act:'DesignAnalysis' },
+    { name:'demo prep',    task:'ATL-10',   min:30, act:'Other' },
+    { name:'support',      task:'SUP-12',   min:30, act:'Other' },
+    { name:'docs',         task:'ATL-10',   min:30, act:'Other' },
+    { name:'grooming',     task:'ATL-10',   min:30, act:'Other' },
+    { name:'incident',     task:'OPS-133',  min:60, act:'Other' },
+    { name:'pairing',      task:'ATL-6802', min:60, act:'Development' },
+    { name:'onboarding',   task:'ATL-10',   min:45, act:'Other' },
+    { name:'team meeting', task:'ATL-10',   min:30, act:'Other' },
+    { name:'deploy watch', task:'OPS-133',  min:15, act:'Other' },
+  ];
+  let SUGGS = [
+    { name:'branch review · petrov/ATL-6844', task:'ATL-6844', min:25, act:'CodeReview' },
+  ];
+  const JIRA = [
+    { key:'ATL-111',  summary:'Replace stored procedures used in Telerik Reports with API calls' },
+    { key:'ATL-7736', summary:'Policy dictionaries: react rewrite of admin grid' },
+    { key:'ATL-5120', summary:'Fee endpoints: save validation edge cases' },
+    { key:'APP-2010', summary:'Pricing engine refactor — phase 2 rollout' },
+    { key:'APP-1024', summary:'Refactor pricing engine core module' },
+    { key:'OPS-208',  summary:'CI cache warmup flakiness on windows runners' },
+    { key:'ATL-6944', summary:'Reactivity: recalc storm on policy term change' },
+    { key:'SUP-44',   summary:'Client X import stuck on step 3' },
+    { key:'HR-91',    summary:'Onboarding checklist automation' },
+    { key:'ATL-6300', summary:'Save pipeline: optimistic locking conflicts' },
+  ];
+
+  const frame   = document.getElementById('frame');
+  const pane    = document.getElementById('pane');
+  const lpHead  = document.getElementById('lp-head');
+  const lpMini  = document.getElementById('lp-mini');
+  const miniSugg= document.getElementById('mini-sugg');
+  const cloud   = document.getElementById('cloud');
+  const chipsEl = document.getElementById('chips');
+  const filterEl= document.getElementById('filter');
+  const tableEl = document.getElementById('lp-table');
+  const sumEl   = document.getElementById('lp-sum');
+  const dayEl   = document.getElementById('day-total');
+  const ghost   = document.getElementById('ghost');
+  const gSugg   = document.getElementById('g-sugg');
+  const backdrop= document.getElementById('backdrop');
+
+  let loggedMin = 90, dayMin = 551, open = false;
+  let jiraTimer = null, jiraSeq = 0, jiraResults = [], jiraLoading = false;
+
+  const fmt = m => m >= 60 ? `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m` : `${m}m`;
+  const actLabel = a => ({ CodeReview:'Code Review', DesignAnalysis:'Design/Analysis' }[a] || a);
+  const actClass = a => /Review/.test(a) ? 'l-act rev' : 'l-act';
+
+  document.getElementById('earlier').addEventListener('click', function(){ this.classList.toggle('open'); });
+
+  function refreshSuggBadge() {
+    gSugg.style.display = SUGGS.length ? '' : 'none';
+    miniSugg.style.display = SUGGS.length ? '' : 'none';
+    gSugg.innerHTML = `<span class="sdot"></span>${SUGGS.length} suggested`;
+    miniSugg.innerHTML = `<span class="sdot"></span>${SUGGS.length}`;
+  }
+  refreshSuggBadge();
+
+  // ── collapse панели ─────────────────────────────────────────────────
+  const isCollapsed = () => pane.classList.contains('collapsed');
+  function setCollapsed(v) { pane.classList.toggle('collapsed', v); }
+  lpHead.addEventListener('click', ev => {
+    if (ev.target.closest('.lp-mini')) return; // кнопка — не тоггл
+    setCollapsed(!isCollapsed());
+  });
+  lpMini.addEventListener('click', ev => { ev.stopPropagation(); openCloud(); });
+
+  // ── удаление (right-click, двухшагово) ──────────────────────────────
+  let armed = null, armTimer = null;
+  function disarm() {
+    if (!armed) return;
+    armed.el.classList.remove('arm');
+    armed.el.querySelector('.f-name').textContent = armed.fav.name;
+    armed = null; clearTimeout(armTimer);
+  }
+
+  function favChip(fav, kind, i) {
+    const el = document.createElement('span');
+    el.className = 'fav' + (kind === 'sugg' ? ' sugg' : '');
+    el.style.animationDelay = `${30 + i * 12}ms`;
+    el.innerHTML =
+      (kind === 'sugg' ? `<span class="f-spark">✦</span>` : '') +
+      `<span class="f-task">${fav.task}</span>` +
+      `<span class="f-name">${fav.name}</span>` +
+      `<span class="f-min">${fmt(fav.min)}</span>`;
+    el.title = actLabel(fav.act) + (kind === 'fav' ? ' · right-click: удалить' : '');
+    el.addEventListener('click', () => {
+      if (armed && armed.el === el) {
+        const idx = FAVS.indexOf(fav);
+        if (idx >= 0) FAVS.splice(idx, 1);
+        el.style.transition = 'transform .18s ease, opacity .18s ease';
+        el.style.transform = 'scale(.5)'; el.style.opacity = '0';
+        setTimeout(() => el.remove(), 180);
+        armed = null; clearTimeout(armTimer);
+        return;
+      }
+      disarm();
+      if (kind === 'sugg') { SUGGS = SUGGS.filter(s => s !== fav); refreshSuggBadge(); }
+      flyAndLog(el, { ...fav });
+    });
+    if (kind === 'fav') {
+      el.addEventListener('contextmenu', ev => {
+        ev.preventDefault(); disarm();
+        armed = { el, fav };
+        el.classList.add('arm');
+        el.querySelector('.f-name').textContent = 'remove?';
+        armTimer = setTimeout(disarm, 1800);
+      });
+    }
+    return el;
+  }
+
+  function jiraChip(hit, i) {
+    const el = document.createElement('span');
+    el.className = 'fav jira';
+    el.style.animationDelay = `${20 + i * 24}ms`;
+    el.title = `${hit.key} · ${hit.summary}`;
+    el.innerHTML = `<span class="f-task">${hit.key}</span><span class="f-name">${hit.summary}</span>`;
+    el.addEventListener('click', () => enterFormMode({ task: hit.key, desc: hit.summary }));
+    return el;
+  }
+
+  function renderChips() {
+    const q = filterEl.value.trim().toLowerCase();
+    chipsEl.innerHTML = '';
+
+    const cu = document.createElement('span');
+    cu.className = 'fav custom';
+    cu.style.animationDelay = '15ms';
+    cu.innerHTML = `<span class="f-name">⌨ custom…</span>`;
+    cu.addEventListener('click', () => enterFormMode());
+    chipsEl.appendChild(cu);
+
+    if (SUGGS.length && !q) {
+      const lb = document.createElement('span');
+      lb.className = 'row-label sugg'; lb.textContent = '✦ suggested — tracker noticed';
+      chipsEl.appendChild(lb);
+      SUGGS.forEach((s, i) => chipsEl.appendChild(favChip(s, 'sugg', i)));
+      const lb2 = document.createElement('span');
+      lb2.className = 'row-label'; lb2.textContent = 'favorites';
+      chipsEl.appendChild(lb2);
+    }
+
+    const matches = FAVS.filter(f => !q || f.name.toLowerCase().includes(q) || f.task.toLowerCase().includes(q));
+    matches.forEach((f, i) => chipsEl.appendChild(favChip(f, 'fav', i + 1)));
+
+    if (q && matches.length === 0) {
+      const lb = document.createElement('span');
+      lb.className = 'row-label jira'; lb.textContent = '⌕ jira';
+      chipsEl.appendChild(lb);
+      if (jiraLoading) {
+        const st = document.createElement('span');
+        st.className = 'jira-status';
+        st.innerHTML = `<span class="spin">⟳</span> searching Jira for “${filterEl.value.trim()}”…`;
+        chipsEl.appendChild(st);
+      } else if (jiraResults.length) {
+        jiraResults.forEach((h, i) => chipsEl.appendChild(jiraChip(h, i)));
+      } else {
+        const st = document.createElement('span');
+        st.className = 'jira-status';
+        st.textContent = 'ничего не найдено — ⌨ custom для ручного ввода';
+        chipsEl.appendChild(st);
+      }
+    }
+  }
+
+  function queryJira(q) {
+    jiraLoading = true; jiraResults = [];
+    const seq = ++jiraSeq;
+    renderChips();
+    setTimeout(() => {
+      if (seq !== jiraSeq) return;
+      const qq = q.toLowerCase();
+      jiraResults = JIRA.filter(t =>
+        t.key.toLowerCase().includes(qq) || t.summary.toLowerCase().includes(qq)).slice(0, 5);
+      jiraLoading = false;
+      renderChips();
+    }, 380);
+  }
+
+  filterEl.addEventListener('input', () => {
+    disarm();
+    const q = filterEl.value.trim().toLowerCase();
+    clearTimeout(jiraTimer); jiraSeq++; jiraLoading = false; jiraResults = [];
+    const hasLocal = !q || FAVS.some(f => f.name.toLowerCase().includes(q) || f.task.toLowerCase().includes(q));
+    renderChips();
+    if (q && !hasLocal && q.length >= 2) {
+      jiraLoading = true;
+      renderChips();
+      jiraTimer = setTimeout(() => queryJira(q), 350);
+    }
+  });
+  filterEl.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter') return;
+    const q = filterEl.value.trim();
+    const favMatch = chipsEl.querySelector('.fav:not(.custom):not(.jira)' + (q ? ':not(.sugg)' : ''));
+    if (favMatch) { favMatch.click(); return; }
+    const jira = chipsEl.querySelector('.fav.jira');
+    if (jira) jira.click();
+  });
+
+  // ── open/close/морф ─────────────────────────────────────────────────
+  function openCloud() {
+    if (open) return;
+    open = true;
+    cloud.classList.remove('form-mode');
+    jiraSeq++; jiraLoading = false; jiraResults = [];
+    filterEl.value = '';
+    renderChips();
+    cloud.style.bottom = (pane.offsetHeight + 6) + 'px';
+    // волна — только на открытие
+    cloud.classList.add('spawn');
+    setTimeout(() => cloud.classList.remove('spawn'), 450);
+    frame.classList.add('cloud-open');
+    setTimeout(() => filterEl.focus(), 70);
+  }
+  function closeCloud() {
+    if (!open) return;
+    open = false; disarm();
+    frame.classList.remove('cloud-open');
+  }
+  function enterFormMode(prefill) {
+    disarm();
+    document.getElementById('cf-task').value = prefill?.task || '';
+    document.getElementById('cf-desc').value = prefill?.desc || '';
+    document.getElementById('cf-min').value = '30m';
+    cloud.classList.add('form-mode');
+    setTimeout(() => {
+      const target = prefill ? document.getElementById('cf-min') : document.getElementById('cf-task');
+      target.focus(); target.select?.();
+    }, 140);
+  }
+  function exitFormMode() {
+    cloud.classList.remove('form-mode');
+    setTimeout(() => filterEl.focus(), 80);
+  }
+
+  ghost.addEventListener('click', openCloud);
+  backdrop.addEventListener('click', closeCloud);
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Escape') return;
+    if (cloud.classList.contains('form-mode')) exitFormMode();
+    else closeCloud();
+  });
+
+  document.getElementById('cf-back').addEventListener('click', exitFormMode);
+  function submitForm() {
+    const task = document.getElementById('cf-task').value.trim() || 'ATL-????';
+    const desc = document.getElementById('cf-desc').value.trim() || 'manual entry';
+    const raw  = document.getElementById('cf-min').value.trim();
+    const h = /(\d+)\s*h/.exec(raw), mm = /(\d+)\s*m/.exec(raw);
+    let m = (h ? +h[1]*60 : 0) + (mm ? +mm[1] : 0);
+    if (!m) m = parseInt(raw, 10) || 30;
+    closeCloud();
+    setTimeout(() => addRow({ task, name: desc, min: m, act:'Other' }), 150);
+  }
+  document.getElementById('cf-submit').addEventListener('click', submitForm);
+  ['cf-task','cf-min','cf-desc'].forEach(id =>
+    document.getElementById(id).addEventListener('keydown', ev => { if (ev.key === 'Enter') submitForm(); }));
+
+  // ── полёт → строка (цель = header панели: стабильна в collapsed) ────
+  function flyAndLog(el, f) {
+    const from = el.getBoundingClientRect();
+    const to = lpHead.getBoundingClientRect();
+    const g = document.createElement('span');
+    g.className = 'fly';
+    g.style.left = from.left + 'px';
+    g.style.top = from.top + 'px';
+    g.innerHTML = `<span class="f-name">${f.name}</span><span class="f-min">${fmt(f.min)}</span>`;
+    document.body.appendChild(g);
+    requestAnimationFrame(() => {
+      g.style.transform = `translate(${to.left + 14 - from.left}px, ${to.bottom + 6 - from.top}px) scale(.5)`;
+      g.style.opacity = '0';
+    });
+    setTimeout(() => g.remove(), 460);
+    closeCloud();
+    setTimeout(() => addRow(f), 170);
+  }
+
+  function addRow(f) {
+    // первая запись в закрытую панель раскрывает её
+    if (isCollapsed()) setCollapsed(false);
+
+    const row = document.createElement('div');
+    row.className = 'log-row fresh';
+    row.innerHTML =
+      `<span class="l-task">${f.task}</span>` +
+      `<span class="${actClass(f.act)}">${actLabel(f.act)}</span>` +
+      `<span class="l-desc">${f.name}</span>`;
+    const st = document.createElement('span');
+    st.className = 'stepper';
+    st.innerHTML =
+      `<button class="s-dec">−</button>` +
+      `<span class="s-val" data-min="${f.min}" title="колёсико: ±15m">${fmt(f.min)}</span>` +
+      `<button class="s-inc">+</button>` +
+      `<button class="s-undo" title="undo">↩</button>`;
+    row.appendChild(st);
+    ghost.after(row);
+    bumpSums(f.min);
+
+    const val = st.querySelector('.s-val');
+    let freezeTimer;
+    const armFreeze = () => { clearTimeout(freezeTimer); freezeTimer = setTimeout(freeze, 4000); };
+    const setMin = m => {
+      m = Math.max(15, Math.min(480, m));
+      bumpSums(m - +val.dataset.min);
+      val.dataset.min = m; val.textContent = fmt(m);
+      armFreeze();
+    };
+    st.querySelector('.s-dec').addEventListener('click', e => { e.stopPropagation(); setMin(+val.dataset.min - 15); });
+    st.querySelector('.s-inc').addEventListener('click', e => { e.stopPropagation(); setMin(+val.dataset.min + 15); });
+    val.addEventListener('wheel', ev => { ev.preventDefault(); setMin(+val.dataset.min + (ev.deltaY < 0 ? 15 : -15)); }, { passive:false });
+    st.querySelector('.s-undo').addEventListener('click', e => {
+      e.stopPropagation(); clearTimeout(freezeTimer);
+      bumpSums(-val.dataset.min); row.remove();
+    });
+    const freeze = () => {
+      const m = +val.dataset.min;
+      st.replaceWith(Object.assign(document.createElement('span'), { className:'l-min', textContent: fmt(m) }));
+      const edit = document.createElement('span');
+      edit.className = 'l-edit'; edit.textContent = '✎';
+      row.appendChild(edit);
+      row.classList.remove('fresh');
+    };
+    armFreeze();
+  }
+
+  function bumpSums(delta) {
+    loggedMin += delta; dayMin += delta;
+    sumEl.textContent = fmt(loggedMin);
+    dayEl.textContent = fmt(dayMin);
+    sumEl.classList.add('flash');
+    setTimeout(() => sumEl.classList.remove('flash'), 400);
+  }
+</script>
+
+</body>
+</html>

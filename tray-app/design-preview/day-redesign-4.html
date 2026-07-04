@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · day view — итерация 4 (Logged примагничен к низу)</title>
+<style>
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --struct:#26263a;
+    --surface0:#313244; --surface1:#45475a; --overlay0:#6c7086;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --blue:#89b4fa; --peach:#fab387; --teal:#94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0c0c14; color:var(--text);
+    font-family:'Cascadia Code','Consolas',monospace;
+    padding:26px 20px 60px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .page-title { font-size:13px; color:var(--subtext0); letter-spacing:.4px; margin-bottom:6px; }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--overlay0); margin-bottom:24px; }
+  .page-sub .auto { color:var(--subtext1); } .page-sub .man { color:var(--mauve); }
+
+  .row-wrap { display:flex; gap:26px; align-items:flex-start; flex-wrap:wrap; justify-content:center; }
+  .variant { display:flex; flex-direction:column; align-items:center; }
+  .variant-tag { font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:var(--mauve); margin:0 0 9px; align-self:flex-start; }
+  .variant-note { width:500px; font-size:10.5px; line-height:1.6; color:var(--overlay0); margin:9px 2px 0; }
+  .variant-note b { color:var(--subtext0); font-weight:600; }
+  .variant-note .g { color:var(--green); } .variant-note .m { color:var(--mauve); }
+
+  .frame { width:500px; height:560px; background:var(--base); border:1px solid #2c2c40; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
+
+  .banner { flex-shrink:0; display:flex; align-items:center; padding:8px 12px; background:var(--mantle); border-bottom:1px solid var(--struct); font-size:10px; color:var(--overlay0); letter-spacing:2px; }
+  .banner .wd { display:flex; gap:8px; }
+  .banner .wd .on { color:var(--text); border-bottom:2px solid var(--mauve); padding-bottom:2px; }
+  .banner .nav { margin-left:auto; letter-spacing:4px; font-size:11px; }
+
+  /* ══ scrollable TRACKED zone ══ */
+  .scroll-zone { flex:1; min-height:0; overflow-y:auto; padding:0 12px; }
+  .scroll-zone::-webkit-scrollbar { width:4px; }
+  .scroll-zone::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .day-block { padding:12px 0 11px; border-bottom:1px solid var(--struct); }
+  .day-line { display:flex; align-items:baseline; }
+  .day-date { font-size:15px; font-weight:600; letter-spacing:.2px; color:var(--text); font-variant-numeric:tabular-nums; }
+  .day-total { margin-left:auto; display:flex; align-items:baseline; gap:7px; font-variant-numeric:tabular-nums; }
+  .day-total .num { font-size:18px; font-weight:700; color:var(--text); }
+  .day-total .cap { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:var(--overlay0); }
+
+  .sec { border-bottom:1px solid var(--struct); }
+  .sec:last-child { border-bottom:none; }
+  .sec-head { display:flex; align-items:center; gap:7px; padding:9px 0; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums; }
+  .sec-head .chev { color:var(--overlay0); font-size:9px; width:9px; flex-shrink:0; }
+  .sec-head .label-auto { color:var(--subtext1); }
+  .sec-head .live-dot { width:5px; height:5px; border-radius:50%; background:var(--green); flex-shrink:0; animation:pulse 1.6s ease-in-out infinite; }
+  .sec-head .sum { margin-left:auto; font-weight:700; text-transform:none; letter-spacing:0; color:var(--text); }
+  .sec-head .idle-dot { width:4px; height:4px; border-radius:1px; background:var(--surface1); flex-shrink:0; }
+  .sec-head .idle-in { font-weight:400; text-transform:none; letter-spacing:0; color:var(--overlay0); font-size:10.5px; }
+  .sec-head .idle-in .v { color:var(--subtext0); }
+
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  .card { position:relative; background:var(--mantle); border:1px solid var(--struct); border-radius:8px; padding:9px 11px 11px; margin-bottom:8px; }
+  .card .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; min-width:0; }
+  .card .repo { font-size:12px; font-weight:700; color:var(--blue); flex-shrink:0; }
+  .card .head .sep { width:1px; height:12px; background:var(--surface0); flex-shrink:0; }
+  .card .branch { font-size:11px; color:var(--overlay0); white-space:nowrap; overflow:hidden; flex:1; min-width:0; -webkit-mask-image:linear-gradient(90deg,#000 82%,transparent); mask-image:linear-gradient(90deg,#000 82%,transparent); }
+  .badge { flex-shrink:0; display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; padding:3px 9px; border-radius:999px; }
+  .badge .dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .badge.live { color:var(--green); background:rgba(166,227,161,.10); }
+  .badge.live .dot { animation:pulse 1.6s ease-in-out infinite; }
+  .badge.pending { color:var(--yellow); background:rgba(249,226,175,.10); }
+  .badge.idle { color:var(--peach); background:rgba(250,179,135,.10); }
+  .metrics { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 9px; border-radius:6px; background:rgba(17,17,27,.6); border:1px solid var(--struct); color:var(--subtext0); }
+  .chip .ic { font-size:10px; color:var(--overlay0); }
+  .chip.time .v { color:var(--text); font-weight:700; }
+  .chip .plus { color:var(--green); } .chip .minus { color:var(--red); }
+  .chip .csep { width:1px; height:10px; background:var(--struct); }
+  .mode { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px; }
+  .mode.normal { color:var(--green); background:rgba(166,227,161,.08); border:1px solid rgba(166,227,161,.25); }
+  .mode.relaxed { color:var(--blue); background:rgba(137,180,250,.08); border:1px solid rgba(137,180,250,.25); }
+  .mode .car { font-size:8px; opacity:.7; }
+  .edge { position:absolute; left:10px; right:10px; bottom:0; height:3px; border-radius:2px; background:var(--struct); overflow:hidden; }
+  .edge .fill { display:block; height:100%; border-radius:2px; }
+
+  .earlier-toggle { display:flex; align-items:center; gap:7px; padding:6px 2px 9px; font-size:10.5px; color:var(--overlay0); font-variant-numeric:tabular-nums; }
+  .earlier-toggle .chev { font-size:8px; width:9px; }
+  .earlier-toggle .e-sum { margin-left:auto; }
+
+  /* ══ PINNED Logged pane — magnetised to the bottom ══ */
+  .logged-pane {
+    flex-shrink:0;
+    background:var(--mantle);
+    border-top:1px solid var(--surface0);
+    box-shadow:0 -6px 16px rgba(0,0,0,.28);
+    padding:8px 12px 10px;
+  }
+  .lp-head { display:flex; align-items:center; gap:7px; padding:2px 0 8px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums; }
+  .lp-head .glyph { color:var(--mauve); font-size:10px; }
+  .lp-head .label { color:var(--mauve); }
+  .lp-head .sum { margin-left:auto; font-weight:700; text-transform:none; color:var(--text); }
+  .lp-add {
+    margin-left:10px; display:inline-flex; align-items:center; gap:5px;
+    background:rgba(203,166,247,.12); border:1px solid rgba(203,166,247,.34);
+    color:var(--mauve); font-size:10px; font-weight:600; padding:3px 10px; border-radius:999px; cursor:default;
+    text-transform:none; letter-spacing:.2px;
+  }
+
+  /* Logged table (back to rows — readable sequence, time in a column) */
+  .lp-table { max-height:104px; overflow-y:auto; -webkit-mask-image:linear-gradient(180deg,#000 86%,transparent); mask-image:linear-gradient(180deg,#000 86%,transparent); }
+  .lp-table.short { -webkit-mask-image:none; mask-image:none; }
+  .lp-table::-webkit-scrollbar { width:4px; }
+  .lp-table::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+  .log-row {
+    display:flex; align-items:center; gap:9px;
+    padding:5px 8px; border-radius:4px;
+    background:rgba(24,24,37,.5); margin-bottom:3px;
+    font-size:11px; font-variant-numeric:tabular-nums;
+  }
+  .log-row .l-task { color:var(--mauve); font-weight:600; background:rgba(203,166,247,.12); padding:1px 7px; border-radius:4px; flex-shrink:0; }
+  .log-row .l-act { font-size:10px; padding:1px 7px; border-radius:4px; flex-shrink:0; color:#9399b2; background:rgba(147,153,178,.12); }
+  .log-row .l-act.rev { color:var(--blue); background:rgba(137,180,250,.12); }
+  .log-row .l-act.dev { color:var(--green); background:rgba(166,227,161,.12); }
+  .log-row .l-desc { color:#7f849c; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .log-row .l-min { min-width:50px; text-align:right; color:var(--text); font-weight:700; flex-shrink:0; }
+  .log-row .l-edit { color:var(--overlay0); font-size:12px; flex-shrink:0; }
+
+  /* Favorites — horizontal scrolling rail of ghost chips */
+  .fav-label { font-size:8.5px; text-transform:uppercase; letter-spacing:.6px; color:#4b4d63; font-weight:600; margin:8px 0 5px; }
+  .fav-rail { display:flex; gap:7px; overflow-x:auto; padding-bottom:3px; -webkit-mask-image:linear-gradient(90deg,#000 92%,transparent); mask-image:linear-gradient(90deg,#000 92%,transparent); }
+  .fav-rail::-webkit-scrollbar { height:0; }
+  .fav-chip {
+    display:inline-flex; align-items:center; gap:6px; flex-shrink:0;
+    padding:4px 11px 4px 8px; border-radius:999px;
+    background:transparent; border:1px dashed var(--surface1); opacity:.72;
+    font-size:10.5px; color:var(--overlay0); font-variant-numeric:tabular-nums; cursor:default;
+    transition:opacity .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .fav-chip:hover { opacity:1; border-color:var(--mauve); background:rgba(203,166,247,.06); }
+  .fav-chip .add { font-size:11px; }
+  .fav-chip .task { color:var(--subtext0); font-weight:700; }
+  .fav-chip:hover .task { color:var(--mauve); }
+  .fav-chip .min { color:var(--subtext0); font-weight:600; }
+</style>
+</head>
+<body>
+
+<div class="page-title"><b>day view · итерация 4 — Logged примагничен к низу</b></div>
+<div class="page-sub"><span class="auto">TRACKED</span> скроллится сверху &nbsp;·&nbsp; <span class="man">LOGGED</span> закреплён внизу: таблица + лента favorites (горизонт. скролл)</div>
+
+<div class="row-wrap">
+
+  <!-- ════════════ FRAME 1 — типичный день ════════════ -->
+  <div class="variant">
+    <div class="variant-tag">1 · типичный день</div>
+    <div class="frame">
+      <div class="banner">
+        <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+        <span class="nav">◷ ▦ ⚙</span>
+      </div>
+
+      <!-- scroll: day header + TRACKED -->
+      <div class="scroll-zone">
+        <div class="day-block">
+          <div class="day-line">
+            <span class="day-date">4 July 2026</span>
+            <span class="day-total"><span class="num">9h 11m</span><span class="cap">today</span></span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head">
+            <span class="chev">▼</span>
+            <span class="live-dot"></span>
+            <span class="label-auto">Tracked</span>
+            <span class="idle-dot"></span>
+            <span class="idle-in"><span class="v">1h 12m</span> idle</span>
+            <span class="sum">7h 41m</span>
+          </div>
+
+          <div class="card">
+            <div class="head">
+              <span class="repo">atlas-frontend</span><span class="sep"></span>
+              <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+              <span class="badge live"><span class="dot"></span>Live</span>
+            </div>
+            <div class="metrics">
+              <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+              <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+              <span class="mode normal">Normal <span class="car">▾</span></span>
+            </div>
+            <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+          </div>
+
+          <div class="card">
+            <div class="head">
+              <span class="repo">appone-backend</span><span class="sep"></span>
+              <span class="branch">APP-1024-refactor-pricing-engine</span>
+              <span class="badge idle"><span class="dot"></span>Idle</span>
+            </div>
+            <div class="metrics">
+              <span class="chip time"><span class="ic">◔</span><span class="v">22m</span></span>
+              <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+18</span><span class="minus">−4</span></span>
+              <span class="mode relaxed">Relaxed <span class="car">▾</span></span>
+            </div>
+            <span class="edge"><span class="fill" style="width:18%;background:var(--peach)"></span></span>
+          </div>
+
+          <div class="earlier-toggle">
+            <span class="chev">▶</span>
+            <span>3 earlier sessions</span>
+            <span class="e-sum">3h 02m</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PINNED Logged -->
+      <div class="logged-pane">
+        <div class="lp-head">
+          <span class="glyph">✎</span>
+          <span class="label">Logged</span>
+          <span class="sum">1h 30m</span>
+          <span class="lp-add">＋ Log</span>
+        </div>
+        <div class="lp-table short">
+          <div class="log-row"><span class="l-task">ATL-6781</span><span class="l-act">Other</span><span class="l-desc">daily standup</span><span class="l-min">15m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">ATL-6712</span><span class="l-act rev">Code Review</span><span class="l-desc">PR #214 review with team</span><span class="l-min">30m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">APP-1024</span><span class="l-act">Other</span><span class="l-desc">sprint planning</span><span class="l-min">45m</span><span class="l-edit">✎</span></div>
+        </div>
+        <div class="fav-label">favorites · click to log</div>
+        <div class="fav-rail">
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">standup</span><span class="min">15m</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">code review</span><span class="min">30m</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">1:1 sync</span><span class="min">30m</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">planning</span><span class="min">1h</span></span>
+        </div>
+      </div>
+    </div>
+    <p class="variant-note">
+      Экран разрезан на две ипостаси физически: <span class="auto">Tracked</span> скроллится сверху (растёт весь день),
+      <span class="m">Logged</span> <b>примагничен к низу</b> — всегда виден, не сворачивается. Записи вернулись в
+      <b>таблицу</b> (task · активность · описание · время в колонке). idle сидит в заголовке Tracked.
+      Favorites — <b>лента-скролл</b> призраков (⊕), клик логает запись в таблицу.
+    </p>
+  </div>
+
+  <!-- ════════════ FRAME 2 — стресс: много записей и фаворитов ════════════ -->
+  <div class="variant">
+    <div class="variant-tag">2 · стресс — таблица и лента скроллятся</div>
+    <div class="frame">
+      <div class="banner">
+        <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+        <span class="nav">◷ ▦ ⚙</span>
+      </div>
+
+      <div class="scroll-zone">
+        <div class="day-block">
+          <div class="day-line">
+            <span class="day-date">4 July 2026</span>
+            <span class="day-total"><span class="num">9h 11m</span><span class="cap">today</span></span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head">
+            <span class="chev">▼</span>
+            <span class="live-dot"></span>
+            <span class="label-auto">Tracked</span>
+            <span class="idle-dot"></span>
+            <span class="idle-in"><span class="v">1h 12m</span> idle</span>
+            <span class="sum">7h 41m</span>
+          </div>
+
+          <div class="card">
+            <div class="head">
+              <span class="repo">atlas-frontend</span><span class="sep"></span>
+              <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+              <span class="badge live"><span class="dot"></span>Live</span>
+            </div>
+            <div class="metrics">
+              <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+              <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+              <span class="mode normal">Normal <span class="car">▾</span></span>
+            </div>
+            <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+          </div>
+
+          <div class="earlier-toggle">
+            <span class="chev">▶</span>
+            <span>3 earlier sessions</span>
+            <span class="e-sum">3h 02m</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="logged-pane">
+        <div class="lp-head">
+          <span class="glyph">✎</span>
+          <span class="label">Logged</span>
+          <span class="sum">3h 45m</span>
+          <span class="lp-add">＋ Log</span>
+        </div>
+        <div class="lp-table">
+          <div class="log-row"><span class="l-task">ATL-6781</span><span class="l-act">Other</span><span class="l-desc">daily standup</span><span class="l-min">15m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">ATL-6712</span><span class="l-act rev">Code Review</span><span class="l-desc">PR #214 review with team</span><span class="l-min">30m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">APP-1024</span><span class="l-act">Other</span><span class="l-desc">sprint planning</span><span class="l-min">45m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">ATL-6802</span><span class="l-act dev">Development</span><span class="l-desc">pairing on migration</span><span class="l-min">1h 15m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">OPS-133</span><span class="l-act">Other</span><span class="l-desc">incident retro</span><span class="l-min">30m</span><span class="l-edit">✎</span></div>
+          <div class="log-row"><span class="l-task">ATL-6712</span><span class="l-act rev">Test Review</span><span class="l-desc">QA handoff sync</span><span class="l-min">30m</span><span class="l-edit">✎</span></div>
+        </div>
+        <div class="fav-label">favorites · click to log</div>
+        <div class="fav-rail">
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">standup</span><span class="min">15m</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">code review</span><span class="min">30m</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">1:1 sync</span><span class="min">30m</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">planning</span><span class="min">1h</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">retro</span><span class="min">30m</span></span>
+          <span class="fav-chip"><span class="add">⊕</span><span class="task">estimation</span><span class="min">45m</span></span>
+        </div>
+      </div>
+    </div>
+    <p class="variant-note">
+      Тот же каркас под нагрузкой: <b>таблица Logged скроллится внутри</b> (fade снизу = ещё записи),
+      <b>лента favorites скроллится вбок</b> (fade справа) — сколько бы их ни было, низ <b>не растёт</b>,
+      высота панели стабильна. Tracked-зона сверху ужимается, но карточки остаются доступны скроллом.
+    </p>
+  </div>
+
+</div>
+
+</body>
+</html>

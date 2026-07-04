@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · day view — итерация 1</title>
+<style>
+  /* ── Catppuccin Mocha tokens (как в приложении) ─────────────────────── */
+  :root {
+    --crust:    #11111b;
+    --mantle:   #181825;
+    --base:     #1e1e2e;
+    --struct:   #26263a;  /* структурный нейтрал: рамки, треки */
+    --surface0: #313244;
+    --surface1: #45475a;
+    --overlay0: #6c7086;
+    --subtext0: #a6adc8;
+    --subtext1: #bac2de;
+    --text:     #cdd6f4;
+    --green:    #a6e3a1;
+    --yellow:   #f9e2af;
+    --red:      #f38ba8;
+    --mauve:    #cba6f7;
+    --blue:     #89b4fa;
+    --peach:    #fab387;
+    --teal:     #94e2d5;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0c0c14;
+    color: var(--text);
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    padding: 28px 20px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-title {
+    font-size: 13px;
+    color: var(--subtext0);
+    letter-spacing: .4px;
+    margin-bottom: 18px;
+  }
+  .page-title b { color: var(--text); }
+
+  .variant { margin-bottom: 34px; }
+  .variant-tag {
+    font-size: 11px;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+    color: var(--mauve);
+    margin: 0 2px 8px;
+  }
+  .variant-note {
+    width: 500px;
+    font-size: 10.5px;
+    line-height: 1.55;
+    color: var(--overlay0);
+    margin: 8px 2px 0;
+  }
+  .variant-note b { color: var(--subtext0); font-weight: 600; }
+
+  /* ── Рамка окна 500×560 ─────────────────────────────────────────────── */
+  .frame {
+    width: 500px;
+    height: 560px;
+    background: var(--base);
+    border: 1px solid #2c2c40;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Верхний banner приложения (упрощённо, для честных пропорций) */
+  .banner {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--mantle);
+    border-bottom: 1px solid var(--struct);
+    font-size: 10px;
+    color: var(--overlay0);
+    letter-spacing: 2px;
+  }
+  .banner .wd { display: flex; gap: 8px; }
+  .banner .wd .on { color: var(--text); border-bottom: 2px solid var(--mauve); padding-bottom: 2px; }
+  .banner .nav { margin-left: auto; letter-spacing: 4px; font-size: 11px; }
+
+  .content { flex: 1; overflow: hidden; padding: 0 12px; display: flex; flex-direction: column; }
+
+  /* ── Шапка дня ──────────────────────────────────────────────────────── */
+  .day-block {
+    padding: 12px 0 11px;
+    border-bottom: 1px solid var(--struct);
+  }
+  .day-line {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .day-date {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .2px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Hero-число (A, B) */
+  .day-total {
+    margin-left: auto;
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-variant-numeric: tabular-nums;
+  }
+  .day-total .num { font-size: 17px; font-weight: 700; color: var(--text); }
+  .day-total .cap {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--overlay0);
+  }
+
+  /* Саблайн-разбивка (A) */
+  .day-breakdown {
+    display: flex;
+    gap: 14px;
+    margin-top: 7px;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--overlay0);
+  }
+  .day-breakdown .part { display: inline-flex; gap: 5px; align-items: baseline; }
+  .day-breakdown .v { color: var(--subtext0); font-weight: 600; }
+  .day-breakdown .part.idle { margin-left: auto; }
+  .day-breakdown .part.idle .v { color: var(--overlay0); }
+
+  /* ── Таймлайн (B): ось времени, не пропорция ────────────────────────── */
+  .timeline { margin-top: 10px; }
+  .tl-track {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    background: var(--struct);
+    overflow: hidden;
+  }
+  .tl-seg { position: absolute; top: 0; bottom: 0; border-radius: 2px; opacity: .92; }
+  .tl-seg.atlas  { background: var(--blue); }
+  .tl-seg.appone { background: var(--peach); }
+  .tl-seg.infra  { background: var(--teal); }
+  .tl-seg.live::after {
+    content: '';
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: #fff;
+    opacity: .8;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity:.8; } 50% { opacity:.2; } }
+  .tl-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 8.5px;
+    color: #4b4d63;
+    font-variant-numeric: tabular-nums;
+  }
+  .tl-head {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 6px;
+    font-size: 10.5px;
+    color: var(--overlay0);
+    font-variant-numeric: tabular-nums;
+  }
+  .tl-head .idle-cap { margin-left: auto; }
+  .tl-head .idle-cap .v { color: var(--subtext0); font-weight: 600; }
+
+  /* Вариант C: однострочная шапка */
+  .day-line.oneline .day-total .num { font-size: 15px; }
+  .day-line.oneline .idle-inline {
+    font-size: 10.5px;
+    color: var(--overlay0);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Секции ─────────────────────────────────────────────────────────── */
+  .sec {
+    border-bottom: 1px solid var(--struct);
+  }
+  .sec:last-of-type { border-bottom: none; }
+  .sec-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--subtext1);
+    cursor: default;
+    font-variant-numeric: tabular-nums;
+  }
+  .sec-head .chev { color: var(--overlay0); font-size: 9px; width: 10px; }
+  .sec-head .count { font-weight: 400; color: var(--overlay0); }
+  .sec-head .sum {
+    margin-left: auto;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--overlay0);
+  }
+
+  /* ── Карточка сессии (очищенная) ────────────────────────────────────── */
+  .card {
+    position: relative;
+    background: var(--mantle);
+    border: 1px solid var(--struct);
+    border-radius: 8px;
+    padding: 9px 11px 11px;
+    margin-bottom: 8px;
+  }
+  .card .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    min-width: 0;
+  }
+  .card .repo { font-size: 12px; font-weight: 700; color: var(--blue); flex-shrink: 0; }
+  .card .head .sep { width: 1px; height: 12px; background: var(--surface0); flex-shrink: 0; }
+  .card .branch {
+    font-size: 11px;
+    color: var(--overlay0);
+    white-space: nowrap;
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent);
+            mask-image: linear-gradient(90deg, #000 82%, transparent);
+  }
+  .badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+  }
+  .badge .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .badge.live    { color: var(--green); background: rgba(166,227,161,.10); }
+  .badge.live .dot { animation: pulse 1.6s ease-in-out infinite; }
+  .badge.pending { color: var(--yellow); background: rgba(249,226,175,.10); }
+  .badge.idle    { color: var(--peach); background: rgba(250,179,135,.10); }
+
+  .metrics { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    background: rgba(17,17,27,.6);
+    border: 1px solid var(--struct);
+    color: var(--subtext0);
+  }
+  .chip .ic { font-size: 10px; color: var(--overlay0); }
+  .chip.time .v { color: var(--text); font-weight: 700; text-decoration: underline dotted var(--surface1); text-underline-offset: 3px; }
+  .chip .plus { color: var(--green); }
+  .chip .minus { color: var(--red); }
+  .chip .csep { width: 1px; height: 10px; background: var(--struct); }
+  .mode {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+  .mode.normal  { color: var(--green); background: rgba(166,227,161,.08); border: 1px solid rgba(166,227,161,.25); }
+  .mode.relaxed { color: var(--blue);  background: rgba(137,180,250,.08); border: 1px solid rgba(137,180,250,.25); }
+  .mode .car { font-size: 8px; opacity: .7; }
+
+  .edge {
+    position: absolute;
+    left: 10px; right: 10px; bottom: 0;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--struct);
+    overflow: hidden;
+  }
+  .edge .fill { display: block; height: 100%; border-radius: 2px; }
+
+  /* Свёрнутые строки Closed/Logged */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--overlay0);
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(24,24,37,.5);
+    margin-bottom: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .row .r-repo { min-width: 110px; color: var(--subtext0); font-weight: 600; }
+  .row .r-task { min-width: 80px; color: var(--subtext1); }
+  .row .r-int  { min-width: 110px; }
+  .row .r-dur  { color: var(--text); font-weight: 600; margin-left: auto; }
+
+  .dock {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 9px 12px;
+    background: var(--mantle);
+    border-top: 1px solid var(--surface0);
+  }
+  .log-btn {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(203,166,247,.1);
+    border: 1px solid rgba(203,166,247,.32);
+    color: var(--mauve);
+    font-size: 11px;
+    padding: 6px 18px;
+    border-radius: 999px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title"><b>day view · итерация 1</b> — шапка = только общее; каждое число живёт в одном месте</div>
+
+<!-- ════════════════ ВАРИАНТ A ════════════════ -->
+<div class="variant">
+  <div class="variant-tag">A · Hero number — «сколько сегодня»</div>
+  <div class="frame">
+    <div class="banner">
+      <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+      <span class="nav">◷ ▦ ⚙</span>
+    </div>
+    <div class="content">
+      <div class="day-block">
+        <div class="day-line">
+          <span class="day-date">4 July 2026</span>
+          <span class="day-total"><span class="num">9h 11m</span><span class="cap">today</span></span>
+        </div>
+        <div class="day-breakdown">
+          <span class="part"><span class="v">7h 41m</span> tracked</span>
+          <span class="part"><span class="v" style="color:var(--mauve)">1h 30m</span> logged</span>
+          <span class="part idle"><span class="v">1h 12m</span> idle</span>
+        </div>
+      </div>
+
+      <!-- ACTIVE -->
+      <div class="sec">
+        <div class="sec-head"><span class="chev">▼</span>Active<span class="sum">4h 39m</span></div>
+        <div class="card">
+          <div class="head">
+            <span class="repo">atlas-frontend</span><span class="sep"></span>
+            <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+            <span class="badge live"><span class="dot"></span>Live</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+            <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+        </div>
+        <div class="card">
+          <div class="head">
+            <span class="repo">appone-backend</span><span class="sep"></span>
+            <span class="branch">APP-1024-refactor-pricing-engine</span>
+            <span class="badge pending"><span class="dot"></span>Pending</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">5m</span></span>
+            <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+4</span><span class="minus">−0</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:10%;background:var(--red)"></span></span>
+        </div>
+      </div>
+
+      <!-- CLOSED / LOGGED свёрнуты -->
+      <div class="sec"><div class="sec-head"><span class="chev">▶</span>Closed <span class="count">(3)</span><span class="sum">3h 02m</span></div></div>
+      <div class="sec"><div class="sec-head"><span class="chev">▶</span>Logged <span class="count">(3)</span><span class="sum">1h 30m</span></div></div>
+    </div>
+    <div class="dock"><span class="log-btn">Log</span></div>
+  </div>
+  <p class="variant-note">
+    Шапка отвечает на один вопрос: <b>«сколько сегодня уйдёт в таймшит»</b> (Active Σ + Closed Σ + Logged Σ).
+    Саблайн — единственные два агрегата, которых нет ни у одной секции: tracked (машина: active+closed)
+    и полный простой дня. Ratio bar, start→end, дубль logged — удалены. Карточки без «paused» и «+manual».
+  </p>
+</div>
+
+<!-- ════════════════ ВАРИАНТ B ════════════════ -->
+<div class="variant">
+  <div class="variant-tag">B · Chronology — ось времени вместо пропорции</div>
+  <div class="frame">
+    <div class="banner">
+      <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+      <span class="nav">◷ ▦ ⚙</span>
+    </div>
+    <div class="content">
+      <div class="day-block">
+        <div class="day-line">
+          <span class="day-date">4 July 2026</span>
+          <span class="day-total"><span class="num">9h 11m</span><span class="cap">today</span></span>
+        </div>
+        <div class="timeline">
+          <div class="tl-head">
+            <span>09:18 → now</span>
+            <span class="idle-cap">idle <span class="v">1h 12m</span></span>
+          </div>
+          <div class="tl-track">
+            <span class="tl-seg atlas"  style="left:3.75%;  width:18.13%" title="atlas-frontend 09:18–10:45"></span>
+            <span class="tl-seg atlas"  style="left:25%;    width:6.25%"  title="atlas-frontend 11:00–11:30"></span>
+            <span class="tl-seg infra"  style="left:32.29%; width:4.17%"  title="infra-scripts 11:35–11:55"></span>
+            <span class="tl-seg appone" style="left:51.67%; width:21.25%" title="appone-backend 13:08–14:50"></span>
+            <span class="tl-seg atlas"  style="left:76.04%; width:13.54%" title="atlas-frontend 15:05–16:10"></span>
+            <span class="tl-seg appone live" style="left:90%; width:2.71%" title="appone-backend 16:12–now"></span>
+          </div>
+          <div class="tl-axis"><span>09</span><span>11</span><span>13</span><span>15</span><span>17</span></div>
+        </div>
+      </div>
+
+      <!-- ACTIVE -->
+      <div class="sec">
+        <div class="sec-head"><span class="chev">▼</span>Active<span class="sum">4h 39m</span></div>
+        <div class="card">
+          <div class="head">
+            <span class="repo">atlas-frontend</span><span class="sep"></span>
+            <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+            <span class="badge live"><span class="dot"></span>Live</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+            <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+        </div>
+        <div class="card">
+          <div class="head">
+            <span class="repo">appone-backend</span><span class="sep"></span>
+            <span class="branch">APP-1024-refactor-pricing-engine</span>
+            <span class="badge pending"><span class="dot"></span>Pending</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">5m</span></span>
+            <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+4</span><span class="minus">−0</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:10%;background:var(--red)"></span></span>
+        </div>
+      </div>
+
+      <div class="sec"><div class="sec-head"><span class="chev">▶</span>Closed <span class="count">(3)</span><span class="sum">3h 02m</span></div></div>
+      <div class="sec"><div class="sec-head"><span class="chev">▶</span>Logged <span class="count">(3)</span><span class="sum">1h 30m</span></div></div>
+    </div>
+    <div class="dock"><span class="log-btn">Log</span></div>
+  </div>
+  <p class="variant-note">
+    Отличие от ratio bar: у полосы есть <b>ось времени</b> (окно = первая активность → сейчас, тики часов).
+    Цвет = репозиторий, разрывы = полный простой, белая кромка пульсирует на живом интервале.
+    Она заменяет и «09:18 → 02:11» (края читаются сами), и «3h 41m paused» у сессий (дыры видны там,
+    где они реально были), и объединяет хронологию Active + Closed. Данные уже есть: activeIntervals.
+  </p>
+</div>
+
+<!-- ════════════════ ВАРИАНТ C ════════════════ -->
+<div class="variant">
+  <div class="variant-tag">C · One line — максимум тишины</div>
+  <div class="frame">
+    <div class="banner">
+      <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+      <span class="nav">◷ ▦ ⚙</span>
+    </div>
+    <div class="content">
+      <div class="day-block">
+        <div class="day-line oneline">
+          <span class="day-date">4 July 2026</span>
+          <span class="idle-inline">idle 1h 12m</span>
+          <span class="day-total"><span class="num">9h 11m</span></span>
+        </div>
+      </div>
+
+      <!-- ACTIVE -->
+      <div class="sec">
+        <div class="sec-head"><span class="chev">▼</span>Active<span class="sum">4h 39m</span></div>
+        <div class="card">
+          <div class="head">
+            <span class="repo">atlas-frontend</span><span class="sep"></span>
+            <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+            <span class="badge live"><span class="dot"></span>Live</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+            <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+        </div>
+        <div class="card">
+          <div class="head">
+            <span class="repo">appone-backend</span><span class="sep"></span>
+            <span class="branch">APP-1024-refactor-pricing-engine</span>
+            <span class="badge pending"><span class="dot"></span>Pending</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">5m</span></span>
+            <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+4</span><span class="minus">−0</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:10%;background:var(--red)"></span></span>
+        </div>
+      </div>
+
+      <div class="sec"><div class="sec-head"><span class="chev">▶</span>Closed <span class="count">(3)</span><span class="sum">3h 02m</span></div></div>
+      <div class="sec"><div class="sec-head"><span class="chev">▶</span>Logged <span class="count">(3)</span><span class="sum">1h 30m</span></div></div>
+    </div>
+    <div class="dock"><span class="log-btn">Log</span></div>
+  </div>
+  <p class="variant-note">
+    Радикальный минимум: дата · idle · тотал — одна строка, никакой графики. Вся детализация — в Σ секций.
+    Экран почти целиком отдан сессиям. Если между A и C сомнение — это тест на то, нужен ли tracked/logged
+    саблайн вообще (Σ секций и так его показывают на один взгляд ниже).
+  </p>
+</div>
+
+</body>
+</html>

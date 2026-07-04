@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · day view — итерация 5 (Log = живое облако фаворитов)</title>
+<style>
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --struct:#26263a;
+    --surface0:#313244; --surface1:#45475a; --overlay0:#6c7086;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --blue:#89b4fa; --peach:#fab387; --teal:#94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0c0c14; color:var(--text);
+    font-family:'Cascadia Code','Consolas',monospace;
+    padding:26px 20px 60px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .page-title { font-size:13px; color:var(--subtext0); letter-spacing:.4px; margin-bottom:6px; }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--overlay0); margin-bottom:22px; }
+  .page-sub .k { color:var(--subtext1); background:var(--struct); border-radius:4px; padding:1px 6px; }
+
+  .variant-note { width:500px; font-size:10.5px; line-height:1.6; color:var(--overlay0); margin:12px 2px 0; }
+  .variant-note b { color:var(--subtext0); font-weight:600; }
+  .variant-note .m { color:var(--mauve); }
+
+  /* ══ Frame ══ */
+  .frame {
+    width:500px; height:560px; background:var(--base);
+    border:1px solid #2c2c40; border-radius:10px; overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .banner { flex-shrink:0; display:flex; align-items:center; padding:8px 12px; background:var(--mantle); border-bottom:1px solid var(--struct); font-size:10px; color:var(--overlay0); letter-spacing:2px; }
+  .banner .wd { display:flex; gap:8px; }
+  .banner .wd .on { color:var(--text); border-bottom:2px solid var(--mauve); padding-bottom:2px; }
+  .banner .nav { margin-left:auto; letter-spacing:4px; font-size:11px; }
+
+  .scroll-zone { flex:1; min-height:0; overflow-y:auto; padding:0 12px; }
+  .scroll-zone::-webkit-scrollbar { width:4px; }
+  .scroll-zone::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .day-block { padding:12px 0 11px; border-bottom:1px solid var(--struct); }
+  .day-line { display:flex; align-items:baseline; }
+  .day-date { font-size:15px; font-weight:600; letter-spacing:.2px; }
+  .day-total { margin-left:auto; display:flex; align-items:baseline; gap:7px; font-variant-numeric:tabular-nums; }
+  .day-total .num { font-size:18px; font-weight:700; }
+  .day-total .cap { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:var(--overlay0); }
+
+  .sec-head { display:flex; align-items:center; gap:7px; padding:9px 0; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums; }
+  .sec-head .chev { color:var(--overlay0); font-size:9px; width:9px; }
+  .sec-head .label-auto { color:var(--subtext1); }
+  .sec-head .live-dot { width:5px; height:5px; border-radius:50%; background:var(--green); animation:pulse 1.6s ease-in-out infinite; }
+  .sec-head .idle-dot { width:4px; height:4px; border-radius:1px; background:var(--surface1); }
+  .sec-head .idle-in { font-weight:400; text-transform:none; color:var(--overlay0); font-size:10.5px; }
+  .sec-head .idle-in .v { color:var(--subtext0); }
+  .sec-head .sum { margin-left:auto; font-weight:700; text-transform:none; color:var(--text); }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  .card { position:relative; background:var(--mantle); border:1px solid var(--struct); border-radius:8px; padding:9px 11px 11px; margin-bottom:8px; }
+  .card .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .card .repo { font-size:12px; font-weight:700; color:var(--blue); }
+  .card .head .sep { width:1px; height:12px; background:var(--surface0); }
+  .card .branch { font-size:11px; color:var(--overlay0); white-space:nowrap; overflow:hidden; flex:1; min-width:0; -webkit-mask-image:linear-gradient(90deg,#000 82%,transparent); mask-image:linear-gradient(90deg,#000 82%,transparent); }
+  .badge { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; padding:3px 9px; border-radius:999px; }
+  .badge .dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .badge.live { color:var(--green); background:rgba(166,227,161,.10); }
+  .badge.live .dot { animation:pulse 1.6s ease-in-out infinite; }
+  .badge.idle { color:var(--peach); background:rgba(250,179,135,.10); }
+  .metrics { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 9px; border-radius:6px; background:rgba(17,17,27,.6); border:1px solid var(--struct); color:var(--subtext0); }
+  .chip .ic { font-size:10px; color:var(--overlay0); }
+  .chip.time .v { color:var(--text); font-weight:700; }
+  .chip .plus { color:var(--green); } .chip .minus { color:var(--red); }
+  .chip .csep { width:1px; height:10px; background:var(--struct); }
+  .mode { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px; }
+  .mode.normal { color:var(--green); background:rgba(166,227,161,.08); border:1px solid rgba(166,227,161,.25); }
+  .mode.relaxed { color:var(--blue); background:rgba(137,180,250,.08); border:1px solid rgba(137,180,250,.25); }
+  .mode .car { font-size:8px; opacity:.7; }
+  .edge { position:absolute; left:10px; right:10px; bottom:0; height:3px; border-radius:2px; background:var(--struct); overflow:hidden; }
+  .edge .fill { display:block; height:100%; border-radius:2px; }
+  .earlier-toggle { display:flex; align-items:center; gap:7px; padding:6px 2px 9px; font-size:10.5px; color:var(--overlay0); font-variant-numeric:tabular-nums; }
+  .earlier-toggle .chev { font-size:8px; width:9px; }
+  .earlier-toggle .e-sum { margin-left:auto; }
+
+  /* ══ Logged pane (компактная: только заголовок + таблица) ══ */
+  .logged-pane {
+    flex-shrink:0; background:var(--mantle);
+    border-top:1px solid var(--surface0);
+    box-shadow:0 -6px 16px rgba(0,0,0,.28);
+    padding:8px 12px 10px;
+  }
+  .lp-head { display:flex; align-items:center; gap:7px; padding:2px 0 8px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums; }
+  .lp-head .glyph { color:var(--mauve); font-size:10px; }
+  .lp-head .label { color:var(--mauve); }
+  .lp-head .sum { margin-left:8px; font-weight:700; text-transform:none; color:var(--text); transition:color .3s ease; }
+  .lp-head .sum.flash { color:var(--mauve); }
+  .log-btn {
+    margin-left:auto; display:inline-flex; align-items:center; gap:5px;
+    background:rgba(203,166,247,.12); border:1px solid rgba(203,166,247,.34);
+    color:var(--mauve); font-family:inherit; font-size:10.5px; font-weight:600;
+    padding:4px 14px; border-radius:999px; cursor:pointer;
+    text-transform:none; letter-spacing:.2px;
+    transition:background .15s ease, border-color .15s ease, opacity .2s ease;
+  }
+  .log-btn:hover { background:rgba(203,166,247,.2); border-color:var(--mauve); }
+  .log-btn.hidden-by-cloud { opacity:0; pointer-events:none; }
+
+  .lp-table { max-height:112px; overflow-y:auto; }
+  .lp-table::-webkit-scrollbar { width:4px; }
+  .lp-table::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+  .log-row {
+    display:flex; align-items:center; gap:9px;
+    padding:5px 8px; border-radius:4px;
+    background:rgba(24,24,37,.5); margin-bottom:3px;
+    font-size:11px; font-variant-numeric:tabular-nums;
+  }
+  .log-row .l-task { color:var(--mauve); font-weight:600; background:rgba(203,166,247,.12); padding:1px 7px; border-radius:4px; flex-shrink:0; }
+  .log-row .l-act { font-size:10px; padding:1px 7px; border-radius:4px; flex-shrink:0; color:#9399b2; background:rgba(147,153,178,.12); }
+  .log-row .l-act.rev { color:var(--blue); background:rgba(137,180,250,.12); }
+  .log-row .l-desc { color:#7f849c; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .log-row .l-min { min-width:50px; text-align:right; color:var(--text); font-weight:700; flex-shrink:0; }
+  .log-row .l-edit { color:var(--overlay0); font-size:12px; flex-shrink:0; cursor:default; }
+
+  /* Свежая строка: mauve-вспышка + draft-степпер времени */
+  .log-row.fresh { animation:row-in .45s cubic-bezier(.2,1.2,.4,1); background:rgba(203,166,247,.10); }
+  @keyframes row-in { 0% { transform:translateY(6px) scale(.96); opacity:0; } 100% { transform:none; opacity:1; } }
+  .stepper { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; }
+  .stepper button {
+    width:16px; height:16px; border-radius:4px; border:1px solid rgba(203,166,247,.4);
+    background:rgba(203,166,247,.1); color:var(--mauve); font-family:inherit; font-size:10px;
+    line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+  }
+  .stepper button:hover { background:rgba(203,166,247,.25); }
+  .stepper .s-val { min-width:44px; text-align:center; color:var(--mauve); font-weight:700; cursor:ns-resize; }
+  .stepper .s-undo { border-color:var(--surface1); background:transparent; color:var(--overlay0); margin-left:2px; }
+  .stepper .s-undo:hover { color:var(--red); border-color:var(--red); background:rgba(243,139,168,.08); }
+
+  /* ══ Облако фаворитов ══ */
+  .cloud-backdrop {
+    position:absolute; inset:0; z-index:30;
+    background:rgba(12,12,20,.45); backdrop-filter:blur(1.5px);
+    opacity:0; pointer-events:none; transition:opacity .22s ease;
+  }
+  .frame.cloud-open .cloud-backdrop { opacity:1; pointer-events:auto; }
+
+  .cloud {
+    position:absolute; left:10px; right:10px; z-index:31;
+    /* прижато к верхней кромке нижней панели; поднимается из кнопки Log */
+    bottom:0; /* JS выставит точный bottom = высота панели */
+    background:#191926;
+    border:1px solid rgba(203,166,247,.22);
+    border-radius:12px;
+    box-shadow:0 -10px 34px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.3);
+    padding:10px;
+    transform-origin:92% 100%;           /* из кнопки Log (право-низ) */
+    transform:scale(.25) translateY(14px);
+    opacity:0; pointer-events:none;
+    transition:transform .3s cubic-bezier(.2,1.35,.35,1), opacity .18s ease;
+  }
+  .frame.cloud-open .cloud { transform:none; opacity:1; pointer-events:auto; }
+
+  .cloud-filter { display:flex; align-items:center; gap:7px; margin-bottom:9px; }
+  .cloud-filter .f-ic { color:var(--overlay0); font-size:11px; }
+  .cloud-filter input {
+    flex:1; background:transparent; border:none; outline:none;
+    color:var(--text); font-family:inherit; font-size:11.5px;
+  }
+  .cloud-filter input::placeholder { color:#4b4d63; }
+  .cloud-filter .f-esc { font-size:8.5px; color:#4b4d63; border:1px solid var(--struct); border-radius:3px; padding:1px 5px; }
+
+  .cloud-chips {
+    display:flex; flex-wrap:wrap; gap:6px;
+    max-height:196px; overflow-y:auto;
+    -webkit-mask-image:linear-gradient(180deg,#000 90%,transparent);
+            mask-image:linear-gradient(180deg,#000 90%,transparent);
+  }
+  .cloud-chips::-webkit-scrollbar { width:4px; }
+  .cloud-chips::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .fav {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:5px 11px; border-radius:999px;
+    background:rgba(203,166,247,.05); border:1px solid rgba(203,166,247,.2);
+    font-size:11px; font-variant-numeric:tabular-nums; cursor:pointer;
+    user-select:none;
+    transition:background .12s ease, border-color .12s ease, transform .12s ease;
+  }
+  .fav:hover { background:rgba(203,166,247,.14); border-color:rgba(203,166,247,.55); transform:translateY(-1px); }
+  .fav .f-name { color:var(--subtext1); font-weight:600; }
+  .fav:hover .f-name { color:var(--mauve); }
+  .fav .f-min { color:var(--overlay0); font-weight:600; }
+  .fav:hover .f-min { color:var(--subtext0); }
+  .fav.custom { border-style:dashed; border-color:var(--surface1); background:transparent; }
+  .fav.custom .f-name { color:var(--overlay0); font-weight:400; }
+  .fav.custom:hover { border-color:var(--mauve); }
+  .fav.custom:hover .f-name { color:var(--mauve); }
+  .fav.hidden { display:none; }
+
+  /* волна появления чипов */
+  .frame.cloud-open .fav { animation:chip-pop .34s cubic-bezier(.2,1.5,.4,1) backwards; }
+  @keyframes chip-pop { 0% { transform:scale(.4); opacity:0; } 100% { transform:scale(1); opacity:1; } }
+
+  /* custom-форма внутри облака */
+  .cloud-form { display:none; flex-direction:column; gap:7px; }
+  .cloud.form-mode .cloud-chips, .cloud.form-mode .cloud-filter { display:none; }
+  .cloud.form-mode .cloud-form { display:flex; }
+  .cloud-form .cf-row { display:flex; gap:7px; }
+  .cloud-form input, .cloud-form select {
+    background:#11111b; border:1px solid var(--surface0); border-radius:5px;
+    color:var(--text); font-family:inherit; font-size:11px; padding:5px 8px; outline:none;
+  }
+  .cloud-form input:focus { border-color:var(--mauve); }
+  .cloud-form .cf-task { width:110px; }
+  .cloud-form .cf-min { width:70px; }
+  .cloud-form .cf-desc { flex:1; }
+  .cloud-form .cf-actions { display:flex; align-items:center; gap:8px; }
+  .cloud-form .cf-back { background:none; border:none; color:var(--overlay0); font-family:inherit; font-size:10px; cursor:pointer; }
+  .cloud-form .cf-back:hover { color:var(--subtext0); }
+  .cloud-form .cf-submit {
+    margin-left:auto; background:var(--mauve); color:#1e1e2e; border:none; border-radius:5px;
+    font-family:inherit; font-size:11px; font-weight:700; padding:5px 16px; cursor:pointer;
+  }
+  .cloud-form .cf-submit:hover { background:#b894ee; }
+
+  /* летящий клон чипа */
+  .fly {
+    position:fixed; z-index:60; pointer-events:none;
+    transition:transform .42s cubic-bezier(.3,.9,.3,1), opacity .42s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title"><b>day view · итерация 5 — Log раскрывается облаком фаворитов</b></div>
+<div class="page-sub">живой прототип: жми <span class="k">Log</span> · колёсико на чипе меняет время · клик — чип летит в таблицу · <span class="k">Esc</span> закрывает</div>
+
+<div class="frame" id="frame">
+  <div class="banner">
+    <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+    <span class="nav">◷ ▦ ⚙</span>
+  </div>
+
+  <div class="scroll-zone">
+    <div class="day-block">
+      <div class="day-line">
+        <span class="day-date">4 July 2026</span>
+        <span class="day-total"><span class="num" id="day-total">9h 11m</span><span class="cap">today</span></span>
+      </div>
+    </div>
+
+    <div class="sec-head">
+      <span class="chev">▼</span>
+      <span class="live-dot"></span>
+      <span class="label-auto">Tracked</span>
+      <span class="idle-dot"></span>
+      <span class="idle-in"><span class="v">1h 12m</span> idle</span>
+      <span class="sum">7h 41m</span>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <span class="repo">atlas-frontend</span><span class="sep"></span>
+        <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+        <span class="badge live"><span class="dot"></span>Live</span>
+      </div>
+      <div class="metrics">
+        <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+        <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+        <span class="mode normal">Normal <span class="car">▾</span></span>
+      </div>
+      <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <span class="repo">appone-backend</span><span class="sep"></span>
+        <span class="branch">APP-1024-refactor-pricing-engine</span>
+        <span class="badge idle"><span class="dot"></span>Idle</span>
+      </div>
+      <div class="metrics">
+        <span class="chip time"><span class="ic">◔</span><span class="v">22m</span></span>
+        <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+18</span><span class="minus">−4</span></span>
+        <span class="mode relaxed">Relaxed <span class="car">▾</span></span>
+      </div>
+      <span class="edge"><span class="fill" style="width:18%;background:var(--peach)"></span></span>
+    </div>
+
+    <div class="earlier-toggle">
+      <span class="chev">▶</span>
+      <span>3 earlier sessions</span>
+      <span class="e-sum">3h 02m</span>
+    </div>
+  </div>
+
+  <!-- ══ Logged: компактная панель — заголовок + таблица, ничего лишнего ══ -->
+  <div class="logged-pane" id="pane">
+    <div class="lp-head">
+      <span class="glyph">✎</span>
+      <span class="label">Logged</span>
+      <span class="sum" id="lp-sum">1h 30m</span>
+      <button class="log-btn" id="log-btn">✎ Log</button>
+    </div>
+    <div class="lp-table" id="lp-table">
+      <div class="log-row"><span class="l-task">ATL-6781</span><span class="l-act">Other</span><span class="l-desc">daily standup</span><span class="l-min">15m</span><span class="l-edit">✎</span></div>
+      <div class="log-row"><span class="l-task">ATL-6712</span><span class="l-act rev">Code Review</span><span class="l-desc">PR #214 review with team</span><span class="l-min">30m</span><span class="l-edit">✎</span></div>
+      <div class="log-row"><span class="l-task">APP-1024</span><span class="l-act">Other</span><span class="l-desc">sprint planning</span><span class="l-min">45m</span><span class="l-edit">✎</span></div>
+    </div>
+  </div>
+
+  <!-- ══ Облако (по запросу) ══ -->
+  <div class="cloud-backdrop" id="backdrop"></div>
+  <div class="cloud" id="cloud">
+    <div class="cloud-filter">
+      <span class="f-ic">⌕</span>
+      <input id="filter" type="text" placeholder="filter favorites · Enter logs the first" />
+      <span class="f-esc">esc</span>
+    </div>
+    <div class="cloud-chips" id="chips"></div>
+    <div class="cloud-form" id="form">
+      <div class="cf-row">
+        <input class="cf-task" id="cf-task" placeholder="ATL-1234" />
+        <input class="cf-min" id="cf-min" value="30m" />
+        <input class="cf-desc" id="cf-desc" placeholder="description" />
+      </div>
+      <div class="cf-actions">
+        <button class="cf-back" id="cf-back">← favorites</button>
+        <button class="cf-submit" id="cf-submit">Log time</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="variant-note">
+  <b>Механика:</b> панель Logged в покое — только заголовок и таблица (ниже, чем в ит.4 → меньше «дыра»).
+  Кнопка <span class="m">Log</span> раздувается в облако: волна чипов-фаворитов (spring-стаггер — твоё «расталкивание»,
+  но управляемое), сверху фильтр с автофокусом (набрал «sta» → Enter). <b>Колёсико на чипе</b> крутит время
+  <i>до</i> записи; <b>клик</b> — чип летит вверх и сжимается в строку; свежая строка ~4 сек держит степпер
+  <span class="m">[− 30m +]</span> и ↩ undo — правка <i>после</i> записи, потом застывает. Чип <b>⌨ custom…</b>
+  меняет облако на мини-форму (форма существует только для ручного пути). 20 фаворитов = скролл внутри облака,
+  частые — первыми.
+</p>
+
+<script>
+  const FAVS = [
+    { name:'standup',        task:'ATL-10',   min:15, act:'Other' },
+    { name:'code review',    task:'ATL-6712', min:30, act:'CodeReview' },
+    { name:'1:1 sync',       task:'ATL-10',   min:30, act:'Other' },
+    { name:'planning',       task:'ATL-10',   min:60, act:'Other' },
+    { name:'retro',          task:'ATL-10',   min:30, act:'Other' },
+    { name:'estimation',     task:'ATL-6802', min:45, act:'Estimation' },
+    { name:'QA sync',        task:'ATL-10',   min:15, act:'Other' },
+    { name:'release mgmt',   task:'OPS-133',  min:30, act:'Other' },
+    { name:'interview',      task:'HR-77',    min:60, act:'Other' },
+    { name:'mentoring',      task:'ATL-10',   min:30, act:'Other' },
+    { name:'arch review',    task:'ATL-6900', min:45, act:'DesignAnalysis' },
+    { name:'demo prep',      task:'ATL-10',   min:30, act:'Other' },
+    { name:'support',        task:'SUP-12',   min:30, act:'Other' },
+    { name:'docs',           task:'ATL-10',   min:30, act:'Other' },
+    { name:'grooming',       task:'ATL-10',   min:30, act:'Other' },
+    { name:'incident',       task:'OPS-133',  min:60, act:'Other' },
+    { name:'pairing',        task:'ATL-6802', min:60, act:'Development' },
+    { name:'onboarding',     task:'ATL-10',   min:45, act:'Other' },
+    { name:'team meeting',   task:'ATL-10',   min:30, act:'Other' },
+    { name:'deploy watch',   task:'OPS-133',  min:15, act:'Other' },
+  ];
+
+  const frame   = document.getElementById('frame');
+  const pane    = document.getElementById('pane');
+  const cloud   = document.getElementById('cloud');
+  const chipsEl = document.getElementById('chips');
+  const filterEl= document.getElementById('filter');
+  const tableEl = document.getElementById('lp-table');
+  const sumEl   = document.getElementById('lp-sum');
+  const dayEl   = document.getElementById('day-total');
+  const logBtn  = document.getElementById('log-btn');
+  const backdrop= document.getElementById('backdrop');
+  const formEl  = document.getElementById('form');
+
+  let loggedMin = 90;          // 1h 30m
+  let dayMin    = 551;         // 9h 11m
+  let open = false;
+
+  const fmt = m => m >= 60 ? `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m` : `${m}m`;
+  const actLabel = a => ({ CodeReview:'Code Review', DesignAnalysis:'Design/Analysis' }[a] || a);
+  const actClass = a => /Review/.test(a) ? 'l-act rev' : 'l-act';
+
+  // ── облако ──────────────────────────────────────────────────────────
+  function renderChips(q = '') {
+    chipsEl.innerHTML = '';
+    const query = q.trim().toLowerCase();
+    FAVS.forEach((f, i) => {
+      const el = document.createElement('span');
+      el.className = 'fav';
+      if (query && !f.name.toLowerCase().includes(query) && !f.task.toLowerCase().includes(query)) el.classList.add('hidden');
+      el.style.animationDelay = `${i * 16}ms`;
+      el.title = `${f.task} · ${actLabel(f.act)} · колёсико: ±15m`;
+      el.innerHTML = `<span class="f-name">${f.name}</span><span class="f-min" data-min="${f.min}">${fmt(f.min)}</span>`;
+      el.addEventListener('wheel', ev => {
+        ev.preventDefault();
+        const minEl = el.querySelector('.f-min');
+        let m = +minEl.dataset.min + (ev.deltaY < 0 ? 15 : -15);
+        m = Math.max(15, Math.min(480, m));
+        minEl.dataset.min = m;
+        minEl.textContent = fmt(m);
+      }, { passive:false });
+      el.addEventListener('click', () => {
+        const m = +el.querySelector('.f-min').dataset.min;
+        flyAndLog(el, { ...f, min:m });
+      });
+      chipsEl.appendChild(el);
+    });
+    // custom — всегда последний, не фильтруется
+    const cu = document.createElement('span');
+    cu.className = 'fav custom';
+    cu.style.animationDelay = `${FAVS.length * 16}ms`;
+    cu.innerHTML = `<span class="f-name">⌨ custom…</span>`;
+    cu.addEventListener('click', () => cloud.classList.add('form-mode'));
+    chipsEl.appendChild(cu);
+  }
+
+  function openCloud() {
+    if (open) return;
+    open = true;
+    cloud.classList.remove('form-mode');
+    renderChips();
+    // прижать облако к верхней кромке панели
+    cloud.style.bottom = (pane.offsetHeight + 6) + 'px';
+    frame.classList.add('cloud-open');
+    logBtn.classList.add('hidden-by-cloud');
+    filterEl.value = '';
+    setTimeout(() => filterEl.focus(), 80);
+  }
+  function closeCloud() {
+    if (!open) return;
+    open = false;
+    frame.classList.remove('cloud-open');
+    logBtn.classList.remove('hidden-by-cloud');
+  }
+
+  logBtn.addEventListener('click', openCloud);
+  backdrop.addEventListener('click', closeCloud);
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Escape') return;
+    if (cloud.classList.contains('form-mode')) cloud.classList.remove('form-mode');
+    else closeCloud();
+  });
+  filterEl.addEventListener('input', () => renderChips(filterEl.value));
+  filterEl.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') {
+      const first = chipsEl.querySelector('.fav:not(.hidden):not(.custom)');
+      if (first) first.click();
+    }
+  });
+
+  // ── полёт чипа → строка ─────────────────────────────────────────────
+  function flyAndLog(chipEl, f) {
+    const from = chipEl.getBoundingClientRect();
+    const to   = tableEl.getBoundingClientRect();
+    const ghost = chipEl.cloneNode(true);
+    ghost.className = 'fav fly';
+    ghost.style.left = from.left + 'px';
+    ghost.style.top  = from.top + 'px';
+    document.body.appendChild(ghost);
+    requestAnimationFrame(() => {
+      const dx = to.left + 16 - from.left;
+      const dy = to.top + 4 - from.top;
+      ghost.style.transform = `translate(${dx}px, ${dy}px) scale(.5)`;
+      ghost.style.opacity = '0';
+    });
+    setTimeout(() => ghost.remove(), 450);
+    closeCloud();
+    setTimeout(() => addRow(f), 180);
+  }
+
+  function addRow(f) {
+    const row = document.createElement('div');
+    row.className = 'log-row fresh';
+    row.innerHTML =
+      `<span class="l-task">${f.task}</span>` +
+      `<span class="${actClass(f.act)}">${actLabel(f.act)}</span>` +
+      `<span class="l-desc">${f.name}</span>`;
+    // draft-степпер вместо статичного времени
+    const st = document.createElement('span');
+    st.className = 'stepper';
+    st.innerHTML =
+      `<button class="s-dec">−</button>` +
+      `<span class="s-val" data-min="${f.min}" title="колёсико: ±15m">${fmt(f.min)}</span>` +
+      `<button class="s-inc">+</button>` +
+      `<button class="s-undo" title="undo">↩</button>`;
+    row.appendChild(st);
+    tableEl.prepend(row);
+    bumpSums(f.min);
+
+    const val = st.querySelector('.s-val');
+    const setMin = m => {
+      m = Math.max(15, Math.min(480, m));
+      bumpSums(m - +val.dataset.min);
+      val.dataset.min = m;
+      val.textContent = fmt(m);
+      armFreeze();
+    };
+    st.querySelector('.s-dec').addEventListener('click', e => { e.stopPropagation(); setMin(+val.dataset.min - 15); });
+    st.querySelector('.s-inc').addEventListener('click', e => { e.stopPropagation(); setMin(+val.dataset.min + 15); });
+    val.addEventListener('wheel', ev => { ev.preventDefault(); setMin(+val.dataset.min + (ev.deltaY < 0 ? 15 : -15)); }, { passive:false });
+    st.querySelector('.s-undo').addEventListener('click', e => {
+      e.stopPropagation();
+      clearTimeout(freezeTimer);
+      bumpSums(-val.dataset.min);
+      row.remove();
+    });
+
+    // фиксация: через 4с бездействия степпер каменеет в обычное время
+    let freezeTimer;
+    const armFreeze = () => { clearTimeout(freezeTimer); freezeTimer = setTimeout(freeze, 4000); };
+    const freeze = () => {
+      const m = +val.dataset.min;
+      st.replaceWith(Object.assign(document.createElement('span'), { className:'l-min', textContent: fmt(m) }));
+      const edit = document.createElement('span');
+      edit.className = 'l-edit'; edit.textContent = '✎';
+      row.appendChild(edit);
+      row.classList.remove('fresh');
+    };
+    armFreeze();
+  }
+
+  function bumpSums(delta) {
+    loggedMin += delta; dayMin += delta;
+    sumEl.textContent = fmt(loggedMin);
+    dayEl.textContent = fmt(dayMin);
+    sumEl.classList.add('flash');
+    setTimeout(() => sumEl.classList.remove('flash'), 400);
+  }
+
+  // ── custom-форма ────────────────────────────────────────────────────
+  document.getElementById('cf-back').addEventListener('click', () => cloud.classList.remove('form-mode'));
+  document.getElementById('cf-submit').addEventListener('click', () => {
+    const task = document.getElementById('cf-task').value.trim() || 'ATL-????';
+    const desc = document.getElementById('cf-desc').value.trim() || 'manual entry';
+    const raw  = document.getElementById('cf-min').value.trim();
+    const h = /(\d+)\s*h/.exec(raw), mm = /(\d+)\s*m/.exec(raw);
+    let m = (h ? +h[1]*60 : 0) + (mm ? +mm[1] : 0);
+    if (!m) m = parseInt(raw, 10) || 30;
+    closeCloud();
+    setTimeout(() => addRow({ task, name:desc, min:m, act:'Other' }), 160);
+  });
+</script>
+
+</body>
+</html>

@@ -20,99 +20,55 @@
 
 <!-- Content (scrolls; the dock below stays pinned) -->
 <div class="content" *ngIf="data && !error">
-  <!-- Day block: date · start→end (one line) + full-width active|idle|logged ratio -->
+  <!-- Day block: date · Day total (the only day-level aggregate) -->
   <section class="day-block">
     <div class="day-line">
       <h1 class="day-date"
           [class.past]="!isViewingToday"
           (click)="goTodayRequested.emit()"
           [title]="isViewingToday ? '' : 'Back to today'">{{ dateLabel }}</h1>
-      <div class="day-times" *ngIf="dayStartIso">
-        <span class="day-start">{{ dayStartLabel }}</span>
-        <span class="day-arrow" *ngIf="lastActivityLabel">→ {{ lastActivityLabel }}</span>
-      </div>
-    </div>
-
-    <!-- Ratio bar (grey track always; segments + legend only for real data) -->
-    <div class="ratio">
-      <div class="ratio-bar">
-        <span class="seg active" *ngIf="totalActiveMs > 0" [style.width.%]="activePct"></span>
-        <span class="seg idle"   *ngIf="totalPauseMs > 0" [style.width.%]="idlePct"></span>
-        <span class="seg logged" *ngIf="loggedMs > 0" [style.width.%]="loggedPct"></span>
-      </div>
-      <div class="ratio-legend" *ngIf="hasActivity">
-        <span class="leg active" *ngIf="totalActiveMs > 0">
-          <span class="dot"></span><span class="num">{{ formatDurationHm(totalActiveMs) }}</span><span class="tag">active</span>
-        </span>
-        <span class="leg idle" *ngIf="totalPauseMs > 0">
-          <span class="dot"></span><span class="num">{{ formatDurationHm(totalPauseMs) }}</span><span class="tag">idle</span>
-        </span>
-        <span class="leg logged" *ngIf="loggedMs > 0">
-          <span class="dot"></span><span class="num">{{ formatDurationHm(loggedMs) }}</span><span class="tag">logged</span>
-        </span>
-      </div>
+      <span class="day-total"
+            *ngIf="dayTotalMs > 0"
+            [class.flash]="dayFlash"
+            title="Tracked + Logged — what goes to Tempo">{{ formatDurationHm(dayTotalMs) }}</span>
     </div>
   </section>
 
-  <!-- Active sessions — open by default; no count/sum, just a live dot -->
-  <section class="sessions foldable" [class.open]="activeOpen" *ngIf="openSessions.length > 0">
-    <h2 class="sec-head" (click)="activeOpen = !activeOpen">
-      <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
-      Active
-      <!-- Live dot only when collapsed — when open the cards' own Live badges show it. -->
-      <span class="live-dot" *ngIf="hasLiveSession && !activeOpen" title="Tracking now"></span>
+  <!-- Tracked: live cards + earlier (closed) fold. Never collapses itself. -->
+  <section class="tracked" *ngIf="hasSessions">
+    <h2 class="tracked-head">
+      Tracked
+      <ng-container *ngIf="totalPauseMs > 0">
+        <span class="idle-sep"></span>
+        <span class="idle-in"><span class="v">{{ formatDurationHm(totalPauseMs) }}</span> idle</span>
+      </ng-container>
+      <span class="sum">{{ formatDurationHm(trackedTotalMs) }}</span>
     </h2>
-    <div class="fold-body">
-      <app-session-card
-        *ngFor="let s of openSessions"
-        [session]="s"
-        [isViewingToday]="isViewingToday"
-        [actionPending]="actionPending"
-        [speedPills]="sensitivityPills"
-        (pillSelected)="pillSelected.emit($event)"
-        (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
-    </div>
-  </section>
 
-  <!-- Closed sessions — collapsed by default; count + Σ on the header -->
-  <section class="sessions closed foldable" [class.open]="closedOpen" *ngIf="closedSessions.length > 0">
-    <h2 class="sec-head" (click)="closedOpen = !closedOpen">
-      <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
-      Closed <span class="count">({{ closedSessions.length }})</span>
-      <span class="sec-sum">{{ formatDurationHm(closedTotalMs) }}</span>
-    </h2>
-    <div class="fold-body">
-      <div class="closed-row" *ngFor="let s of closedSessions">
-        <span class="repo">{{ repoName(s.repo) }}</span>
-        <span class="task">{{ s.task ?? '—' }}</span>
-        <span class="interval">{{ sessionInterval(s) }}</span>
-        <span class="dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
-        <span class="reason-badge"
-              [class]="'reason-badge ' + closedReasonClass(s.closedBy)"
-              [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
-      </div>
-    </div>
-  </section>
+    <app-session-card
+      *ngFor="let s of openSessions"
+      [session]="s"
+      [isViewingToday]="isViewingToday"
+      [actionPending]="actionPending"
+      [speedPills]="sensitivityPills"
+      (pillSelected)="pillSelected.emit($event)"
+      (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
 
-  <!-- Logged: manual entries — only when there are real entries; count + Σ -->
-  <section class="sessions logged foldable" [class.open]="loggedOpen" *ngIf="showLoggedSection">
-    <h2 class="sec-head" (click)="loggedOpen = !loggedOpen">
+    <div class="earlier-toggle"
+         [class.open]="earlierOpen"
+         *ngIf="closedSessions.length > 0"
+         (click)="earlierOpen = !earlierOpen">
       <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
-      Logged <span class="count">({{ manualEntries.length }})</span>
-      <span class="sec-sum">{{ formatDurationHm(loggedMs) }}</span>
-    </h2>
-    <div class="fold-body">
-      <div class="log-row" *ngFor="let e of manualEntries">
-        <span class="log-task">{{ e.task }}</span>
-        <span class="log-activity" [class]="'log-activity tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>
-        <span class="log-desc" [title]="e.description">{{ e.description }}</span>
-        <span class="log-min">{{ formatDurationHm(e.minutes * 60000) }}</span>
-        <!-- Session-born entries are not editable — no pencil for them. -->
-        <button class="log-edit"
-                *ngIf="isViewingToday && !e.sourceSessionId"
-                [disabled]="actionPending"
-                (click)="openEditPopover(e)"
-                aria-label="Edit entry" title="Edit entry">✎</button>
+      <span>{{ closedSessions.length }} earlier {{ closedSessions.length === 1 ? 'session' : 'sessions' }}</span>
+      <span class="e-sum">{{ formatDurationHm(closedTotalMs) }}</span>
+    </div>
+    <div class="earlier-body" *ngIf="earlierOpen">
+      <div class="e-row" *ngFor="let s of closedSessions">
+        <span class="e-task" [class.none]="!s.task">{{ s.task ?? '—' }}</span>
+        <span class="e-repo">{{ repoName(s.repo) }}</span>
+        <span class="e-int">{{ sessionInterval(s) }}</span>
+        <span class="e-reason" [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
+        <span class="e-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
       </div>
     </div>
   </section>
@@ -123,17 +79,35 @@
   </div>
 </div>
 
-<!-- Pinned dock: quick add (today only). Favorites will join the button here later. -->
-<div class="dock" *ngIf="isViewingToday && data && !error">
-  <span class="log-add-anchor">
-    <button class="log-add-btn"
-            [disabled]="actionPending"
-            (click)="openLogPopover()"
-            title="Log standalone time on a task">Log</button>
+<!-- Pinned Logged panel — collapses by header click; ghost-row opens the cloud -->
+<app-logged-panel
+  *ngIf="data && !error && (isViewingToday || manualEntries.length > 0)"
+  [entries]="manualEntries"
+  [isViewingToday]="isViewingToday"
+  [actionPending]="actionPending"
+  [activityTypes]="activityTypes"
+  [suggestedCount]="suggestions.length"
+  [freshEntryId]="freshEntryId"
+  (logRequested)="openCloud()"
+  (editRequested)="openEditPopover($event)"
+  (freshMinutesCommitted)="onFreshMinutesCommitted($event)" />
 
-    <!-- Compose popover — opens up from the dock button; outside click closes -->
-    <div class="log-pop-backdrop" *ngIf="logPopoverOpen" (click)="closeLogPopover()"></div>
-    <div class="log-pop" *ngIf="logPopoverOpen" (keydown.escape)="closeLogPopover()">
+<!-- Log cloud overlay (today only) -->
+<div class="cloud-backdrop" [class.open]="cloudOpen" (click)="closeCloud()"></div>
+<app-log-cloud
+  *ngIf="isViewingToday && data && !error"
+  [open]="cloudOpen"
+  [favorites]="favorites"
+  [suggestions]="suggestions"
+  [actionPending]="actionPending"
+  [style.bottom.px]="overlayBottom"
+  (chipPicked)="onChipPicked($event)"
+  (customRequested)="openCustomComposer()"
+  (closed)="closeCloud()" />
+
+<!-- Compose popover — floats above the Logged panel (custom add + edit) -->
+<div class="log-pop-backdrop" *ngIf="logPopoverOpen" (click)="closeLogPopover()"></div>
+<div class="log-pop" *ngIf="logPopoverOpen" [style.bottom.px]="composerBottom" (keydown.escape)="closeLogPopover()">
       <div class="log-pop-title">{{ editingId ? 'Edit entry' : 'Log time' }}</div>
 
       <div class="lp-field">
@@ -196,6 +170,4 @@
           {{ editingId ? 'Save' : 'Log time' }}
         </button>
       </div>
-    </div>
-  </span>
 </div>

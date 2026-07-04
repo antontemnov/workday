@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · day view — итерация 2 (две ипостаси)</title>
+<style>
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --struct:#26263a;
+    --surface0:#313244; --surface1:#45475a; --overlay0:#6c7086;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --blue:#89b4fa; --peach:#fab387; --teal:#94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0c0c14; color:var(--text);
+    font-family:'Cascadia Code','Consolas',monospace;
+    padding:26px 20px 60px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .page-title { font-size:13px; color:var(--subtext0); letter-spacing:.4px; margin-bottom:6px; }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--overlay0); margin-bottom:24px; }
+  .page-sub .auto { color:var(--subtext1); } .page-sub .man { color:var(--mauve); }
+
+  .variant { margin-bottom:32px; display:flex; flex-direction:column; align-items:center; }
+  .variant-tag { font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:var(--mauve); margin:0 0 9px; align-self:flex-start; }
+  .variant-note { width:500px; font-size:10.5px; line-height:1.6; color:var(--overlay0); margin:9px 2px 0; }
+  .variant-note b { color:var(--subtext0); font-weight:600; }
+  .variant-note .g { color:var(--green); } .variant-note .m { color:var(--mauve); }
+
+  .frame {
+    width:500px; background:var(--base);
+    border:1px solid #2c2c40; border-radius:10px; overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+  .frame.fixed { height:560px; }
+
+  .banner {
+    flex-shrink:0; display:flex; align-items:center;
+    padding:8px 12px; background:var(--mantle);
+    border-bottom:1px solid var(--struct);
+    font-size:10px; color:var(--overlay0); letter-spacing:2px;
+  }
+  .banner .wd { display:flex; gap:8px; }
+  .banner .wd .on { color:var(--text); border-bottom:2px solid var(--mauve); padding-bottom:2px; }
+  .banner .nav { margin-left:auto; letter-spacing:4px; font-size:11px; }
+
+  .content { flex:1; overflow:hidden; padding:0 12px; display:flex; flex-direction:column; }
+
+  /* ══ Day header — split: identity left, answer right ══ */
+  .day-block { padding:13px 0 12px; border-bottom:1px solid var(--struct); }
+  .day-split { display:flex; align-items:flex-start; }
+  .day-id { display:flex; flex-direction:column; gap:3px; }
+  .day-date { font-size:15px; font-weight:600; letter-spacing:.2px; color:var(--text); font-variant-numeric:tabular-nums; }
+  .day-idle { font-size:10.5px; color:var(--overlay0); font-variant-numeric:tabular-nums; }
+  .day-idle .v { color:var(--subtext0); }
+  .day-answer { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:2px; }
+  .day-answer .num { font-size:19px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; line-height:1; }
+  .day-answer .cap { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:var(--overlay0); }
+
+  /* ══ Day header — centered date variant ══ */
+  .day-block.centered { text-align:center; }
+  .day-block.centered .day-date {
+    font-size:13px; text-transform:uppercase; letter-spacing:2.5px; color:var(--subtext1);
+  }
+  .day-rule { height:1px; background:var(--struct); margin:9px 0; }
+  .day-c-answer { display:flex; align-items:baseline; justify-content:flex-end; gap:8px; }
+  .day-c-answer .num { font-size:18px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
+  .day-c-answer .sub { font-size:10px; color:var(--overlay0); font-variant-numeric:tabular-nums; }
+  .day-c-answer .sub .v { color:var(--subtext0); }
+
+  /* ══ Section (hypostasis) ══ */
+  .sec { border-bottom:1px solid var(--struct); }
+  .sec:last-of-type { border-bottom:none; }
+  .sec-head {
+    display:flex; align-items:center; gap:7px;
+    padding:9px 0; font-size:11px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.6px;
+    font-variant-numeric:tabular-nums; cursor:default;
+  }
+  .sec-head .chev { color:var(--overlay0); font-size:9px; width:9px; flex-shrink:0; }
+  .sec-head .label-auto { color:var(--subtext1); }
+  .sec-head .label-man  { color:var(--mauve); }
+  .sec-head .glyph { font-size:10px; flex-shrink:0; }
+  .sec-head .glyph.man { color:var(--mauve); }
+  .sec-head .live-dot {
+    width:5px; height:5px; border-radius:50%; background:var(--green); flex-shrink:0;
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  /* Σ — right edge, the number column everything reconciles into */
+  .sec-head .sum { margin-left:auto; font-weight:700; text-transform:none; letter-spacing:0; color:var(--text); }
+
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  /* ══ Live session card (pause removed) ══ */
+  .card {
+    position:relative; background:var(--mantle);
+    border:1px solid var(--struct); border-radius:8px;
+    padding:9px 11px 11px; margin-bottom:8px;
+  }
+  .card .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; min-width:0; }
+  .card .repo { font-size:12px; font-weight:700; color:var(--blue); flex-shrink:0; }
+  .card .head .sep { width:1px; height:12px; background:var(--surface0); flex-shrink:0; }
+  .card .branch {
+    font-size:11px; color:var(--overlay0); white-space:nowrap; overflow:hidden;
+    flex:1; min-width:0;
+    -webkit-mask-image:linear-gradient(90deg,#000 82%,transparent);
+            mask-image:linear-gradient(90deg,#000 82%,transparent);
+  }
+  .badge { flex-shrink:0; display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; padding:3px 9px; border-radius:999px; }
+  .badge .dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .badge.live { color:var(--green); background:rgba(166,227,161,.10); }
+  .badge.live .dot { animation:pulse 1.6s ease-in-out infinite; }
+  .badge.pending { color:var(--yellow); background:rgba(249,226,175,.10); }
+  .badge.idle { color:var(--peach); background:rgba(250,179,135,.10); }
+  .metrics { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 9px; border-radius:6px; background:rgba(17,17,27,.6); border:1px solid var(--struct); color:var(--subtext0); }
+  .chip .ic { font-size:10px; color:var(--overlay0); }
+  .chip.time .v { color:var(--text); font-weight:700; }
+  .chip.time .man { color:var(--mauve); }
+  .chip .plus { color:var(--green); } .chip .minus { color:var(--red); }
+  .chip .csep { width:1px; height:10px; background:var(--struct); }
+  .mode { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px; }
+  .mode.normal { color:var(--green); background:rgba(166,227,161,.08); border:1px solid rgba(166,227,161,.25); }
+  .mode.relaxed { color:var(--blue); background:rgba(137,180,250,.08); border:1px solid rgba(137,180,250,.25); }
+  .mode .car { font-size:8px; opacity:.7; }
+  .edge { position:absolute; left:10px; right:10px; bottom:0; height:3px; border-radius:2px; background:var(--struct); overflow:hidden; }
+  .edge .fill { display:block; height:100%; border-radius:2px; }
+
+  /* ══ "Earlier" sub-group inside Tracked (was Closed) ══ */
+  .earlier-toggle {
+    display:flex; align-items:center; gap:7px;
+    padding:6px 2px 8px; font-size:10.5px; color:var(--overlay0);
+    cursor:default; font-variant-numeric:tabular-nums;
+  }
+  .earlier-toggle .chev { font-size:8px; width:9px; }
+  .earlier-toggle .e-sum { margin-left:auto; color:var(--overlay0); }
+  .earlier-body { padding-bottom:6px; }
+
+  /* Closed/earlier row — duration pushed to the far right (reordered) */
+  .row {
+    display:flex; align-items:center; gap:10px;
+    font-size:11px; color:var(--overlay0);
+    padding:5px 8px; border-radius:4px;
+    background:rgba(24,24,37,.5); margin-bottom:3px;
+    font-variant-numeric:tabular-nums;
+  }
+  .row .r-repo { min-width:108px; color:var(--subtext0); font-weight:600; flex-shrink:0; }
+  .row .r-task { min-width:74px; color:var(--subtext1); flex-shrink:0; }
+  .row .r-int  { color:var(--overlay0); flex-shrink:0; }
+  .row .r-reason {
+    margin-left:auto; font-size:9px; font-weight:600; letter-spacing:.4px; text-transform:uppercase;
+    padding:2px 6px; border-radius:3px; flex-shrink:0;
+  }
+  .row .r-reason.idle     { background:rgba(250,179,135,.12); color:var(--peach); }
+  .row .r-reason.switched { background:rgba(116,199,236,.12); color:#74c7ec; }
+  .row .r-reason.manual   { background:rgba(166,173,200,.12); color:var(--subtext0); }
+  /* duration — the rightmost column, aligned under every Σ */
+  .row .r-dur { min-width:52px; text-align:right; color:var(--text); font-weight:700; flex-shrink:0; }
+
+  /* ══ Logged row (manual — mauve species) ══ */
+  .log-row {
+    display:flex; align-items:center; gap:9px;
+    padding:5px 8px; border-radius:4px;
+    background:rgba(24,24,37,.5); margin-bottom:3px;
+    font-size:11px; font-variant-numeric:tabular-nums;
+  }
+  .log-row .l-task { color:var(--mauve); font-weight:600; background:rgba(203,166,247,.12); padding:1px 7px; border-radius:4px; flex-shrink:0; }
+  .log-row .l-act { font-size:10px; padding:1px 7px; border-radius:4px; flex-shrink:0; color:#9399b2; background:rgba(147,153,178,.12); }
+  .log-row .l-act.rev { color:var(--blue); background:rgba(137,180,250,.12); }
+  .log-row .l-desc { color:#7f849c; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .log-row .l-min { min-width:52px; text-align:right; color:var(--text); font-weight:700; flex-shrink:0; }
+  .log-row .l-edit { color:var(--overlay0); font-size:12px; flex-shrink:0; }
+
+  .dock { flex-shrink:0; display:flex; align-items:center; padding:9px 12px; background:var(--mantle); border-top:1px solid var(--surface0); }
+  .log-btn { display:inline-flex; align-items:center; gap:6px; background:rgba(203,166,247,.1); border:1px solid rgba(203,166,247,.32); color:var(--mauve); font-size:11px; padding:6px 16px; border-radius:999px; }
+
+  .fold-hint { font-size:9px; color:#3a3a4e; text-align:center; padding:6px 0 2px; letter-spacing:.5px; }
+</style>
+</head>
+<body>
+
+<div class="page-title"><b>day view · итерация 2 — две ипостаси</b></div>
+<div class="page-sub"><span class="auto">TRACKED</span> = машина видит git (бывш. Active+Closed) &nbsp;·&nbsp; <span class="man">LOGGED</span> = ты логируешь вручную</div>
+
+<!-- ════════════ FRAME 1 — split header, earlier collapsed (default view) ════════════ -->
+<div class="variant">
+  <div class="variant-tag">1 · split header · «как выглядит при открытии»</div>
+  <div class="frame fixed">
+    <div class="banner">
+      <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+      <span class="nav">◷ ▦ ⚙</span>
+    </div>
+    <div class="content">
+      <div class="day-block">
+        <div class="day-split">
+          <div class="day-id">
+            <span class="day-date">4 July 2026</span>
+            <span class="day-idle"><span class="v">1h 12m</span> idle</span>
+          </div>
+          <div class="day-answer">
+            <span class="num">9h 11m</span>
+            <span class="cap">today</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRACKED -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="chev">▼</span>
+          <span class="live-dot"></span>
+          <span class="label-auto">Tracked</span>
+          <span class="sum">7h 41m</span>
+        </div>
+
+        <div class="card">
+          <div class="head">
+            <span class="repo">atlas-frontend</span><span class="sep"></span>
+            <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+            <span class="badge live"><span class="dot"></span>Live</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+            <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+        </div>
+
+        <div class="card">
+          <div class="head">
+            <span class="repo">appone-backend</span><span class="sep"></span>
+            <span class="branch">APP-1024-refactor-pricing-engine</span>
+            <span class="badge pending"><span class="dot"></span>Pending</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">5m</span> <span class="man">+45m</span></span>
+            <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+4</span><span class="minus">−0</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:10%;background:var(--red)"></span></span>
+        </div>
+
+        <div class="card">
+          <div class="head">
+            <span class="repo">infra-scripts</span><span class="sep"></span>
+            <span class="branch">OPS-512-pipeline-tweak</span>
+            <span class="badge idle"><span class="dot"></span>Idle</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">22m</span></span>
+            <span class="chip"><span class="ic">⊙</span>0<span class="csep"></span><span class="plus">+18</span><span class="minus">−4</span></span>
+            <span class="mode relaxed">Relaxed <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:18%;background:var(--peach)"></span></span>
+        </div>
+
+        <!-- earlier = closed sessions, collapsed -->
+        <div class="earlier-toggle">
+          <span class="chev">▶</span>
+          <span>3 earlier sessions</span>
+          <span class="e-sum">3h 02m</span>
+        </div>
+      </div>
+
+      <!-- LOGGED -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="chev">▶</span>
+          <span class="glyph man">✎</span>
+          <span class="label-man">Logged</span>
+          <span class="sum">1h 30m</span>
+        </div>
+      </div>
+    </div>
+    <div class="dock"><span class="log-btn"><span style="color:var(--mauve)">✎</span> Log time</span></div>
+  </div>
+  <p class="variant-note">
+    Слева — «что за день»: дата + <b>idle полного простоя</b> (мелкий, увёл из конкуренции с суммой).
+    Справа — единственный ответ: <b>9h 11m today</b>. Ниже суммы секций складываются в него:
+    <span class="g">7h 41m</span> + <span class="m">1h 30m</span> = 9h 11m — колонка чисел по правому краю сходится.
+    Active+Closed теперь одна секция <b>Tracked</b>: живые — карточками, история — свёрнута в «3 earlier».
+    Паузы у карточек убраны.
+  </p>
+</div>
+
+<!-- ════════════ FRAME 2 — centered header, everything expanded ════════════ -->
+<div class="variant">
+  <div class="variant-tag">2 · centered date · всё раскрыто (колонки Closed переставлены)</div>
+  <div class="frame">
+    <div class="banner">
+      <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span class="on">S</span><span>S</span></span>
+      <span class="nav">◷ ▦ ⚙</span>
+    </div>
+    <div class="content">
+      <div class="day-block centered">
+        <span class="day-date">4 July 2026</span>
+        <div class="day-rule"></div>
+        <div class="day-c-answer">
+          <span class="num">9h 11m</span>
+          <span class="sub">today · <span class="v">1h 12m</span> idle</span>
+        </div>
+      </div>
+
+      <!-- TRACKED -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="chev">▼</span>
+          <span class="live-dot"></span>
+          <span class="label-auto">Tracked</span>
+          <span class="sum">7h 41m</span>
+        </div>
+
+        <div class="card">
+          <div class="head">
+            <span class="repo">atlas-frontend</span><span class="sep"></span>
+            <span class="branch">ATL-6781-atemnov-save-fee-endpoints</span>
+            <span class="badge live"><span class="dot"></span>Live</span>
+          </div>
+          <div class="metrics">
+            <span class="chip time"><span class="ic">◔</span><span class="v">4h 12m</span></span>
+            <span class="chip"><span class="ic">⊙</span>5<span class="csep"></span><span class="plus">+312</span><span class="minus">−88</span></span>
+            <span class="mode normal">Normal <span class="car">▾</span></span>
+          </div>
+          <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+        </div>
+
+        <!-- earlier expanded — reordered columns: repo · task · interval · reason · DURATION(right) -->
+        <div class="earlier-toggle">
+          <span class="chev">▼</span>
+          <span>3 earlier sessions</span>
+          <span class="e-sum">3h 02m</span>
+        </div>
+        <div class="earlier-body">
+          <div class="row">
+            <span class="r-repo">atlas-frontend</span>
+            <span class="r-task">ATL-6712</span>
+            <span class="r-int">09:18 → 10:45</span>
+            <span class="r-reason switched">Switched</span>
+            <span class="r-dur">1h 27m</span>
+          </div>
+          <div class="row">
+            <span class="r-repo">appone-backend</span>
+            <span class="r-task">APP-1019</span>
+            <span class="r-int">11:35 → 12:50</span>
+            <span class="r-reason switched">Switched</span>
+            <span class="r-dur">1h 15m</span>
+          </div>
+          <div class="row">
+            <span class="r-repo">infra-scripts</span>
+            <span class="r-task">—</span>
+            <span class="r-int">14:10 → 14:30</span>
+            <span class="r-reason manual">Manual</span>
+            <span class="r-dur">20m</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOGGED expanded -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="chev">▼</span>
+          <span class="glyph man">✎</span>
+          <span class="label-man">Logged</span>
+          <span class="sum">1h 30m</span>
+        </div>
+        <div class="earlier-body">
+          <div class="log-row">
+            <span class="l-task">ATL-6781</span>
+            <span class="l-act">Other</span>
+            <span class="l-desc">daily standup</span>
+            <span class="l-min">15m</span>
+            <span class="l-edit">✎</span>
+          </div>
+          <div class="log-row">
+            <span class="l-task">ATL-6712</span>
+            <span class="l-act rev">Code Review</span>
+            <span class="l-desc">PR #214 review with team</span>
+            <span class="l-min">30m</span>
+            <span class="l-edit">✎</span>
+          </div>
+          <div class="log-row">
+            <span class="l-task">APP-1024</span>
+            <span class="l-act">Other</span>
+            <span class="l-desc">sprint planning</span>
+            <span class="l-min">45m</span>
+            <span class="l-edit">✎</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dock"><span class="log-btn"><span style="color:var(--mauve)">✎</span> Log time</span></div>
+  </div>
+  <p class="variant-note">
+    Дата вынесена по центру как заголовок-титул (uppercase, разрядка), под ней — сумма справа с idle-сабтайтлом.
+    Секция <b>Closed</b> переехала внутрь Tracked как «earlier»: колонки переставлены — <b>время сессии теперь
+    в крайнем правом столбце</b>, под Σ и под тоталом. Reason-бадж съехал левее.
+    <span class="m">Logged</span> — вторая ипостась: mauve-акцент + ✎, задача-чип · активность · описание · минуты.
+  </p>
+</div>
+
+</body>
+</html>

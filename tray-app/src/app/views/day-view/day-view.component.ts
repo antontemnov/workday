@@ -1,9 +1,14 @@
-import { Component, ElementRef, EventEmitter, Input, Output } from '@angular/core';
+import {
+  Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionCardComponent } from './session-card/session-card.component';
 import { DurationFieldComponent } from './duration-field/duration-field.component';
+import { LoggedPanelComponent } from './logged-panel/logged-panel.component';
+import { ChipPick, LogCloudComponent, SuggestedLog } from './log-cloud/log-cloud.component';
 import { formatDurationLabel, parseDurationToMinutes } from './duration-field/duration.util';
+import { activityLabel } from './activity.util';
 import {
   SessionDetail,
   SensitivityLevel,
@@ -13,6 +18,7 @@ import {
   ManualEntryInput,
   ManualEntryPatch,
   ActivityType,
+  Favorite,
 } from '../../models/workday.models';
 
 interface SensitivityPillOption {
@@ -22,18 +28,17 @@ interface SensitivityPillOption {
   readonly title: string;
 }
 
-// Manual entries are their own species — one accent (mauve) regardless of task.
-const MANUAL_ACCENT = '#cba6f7';
 const DEFAULT_ACTIVITY = 'Other';
 
 @Component({
   selector: 'app-day-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, SessionCardComponent, DurationFieldComponent],
+  imports: [CommonModule, FormsModule, SessionCardComponent, DurationFieldComponent,
+            LoggedPanelComponent, LogCloudComponent],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
-export class DayViewComponent {
+export class DayViewComponent implements OnChanges {
   @Input() data: TodayResponse | null = null;
   @Input() loading = false;
   @Input() error: string | null = null;
@@ -41,9 +46,11 @@ export class DayViewComponent {
   @Input() dateLabel = '';
   @Input() actionPending = false;
   @Input() daemonUserStopped = false;
-  @Input() currentTimeMs: number = Date.now();
   @Input() sensitivityPills: readonly SensitivityPillOption[] = [];
   @Input() activityTypes: readonly ActivityType[] = [];
+  @Input() favorites: readonly Favorite[] = [];
+  // Entry created by the latest log action — the panel opens its draft window.
+  @Input() freshEntryId: string | null = null;
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
@@ -53,14 +60,30 @@ export class DayViewComponent {
 
   public constructor(private host: ElementRef<HTMLElement>) {}
 
+  @ViewChild(LoggedPanelComponent, { read: ElementRef })
+  private panelRef?: ElementRef<HTMLElement>;
+
+  // Mauve flash on the Day total when the logged share changes.
+  dayFlash = false;
+  private dayFlashTimer: ReturnType<typeof setTimeout> | null = null;
+  private prevLoggedMs: number | null = null;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['data']) return;
+    const logged = this.loggedMs;
+    if (this.prevLoggedMs !== null && logged !== this.prevLoggedMs) {
+      this.dayFlash = true;
+      if (this.dayFlashTimer) clearTimeout(this.dayFlashTimer);
+      this.dayFlashTimer = setTimeout(() => this.dayFlash = false, 400);
+    }
+    this.prevLoggedMs = logged;
+  }
+
   // ─── Sessions ─────────────────────────────────────────────────────────
 
-  // Section collapse — "live open, history collapsed". Active starts open;
-  // Closed always starts collapsed; Logged too (the dock owns adding, the list
-  // is review-only).
-  activeOpen = true;
-  closedOpen = false;
-  loggedOpen = false;
+  // Tracked never collapses; only history folds. Earlier (closed) starts
+  // collapsed.
+  earlierOpen = false;
 
   get openSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => !s.closedBy) ?? [];
@@ -75,7 +98,7 @@ export class DayViewComponent {
     return this.openSessions.some(s => !s.paused && s.state === 'active');
   }
 
-  // Σ on the Closed header — sum of effective durations.
+  // Σ on the earlier fold — sum of closed effective durations.
   get closedTotalMs(): number {
     return this.closedSessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
   }
@@ -84,54 +107,16 @@ export class DayViewComponent {
     return (this.data?.sessions.length ?? 0) > 0;
   }
 
-  // ─── Day-start marker ─────────────────────────────────────────────────
-
-  // Server-resolved label (earliest activatedAt); the disk-fallback path may
-  // leave it null, so mirror the same earliest-activatedAt logic locally.
-  get dayStartIso(): string | null {
-    if (!this.data) return null;
-    if (this.data.dayStart) return this.data.dayStart;
-    let earliest: string | null = null;
-    for (const s of this.data.sessions) {
-      if (!s.activatedAt) continue;
-      if (earliest === null || new Date(s.activatedAt).getTime() < new Date(earliest).getTime()) {
-        earliest = s.activatedAt;
-      }
-    }
-    return earliest;
-  }
-
-  get dayStartLabel(): string {
-    const iso = this.dayStartIso;
-    if (!iso) return '';
-    return this.formatHm(iso);
-  }
-
-  // ─── Last-activity marker ─────────────────────────────────────────────
-
-  get lastActivityIso(): string | null {
-    if (!this.data?.activeIntervals.length) return null;
-    const hasLiveSession = this.openSessions.some(s => !s.paused && s.activatedAt !== null);
-    if (hasLiveSession) return new Date(this.currentTimeMs).toISOString();
-    let maxTo = 0;
-    for (const iv of this.data.activeIntervals) {
-      const t = new Date(iv.to).getTime();
-      if (t > maxTo) maxTo = t;
-    }
-    return maxTo > 0 ? new Date(maxTo).toISOString() : null;
-  }
-
-  get lastActivityLabel(): string {
-    const iso = this.lastActivityIso;
-    return iso ? this.formatHm(iso) : '';
-  }
-
   // ─── Stats ────────────────────────────────────────────────────────────
 
-  get totalActiveMs(): number {
-    if (!this.data?.activeIntervals) return 0;
-    return this.data.activeIntervals.reduce((sum, iv) =>
-      sum + (new Date(iv.to).getTime() - new Date(iv.from).getTime()), 0);
+  // Σ on the Tracked header — live + closed effective durations.
+  get trackedTotalMs(): number {
+    return this.data?.sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0) ?? 0;
+  }
+
+  // Day total = Tracked Σ + Logged Σ — "what goes to Tempo today".
+  get dayTotalMs(): number {
+    return this.trackedTotalMs + this.loggedMs;
   }
 
   get totalPauseMs(): number {
@@ -158,34 +143,6 @@ export class DayViewComponent {
     return span - work;
   }
 
-  // ─── Active|idle ratio ────────────────────────────────────────────────
-
-  // Bar + caption render only when there is something to show.
-  get hasActivity(): boolean {
-    return this.totalActiveMs > 0 || this.totalPauseMs > 0 || this.loggedMs > 0;
-  }
-
-  // Bar total = active + idle (git presence) + logged (manual). Three segments
-  // mirror the three caption numbers; logged is additive, not carved from idle.
-  private get ratioTotalMs(): number {
-    return this.totalActiveMs + this.totalPauseMs + this.loggedMs;
-  }
-
-  get activePct(): number {
-    const total = this.ratioTotalMs;
-    return total > 0 ? (this.totalActiveMs / total) * 100 : 0;
-  }
-
-  get idlePct(): number {
-    const total = this.ratioTotalMs;
-    return total > 0 ? (this.totalPauseMs / total) * 100 : 0;
-  }
-
-  get loggedPct(): number {
-    const total = this.ratioTotalMs;
-    return total > 0 ? (this.loggedMs / total) * 100 : 0;
-  }
-
   // ─── Formatters ───────────────────────────────────────────────────────
 
   formatDurationHm(ms: number): string {
@@ -209,8 +166,8 @@ export class DayViewComponent {
     return `${this.formatHm(s.startedAt)} → ${this.formatHm(s.lastSeenAt)}`;
   }
 
-  // Reason badge for the Closed list. Labels stay short so the row layout
-  // doesn't break at the default tray window width.
+  // Reason text for the earlier (closed) rows — quiet italic, no badge.
+  // Labels stay short so the row layout doesn't break at tray width.
   closedReasonLabel(closedBy: string | null): string {
     switch ((closedBy ?? '').toLowerCase()) {
       case 'checkout_other_task': return 'Switched';
@@ -228,26 +185,7 @@ export class DayViewComponent {
     }
   }
 
-  closedReasonClass(closedBy: string | null): string {
-    switch ((closedBy ?? '').toLowerCase()) {
-      case 'checkout_other_task': return 'reason-switched';
-      case 'day_boundary':        return 'reason-dayend';
-      case 'daemon_stop':
-      case 'stopped':
-      case 'daemon_crash':        return 'reason-stopped';
-      case 'manual_stop':
-      case 'manual':
-      case 'user':                return 'reason-manual';
-      case 'budget_exhausted':    return 'reason-dayend';
-      case 'idle_timeout':        return 'reason-idle';
-      case 'superseded':          return 'reason-switched';
-      default:                    return 'reason-other';
-    }
-  }
-
   // ─── Manual entries (LOGGED band) ──────────────────────────────────────
-
-  readonly manualAccent = MANUAL_ACCENT;
 
   // Compose popover state. editingId = null → adding; otherwise editing that id.
   logPopoverOpen = false;
@@ -264,12 +202,6 @@ export class DayViewComponent {
     return this.data?.manualEntries ?? [];
   }
 
-  // The Logged section renders only with real entries; the dock owns adding, so
-  // there is no empty-state band any more.
-  get showLoggedSection(): boolean {
-    return this.manualEntries.length > 0;
-  }
-
   get loggedMs(): number {
     return this.manualEntries.reduce((sum, e) => sum + e.minutes, 0) * 60_000;
   }
@@ -280,22 +212,89 @@ export class DayViewComponent {
   }
 
   activityLabel(value: string): string {
-    return this.activityTypes.find(a => a.value === value)?.name ?? value;
+    return activityLabel(this.activityTypes, value);
   }
 
-  // CSS modifier so a few common activities get a distinct badge tint.
-  activityTone(value: string): string {
-    switch (value) {
-      case 'CodeReview':
-      case 'CodeReviewFixes':
-      case 'TestReview':   return 'rev';
-      case 'Development':
-      case 'Bugfixing':    return 'dev';
-      default:             return 'other';
-    }
+  // ─── Log cloud ─────────────────────────────────────────────────────────
+
+  // Tracker-noticed suggestions — no daemon surface yet, so always empty;
+  // the cloud's teal row and the panel badges light up once it exists.
+  readonly suggestions: readonly SuggestedLog[] = [];
+
+  cloudOpen = false;
+  // Both overlays sit just above the Logged panel; measured at open time.
+  overlayBottom = 0;
+  composerBottom = 0;
+
+  openCloud(): void {
+    if (!this.isViewingToday || this.actionPending) return;
+    this.overlayBottom = this.panelHeight() + 6;
+    this.cloudOpen = true;
   }
 
-  // ─── Compose popover ───────────────────────────────────────────────────
+  closeCloud(): void {
+    this.cloudOpen = false;
+  }
+
+  private panelHeight(): number {
+    return this.panelRef?.nativeElement.offsetHeight ?? 46;
+  }
+
+  // Instant log: chip click → cloud closes, the chip flies to the panel
+  // header, the entry POSTs in parallel (lands with the next refresh).
+  onChipPicked(pick: ChipPick): void {
+    this.closeCloud();
+    this.flyChip(pick.sourceRect, pick.label, pick.entry.minutes);
+    this.logSubmitted.emit(pick.entry);
+  }
+
+  onFreshMinutesCommitted(e: { id: string; minutes: number }): void {
+    this.entryEditSubmitted.emit({ target: e.id, patch: { minutes: e.minutes } });
+  }
+
+  // FLIP clone of the picked chip → flies to the panel header (Σ corner).
+  // Styled inline: the element lives on document.body, outside the component's
+  // scoped styles.
+  private flyChip(from: DOMRect, label: string, minutes: number): void {
+    const head = this.panelRef?.nativeElement.querySelector('.lp-head');
+    if (!head || from.width === 0) return;
+    const to = head.getBoundingClientRect();
+
+    const g = document.createElement('span');
+    Object.assign(g.style, {
+      position: 'fixed', zIndex: '60', pointerEvents: 'none',
+      left: `${from.left}px`, top: `${from.top}px`,
+      display: 'inline-flex', alignItems: 'center', gap: '6px',
+      padding: '5px 11px', borderRadius: '999px',
+      background: 'rgba(203, 166, 247, 0.16)', border: '1px solid rgba(203, 166, 247, 0.5)',
+      fontSize: '10.5px', fontFamily: 'inherit',
+      transition: 'transform 0.42s cubic-bezier(0.35, 0.9, 0.3, 1), opacity 0.42s ease',
+    } as Partial<CSSStyleDeclaration>);
+
+    const name = document.createElement('span');
+    name.textContent = label;
+    Object.assign(name.style, { color: '#cba6f7', fontWeight: '600' } as Partial<CSSStyleDeclaration>);
+    const min = document.createElement('span');
+    min.textContent = formatDurationLabel(minutes);
+    Object.assign(min.style, { color: '#a6adc8' } as Partial<CSSStyleDeclaration>);
+    g.append(name, min);
+
+    document.body.appendChild(g);
+    requestAnimationFrame(() => {
+      g.style.transform =
+        `translate(${to.left + 14 - from.left}px, ${to.bottom + 6 - from.top}px) scale(0.5)`;
+      g.style.opacity = '0';
+    });
+    setTimeout(() => g.remove(), 460);
+  }
+
+  // ─── Compose popover (custom add + edit) ───────────────────────────────
+
+  // Temporary custom path (cloud "⌨ custom…") until Jira search lands.
+  openCustomComposer(): void {
+    this.closeCloud();
+    this.openLogPopover();
+  }
 
   openLogPopover(): void {
     if (!this.isViewingToday) return;
@@ -306,6 +305,7 @@ export class DayViewComponent {
     this.logDescription = '';
     this.attemptedLog = false;
     this.activityListOpen = false;
+    this.composerBottom = this.panelHeight() + 8;
     this.logPopoverOpen = true;
   }
 
@@ -318,6 +318,7 @@ export class DayViewComponent {
     this.logDescription = entry.description;
     this.attemptedLog = false;
     this.activityListOpen = false;
+    this.composerBottom = this.panelHeight() + 8;
     this.logPopoverOpen = true;
   }
 

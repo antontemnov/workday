@@ -1,0 +1,52 @@
+<div class="cloud-filter">
+  <span class="f-ic">⌕</span>
+  <input #filterInput
+         type="text"
+         [(ngModel)]="filter"
+         (keydown.enter)="onEnter()"
+         (keydown.escape)="onEscape()"
+         placeholder="filter favorites…"
+         autocomplete="off" />
+  <span class="f-esc">esc</span>
+</div>
+
+<div class="cloud-body">
+  <div class="cloud-chips">
+    <!-- Suggested — tracker noticed activity worth logging (teal species).
+         Hidden while the array is empty; the mechanics land daemon-side later. -->
+    <ng-container *ngIf="showSuggestions">
+      <span class="row-label sugg">✦ suggested — tracker noticed</span>
+      <span class="fav sugg"
+            *ngFor="let s of suggestions; let i = index"
+            [style.animation-delay]="chipDelay(i)"
+            [title]="s.activity"
+            (click)="pickSuggestion(s, $event)">
+        <span class="f-spark">✦</span>
+        <span class="f-task">{{ s.task }}</span>
+        <span class="f-name">{{ s.name }}</span>
+        <span class="f-min">{{ formatMinutes(s.minutes) }}</span>
+      </span>
+      <span class="row-label">favorites</span>
+    </ng-container>
+
+    <span class="fav"
+          *ngFor="let f of filteredFavorites; let i = index; trackBy: trackByFavorite"
+          [style.animation-delay]="chipDelay(i + 1)"
+          [title]="f.activity"
+          (click)="pickFavorite(f, $event)">
+      <span class="f-task">{{ f.task }}</span>
+      <span class="f-name">{{ f.name }}</span>
+      <span class="f-min">{{ formatMinutes(f.minutes) }}</span>
+    </span>
+
+    <span class="cloud-empty" *ngIf="noMatches">
+      no favorites match — Jira search comes next
+    </span>
+
+    <!-- Temporary bridge until Jira search lands: arbitrary-task entry via
+         the composer popover. Remove together with the Jira-search stage. -->
+    <span class="fav custom" (click)="customRequested.emit()">
+      <span class="f-name">⌨ custom…</span>
+    </span>
+  </div>
+</div>

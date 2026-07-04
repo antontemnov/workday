@@ -1,0 +1,51 @@
+<div class="logged-pane" [class.collapsed]="collapsed">
+  <div class="lp-head" (click)="toggleCollapsed($event)" title="Collapse / expand">
+    <span class="label">Logged</span>
+    <button class="lp-mini"
+            *ngIf="isViewingToday"
+            (click)="onMiniClick($event)"
+            [disabled]="actionPending"
+            title="Log time…">＋<span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
+    <span class="caret">▼</span>
+    <span class="sum" [class.flash]="sumFlash">{{ formatDurationHm(sumMs) }}</span>
+  </div>
+
+  <div class="lp-body">
+    <div class="lp-clip">
+      <div class="lp-table">
+        <div class="ghost-row" *ngIf="isViewingToday" (click)="logRequested.emit()">
+          <span class="g-plus">＋</span><span>Log time…</span>
+          <span class="g-sugg" *ngIf="suggestedCount > 0">
+            <span class="sdot"></span>{{ suggestedCount }} suggested
+          </span>
+        </div>
+
+        <div class="log-row"
+             *ngFor="let e of entries; trackBy: trackByEntry"
+             [class.fresh]="isFresh(e)">
+          <span class="l-task">{{ e.task }}</span>
+          <span class="l-act" [class]="'l-act tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>
+          <span class="l-desc" [title]="e.description">{{ e.description }}</span>
+
+          <ng-container *ngIf="isFresh(e); else staticMin">
+            <span class="stepper">
+              <button class="s-dec" (click)="stepDown($event)">−</button>
+              <span class="s-val" title="wheel: ±15m" (wheel)="onStepWheel($event)">
+                {{ formatDurationHm((freshMinutes ?? e.minutes) * 60000) }}</span>
+              <button class="s-inc" (click)="stepUp($event)">+</button>
+            </span>
+          </ng-container>
+          <ng-template #staticMin>
+            <span class="l-min">{{ formatDurationHm(e.minutes * 60000) }}</span>
+            <!-- Session-born entries are not editable — no pencil for them. -->
+            <button class="l-edit"
+                    *ngIf="canEdit(e)"
+                    [disabled]="actionPending"
+                    (click)="onEditClick(e)"
+                    aria-label="Edit entry" title="Edit entry">✎</button>
+          </ng-template>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

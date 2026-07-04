@@ -1,0 +1,316 @@
+// Pinned Logged panel — mauve species. Collapse: grid-rows 1fr→0fr while the
+// table slides down behind the clip (translateY + fade), 260ms; the header
+// stays with Σ and grows the mini ＋ button.
+:host {
+  display: block;
+  flex-shrink: 0;
+  max-height: 55%;
+  min-height: 0;
+}
+
+.logged-pane {
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #181825;
+  border-top: 1px solid #313244;
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.28);
+  padding: 9px 12px 10px;
+  position: relative;
+  z-index: 10;
+  transition: padding 0.24s ease;
+
+  &.collapsed { padding-bottom: 9px; }
+}
+
+.lp-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0 9px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  user-select: none;
+
+  .label { order: 0; color: #cba6f7; }
+
+  .caret {
+    order: 2;
+    font-size: 7px;
+    color: #6c7086;
+    transition: transform 0.24s ease;
+    margin-top: 1px;
+  }
+
+  .sum {
+    order: 3;
+    margin-left: auto;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #cdd6f4;
+    transition: color 0.3s ease;
+
+    &.flash { color: #cba6f7; }
+  }
+}
+
+.logged-pane.collapsed .lp-head { padding-bottom: 2px; }
+.logged-pane.collapsed .lp-head .caret { transform: rotate(180deg); }
+
+// Mini ＋ button: collapsed-only — LOGGED ＋ ▲, caret to its right. Expanded
+// state shrinks it to zero width so the header doesn't jump.
+.lp-mini {
+  order: 1;
+  position: relative;
+  width: 0;
+  height: 21px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(203, 166, 247, 0.12);
+  border: 1px solid rgba(203, 166, 247, 0.34);
+  color: #cba6f7;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0;
+  margin-right: -7px;
+  cursor: pointer;
+  overflow: visible;
+  opacity: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+  transition: opacity 0.2s ease 0.1s, transform 0.2s cubic-bezier(0.2, 1.3, 0.4, 1) 0.1s,
+              width 0.2s ease 0.1s, margin-right 0.2s ease 0.1s, background 0.15s ease;
+
+  &:hover:not(:disabled) { background: rgba(203, 166, 247, 0.24); border-color: #cba6f7; }
+  &:disabled { opacity: 0.4; cursor: default; }
+
+  // Teal suggestions badge riding the button's corner.
+  .mb {
+    position: absolute;
+    top: -4px;
+    right: -6px;
+    min-width: 11px;
+    height: 11px;
+    padding: 0 2px;
+    border-radius: 6px;
+    background: #94e2d5;
+    color: #0c0c14;
+    font-size: 7.5px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.logged-pane.collapsed .lp-mini {
+  width: 21px;
+  margin-right: 0;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.lp-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 0;
+}
+
+.logged-pane.collapsed .lp-body { grid-template-rows: 0fr; }
+
+.lp-clip {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.lp-table {
+  max-height: 100%;
+  overflow-y: auto;
+  transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
+}
+
+.logged-pane.collapsed .lp-table {
+  transform: translateY(60%);
+  opacity: 0;
+}
+
+// ─── Ghost row — the Log entry point ─────────────────────────────────────
+.ghost-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  border: 1px dashed rgba(203, 166, 247, 0.3);
+  border-radius: 5px;
+  color: #6c7086;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    border-color: #cba6f7;
+    background: rgba(203, 166, 247, 0.05);
+    color: #a6adc8;
+  }
+
+  .g-plus { color: #cba6f7; font-weight: 700; }
+
+  .g-sugg {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    color: #94e2d5;
+
+    .sdot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #94e2d5;
+      animation: sugg-pulse 1.6s ease-in-out infinite;
+    }
+  }
+}
+
+// ─── Entry rows ──────────────────────────────────────────────────────────
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.4s ease;
+
+  &:hover { background: rgba(203, 166, 247, 0.05); }
+
+  .l-task {
+    color: #cba6f7;
+    font-weight: 600;
+    background: rgba(203, 166, 247, 0.12);
+    padding: 1px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .l-act {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    white-space: nowrap;
+
+    &.tone-other { color: #9399b2; background: rgba(147, 153, 178, 0.1); }
+    &.tone-rev   { color: #89b4fa; background: rgba(137, 180, 250, 0.1); }
+    &.tone-dev   { color: #a6e3a1; background: rgba(166, 227, 161, 0.1); }
+  }
+
+  .l-desc {
+    color: #7f849c;
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .l-min {
+    min-width: 50px;
+    text-align: right;
+    color: #cdd6f4;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .l-edit {
+    background: transparent;
+    border: none;
+    color: #6c7086;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s ease, color 0.15s ease, background 0.15s ease;
+
+    &:hover:not(:disabled) { color: #cba6f7; background: rgba(203, 166, 247, 0.1); }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+
+  &:hover .l-edit { opacity: 1; }
+
+  &.fresh {
+    animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1);
+    background: rgba(203, 166, 247, 0.1);
+  }
+}
+
+// ─── Stepper (fresh row draft) ───────────────────────────────────────────
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+
+  button {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid rgba(203, 166, 247, 0.4);
+    background: rgba(203, 166, 247, 0.1);
+    color: #cba6f7;
+    font-family: inherit;
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover { background: rgba(203, 166, 247, 0.25); }
+  }
+
+  .s-val {
+    min-width: 44px;
+    text-align: center;
+    color: #cba6f7;
+    font-weight: 700;
+    cursor: ns-resize;
+  }
+}
+
+@keyframes row-in {
+  0%   { transform: translateY(6px) scale(0.96); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes sugg-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

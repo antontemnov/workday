@@ -151,14 +151,6 @@ export class SessionCardComponent {
     return this.formatDurationHm(this.session.effectiveDurationMs);
   }
 
-  // Total time this session spent paused — duration only, no count. Shown in the
-  // time chip when there was any pause (mirrors how +manual only shows when > 0).
-  get pauseLabel(): string | null {
-    return this.session.totalPauseDurationMs > 0
-      ? this.formatDurationHm(this.session.totalPauseDurationMs)
-      : null;
-  }
-
   formatDurationHm(ms: number): string {
     const totalMinutes = Math.floor(ms / 60_000);
     const hours = Math.floor(totalMinutes / 60);

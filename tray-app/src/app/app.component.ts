@@ -12,6 +12,7 @@ import {
   ActivityType,
   ManualEntryInput,
   ManualEntryPatch,
+  Favorite,
 } from './models/workday.models';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
@@ -80,6 +81,15 @@ export class AppComponent implements OnInit, OnDestroy {
   // Tempo _Activity_ options for the manual-entry composer; prefetched once.
   activityTypes: readonly ActivityType[] = [];
 
+  // Log-cloud chip templates. loaded distinguishes "fetch never landed" from
+  // a legitimately empty list — the poll retries only the former; the cache
+  // is never cleared on failure (one-shot fetches must self-heal).
+  favorites: readonly Favorite[] = [];
+  private favoritesLoaded = false;
+
+  // Entry id from the latest add — the Logged panel opens its draft window.
+  freshEntryId: string | null = null;
+
   // Toast + action gate
   actionError: string | null = null;
   actionPending = false;
@@ -101,11 +111,7 @@ export class AppComponent implements OnInit, OnDestroy {
   // success is recognized as a reconnect → re-pull activity types.
   private daemonWasReachable = true;
 
-  // Live ticker — advances the "now" cursor between polls.
-  currentTimeMs: number = Date.now();
-
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private tickTimer: ReturnType<typeof setInterval> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private api: WorkdayApiService) {}
@@ -114,6 +120,7 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.watchAppUpdates();
     void this.refreshAvailableDates();
     void this.refreshActivityTypes();
+    void this.refreshFavorites();
     this.refresh();
     this.pollTimer = setInterval(() => {
       if (this.isViewingToday) this.refresh();
@@ -121,17 +128,14 @@ export class AppComponent implements OnInit, OnDestroy {
       // (daemon not ready at launch / transient version mismatch) the
       // composer is stuck on "Other" until app restart. Retry until loaded.
       if (this.activityTypes.length === 0) void this.refreshActivityTypes();
+      if (!this.favoritesLoaded) void this.refreshFavorites();
     }, 10_000);
-    this.tickTimer = setInterval(() => {
-      if (this.isViewingToday) this.currentTimeMs = Date.now();
-    }, 30_000);
     void this.watchdogTick();
     this.watchdogTimer = setInterval(() => void this.watchdogTick(), 15_000);
   }
 
   ngOnDestroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
-    if (this.tickTimer) clearInterval(this.tickTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     if (this.unlistenAppUpdate) this.unlistenAppUpdate();
@@ -216,6 +220,14 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  private async refreshFavorites(): Promise<void> {
+    const res = await this.api.getFavorites();
+    if (res.ok && res.data) {
+      this.favorites = res.data.favorites;
+      this.favoritesLoaded = true;
+    }
+  }
+
   async refresh(): Promise<void> {
     const date = this.viewedDate;
     const res = date
@@ -232,6 +244,7 @@ export class AppComponent implements OnInit, OnDestroy {
       if (!this.daemonWasReachable) {
         this.daemonWasReachable = true;
         void this.refreshActivityTypes();
+        void this.refreshFavorites();
       }
       if (!date) this.todayDate = res.data.date;
       if (res.data.sessions.length > 0 && !this.availableDates.includes(res.data.date)) {
@@ -444,7 +457,13 @@ export class AppComponent implements OnInit, OnDestroy {
   // ─── Manual entries ────────────────────────────────────────────────────
 
   async submitLog(input: ManualEntryInput): Promise<void> {
-    await this.runAction(() => this.api.addManualEntry(input));
+    await this.runAction(async () => {
+      const res = await this.api.addManualEntry(input);
+      // Captured before the refresh inside runAction, so the panel sees the
+      // fresh id and the entry land together.
+      if (res.ok && res.data) this.freshEntryId = res.data.id;
+      return res;
+    });
   }
 
   async submitEntryEdit(e: { target: string; patch: ManualEntryPatch }): Promise<void> {
