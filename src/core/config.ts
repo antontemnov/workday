@@ -237,6 +237,19 @@ export function loadSecrets(): Secrets {
   return secrets;
 }
 
+/** Non-fatal variant for optional integrations: missing/invalid → null. */
+export function tryLoadSecrets(): Secrets | null {
+  const secretsPath = join(WORKDAY_HOME, SECRETS_FILE_NAME);
+  if (!existsSync(secretsPath)) return null;
+  try {
+    const secrets = readJson<Secrets>(secretsPath);
+    validateSecrets(secrets);
+    return secrets;
+  } catch {
+    return null;
+  }
+}
+
 export function getWorkdayHome(): string {
   return WORKDAY_HOME;
 }

@@ -17,6 +17,11 @@ import {
   ManualEntryResponse,
   ManualEntryInput,
   ManualEntryPatch,
+  FavoritesResponse,
+  FavoriteAddResponse,
+  FavoriteRemoveResponse,
+  FavoriteInput,
+  JiraSearchResponse,
 } from '../models/workday.models';
 
 /**
@@ -53,6 +58,17 @@ export abstract class WorkdayApiService {
   abstract getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;
   abstract addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>>;
   abstract updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>>;
+
+  // Favorites — reusable log templates for the log cloud (day-independent,
+  // stored in the daemon's favorites.json). target = favorite id.
+  abstract getFavorites(): Promise<ApiResponse<FavoritesResponse>>;
+  abstract addFavorite(input: FavoriteInput): Promise<ApiResponse<FavoriteAddResponse>>;
+  abstract removeFavorite(target: string): Promise<ApiResponse<FavoriteRemoveResponse>>;
+
+  // Live Jira issue search (log-cloud fallback when favorites don't match).
+  // errorCode 'jira-not-configured' → the UI blocks the search section with
+  // a Settings link; debounce/min-length live on the UI side.
+  abstract searchJira(query: string): Promise<ApiResponse<JiraSearchResponse>>;
 
   // Timesheets view — per-month aggregated day summaries.
   abstract getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>>;

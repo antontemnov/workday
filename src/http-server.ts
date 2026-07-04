@@ -17,14 +17,23 @@ import {
   listAvailableDates,
 } from './core/daily-log.js';
 import { resolveActivityTypes } from './push/activity-types.js';
+import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
+import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
 import {
   computeWorkingDate,
   buildPatchedConfig,
   writeConfig,
   writeSecrets,
   loadSecrets,
+  tryLoadSecrets,
 } from './core/config.js';
-import { MAX_BODY_BYTES, API_VERSION, MS_PER_MINUTE, DEFAULT_MANUAL_ACTIVITY } from './core/constants.js';
+import {
+  MAX_BODY_BYTES,
+  API_VERSION,
+  MS_PER_MINUTE,
+  DEFAULT_MANUAL_ACTIVITY,
+  JIRA_SEARCH_MIN_QUERY_LENGTH,
+} from './core/constants.js';
 import type {
   AppConfig,
   ApiResponse,
@@ -39,6 +48,10 @@ import type {
   SessionDeleteResponse,
   ManualEntry,
   ManualEntryResponse,
+  FavoritesResponse,
+  FavoriteAddResponse,
+  FavoriteRemoveResponse,
+  JiraSearchResponse,
   ActivityTypesResponse,
   DaysResponse,
   Session,
@@ -49,7 +62,7 @@ import type {
   UpdateApplyResponse,
   WatchingRepo,
 } from './core/types.js';
-import { SensitivityLevel, SessionState } from './core/types.js';
+import { ApiErrorCode, SensitivityLevel, SessionState } from './core/types.js';
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
@@ -206,6 +219,21 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/manual-entry/update') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleUpdateManualEntry(body));
+      }
+      if (method === 'GET' && path === '/api/favorites') {
+        return this.sendJson(res, 200, this.handleGetFavorites());
+      }
+      if (method === 'POST' && path === '/api/favorites') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleAddFavorite(body));
+      }
+      if (method === 'POST' && path === '/api/favorites/remove') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleRemoveFavorite(body));
+      }
+      if (method === 'GET' && path === '/api/jira/search') {
+        const query = url.searchParams.get('q') ?? '';
+        return this.sendJson(res, 200, await this.handleJiraSearch(query));
       }
       if (method === 'GET' && path === '/api/activity-types') {
         return this.sendJson(res, 200, await this.handleActivityTypes());
@@ -436,6 +464,10 @@ export class HttpServer {
 
       if (!task) return { ok: false, error: 'Missing task' };
       if (!description) return { ok: false, error: 'Missing description' };
+      // User-picked task must exist in Jira; session-born tasks come from
+      // git and are validated at push time instead.
+      const jiraError = await this.validateTaskInJira(task);
+      if (jiraError) return jiraError;
       result = tracker.addManualEntry({ task, minutes, description, activity });
     }
 
@@ -490,6 +522,97 @@ export class HttpServer {
         totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
       },
     };
+  }
+
+  // ─── Favorites (manual-entry templates) ───────────────────────────
+
+  private handleGetFavorites(): ApiResponse<FavoritesResponse> {
+    try {
+      return { ok: true, data: { favorites: loadFavorites() } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async handleAddFavorite(body: Record<string, unknown>): Promise<ApiResponse<FavoriteAddResponse>> {
+    const name = typeof body.name === 'string' ? body.name : '';
+    const task = typeof body.task === 'string' ? body.task : '';
+    const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
+    const activity = typeof body.activity === 'string' && body.activity.trim()
+      ? body.activity
+      : DEFAULT_MANUAL_ACTIVITY;
+
+    try {
+      const favorites = loadFavorites();
+      const added = addFavorite(favorites, { name, task, minutes, activity }, this.deps.config);
+      const jiraError = await this.validateTaskInJira(added.task);
+      if (jiraError) return jiraError;
+      saveFavorites(favorites);
+      return { ok: true, data: { added, favorites } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // ─── Jira search & validation ─────────────────────────────────────
+
+  private async handleJiraSearch(query: string): Promise<ApiResponse<JiraSearchResponse>> {
+    const trimmed = query.trim();
+    if (trimmed.length < JIRA_SEARCH_MIN_QUERY_LENGTH) {
+      return { ok: true, data: { hits: [] } };
+    }
+
+    const secrets = tryLoadSecrets();
+    if (!secrets || !isJiraConfigured(secrets)) {
+      return {
+        ok: false,
+        error: 'Jira API is not configured — set the token in Settings',
+        errorCode: ApiErrorCode.JiraNotConfigured,
+      };
+    }
+
+    try {
+      const hits = await searchIssues(trimmed, secrets);
+      return { ok: true, data: { hits } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * Existence gate for user-picked tasks. Returns the error response to send,
+   * or null when logging may proceed: issue found, Jira not configured, or
+   * Jira unreachable (offline must not block logging — push re-validates).
+   */
+  private async validateTaskInJira(task: string): Promise<ApiResponse<never> | null> {
+    const secrets = tryLoadSecrets();
+    if (!secrets || !isJiraConfigured(secrets)) return null;
+    try {
+      const issue = await checkIssueExists(task, secrets);
+      if (!issue) {
+        return {
+          ok: false,
+          error: `${task} not found in Jira`,
+          errorCode: ApiErrorCode.JiraNotFound,
+        };
+      }
+    } catch { /* unreachable/5xx — soft-pass */ }
+    return null;
+  }
+
+  private handleRemoveFavorite(body: Record<string, unknown>): ApiResponse<FavoriteRemoveResponse> {
+    const target = typeof body.target === 'string' ? body.target
+      : (typeof body.id === 'string' ? body.id : '');
+    if (!target) return { ok: false, error: 'Missing target (favorite #index or id)' };
+
+    try {
+      const favorites = loadFavorites();
+      const removed = removeFavorite(favorites, target);
+      saveFavorites(favorites);
+      return { ok: true, data: { removed, favorites } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   private async handleActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {

@@ -21,6 +21,13 @@ import {
   ManualEntryResponse,
   ManualEntryInput,
   ManualEntryPatch,
+  Favorite,
+  FavoritesResponse,
+  FavoriteAddResponse,
+  FavoriteRemoveResponse,
+  FavoriteInput,
+  JiraSearchHit,
+  JiraSearchResponse,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -333,6 +340,69 @@ export class MockWorkdayApiService extends WorkdayApiService {
       description: entry.description, activity: entry.activity,
       totalManualMinutes: this.mockManualMinutes(),
     };
+  }
+
+  // ─── Favorites mocks ──────────────────────────────────────────────────
+
+  private mockFavorites: Favorite[] = [
+    { id: 'f1', name: 'standup',      task: 'ATL-10',   minutes: 15, activity: 'Other',          createdAt: this.iso(9, 0) },
+    { id: 'f2', name: 'code review',  task: 'ATL-6712', minutes: 30, activity: 'CodeReview',     createdAt: this.iso(9, 0) },
+    { id: 'f3', name: 'planning',     task: 'ATL-10',   minutes: 60, activity: 'Other',          createdAt: this.iso(9, 0) },
+    { id: 'f4', name: 'estimation',   task: 'ATL-6802', minutes: 45, activity: 'Estimation',     createdAt: this.iso(9, 0) },
+    { id: 'f5', name: 'arch review',  task: 'ATL-6900', minutes: 45, activity: 'DesignAnalysis', createdAt: this.iso(9, 0) },
+  ];
+  private mockFavSeq = 6;
+
+  async getFavorites(): Promise<ApiResponse<FavoritesResponse>> {
+    return { ok: true, data: { favorites: [...this.mockFavorites] } };
+  }
+
+  async addFavorite(input: FavoriteInput): Promise<ApiResponse<FavoriteAddResponse>> {
+    await delay(150);
+    if (!input.task) return { ok: false, error: 'Task is required' };
+    if (!input.name) return { ok: false, error: 'Name is required' };
+    const dup = this.mockFavorites.some(f =>
+      f.task.toLowerCase() === input.task.toLowerCase()
+      && f.name.toLowerCase() === input.name.toLowerCase());
+    if (dup) return { ok: false, error: `Already in favorites: ${input.task} — "${input.name}"` };
+    const added: Favorite = {
+      id: `f${this.mockFavSeq++}`,
+      name: input.name,
+      task: input.task,
+      minutes: input.minutes,
+      activity: input.activity || 'Other',
+      createdAt: this.iso(12, 0),
+    };
+    this.mockFavorites = [...this.mockFavorites, added];
+    return { ok: true, data: { added, favorites: [...this.mockFavorites] } };
+  }
+
+  async removeFavorite(target: string): Promise<ApiResponse<FavoriteRemoveResponse>> {
+    await delay(150);
+    const removed = this.mockFavorites.find(f => f.id === target);
+    if (!removed) return { ok: false, error: `Favorite not found: ${target}` };
+    this.mockFavorites = this.mockFavorites.filter(f => f !== removed);
+    return { ok: true, data: { removed, favorites: [...this.mockFavorites] } };
+  }
+
+  // ─── Jira search mock ─────────────────────────────────────────────────
+
+  private static readonly MOCK_JIRA_ISSUES: readonly JiraSearchHit[] = [
+    { key: 'ATL-7001', summary: 'Payment gateway timeout on 3DS callback' },
+    { key: 'ATL-7002', summary: 'Reactivity: stale premium after coverage change' },
+    { key: 'ATL-7014', summary: 'Save pipeline drops middle names on import' },
+    { key: 'ATL-7020', summary: 'Organization tree: drag-and-drop reorder' },
+    { key: 'ATL-7031', summary: 'Feature flags cleanup for Q3 release' },
+    { key: 'ATL-6712', summary: 'Code review automation for policy terms' },
+  ];
+
+  async searchJira(query: string): Promise<ApiResponse<JiraSearchResponse>> {
+    await delay(400); // simulates the live-search latency the UI must absorb
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return { ok: true, data: { hits: [] } };
+    const hits = MockWorkdayApiService.MOCK_JIRA_ISSUES.filter(issue =>
+      issue.key.toLowerCase().includes(q) || issue.summary.toLowerCase().includes(q));
+    return { ok: true, data: { hits } };
   }
 
   // ─── Timesheets / Settings mocks ──────────────────────────────────────

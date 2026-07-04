@@ -24,6 +24,11 @@ import {
   ManualEntryResponse,
   ManualEntryInput,
   ManualEntryPatch,
+  FavoritesResponse,
+  FavoriteAddResponse,
+  FavoriteRemoveResponse,
+  FavoriteInput,
+  JiraSearchResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -214,6 +219,24 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>> {
     return this.post<ManualEntryResponse>('/api/manual-entry/update', { target, ...patch });
+  }
+
+  // ─── Favorites ───────────────────────────────────────────────────────
+
+  override async getFavorites(): Promise<ApiResponse<FavoritesResponse>> {
+    return this.get<FavoritesResponse>('/api/favorites');
+  }
+
+  override async addFavorite(input: FavoriteInput): Promise<ApiResponse<FavoriteAddResponse>> {
+    return this.post<FavoriteAddResponse>('/api/favorites', { ...input });
+  }
+
+  override async removeFavorite(target: string): Promise<ApiResponse<FavoriteRemoveResponse>> {
+    return this.post<FavoriteRemoveResponse>('/api/favorites/remove', { target });
+  }
+
+  override async searchJira(query: string): Promise<ApiResponse<JiraSearchResponse>> {
+    return this.get<JiraSearchResponse>(`/api/jira/search?q=${encodeURIComponent(query)}`);
   }
 
   // ─── Stubs for endpoints not yet implemented on the daemon ───────────

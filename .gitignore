@@ -1,6 +1,7 @@
 node_modules/
 dist/
 secrets.json
+favorites.json
 data/
 *.tmp
 *.log

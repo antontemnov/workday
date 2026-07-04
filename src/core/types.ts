@@ -114,6 +114,18 @@ export interface ManualEntry {
   readonly sourceSessionId?: string;
 }
 
+// Reusable manual-entry template ("favorite"). Day-independent — lives in
+// WORKDAY_HOME/favorites.json, never inside daily logs. Logging from a
+// favorite creates a plain standalone ManualEntry (name → description).
+export interface Favorite {
+  readonly id: string;
+  readonly name: string;          // chip label; becomes the entry description
+  readonly task: string;          // matches config.taskPattern, e.g. ATL-10
+  readonly minutes: number;       // default duration, > 0, max MAX_ENTRY_MINUTES
+  readonly activity: string;      // Tempo _Activity_ value, e.g. 'CodeReview'
+  readonly createdAt: string;     // ISO timestamp
+}
+
 // ─── Evidence & Sessions ─────────────────────────────────────────────────
 
 // Mutable accumulator — fields incremented during session lifecycle
@@ -446,7 +458,15 @@ export interface ApiResponse<T = unknown> {
   readonly ok: boolean;
   readonly data?: T;
   readonly error?: string;
+  // Machine-readable discriminator for errors the tray reacts to
+  // differently — never string-match the error text.
+  readonly errorCode?: ApiErrorCode;
   readonly apiVersion?: number;
+}
+
+export enum ApiErrorCode {
+  JiraNotFound = 'jira-not-found',
+  JiraNotConfigured = 'jira-not-configured',
 }
 
 export interface StatusResponse {
@@ -554,6 +574,33 @@ export interface ManualEntryResponse {
   readonly description: string;
   readonly activity: string;
   readonly totalManualMinutes: number;   // sum of all manual entries today
+}
+
+export interface FavoritesResponse {
+  readonly favorites: readonly Favorite[];
+}
+
+// Mutations echo the touched favorite plus the full list — the tray refreshes
+// its chip cloud in one hop, no follow-up GET.
+export interface FavoriteAddResponse {
+  readonly added: Favorite;
+  readonly favorites: readonly Favorite[];
+}
+
+export interface FavoriteRemoveResponse {
+  readonly removed: Favorite;
+  readonly favorites: readonly Favorite[];
+}
+
+// One hit of the live Jira search (log-cloud fallback when favorites don't
+// match). Plain text only — picker HTML highlighting is stripped.
+export interface JiraSearchHit {
+  readonly key: string;      // e.g. 'ATL-6712'
+  readonly summary: string;
+}
+
+export interface JiraSearchResponse {
+  readonly hits: readonly JiraSearchHit[];
 }
 
 export interface ActivityType {

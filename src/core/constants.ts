@@ -5,6 +5,7 @@ export const PID_FILE_NAME = 'workday.pid';
 // Manual-stop marker (in WORKDAY_HOME) — the tray watchdog does not respawn
 // a manually stopped daemon; cleared on daemon start / autostart login.
 export const STOP_MARKER_FILE_NAME = 'daemon.stopped';
+export const FAVORITES_FILE_NAME = 'favorites.json';
 export const DATA_DIR_NAME = 'data';
 export const TMP_EXTENSION = '.tmp';
 export const BACKUP_EXTENSION = '.bak';
@@ -20,7 +21,7 @@ export const DEFAULT_API_PORT = 9213;
 // pick it up (they re-check every 6h), THEN npm-publish the daemon —
 // a tray with the old exact-match check meeting a newer apiVersion would
 // reinstall-loop the daemon.
-export const API_VERSION = 8;
+export const API_VERSION = 9;
 
 // ─── Auto-update ────────────────────────────────────────────────────────
 export const NPM_PACKAGE_NAME = 'workday-daemon';
@@ -71,6 +72,15 @@ export const FALLBACK_ACTIVITIES: ReadonlyArray<{ readonly value: string; readon
   { value: 'Testing', name: 'Testing' },
   { value: 'TestReview', name: 'Test Review' },
 ];
+
+// ─── Jira search (log-cloud live fallback) ──────────────────────────────
+// Queries shorter than this return empty without hitting Jira (mirrors the
+// tray's len>=2 debounce rule).
+export const JIRA_SEARCH_MIN_QUERY_LENGTH = 2;
+// In-memory cache of recent search queries — results are perishable, never
+// persisted to disk.
+export const JIRA_SEARCH_CACHE_TTL_MS = 5 * 60_000;
+export const JIRA_SEARCH_CACHE_MAX_ENTRIES = 50;
 
 // ─── Push / Tempo ───────────────────────────────────────────────────────
 export const ISSUE_CACHE_FILE = 'issue-cache.json';

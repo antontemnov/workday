@@ -480,7 +480,7 @@ export function resolveManualEntryTarget(log: DailyLog, target: string): ManualE
 }
 
 /** Validate a task key against the configured pattern (full-string match). */
-function assertValidTask(task: string, config: AppConfig): void {
+export function assertValidTask(task: string, config: AppConfig): void {
   const match = task.match(new RegExp(config.taskPattern));
   if (!match || match[0] !== task) {
     throw new Error(`Task "${task}" is not a valid key (pattern: ${config.taskPattern})`);

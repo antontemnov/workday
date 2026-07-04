@@ -1,10 +1,29 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from '../core/config.js';
-import { ISSUE_CACHE_FILE } from '../core/constants.js';
-import type { Secrets, JiraIssue } from '../core/types.js';
+import {
+  ISSUE_CACHE_FILE,
+  JIRA_SEARCH_CACHE_TTL_MS,
+  JIRA_SEARCH_CACHE_MAX_ENTRIES,
+} from '../core/constants.js';
+import type { Secrets, JiraIssue, JiraSearchHit } from '../core/types.js';
 
 const ACCOUNT_ID_CACHE_KEY = '__accountId__';
+
+/** Jira HTTP failure with the status preserved — 404 means "no such issue". */
+export class JiraApiError extends Error {
+  public readonly status: number;
+
+  public constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** All three Jira fields present — the search/validation gate. */
+export function isJiraConfigured(secrets: Secrets): boolean {
+  return !!(secrets.Jira_BaseUrl?.trim() && secrets.Jira_Email?.trim() && secrets.Jira_Token?.trim());
+}
 
 function getCachePath(): string {
   return join(getDataDir(), ISSUE_CACHE_FILE);
@@ -39,7 +58,7 @@ async function jiraGet(path: string, secrets: Secrets): Promise<unknown> {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Jira API ${res.status} GET ${path}: ${body.slice(0, 300)}`);
+    throw new JiraApiError(res.status, `Jira API ${res.status} GET ${path}: ${body.slice(0, 300)}`);
   }
 
   return res.json();
@@ -56,6 +75,86 @@ export async function getAccountId(secrets: Secrets): Promise<string> {
   cache[ACCOUNT_ID_CACHE_KEY] = data.accountId;
   saveCache(cache);
   return data.accountId;
+}
+
+// ─── Live search (log-cloud fallback) ────────────────────────────────────
+
+interface PickerIssue {
+  readonly key?: string;
+  readonly summaryText?: string;  // plain text
+  readonly summary?: string;      // may carry <b> highlighting
+}
+
+interface PickerResponse {
+  readonly sections?: ReadonlyArray<{ readonly issues?: readonly PickerIssue[] }>;
+}
+
+// Recent queries only — perishable, in-memory, Map insertion order = LRU.
+const searchCache = new Map<string, { hits: JiraSearchHit[]; expiresAt: number }>();
+
+/**
+ * Live issue search via the Jira Cloud issue picker (made for autocomplete:
+ * matches key + summary text, ranks itself). Hits are deduped across picker
+ * sections (history vs current search overlap).
+ */
+export async function searchIssues(query: string, secrets: Secrets): Promise<JiraSearchHit[]> {
+  const cacheKey = query.trim().toLowerCase();
+  const cached = searchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.hits;
+
+  const data = await jiraGet(
+    `/rest/api/3/issue/picker?query=${encodeURIComponent(query.trim())}`,
+    secrets,
+  ) as PickerResponse;
+
+  const hits: JiraSearchHit[] = [];
+  const seenKeys = new Set<string>();
+  for (const section of data.sections ?? []) {
+    for (const issue of section.issues ?? []) {
+      if (!issue.key || seenKeys.has(issue.key)) continue;
+      seenKeys.add(issue.key);
+      const summary = issue.summaryText ?? (issue.summary ?? '').replace(/<[^>]*>/g, '');
+      hits.push({ key: issue.key, summary });
+    }
+  }
+
+  searchCache.delete(cacheKey);
+  searchCache.set(cacheKey, { hits, expiresAt: Date.now() + JIRA_SEARCH_CACHE_TTL_MS });
+  if (searchCache.size > JIRA_SEARCH_CACHE_MAX_ENTRIES) {
+    searchCache.delete(searchCache.keys().next().value as string);
+  }
+  return hits;
+}
+
+/**
+ * Existence probe for a task key: found → JiraIssue (cached in
+ * issue-cache.json), 404 → null (never cached — the issue may be created a
+ * minute later), network/5xx → throws. Callers treat "unreachable" as
+ * soft-pass: offline must not block logging, push re-validates anyway.
+ */
+export async function checkIssueExists(key: string, secrets: Secrets): Promise<JiraIssue | null> {
+  const cache = loadCache();
+  const cached = cache[key] as JiraIssue | undefined;
+  if (cached) return cached;
+
+  let data: { id: string; fields?: { summary?: string } };
+  try {
+    data = await jiraGet(
+      `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary`,
+      secrets,
+    ) as { id: string; fields?: { summary?: string } };
+  } catch (err) {
+    if (err instanceof JiraApiError && err.status === 404) return null;
+    throw err;
+  }
+
+  const issue: JiraIssue = {
+    issueId: Number(data.id),
+    summary: data.fields?.summary ?? '',
+  };
+  cache[key] = issue;
+  saveCache(cache);
+  return issue;
 }
 
 /** Resolve task keys to Jira issue IDs and summaries (cached) */

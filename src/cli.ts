@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getWorkdayHome, getPackageRoot, getDataDir, computeWorkingDate } from './core/config.js';
+import { loadConfig, loadSecrets, tryLoadSecrets, getWorkdayHome, getPackageRoot, getDataDir, computeWorkingDate } from './core/config.js';
 import { UpdateManager } from './core/update-manager.js';
 import {
   CONFIG_FILE_NAME,
@@ -35,6 +35,8 @@ import {
   computeTotalManualEntryMs,
   createEmptyLog,
 } from './core/daily-log.js';
+import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
+import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
 import type {
   ApiResponse,
   StatusResponse,
@@ -555,6 +557,115 @@ async function handleLogList(args: string[]): Promise<void> {
   printManualEntries(entries);
 }
 
+// ─── Favorites (manual-entry templates) ───────────────────────────────────
+// Direct file access on purpose: favorites.json is not daemon state (the
+// daemon re-reads it per request), so these work with the daemon down too.
+
+async function handleFavAdd(args: string[]): Promise<void> {
+  // workday fav-add <task> <minutes> "<name>" [--activity <type>]
+  const actIdx = args.indexOf('--activity');
+  let activity = DEFAULT_MANUAL_ACTIVITY;
+  let cmdArgs = args;
+  if (actIdx !== -1) {
+    activity = cmdArgs[actIdx + 1] ?? DEFAULT_MANUAL_ACTIVITY;
+    cmdArgs = [...cmdArgs.slice(0, actIdx), ...cmdArgs.slice(actIdx + 2)];
+  }
+
+  const task = cmdArgs[0];
+  const minutesStr = cmdArgs[1];
+  const name = cmdArgs.slice(2).join(' ');
+
+  if (!task || !minutesStr || !name) {
+    console.log('Usage: workday fav-add <task> <minutes> "<name>" [--activity <type>]');
+    return;
+  }
+  const minutes = parseInt(minutesStr, 10);
+  if (isNaN(minutes) || minutes <= 0) {
+    console.log('Minutes must be a positive number');
+    return;
+  }
+
+  const config = loadConfig();
+  try {
+    const favorites = loadFavorites();
+    const added = addFavorite(favorites, { name, task, minutes, activity }, config);
+    // Existence gate, same soft rule as the daemon: 404 → reject,
+    // unconfigured/unreachable → proceed (push re-validates).
+    const secrets = tryLoadSecrets();
+    if (secrets && isJiraConfigured(secrets)) {
+      try {
+        const issue = await checkIssueExists(added.task, secrets);
+        if (!issue) {
+          console.log(`${added.task} not found in Jira — favorite not added`);
+          return;
+        }
+      } catch { /* Jira unreachable — skip the check */ }
+    }
+    saveFavorites(favorites);
+    console.log(`Added favorite ${added.task}: ${added.minutes}m ${added.activity} — "${added.name}"`);
+    console.log(`Favorites: ${favorites.length}`);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function handleJiraSearch(args: string[]): Promise<void> {
+  const query = args.join(' ').trim();
+  if (!query) {
+    console.log('Usage: workday jira-search "<query>"');
+    return;
+  }
+
+  const secrets = tryLoadSecrets();
+  if (!secrets || !isJiraConfigured(secrets)) {
+    console.log('Jira API is not configured — fill Jira_* fields in secrets.json');
+    return;
+  }
+
+  try {
+    const hits = await searchIssues(query, secrets);
+    if (hits.length === 0) {
+      console.log('No matches.');
+      return;
+    }
+    for (const hit of hits) {
+      console.log(`  ${hit.key.padEnd(12)} ${hit.summary}`);
+    }
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+function handleFavRemove(args: string[]): void {
+  const target = args[0];
+  if (!target) {
+    console.log('Usage: workday fav-remove <#index|id>');
+    return;
+  }
+  try {
+    const favorites = loadFavorites();
+    const removed = removeFavorite(favorites, target);
+    saveFavorites(favorites);
+    console.log(`Removed favorite ${removed.task} — "${removed.name}"`);
+    console.log(`Favorites: ${favorites.length}`);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+function handleFavList(): void {
+  try {
+    const favorites = loadFavorites();
+    if (favorites.length === 0) { console.log('No favorites.'); return; }
+    for (let i = 0; i < favorites.length; i++) {
+      const f = favorites[i];
+      console.log(`  #${i + 1} ${f.id}  ${f.task}  ${f.minutes}m  ${f.activity}  "${f.name}"`);
+    }
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
 async function handleActivities(): Promise<void> {
   const result = await apiGet<ActivityTypesResponse>('/api/activity-types');
   let data: ActivityTypesResponse;
@@ -948,6 +1059,18 @@ async function main(): Promise<void> {
     case 'log-list':
       await handleLogList(args.slice(1));
       break;
+    case 'fav-add':
+      await handleFavAdd(args.slice(1));
+      break;
+    case 'fav-remove':
+      handleFavRemove(args.slice(1));
+      break;
+    case 'fav-list':
+      handleFavList();
+      break;
+    case 'jira-search':
+      await handleJiraSearch(args.slice(1));
+      break;
     case 'activities':
       await handleActivities();
       break;
@@ -985,6 +1108,10 @@ Usage:
   workday log <task> <min> "<desc>" --date DATE        Log manual time (past day)
   workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry
   workday log-list [--date DATE]                       List manual entries
+  workday fav-add <task> <min> "<name>" [--activity T] Add a favorite (log template)
+  workday fav-remove <#|id>                            Remove a favorite
+  workday fav-list                                     List favorites
+  workday jira-search "<query>"                        Live Jira issue search (key + summary)
   workday activities                                   Show Tempo activity types
   workday tempo                                        Show report (1st of month → today)
   workday tempo --from DATE --to DATE                  Report for a custom range

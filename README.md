@@ -36,6 +36,10 @@ workday pause [repo]                   Pause sessions
 workday resume                         Resume paused sessions
 workday autopause on|off [repo]        Toggle idle auto-pause
 workday log <task> <min> "<desc>"      Log manual time on a task
+workday fav-add <task> <min> "<name>"  Add a favorite (reusable log template)
+workday fav-remove <#|id>              Remove a favorite
+workday fav-list                       List favorites
+workday jira-search "<query>"          Live Jira issue search (key + summary)
 workday session-delete <target>        Delete a junk session (add --date for past days)
 workday tempo                          Show report (month to date)
 workday tempo --push                   Push to Tempo

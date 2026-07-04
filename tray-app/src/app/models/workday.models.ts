@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 8;
+export const EXPECTED_API_VERSION = 9;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -15,7 +15,15 @@ export interface ApiResponse<T = unknown> {
   ok: boolean;
   data?: T;
   error?: string;
+  // Machine-readable discriminator (mirrors the daemon's ApiErrorCode) —
+  // never string-match the error text.
+  errorCode?: ApiErrorCode;
   apiVersion?: number;
+}
+
+export enum ApiErrorCode {
+  JiraNotFound = 'jira-not-found',
+  JiraNotConfigured = 'jira-not-configured',
 }
 
 export interface Evidence {
@@ -142,6 +150,54 @@ export interface ManualEntryInput {
 }
 
 export type ManualEntryPatch = Partial<Pick<ManualEntryInput, 'minutes' | 'description' | 'activity'>>;
+
+// ─── Favorites (manual-entry templates) ────────────────────────────────────
+
+// Mirrors the daemon's Favorite — a reusable log template shown as a chip in
+// the log cloud. Day-independent; logging from one creates a plain ManualEntry
+// (name → description).
+export interface Favorite {
+  readonly id: string;
+  readonly name: string;        // chip label; becomes the entry description
+  readonly task: string;
+  readonly minutes: number;
+  readonly activity: string;
+  readonly createdAt: string;
+}
+
+export interface FavoritesResponse {
+  readonly favorites: readonly Favorite[];
+}
+
+// Mutations echo the touched favorite plus the full list — one hop to refresh.
+export interface FavoriteAddResponse {
+  readonly added: Favorite;
+  readonly favorites: readonly Favorite[];
+}
+
+export interface FavoriteRemoveResponse {
+  readonly removed: Favorite;
+  readonly favorites: readonly Favorite[];
+}
+
+// Input for adding a favorite (right-click on a logged row in the redesign).
+export interface FavoriteInput {
+  readonly name: string;
+  readonly task: string;
+  readonly minutes: number;
+  readonly activity: string;
+}
+
+// ─── Jira search (log-cloud live fallback) ─────────────────────────────────
+
+export interface JiraSearchHit {
+  readonly key: string;      // e.g. 'ATL-6712'
+  readonly summary: string;  // plain text
+}
+
+export interface JiraSearchResponse {
+  readonly hits: readonly JiraSearchHit[];
+}
 
 // ─── Timesheets ──────────────────────────────────────────────────────────
 
