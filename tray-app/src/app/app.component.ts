@@ -276,6 +276,10 @@ export class AppComponent implements OnInit, OnDestroy {
   // ─── View switching ─────────────────────────────────────────────────────
 
   setView(v: ActiveView): void {
+    // The just-logged draft belongs to the mounted Day view; leaving it strands
+    // the fresh id, and returning would replay the draft stepper on the last
+    // row. Drop it so the one-shot never outlives the view it targets.
+    if (v !== 'day') this.freshEntryId = null;
     this.activeView = v;
   }
 

@@ -108,7 +108,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private lastEmittedDiff = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['freshEntryId'] && this.freshEntryId && this.isViewingToday) {
+    // A real pick fires this while the panel is alive (firstChange false). On
+    // re-creation — switching tabs back to Day — Angular replays the still-set
+    // freshEntryId as a firstChange; ignore it, or the last row re-opens its
+    // draft stepper every time the user returns to the Day view.
+    if (changes['freshEntryId'] && !changes['freshEntryId'].firstChange
+        && this.freshEntryId && this.isViewingToday) {
       this.freeze(); // a new pick supersedes any still-open draft
       // Draft window (mauve stepper) is an expanded-panel affordance only. A
       // pick into a collapsed panel fixes the time immediately and lands as a
