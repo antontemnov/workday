@@ -44,6 +44,7 @@ function toMonthDayTask(entry: TaskDayReport): MonthDayTask {
     task: entry.task,
     seconds: entry.totalSeconds,
     kind: entry.kind,
+    sessionCount: entry.sessionCount,
     ...(entry.description !== undefined ? { description: entry.description } : {}),
     ...(entry.activity !== undefined ? { activity: entry.activity } : {}),
   };

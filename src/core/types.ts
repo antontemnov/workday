@@ -648,6 +648,7 @@ export interface MonthDayTask {
   readonly task: string;
   readonly seconds: number;
   readonly kind: ReportEntryKind;
+  readonly sessionCount: number;   // 0 for manual kind
   readonly description?: string;   // manual kind only
   readonly activity?: string;      // manual kind only
 }
