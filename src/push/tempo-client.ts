@@ -18,6 +18,37 @@ export interface TempoWorkAttribute {
   readonly names?: Readonly<Record<string, string>>; // value → display label
 }
 
+/** Tempo HTTP failure with the status preserved — 403 means "scope missing". */
+export class TempoApiError extends Error {
+  public readonly status: number;
+
+  public constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Raw /4/user-schedule day (DaySchedule in the Tempo OpenAPI spec). */
+export interface TempoScheduleDay {
+  readonly date: string;
+  readonly requiredSeconds: number;
+  readonly type: string;
+  readonly holiday?: {
+    readonly name?: string;
+    readonly description?: string;
+    readonly durationSeconds?: number;
+  };
+}
+
+/** Raw /4/timesheet-approvals/user response (TimesheetApproval in the spec). */
+export interface TempoTimesheetApproval {
+  readonly period: { readonly from: string; readonly to: string };
+  readonly requiredSeconds: number;
+  readonly timeSpentSeconds: number;
+  readonly status?: { readonly key?: string };
+  readonly actions?: { readonly submit?: unknown };
+}
+
 export class TempoClient {
   private readonly token: string;
   private lastRequestTime: number = 0;
@@ -53,7 +84,7 @@ export class TempoClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Tempo API ${res.status} ${method} ${path}: ${text.slice(0, 300)}`);
+      throw new TempoApiError(res.status, `Tempo API ${res.status} ${method} ${path}: ${text.slice(0, 300)}`);
     }
 
     // DELETE returns 204 No Content
@@ -96,6 +127,28 @@ export class TempoClient {
     }
 
     return allWorklogs;
+  }
+
+  /**
+   * Day schedule of the token's user (requiredSeconds, day type, holiday).
+   * Needs scope schemes:view — 403 without it. Not paginated: the endpoint
+   * takes only from/to and returns every day of the range.
+   */
+  public async getUserSchedule(from: string, to: string): Promise<TempoScheduleDay[]> {
+    const response = await this.request('GET', `/4/user-schedule?from=${from}&to=${to}`) as {
+      results?: TempoScheduleDay[];
+    };
+    return response.results ?? [];
+  }
+
+  /**
+   * Current timesheet approval for the period containing `from` (period
+   * granularity comes from globalconfiguration.approvalPeriod). Needs scope
+   * approvals:view — 403 without it.
+   */
+  public async getUserTimesheetApproval(accountId: string, from: string): Promise<TempoTimesheetApproval> {
+    const path = `/4/timesheet-approvals/user/${encodeURIComponent(accountId)}?from=${from}`;
+    return await this.request('GET', path) as TempoTimesheetApproval;
   }
 
   /** Fetch all work attributes (e.g. _Activity_ STATIC_LIST values). */

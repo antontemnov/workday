@@ -90,6 +90,15 @@ export const TEMPO_BASE_URL = 'https://api.tempo.io';
 export const TEMPO_RATE_LIMIT_MS = 210;
 export const TEMPO_TOLERANCE_SECONDS = 60;
 
+// ─── Tempo month meta (schedule / approvals proxies) ────────────────────
+// Schedule changes ~never (holiday scheme edits) — a day of staleness is fine.
+export const SCHEDULE_CACHE_FILE = 'schedule-cache.json';
+export const SCHEDULE_CACHE_TTL_MS = 24 * 3_600_000;
+// Approval status can flip any time (reviewer action) — keep it short.
+// The cache is also dropped entirely after every successful push.
+export const APPROVAL_CACHE_FILE = 'approval-cache.json';
+export const APPROVAL_CACHE_TTL_MS = 15 * 60_000;
+
 // ─── Idle auto-close ─────────────────────────────────────────────────────
 // Default for config session.idleCloseHours (0 = disabled).
 export const DEFAULT_IDLE_CLOSE_HOURS = 3;

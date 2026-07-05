@@ -17,8 +17,19 @@ import {
   listAvailableDates,
 } from './core/daily-log.js';
 import { resolveActivityTypes } from './push/activity-types.js';
+import {
+  addEntryOnDate,
+  addSessionEntryOnDate,
+  editEntryOnDate,
+  deleteEntryOnDate,
+} from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
+import { buildMonthResponse } from './push/month-report.js';
+import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
+import { runPush } from './push/tempo-pusher.js';
+import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
+import { resolveMonthApproval, approvalUnavailable } from './push/tempo-approvals.js';
 import {
   computeWorkingDate,
   buildPatchedConfig,
@@ -62,8 +73,15 @@ import type {
   UpdateCheckResponse,
   UpdateApplyResponse,
   WatchingRepo,
+  DailyLog,
+  MonthResponse,
+  PushResponse,
+  TempoScheduleResponse,
+  TempoApprovalResponse,
 } from './core/types.js';
-import { ApiErrorCode, SensitivityLevel, SessionState } from './core/types.js';
+import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
@@ -249,6 +267,19 @@ export class HttpServer {
       }
       if (method === 'GET' && path === '/api/days') {
         return this.sendJson(res, 200, this.handleDays());
+      }
+      if (method === 'GET' && path === '/api/month') {
+        return this.sendJson(res, 200, this.handleMonth(url));
+      }
+      if (method === 'POST' && path === '/api/push') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handlePush(body));
+      }
+      if (method === 'GET' && path === '/api/tempo/schedule') {
+        return this.sendJson(res, 200, await this.handleTempoSchedule(url));
+      }
+      if (method === 'GET' && path === '/api/tempo/approval') {
+        return this.sendJson(res, 200, await this.handleTempoApproval(url));
       }
       if (method === 'POST' && path === '/api/stop') {
         const response: ApiResponse<StopResponse> = { ok: true, data: { message: 'Daemon stopping...' } };
@@ -450,40 +481,21 @@ export class HttpServer {
 
   // ─── Manual entries ──────────────────────────────────────────────
 
-  private async handleAddManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
-    const tracker = this.deps.sessionTracker;
-    const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
+  /**
+   * Optional past-day override for manual-entry mutations. null = operate on
+   * today via the tracker; a string = disk path through day-edit. Today's
+   * own date normalizes to null so the in-memory log stays authoritative.
+   */
+  private resolveEditDate(body: Record<string, unknown>): { date: string | null } | { error: string } {
+    if (body.date === undefined || body.date === null) return { date: null };
+    const date = typeof body.date === 'string' ? body.date : '';
+    if (!DATE_RE.test(date)) return { error: 'Invalid date. Use YYYY-MM-DD' };
+    const today = this.deps.getCurrentDate();
+    if (date > today) return { error: `Cannot log on a future date (${date} > ${today})` };
+    return { date: date === today ? null : date };
+  }
 
-    // Session-born ("+ Add time" on a card): the session is the source of
-    // truth for the task; activity/description are fixed by the domain rule.
-    const sourceSessionId = typeof body.sourceSessionId === 'string' ? body.sourceSessionId : '';
-    let result: { ok: boolean; error?: string; entry?: ManualEntry };
-    if (sourceSessionId) {
-      result = tracker.addSessionEntry(sourceSessionId, minutes);
-    } else {
-      const task = typeof body.task === 'string' ? body.task : '';
-      const description = typeof body.description === 'string' ? body.description : '';
-      const activity = typeof body.activity === 'string' && body.activity.trim()
-        ? body.activity
-        : DEFAULT_MANUAL_ACTIVITY;
-
-      if (!task) return { ok: false, error: 'Missing task' };
-      // Description validated in core against the activity rule (required
-      // for everything but Development).
-      // User-picked task must exist in Jira; session-born tasks come from
-      // git and are validated at push time instead.
-      const jiraError = await this.validateTaskInJira(task);
-      if (jiraError) return jiraError;
-      result = tracker.addManualEntry({ task, minutes, description, activity });
-    }
-
-    if (!result.ok || !result.entry) {
-      return { ok: false, error: result.error };
-    }
-    tracker.flush();
-
-    const log = tracker.getDailyLog();
-    const entry = result.entry;
+  private toEntryResponse(entry: ManualEntry, log: DailyLog): ApiResponse<ManualEntryResponse> {
     return {
       ok: true,
       data: {
@@ -492,20 +504,86 @@ export class HttpServer {
         minutes: entry.minutes,
         description: entry.description,
         activity: entry.activity,
+        date: log.date,
         totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
       },
     };
+  }
+
+  private async handleAddManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
+    const tracker = this.deps.sessionTracker;
+    const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
+    const parsed = this.resolveEditDate(body);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+    const pastDate = parsed.date;
+
+    // Session-born ("+ Add time" on a card): the session is the source of
+    // truth for the task; activity/description are fixed by the domain rule.
+    const sourceSessionId = typeof body.sourceSessionId === 'string' ? body.sourceSessionId : '';
+    if (sourceSessionId && pastDate) {
+      try {
+        const { entry, log } = addSessionEntryOnDate(pastDate, sourceSessionId, minutes, this.deps.config);
+        return this.toEntryResponse(entry, log);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    if (sourceSessionId) {
+      const result = tracker.addSessionEntry(sourceSessionId, minutes);
+      if (!result.ok || !result.entry) return { ok: false, error: result.error };
+      tracker.flush();
+      return this.toEntryResponse(result.entry, tracker.getDailyLog());
+    }
+
+    const task = typeof body.task === 'string' ? body.task : '';
+    const description = typeof body.description === 'string' ? body.description : '';
+    const activity = typeof body.activity === 'string' && body.activity.trim()
+      ? body.activity
+      : DEFAULT_MANUAL_ACTIVITY;
+
+    if (!task) return { ok: false, error: 'Missing task' };
+    // Description validated in core against the activity rule (required
+    // for everything but Development).
+    // User-picked task must exist in Jira; session-born tasks come from
+    // git and are validated at push time instead.
+    const jiraError = await this.validateTaskInJira(task);
+    if (jiraError) return jiraError;
+
+    if (pastDate) {
+      try {
+        const { entry, log } = addEntryOnDate(pastDate, { task, minutes, description, activity }, this.deps.config);
+        return this.toEntryResponse(entry, log);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    const result = tracker.addManualEntry({ task, minutes, description, activity });
+    if (!result.ok || !result.entry) return { ok: false, error: result.error };
+    tracker.flush();
+    return this.toEntryResponse(result.entry, tracker.getDailyLog());
   }
 
   private async handleUpdateManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
     const target = typeof body.target === 'string' ? body.target
       : (typeof body.id === 'string' ? body.id : '');
     if (!target) return { ok: false, error: 'Missing target (manual entry #index or id)' };
+    const parsed = this.resolveEditDate(body);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
 
     const patch: { minutes?: number; description?: string; activity?: string } = {};
     if (typeof body.minutes === 'number') patch.minutes = body.minutes;
     if (typeof body.description === 'string') patch.description = body.description;
     if (typeof body.activity === 'string') patch.activity = body.activity;
+
+    if (parsed.date) {
+      try {
+        const { entry, log } = editEntryOnDate(parsed.date, target, patch, this.deps.config);
+        return this.toEntryResponse(entry, log);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
 
     const tracker = this.deps.sessionTracker;
     const found = resolveManualEntryTarget(tracker.getDailyLog(), target);
@@ -517,23 +595,34 @@ export class HttpServer {
     const log = tracker.getDailyLog();
     const entry = findManualEntry(log, found.id);
     if (!entry) return { ok: false, error: 'Manual entry not found after update' };
-    return {
-      ok: true,
-      data: {
-        id: entry.id,
-        task: entry.task,
-        minutes: entry.minutes,
-        description: entry.description,
-        activity: entry.activity,
-        totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
-      },
-    };
+    return this.toEntryResponse(entry, log);
   }
 
   private handleDeleteManualEntry(body: Record<string, unknown>): ApiResponse<ManualEntryDeleteResponse> {
     const target = typeof body.target === 'string' ? body.target
       : (typeof body.id === 'string' ? body.id : '');
     if (!target) return { ok: false, error: 'Missing target (manual entry #index or id)' };
+    const parsed = this.resolveEditDate(body);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+
+    if (parsed.date) {
+      try {
+        const { deleted, log, dayFileDeleted } = deleteEntryOnDate(parsed.date, target);
+        return {
+          ok: true,
+          data: {
+            id: deleted.id,
+            task: deleted.task,
+            minutes: deleted.minutes,
+            date: parsed.date,
+            totalManualMinutes: dayFileDeleted ? 0 : Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
+            dayFileDeleted,
+          },
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
 
     const tracker = this.deps.sessionTracker;
     const found = resolveManualEntryTarget(tracker.getDailyLog(), target);
@@ -548,6 +637,7 @@ export class HttpServer {
         id: result.deleted.id,
         task: result.deleted.task,
         minutes: result.deleted.minutes,
+        date: tracker.getDailyLog().date,
         totalManualMinutes: Math.round(computeTotalManualEntryMs(tracker.getDailyLog()) / MS_PER_MINUTE),
       },
     };
@@ -815,6 +905,102 @@ export class HttpServer {
 
   private handleDays(): ApiResponse<DaysResponse> {
     return { ok: true, data: { dates: listAvailableDates() } };
+  }
+
+  // ─── Month view (timesheets tab) ──────────────────────────────────
+
+  /** ?year&month with both defaulting to the current working month. */
+  private resolveYearMonth(url: URL): { year: number; month: number } | { error: string } {
+    const today = this.deps.getCurrentDate();
+    const yearStr = url.searchParams.get('year');
+    const monthStr = url.searchParams.get('month');
+    const year = yearStr ? Number(yearStr) : Number(today.slice(0, 4));
+    const month = monthStr ? Number(monthStr) : Number(today.slice(5, 7));
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      return { error: `Invalid year: ${yearStr}` };
+    }
+    if (!Number.isInteger(month) || month < 1 || month > 12) {
+      return { error: `Invalid month: ${monthStr}` };
+    }
+    return { year, month };
+  }
+
+  private handleMonth(url: URL): ApiResponse<MonthResponse> {
+    const parsed = this.resolveYearMonth(url);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+    const { year, month } = parsed;
+
+    // Today's log lives in memory — flush so the disk aggregate sees it.
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+    if (this.deps.getCurrentDate().startsWith(monthPrefix)) {
+      this.deps.sessionTracker.flush();
+    }
+    return { ok: true, data: buildMonthResponse(year, month, this.deps.config) };
+  }
+
+  // ─── Push to Tempo ────────────────────────────────────────────────
+
+  private async handlePush(body: Record<string, unknown>): Promise<ApiResponse<PushResponse>> {
+    const config = this.deps.config;
+    const from = typeof body.from === 'string' ? body.from : getDefaultFromDate(config);
+    const to = typeof body.to === 'string' ? body.to : getDefaultToDate(config);
+    const dryRun = body.dryRun === true;
+    if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
+      return { ok: false, error: 'Invalid from/to. Use YYYY-MM-DD' };
+    }
+    if (from > to) return { ok: false, error: `from ${from} is after to ${to}` };
+
+    const secrets = tryLoadSecrets();
+    if (!secrets || !secrets.Tempo_Token?.trim() || !isJiraConfigured(secrets)) {
+      return { ok: false, error: 'Jira/Tempo tokens are not configured — set them in Settings' };
+    }
+
+    // Report reads from disk — make sure today's live log is there.
+    this.deps.sessionTracker.flush();
+    try {
+      const response = await runPush({ from, to, commit: !dryRun, config, secrets });
+
+      // markDaysPushed sealed today's file behind the in-memory log — re-sync
+      // so the next flush doesn't revert the day to draft.
+      const today = this.deps.getCurrentDate();
+      if (!dryRun && from <= today && today <= to) {
+        const disk = readDailyLog(today);
+        if (disk?.pushedAt && disk.status === DayStatus.Pushed) {
+          this.deps.sessionTracker.markPushed(disk.pushedAt);
+        }
+      }
+      return { ok: true, data: response };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // ─── Tempo month meta (schedule / approval) ───────────────────────
+
+  private async handleTempoSchedule(url: URL): Promise<ApiResponse<TempoScheduleResponse>> {
+    const parsed = this.resolveYearMonth(url);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+
+    const secrets = tryLoadSecrets();
+    if (!secrets) return { ok: true, data: scheduleUnavailable('no-token') };
+    try {
+      return { ok: true, data: await resolveMonthSchedule(parsed.year, parsed.month, secrets) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async handleTempoApproval(url: URL): Promise<ApiResponse<TempoApprovalResponse>> {
+    const parsed = this.resolveYearMonth(url);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+
+    const secrets = tryLoadSecrets();
+    if (!secrets) return { ok: true, data: approvalUnavailable('no-token') };
+    try {
+      return { ok: true, data: await resolveMonthApproval(parsed.year, parsed.month, secrets) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────

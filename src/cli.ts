@@ -28,14 +28,9 @@ import {
   computeActiveIntervals,
   computeDaySummary,
   resolveUiDayStart,
-  addManualEntry,
-  editManualEntry,
-  deleteManualEntry,
-  findManualEntry,
-  resolveManualEntryTarget,
   computeTotalManualEntryMs,
-  createEmptyLog,
 } from './core/daily-log.js';
+import { addEntryOnDate, editEntryOnDate, deleteEntryOnDate } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
 import type {
@@ -56,8 +51,9 @@ import type {
   ManualEntryResponse,
   ManualEntryDeleteResponse,
   ActivityTypesResponse,
+  MonthResponse,
 } from './core/types.js';
-import { SensitivityLevel, DayStatus } from './core/types.js';
+import { SensitivityLevel, DayStatus, MonthDayStatus } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -473,11 +469,8 @@ function handleLogOffline(date: string, task: string, minutes: number, descripti
     console.log(`Cannot log on a future date (${date} > ${today})`);
     return;
   }
-  // Manual entry is standalone — create the day log if it doesn't exist yet.
-  const log = readDailyLog(date) ?? createEmptyLog(date, config);
   try {
-    const entry = addManualEntry(log, { task, minutes, description, activity }, config);
-    writeDailyLog(log);
+    const { entry, log } = addEntryOnDate(date, { task, minutes, description, activity }, config);
     console.log(`Logged ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
     console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m`);
   } catch (err) {
@@ -531,16 +524,9 @@ async function handleLogEdit(args: string[]): Promise<void> {
 }
 
 function handleLogEditOffline(date: string, target: string, patch: { minutes?: number; description?: string; activity?: string }): void {
-  const config = loadConfig();
-  const log = readDailyLog(date);
-  if (!log) { console.log(`No data for ${date}`); return; }
-  const entry = resolveManualEntryTarget(log, target);
-  if (!entry) { console.log(`Manual entry not found: ${target}`); return; }
   try {
-    editManualEntry(log, entry.id, patch, config);
-    writeDailyLog(log);
-    const after = findManualEntry(log, entry.id)!;
-    console.log(`Updated ${after.task} on ${date}: ${after.minutes}m ${after.activity} — "${after.description}"`);
+    const { entry } = editEntryOnDate(date, target, patch, loadConfig());
+    console.log(`Updated ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
   } catch (err) {
     console.log(err instanceof Error ? err.message : String(err));
   }
@@ -575,14 +561,13 @@ async function handleLogDelete(args: string[]): Promise<void> {
 }
 
 function handleLogDeleteOffline(date: string, target: string): void {
-  const log = readDailyLog(date);
-  if (!log) { console.log(`No data for ${date}`); return; }
-  const entry = resolveManualEntryTarget(log, target);
-  if (!entry) { console.log(`Manual entry not found: ${target}`); return; }
   try {
-    deleteManualEntry(log, entry.id);
-    writeDailyLog(log);
-    console.log(`Deleted ${entry.task} on ${date}: ${entry.minutes}m`);
+    const { deleted, log, dayFileDeleted } = deleteEntryOnDate(date, target);
+    console.log(`Deleted ${deleted.task} on ${date}: ${deleted.minutes}m`);
+    if (dayFileDeleted) {
+      console.log('Day had no other facts — file removed.');
+      return;
+    }
     console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m`);
   } catch (err) {
     console.log(err instanceof Error ? err.message : String(err));
@@ -1058,6 +1043,105 @@ function printPushPlan(plan: readonly PushPlanEntry[]): void {
   console.log(`Create: ${counts.create}  Update: ${counts.update}  Skip: ${counts.skip}  Error: ${counts.error}`);
 }
 
+// ─── Month view / Tempo meta ─────────────────────────────────────────────
+
+function currentYearMonth(): { year: number; month: number } {
+  const config = loadConfig();
+  const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
+  return { year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) };
+}
+
+async function handleMonth(args: string[]): Promise<void> {
+  const { parseYearMonth, buildMonthResponse } = await import('./push/month-report.js');
+  let ym: { year: number; month: number } | null;
+  if (args[0]) {
+    ym = parseYearMonth(args[0]);
+    if (!ym) { console.log('Usage: workday month [YYYY-MM]'); return; }
+  } else {
+    ym = currentYearMonth();
+  }
+
+  // Daemon first — it flushes today's live log before aggregating; the
+  // disk fallback covers past months and a stopped daemon equally well.
+  const result = await apiGet<MonthResponse>(`/api/month?year=${ym.year}&month=${ym.month}`);
+  const data = (result.ok && result.data) ? result.data : buildMonthResponse(ym.year, ym.month, loadConfig());
+  printMonth(data);
+}
+
+function printMonth(data: MonthResponse): void {
+  const t = data.totals;
+  console.log(`Month: ${data.from.slice(0, 7)}`);
+  console.log(`Days with data: ${t.daysWithData}  (pending ${t.pendingDays} · outdated ${t.outdatedDays} · pushed ${t.pushedDays})`);
+  if (data.lastPushAt) console.log(`Last push: ${data.lastPushAt}`);
+  console.log('');
+
+  const COL_DATE = 13;
+  const COL_STATUS = 10;
+  const COL_HOURS = 8;
+  console.log('DATE'.padEnd(COL_DATE) + 'STATUS'.padEnd(COL_STATUS) + 'HOURS'.padStart(COL_HOURS) + '  TASKS');
+  console.log('─'.repeat(COL_DATE + COL_STATUS + COL_HOURS + 24));
+
+  for (const day of data.days) {
+    if (day.status === MonthDayStatus.None) continue;
+    const tasks = [...new Set(day.tasks.map(task => task.task))].join(', ');
+    console.log(
+      day.date.padEnd(COL_DATE)
+      + day.status.padEnd(COL_STATUS)
+      + formatReportHours(day.reportedSeconds).padStart(COL_HOURS)
+      + (tasks ? `  ${tasks}` : ''),
+    );
+  }
+
+  console.log('─'.repeat(COL_DATE + COL_STATUS + COL_HOURS + 24));
+  console.log('TOTAL'.padEnd(COL_DATE + COL_STATUS) + formatReportHours(t.reportedSeconds).padStart(COL_HOURS));
+}
+
+async function handleSchedule(args: string[]): Promise<void> {
+  const { parseYearMonth } = await import('./push/month-report.js');
+  const ym = args[0] ? parseYearMonth(args[0]) : currentYearMonth();
+  if (!ym) { console.log('Usage: workday schedule [YYYY-MM]'); return; }
+
+  const secrets = tryLoadSecrets();
+  if (!secrets) { console.log('Secrets not configured — run "workday init".'); return; }
+
+  const { resolveMonthSchedule } = await import('./push/tempo-schedule.js');
+  const data = await resolveMonthSchedule(ym.year, ym.month, secrets);
+  if (!data.available) {
+    const hint = data.reason === 'scope' ? ' — Tempo token needs the schemes:view scope' : '';
+    console.log(`Schedule unavailable (${data.reason})${hint}`);
+    return;
+  }
+
+  console.log(`Schedule ${ym.year}-${String(ym.month).padStart(2, '0')}: required ${formatReportHours(data.requiredSecondsTotal)}${data.fromCache ? '  [cache]' : ''}`);
+  for (const day of data.days) {
+    const holiday = day.holidayName ? `  ☀ ${day.holidayName}` : '';
+    console.log(`  ${day.date}  ${day.type.padEnd(30)} ${formatReportHours(day.requiredSeconds).padStart(6)}${holiday}`);
+  }
+}
+
+async function handleApproval(args: string[]): Promise<void> {
+  const { parseYearMonth } = await import('./push/month-report.js');
+  const ym = args[0] ? parseYearMonth(args[0]) : currentYearMonth();
+  if (!ym) { console.log('Usage: workday approval [YYYY-MM]'); return; }
+
+  const secrets = tryLoadSecrets();
+  if (!secrets) { console.log('Secrets not configured — run "workday init".'); return; }
+
+  const { resolveMonthApproval } = await import('./push/tempo-approvals.js');
+  const data = await resolveMonthApproval(ym.year, ym.month, secrets);
+  if (!data.available) {
+    const hint = data.reason === 'scope' ? ' — Tempo token needs the approvals:view scope' : '';
+    console.log(`Approval unavailable (${data.reason})${hint}`);
+    return;
+  }
+
+  console.log(`Period: ${data.period?.from ?? '?'} → ${data.period?.to ?? '?'}${data.fromCache ? '  [cache]' : ''}`);
+  console.log(`Status: ${data.statusKey ?? '—'}`);
+  if (data.requiredSeconds !== null) console.log(`Required: ${formatReportHours(data.requiredSeconds)}`);
+  if (data.timeSpentSeconds !== null) console.log(`Logged (Tempo side): ${formatReportHours(data.timeSpentSeconds)}`);
+  if (data.canSubmit) console.log('Submit action is available for this period.');
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1127,6 +1211,15 @@ async function main(): Promise<void> {
     case 'tempo':
       await handleTempo(args.slice(1));
       break;
+    case 'month':
+      await handleMonth(args.slice(1));
+      break;
+    case 'schedule':
+      await handleSchedule(args.slice(1));
+      break;
+    case 'approval':
+      await handleApproval(args.slice(1));
+      break;
     case 'init':
       handleInit();
       break;
@@ -1169,6 +1262,9 @@ Usage:
   workday tempo --file report.json                     Save report to JSON file
   workday tempo --file report.json --push              Push from saved report
   workday tempo --push                                 Push computed data to Tempo
+  workday month [YYYY-MM]                              Month view: day statuses vs Tempo (pending/outdated/pushed)
+  workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
+  workday approval [YYYY-MM]                           Tempo timesheet approval status for the period
 
 Target: session index (#1, #2) or session id (hex)`);
 }

@@ -43,6 +43,9 @@ workday jira-search "<query>"          Live Jira issue search (key + summary)
 workday session-delete <target>        Delete a junk session (add --date for past days)
 workday tempo                          Show report (month to date)
 workday tempo --push                   Push to Tempo
+workday month [YYYY-MM]                Month view: day statuses vs Tempo
+workday schedule [YYYY-MM]             Tempo work schedule (required hours, holidays)
+workday approval [YYYY-MM]             Tempo timesheet approval status
 workday daemon                         Run in foreground (live dashboard)
 ```
 

@@ -332,6 +332,16 @@ export class SessionTracker {
   }
 
   /**
+   * Sync the in-memory day after an external push sealed the file behind us
+   * (markDaysPushed) — without this the next flush would revert the day to
+   * draft and silently "un-push" it.
+   */
+  public markPushed(pushedAt: string): void {
+    this.dailyLog.status = DayStatus.Pushed;
+    this.dailyLog.pushedAt = pushedAt;
+  }
+
+  /**
    * Write current daily log to disk (atomic). No-op until the day is
    * materialized: file exists ⇔ a confirmed fact happened (lazy day).
    */

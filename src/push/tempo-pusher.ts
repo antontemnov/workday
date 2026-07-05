@@ -7,6 +7,7 @@ import { DayStatus, type AppConfig, type Secrets, type TaskDayReport, type Tempo
 import { buildReport, buildReportResponse, getDefaultFromDate, getDefaultToDate } from './report-builder.js';
 import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient } from './tempo-client.js';
+import { invalidateApprovalCache } from './tempo-approvals.js';
 
 // ─── Push log persistence ────────────────────────────────────────────────
 
@@ -336,6 +337,11 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
 
   console.log(`Executing ${actionable.length} mutation(s)...`);
   const result = await executePlan(plan, tempoClient, accountId);
+
+  // Tempo-side totals changed — the approval snapshot is stale now.
+  if (result.posted > 0 || result.updated > 0) {
+    invalidateApprovalCache();
+  }
 
   // Seal the day only on a clean push. A failed mutation (network, Jira limit, etc.)
   // must NOT mark the day pushed, or it would silently drop out of future syncs.

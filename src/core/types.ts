@@ -573,14 +573,18 @@ export interface ManualEntryResponse {
   readonly minutes: number;
   readonly description: string;
   readonly activity: string;
-  readonly totalManualMinutes: number;   // sum of all manual entries today
+  readonly date: string;                 // day the entry lives on (YYYY-MM-DD)
+  readonly totalManualMinutes: number;   // sum of all manual entries that day
 }
 
 export interface ManualEntryDeleteResponse {
   readonly id: string;
   readonly task: string;
   readonly minutes: number;
+  readonly date: string;                 // day the entry lived on (YYYY-MM-DD)
   readonly totalManualMinutes: number;   // sum after the delete
+  // Past-day delete removed the day's last fact — file deleted (storage invariant).
+  readonly dayFileDeleted?: boolean;
 }
 
 export interface FavoritesResponse {
@@ -624,6 +628,93 @@ export interface ActivityTypesResponse {
 export interface DaysResponse {
   // YYYY-MM-DD, descending (newest first). Includes only days with sessions.
   readonly dates: readonly string[];
+}
+
+// ─── Month (timesheets tab) ─────────────────────────────────────────────
+
+// Sync state of a day vs Tempo, derived offline from the daily log alone:
+// pending — has data, never pushed; outdated — pushed, then edited (Tempo
+// holds a stale version, next push sends updates); pushed — in sync.
+export enum MonthDayStatus {
+  None = 'none',
+  Pending = 'pending',
+  Pushed = 'pushed',
+  Outdated = 'outdated',
+}
+
+// One would-be Tempo worklog line: session aggregate (rounded, session-born
+// entries folded in) or a standalone manual entry.
+export interface MonthDayTask {
+  readonly task: string;
+  readonly seconds: number;
+  readonly kind: ReportEntryKind;
+  readonly description?: string;   // manual kind only
+  readonly activity?: string;      // manual kind only
+}
+
+export interface MonthDaySummary {
+  readonly date: string;
+  readonly dayType: string | null;    // null when the day has no data
+  readonly status: MonthDayStatus;
+  readonly claimedMs: number;         // raw local total (sessions + manual)
+  readonly reportedSeconds: number;   // Σ tasks[].seconds — what push would send
+  readonly taskCount: number;         // unique task keys
+  readonly tasks: readonly MonthDayTask[];
+  readonly pushedAt: string | null;
+}
+
+export interface MonthTotals {
+  readonly claimedMs: number;
+  readonly reportedSeconds: number;
+  readonly daysWithData: number;
+  readonly pendingDays: number;
+  readonly outdatedDays: number;
+  readonly pushedDays: number;
+}
+
+export interface MonthResponse {
+  readonly year: number;
+  readonly month: number;             // 1-12
+  readonly from: string;              // YYYY-MM-DD, first day
+  readonly to: string;                // YYYY-MM-DD, last day
+  // Full calendar month, oldest first — days without data carry status 'none'.
+  readonly days: readonly MonthDaySummary[];
+  readonly totals: MonthTotals;
+  readonly lastPushAt: string | null; // max pushedAt across the month
+}
+
+// ─── Tempo month meta (schedule / approvals proxies) ────────────────────
+
+// Why the Tempo-side data is missing. UI degrades silently on any of these:
+// no-token — Tempo/Jira not configured; scope — token lacks the required
+// scope (schemes:view / approvals:view); error — network/API failure.
+export type TempoMetaUnavailableReason = 'no-token' | 'scope' | 'error';
+
+export interface ScheduleDay {
+  readonly date: string;
+  readonly requiredSeconds: number;
+  // WORKING_DAY | NON_WORKING_DAY | HOLIDAY | HOLIDAY_AND_NON_WORKING_DAY
+  readonly type: string;
+  readonly holidayName: string | null;
+}
+
+export interface TempoScheduleResponse {
+  readonly available: boolean;
+  readonly reason?: TempoMetaUnavailableReason;
+  readonly days: readonly ScheduleDay[];
+  readonly requiredSecondsTotal: number;
+  readonly fromCache: boolean;
+}
+
+export interface TempoApprovalResponse {
+  readonly available: boolean;
+  readonly reason?: TempoMetaUnavailableReason;
+  readonly period: { readonly from: string; readonly to: string } | null;
+  readonly statusKey: string | null;        // OPEN | IN_REVIEW | APPROVED
+  readonly requiredSeconds: number | null;
+  readonly timeSpentSeconds: number | null; // Tempo-side logged total
+  readonly canSubmit: boolean;              // actions.submit present (v2 groundwork)
+  readonly fromCache: boolean;
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────
