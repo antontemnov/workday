@@ -44,9 +44,8 @@
           [class.marked]="isEditMode && isMarked(f)"
           [class.shrink]="shrinkingIds.has(f.id)"
           [style.animation-delay]="chipDelay(i + 1)"
-          [title]="isEditMode ? 'click — mark for removal' : f.activity + ' · right-click: remove · Ctrl+click: collect'"
-          (click)="pickFavorite(f, $event)"
-          (contextmenu)="onFavContextMenu(f, $event)">
+          [title]="isEditMode ? 'click — mark for removal' : f.activity + ' · Ctrl+click: collect'"
+          (click)="pickFavorite(f, $event)">
       <span class="f-task">{{ f.task }}</span>
       <span class="f-name">{{ f.name }}</span>
       <span class="f-min">{{ formatMinutes(f.minutes) }}</span>

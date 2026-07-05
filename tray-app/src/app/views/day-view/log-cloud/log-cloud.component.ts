@@ -83,7 +83,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @Output() formSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   // Favorites management: right-click a Jira result → save a template;
-  // right-click a favorite chip / ✎ edit-mode batch → remove (ids).
+  // ✎ edit-mode batch → remove (ids).
   @Output() favoriteSaved = new EventEmitter<FavoriteInput>();
   @Output() favoritesRemoved = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();
@@ -337,7 +337,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     this.closed.emit();
   }
 
-  // ─── Favorites management (✎ edit mode + context menus) ─────────────────
+  // ─── Favorites management (✎ edit mode + Jira save context menu) ────────
 
   toggleEditMode(): void {
     this.setEditMode(!this.editMode);
@@ -378,24 +378,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
       this.shrinkingIds.clear();
       this.focusFilter(0);
     }, total));
-  }
-
-  onFavContextMenu(f: Favorite, ev: MouseEvent): void {
-    ev.preventDefault();
-    ev.stopPropagation();
-    openCtxMenu(ev.clientX, ev.clientY, [
-      { icon: '✕', label: 'Remove from favorites', danger: true,
-        action: () => this.shrinkFavorite(f.id) },
-    ]);
-  }
-
-  // Play the chip's shrink-away, then let the removal reach the daemon.
-  private shrinkFavorite(id: string): void {
-    this.shrinkingIds.add(id);
-    this.shrinkTimers.push(setTimeout(() => {
-      this.favoritesRemoved.emit([id]);
-      this.shrinkingIds.delete(id);
-    }, SHRINK_ANIM_MS));
   }
 
   onJiraContextMenu(h: JiraSearchHit, ev: MouseEvent): void {
@@ -447,7 +429,9 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   }
 
   private favBasketItem(f: Favorite): BasketItem {
-    return { id: `fav:${f.task}:${f.name}`, task: f.task, label: f.name, src: 'fav',
+    // Key by the favorite's stable id — task+name collide when two templates
+    // share a ticket + summary but differ in minutes (30m vs 45m).
+    return { id: `fav:${f.id}`, task: f.task, label: f.name, src: 'fav',
              description: f.name, minutes: f.minutes, activity: f.activity };
   }
 
@@ -468,7 +452,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   }
 
   isFavPicked(f: Favorite): boolean {
-    return this.inBasket(`fav:${f.task}:${f.name}`);
+    return this.inBasket(`fav:${f.id}`);
   }
 
   isSuggPicked(s: SuggestedLog): boolean {
