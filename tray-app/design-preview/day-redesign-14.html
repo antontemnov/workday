@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · day view — итерация 14 (тикет-строка над записью, без групп)</title>
+<style>
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --struct:#26263a;
+    --surface0:#313244; --surface1:#45475a; --overlay0:#6c7086;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --blue:#89b4fa; --peach:#fab387; --teal:#94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0c0c14; color:var(--text);
+    font-family:'Cascadia Code','Consolas',monospace;
+    padding:26px 20px 60px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .page-title { font-size:13px; color:var(--subtext0); letter-spacing:.4px; margin-bottom:6px; }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--overlay0); margin-bottom:22px; text-align:center; line-height:1.6; }
+  .page-sub .k { color:var(--subtext1); background:var(--struct); border-radius:4px; padding:1px 6px; }
+
+  .frames { display:flex; flex-wrap:wrap; gap:26px; justify-content:center; align-items:flex-start; }
+  .col { display:flex; flex-direction:column; }
+  .variant-note { width:500px; font-size:10.5px; line-height:1.6; color:var(--overlay0); margin:12px 2px 0; }
+  .variant-note b { color:var(--subtext0); font-weight:600; }
+  .variant-note .m { color:var(--mauve); }
+
+  .frame {
+    width:500px; background:var(--base);
+    border:1px solid #2c2c40; border-radius:10px; overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .frame.tall { height:520px; }
+  .banner { flex-shrink:0; display:flex; align-items:center; padding:8px 12px; background:var(--mantle); border-bottom:1px solid var(--struct); font-size:10px; color:var(--overlay0); letter-spacing:2px; }
+  .banner .wd { display:flex; gap:8px; }
+  .banner .wd .on { color:var(--text); border-bottom:2px solid var(--mauve); padding-bottom:2px; }
+  .banner .nav { margin-left:auto; letter-spacing:4px; font-size:11px; }
+
+  .scroll-zone { flex:1; min-height:0; overflow-y:auto; padding:0 12px; }
+  .day-block { padding:12px 0 12px; border-bottom:1px solid var(--struct); }
+  .day-line { display:flex; align-items:baseline; }
+  .day-date { font-size:15px; font-weight:600; letter-spacing:.2px; }
+  .day-total { margin-left:auto; display:flex; align-items:baseline; gap:7px; font-variant-numeric:tabular-nums; }
+  .day-total .num { font-size:18px; font-weight:700; }
+  .day-total .cap { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:var(--overlay0); }
+
+  .sec-head { display:flex; align-items:center; gap:7px; padding:12px 0 10px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums; }
+  .sec-head .label-auto { color:var(--subtext1); }
+  .sec-head .live-dot { width:5px; height:5px; border-radius:50%; background:var(--green); animation:pulse 1.6s ease-in-out infinite; }
+  .sec-head .sum { margin-left:auto; font-weight:700; text-transform:none; color:var(--text); }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  .card { position:relative; background:var(--mantle); border:1px solid var(--struct); border-radius:8px; padding:9px 11px 11px; margin-bottom:8px; }
+  .card .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .card .repo { font-size:12px; font-weight:700; color:var(--blue); }
+  .card .head .sep { width:1px; height:12px; background:var(--surface0); }
+  .card .branch { font-size:11px; color:var(--overlay0); white-space:nowrap; overflow:hidden; flex:1; min-width:0; -webkit-mask-image:linear-gradient(90deg,#000 82%,transparent); mask-image:linear-gradient(90deg,#000 82%,transparent); }
+  .badge { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; padding:3px 9px; border-radius:999px; }
+  .badge .dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .badge.live { color:var(--green); background:rgba(166,227,161,.10); }
+  .badge.live .dot { animation:pulse 1.6s ease-in-out infinite; }
+  .metrics { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 9px; border-radius:6px; background:rgba(17,17,27,.6); border:1px solid var(--struct); color:var(--subtext0); }
+  .chip .ic { font-size:10px; color:var(--overlay0); }
+  .chip.time .v { color:var(--text); font-weight:700; }
+  .chip .plus { color:var(--green); } .chip .minus { color:var(--red); }
+  .chip .csep { width:1px; height:10px; background:var(--struct); }
+  .mode { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px; }
+  .mode.normal { color:var(--green); background:rgba(166,227,161,.08); border:1px solid rgba(166,227,161,.25); }
+  .mode .car { font-size:8px; opacity:.7; }
+  .edge { position:absolute; left:10px; right:10px; bottom:0; height:3px; border-radius:2px; background:var(--struct); overflow:hidden; }
+  .edge .fill { display:block; height:100%; border-radius:2px; }
+
+  /* ══ Logged pane ══ */
+  .logged-pane {
+    flex-shrink:0; max-height:70%;
+    display:flex; flex-direction:column;
+    background:var(--mantle);
+    border-top:1px solid var(--surface0);
+    box-shadow:0 -6px 16px rgba(0,0,0,.28);
+    padding:9px 12px 10px;
+    position:relative; z-index:10;
+  }
+  .lp-head { flex-shrink:0; display:flex; align-items:center; gap:7px; padding:2px 0 9px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; font-variant-numeric:tabular-nums; cursor:pointer; user-select:none; }
+  .lp-head .label { color:var(--mauve); }
+  .lp-head .caret { font-size:7px; color:var(--overlay0); margin-top:1px; }
+  .lp-head .sum { margin-left:auto; font-weight:700; text-transform:none; color:var(--text); }
+  .lp-table { max-height:100%; overflow-y:auto; }
+  .ghost-row { display:flex; align-items:center; gap:8px; padding:5px 8px; margin-bottom:2px; border:1px dashed rgba(203,166,247,.3); border-radius:5px; color:var(--overlay0); font-size:11px; cursor:pointer; user-select:none; }
+  .ghost-row .g-plus { color:var(--mauve); font-weight:700; }
+
+  /* тикет-строка: НЕ группа — просто заголовок над записью(ями) этого тикета.
+     Без рамок, без Σ. Тише entry-строки: мельче, приглушённее. */
+  .t-line { display:flex; align-items:baseline; gap:7px; padding:5px 8px 0; font-size:10px; font-variant-numeric:tabular-nums; }
+  .t-line .t-key { color:var(--mauve); font-weight:700; flex-shrink:0; opacity:.85; }
+  .t-line .t-sum { flex:1; color:#767e9d; }
+
+  .tsum { position:relative; overflow:hidden; white-space:nowrap; min-width:0; }
+  .tsum .in { display:inline-block; }
+  .tsum.has-more { -webkit-mask-image:linear-gradient(90deg,#000 84%,transparent); mask-image:linear-gradient(90deg,#000 84%,transparent); cursor:pointer; }
+  .tsum.has-more.scrolling { -webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 84%,transparent); mask-image:linear-gradient(90deg,transparent,#000 12%,#000 84%,transparent); }
+
+  /* entry-строка: без тикет-чипа — тикет уже над ней */
+  .log-row { display:flex; align-items:center; gap:9px; padding:3px 8px 3px 20px; border-radius:4px; font-size:11px; font-variant-numeric:tabular-nums; user-select:none; }
+  .log-row:hover { background:rgba(203,166,247,.05); }
+  .log-row .l-act { font-size:10px; padding:1px 7px; border-radius:4px; flex-shrink:0; color:#9399b2; background:rgba(147,153,178,.10); }
+  .log-row .l-act.rev { color:var(--blue); background:rgba(137,180,250,.10); }
+  .log-row .l-act.dev { color:var(--green); background:rgba(166,227,161,.08); }
+  .log-row .l-desc { color:#7f849c; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .log-row .l-desc.none { color:#4b4d63; }
+  .log-row .l-min { min-width:50px; text-align:right; color:var(--text); font-weight:700; flex-shrink:0; }
+
+  .log-row.fresh { background:rgba(203,166,247,.10); }
+  .stepper { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; }
+  .stepper button { width:16px; height:16px; border-radius:4px; border:1px solid rgba(203,166,247,.4); background:rgba(203,166,247,.1); color:var(--mauve); font-family:inherit; font-size:10px; line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  .stepper .s-val { min-width:44px; text-align:center; color:var(--mauve); font-weight:700; cursor:ns-resize; }
+
+  /* edit-морф: только данные записи; тикет-строка сверху остаётся как есть */
+  .log-row.editing { background:rgba(203,166,247,.07); }
+  .le-form { display:flex; align-items:center; gap:6px; flex:1; min-width:0; }
+  .le-form input, .le-form select { background:rgba(17,17,27,.85); border:1px solid var(--surface0); border-radius:5px; color:var(--text); font-family:inherit; font-size:10.5px; padding:3px 7px; outline:none; }
+  .le-form select { width:104px; flex-shrink:0; font-size:10px; color:var(--subtext1); padding:3px 3px; }
+  .le-form .le-min { width:54px; flex-shrink:0; text-align:center; color:var(--mauve); font-weight:700; }
+  .le-form .le-desc { flex:1; min-width:0; }
+  .le-form .le-back { flex-shrink:0; background:none; border:none; color:var(--overlay0); font-family:inherit; font-size:12px; cursor:pointer; padding:0 2px; }
+  .le-form .le-save { flex-shrink:0; background:var(--mauve); color:#1e1e2e; border:none; border-radius:5px; font-family:inherit; font-size:10px; font-weight:700; padding:3px 10px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div class="page-title"><b>day view · итерация 14 — тикет-строка над записью (без групп и подсумм)</b></div>
+<div class="page-sub">
+  каждая запись = тихая тикет-строка (<span class="k">key · имя</span>, 10px, приглушённая) + строка данных без тикет-чипа ·<br>
+  соседние записи одного тикета не повторяют тикет-строку · <span class="k">клик</span> по обрезанному имени — прокрутка и возврат
+</div>
+
+<div class="frames">
+
+<div class="col">
+<div class="frame tall">
+  <div class="banner">
+    <span class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span class="on">S</span></span>
+    <span class="nav">◷ ▦ ⚙</span>
+  </div>
+
+  <div class="scroll-zone">
+    <div class="day-block">
+      <div class="day-line">
+        <span class="day-date">6 July 2026</span>
+        <span class="day-total"><span class="num">7h 45m</span><span class="cap">today</span></span>
+      </div>
+    </div>
+
+    <div class="sec-head">
+      <span class="live-dot"></span>
+      <span class="label-auto">Tracked</span>
+      <span class="sum">5h 30m</span>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <span class="repo">appone-backend</span><span class="sep"></span>
+        <span class="branch">ATL-7736-atemnov-policy-dictionaries-reactive-pass</span>
+        <span class="badge live"><span class="dot"></span>Live</span>
+      </div>
+      <div class="metrics">
+        <span class="chip time"><span class="ic">◔</span><span class="v">5h 30m</span></span>
+        <span class="chip"><span class="ic">⊙</span>4<span class="csep"></span><span class="plus">+286</span><span class="minus">−54</span></span>
+        <span class="mode normal">Normal <span class="car">▾</span></span>
+      </div>
+      <span class="edge"><span class="fill" style="width:62%;background:var(--green)"></span></span>
+    </div>
+  </div>
+
+  <div class="logged-pane">
+    <div class="lp-head">
+      <span class="label">Logged</span>
+      <span class="caret">▼</span>
+      <span class="sum">3h 00m</span>
+    </div>
+    <div class="lp-table">
+      <div class="ghost-row"><span class="g-plus">＋</span><span>Log time…</span></div>
+
+      <!-- fresh-запись со степпером -->
+      <div class="t-line">
+        <span class="t-key">ATL-14</span>
+        <span class="tsum t-sum" title="Internal meetings"><span class="in">Internal meetings</span></span>
+      </div>
+      <div class="log-row fresh">
+        <span class="l-act">Meetings</span>
+        <span class="l-desc">sprint retro</span>
+        <span class="stepper"><button>−</button><span class="s-val">30m</span><button>+</button></span>
+      </div>
+
+      <!-- две записи одного тикета: тикет-строка одна, записей две, Σ нет -->
+      <div class="t-line">
+        <span class="t-key">ATL-7736</span>
+        <span class="tsum t-sum" title="Existing Transaction: add missing reactive behaviour for Policy Dictionaries"><span class="in">Existing Transaction: add missing reactive behaviour for Policy Dictionaries</span></span>
+      </div>
+      <div class="log-row">
+        <span class="l-act rev">CodeReview</span>
+        <span class="l-desc">review PR #482</span>
+        <span class="l-min">30m</span>
+      </div>
+      <div class="log-row">
+        <span class="l-act">Meetings</span>
+        <span class="l-desc">daily sync</span>
+        <span class="l-min">15m</span>
+      </div>
+
+      <!-- session-born Development: описания нет — строка остаётся почти пустой,
+           но тикет-строка сверху уже сказала всё -->
+      <div class="t-line">
+        <span class="t-key">ATL-7244</span>
+        <span class="tsum t-sum" title="Fix false positive change-detection on coverage list"><span class="in">Fix false positive change-detection on coverage list</span></span>
+      </div>
+      <div class="log-row">
+        <span class="l-act dev">Development</span>
+        <span class="l-desc none">—</span>
+        <span class="l-min">1h 00m</span>
+      </div>
+
+      <!-- edit-морф: тикет-строка не участвует, форма компактнее (нет тикет-лейбла) -->
+      <div class="t-line">
+        <span class="t-key">ATL-6503</span>
+        <span class="tsum t-sum" title="Lead: Fix Incorrect Coverage Behavior"><span class="in">Lead: Fix Incorrect Coverage Behavior</span></span>
+      </div>
+      <div class="log-row editing">
+        <span class="le-form">
+          <button class="le-back" title="cancel (Esc)">←</button>
+          <select><option>Estimation</option></select>
+          <input class="le-min" value="45m" />
+          <input class="le-desc" value="grooming" />
+          <button class="le-save">Save</button>
+        </span>
+      </div>
+
+      <!-- тикет без summary в кэше: строка вырождается в один ключ -->
+      <div class="t-line">
+        <span class="t-key">OPS-133</span>
+      </div>
+      <div class="log-row">
+        <span class="l-act">Other</span>
+        <span class="l-desc">release mgmt</span>
+        <span class="l-min">30m</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="variant-note">
+  <b>Ит.14 = B минус группы.</b> Никаких контейнеров и под-Σ: тикет-строка — просто заголовок
+  над записью, на два шага тише неё (10px, приглушённый mauve-ключ без плашки, имя ещё тусклее).
+  Entry-строка теряет тикет-чип (лёгкий отступ слева) — в ней остаются только данные:
+  <span class="m">[activity] [описание] [время]</span>. Соседние записи одного тикета
+  делят одну тикет-строку — это дедупликация при рендере (newest-first порядок не меняется),
+  а не «группа». Fresh-степпер и edit-морф живут на entry-строке; edit стал компактнее —
+  тикет-лейбл из формы ушёл наверх. Нет summary в кэше — тикет-строка вырождается в один ключ.
+  Длинное имя: fade + клик-прокрутка (кликните ATL-7736), hover — title.
+  <b>Favorites не меняются вовсе</b> (плоские чипы как сейчас); имя тикета там — только
+  title-tooltip при hover на чипе, нулевая цена по высоте.
+  Цена варианта: ~+18px на тикет; панель у высокого лога станет выше — компенсируется
+  collapse'ом и тем, что section max-height уже ограничен.
+</p>
+</div>
+
+</div>
+
+<script>
+document.querySelectorAll('.tsum').forEach(el => {
+  const inner = el.querySelector('.in');
+  const measure = () => {
+    el.classList.toggle('has-more', inner.scrollWidth - el.clientWidth > 4);
+  };
+  measure();
+  window.addEventListener('resize', measure);
+
+  el.addEventListener('click', () => {
+    const over = inner.scrollWidth - el.clientWidth;
+    if (over <= 4 || el.classList.contains('scrolling')) return;
+    el.classList.add('scrolling');
+    const dist = over + 12;
+    const durOut = Math.max(0.7, dist / 45);
+    const durBack = Math.max(0.4, durOut * 0.5);
+    inner.style.transition = `transform ${durOut}s linear`;
+    inner.style.transform = `translateX(${-dist}px)`;
+    setTimeout(() => {
+      inner.style.transition = `transform ${durBack}s ease`;
+      inner.style.transform = 'translateX(0)';
+      setTimeout(() => {
+        el.classList.remove('scrolling');
+        inner.style.transition = '';
+      }, durBack * 1000 + 60);
+    }, durOut * 1000 + 700);
+  });
+});
+</script>
+
+</body>
+</html>
