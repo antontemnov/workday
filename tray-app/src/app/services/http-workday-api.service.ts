@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { WorkdayApiService } from './workday-api.service';
-import { MockWorkdayApiService } from './mock-workday-api.service';
 import {
   ActiveInterval,
   ApiResponse,
@@ -30,6 +29,9 @@ import {
   FavoriteRemoveResponse,
   FavoriteInput,
   JiraSearchResponse,
+  PushResponse,
+  TempoScheduleResponse,
+  TempoApprovalResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -244,25 +246,22 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.get<JiraSearchResponse>(`/api/jira/search?q=${encodeURIComponent(query)}`);
   }
 
-  // ─── Stubs for endpoints not yet implemented on the daemon ───────────
-  // The Timesheets and Settings views need data we don't have a real
-  // endpoint for yet. Delegate to MockWorkdayApiService so the UI develops
-  // independent of backend. Replace each with a real fetch() call when
-  // the corresponding daemon route lands.
+  // ─── Timesheets (month view) ─────────────────────────────────────────
 
-  // TODO: replace with GET /api/month?year=YYYY&month=MM
   override async getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>> {
-    return new MockWorkdayApiService().getMonth(year, month);
+    return this.get<MonthResponse>(`/api/month?year=${year}&month=${month}`);
   }
 
-  // TODO: replace with POST /api/confirm { date }
-  override async confirmDay(date: string): Promise<ApiResponse<unknown>> {
-    return new MockWorkdayApiService().confirmDay(date);
+  override async pushToTempo(from: string, to: string): Promise<ApiResponse<PushResponse>> {
+    return this.post<PushResponse>('/api/push', { from, to });
   }
 
-  // TODO: replace with POST /api/push { from, to } that wraps runPush()
-  override async pushToTempo(from: string, to: string): Promise<ApiResponse<unknown>> {
-    return new MockWorkdayApiService().pushToTempo(from, to);
+  override async getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>> {
+    return this.get<TempoScheduleResponse>(`/api/tempo/schedule?year=${year}&month=${month}`);
+  }
+
+  override async getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>> {
+    return this.get<TempoApprovalResponse>(`/api/tempo/approval?year=${year}&month=${month}`);
   }
 
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {

@@ -9,8 +9,13 @@ import {
   SessionDeleteResponse,
   DaysResponse,
   MonthResponse,
-  MonthDay,
-  DayStatus,
+  MonthDaySummary,
+  MonthDayStatus,
+  MonthDayTask,
+  ScheduleDay,
+  TempoScheduleResponse,
+  TempoApprovalResponse,
+  PushResponse,
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
@@ -433,19 +438,49 @@ export class MockWorkdayApiService extends WorkdayApiService {
   // ─── Timesheets / Settings mocks ──────────────────────────────────────
 
   async getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>> {
-    // For preview we always return the curated month sample, ignoring the
-    // requested year/month. Real impl reads from disk via a daemon endpoint.
-    return { ok: true, data: { year, month, days: MOCK_MONTH_DAYS } };
+    await delay(200);
+    return { ok: true, data: buildMockMonth(year, month, this.today) };
   }
 
-  async confirmDay(_date: string): Promise<ApiResponse<unknown>> {
-    await delay(150);
-    return { ok: true, data: {} };
-  }
-
-  async pushToTempo(_from: string, _to: string): Promise<ApiResponse<unknown>> {
+  async pushToTempo(_from: string, _to: string): Promise<ApiResponse<PushResponse>> {
     await delay(400);
-    return { ok: true, data: {} };
+    return {
+      ok: true,
+      data: { dryRun: false, plan: [], result: { posted: 3, updated: 1, deleted: 0, skipped: 12, failed: 0 } },
+    };
+  }
+
+  async getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>> {
+    await delay(150);
+    const days = buildMockSchedule(year, month);
+    return {
+      ok: true,
+      data: {
+        available: true,
+        days,
+        requiredSecondsTotal: days.reduce((s, d) => s + d.requiredSeconds, 0),
+        fromCache: true,
+      },
+    };
+  }
+
+  async getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>> {
+    await delay(150);
+    const [ty, tm] = this.today.split('-').map(Number);
+    const isPast = year < ty || (year === ty && month < tm);
+    const isFuture = year > ty || (year === ty && month > tm);
+    return {
+      ok: true,
+      data: {
+        available: true,
+        period: null,
+        statusKey: isFuture ? null : (isPast ? 'APPROVED' : 'OPEN'),
+        requiredSeconds: null,
+        timeSpentSeconds: null,
+        canSubmit: false,
+        fromCache: true,
+      },
+    };
   }
 
   async getSettings(): Promise<ApiResponse<SettingsResponse>> {
@@ -533,51 +568,102 @@ const MOCK_ACTIVITIES: ReadonlyArray<{ readonly value: string; readonly name: st
 ];
 
 // ─── Mock month dataset ──────────────────────────────────────────────────
+// Deterministic generator for any requested month: weekdays carry pushed
+// 7-8h, the last few days before today are pending, one day is outdated.
 
-const HOUR = 3_600_000;
+const HOLIDAY_DAY = 6; // every mock month has one named holiday on the 6th
 
-function task(key: string, hours: number) {
-  return { key, ms: Math.round(hours * HOUR) };
+function mockIso(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-// May 2026 — past + today only; future days are dropped by the view layer.
-// Ported from tray-app/design-preview/nav-options.html `mayDays()`.
-const MOCK_MONTH_DAYS: readonly MonthDay[] = [
-  { date: '2026-05-01', dayType: 'workday', status: DayStatus.Pushed,
-    claimedMs: Math.round(4.5 * HOUR), tasks: [task('ATL-6781', 4.5)] },
-  { date: '2026-05-02', dayType: 'weekend', status: DayStatus.Draft, claimedMs: 0, tasks: [] },
-  { date: '2026-05-03', dayType: 'weekend', status: DayStatus.Draft, claimedMs: 0, tasks: [] },
+function mockDow(year: number, month: number, day: number): number {
+  return new Date(year, month - 1, day).getDay(); // 0=Sun..6=Sat
+}
 
-  { date: '2026-05-04', dayType: 'workday', status: DayStatus.Pushed,
-    claimedMs: Math.round(7.5 * HOUR), tasks: [task('ATL-6781', 7.5)] },
-  { date: '2026-05-05', dayType: 'workday', status: DayStatus.Pushed,
-    claimedMs: Math.round(8.0 * HOUR), tasks: [task('ATL-6781', 7), task('standup', 1)] },
-  { date: '2026-05-06', dayType: 'workday', status: DayStatus.Pushed,
-    claimedMs: Math.round(7.0 * HOUR), tasks: [task('ATL-6442', 7)] },
-  { date: '2026-05-07', dayType: 'workday', status: DayStatus.Pushed,
-    claimedMs: Math.round(8.0 * HOUR), tasks: [task('ATL-6442', 5), task('ATL-6701', 3)] },
-  { date: '2026-05-08', dayType: 'workday', status: DayStatus.Pushed,
-    claimedMs: Math.round(7.5 * HOUR), tasks: [task('ATL-6701', 7.5)] },
-  { date: '2026-05-09', dayType: 'weekend', status: DayStatus.Draft, claimedMs: 0, tasks: [] },
-  { date: '2026-05-10', dayType: 'weekend', status: DayStatus.Draft, claimedMs: 0, tasks: [] },
+function buildMockMonth(year: number, month: number, today: string): MonthResponse {
+  const lastDay = new Date(year, month, 0).getDate();
+  const from = mockIso(year, month, 1);
+  const to = mockIso(year, month, lastDay);
+  const days: MonthDaySummary[] = [];
+  const totals = {
+    claimedMs: 0, reportedSeconds: 0,
+    daysWithData: 0, pendingDays: 0, outdatedDays: 0, pushedDays: 0,
+  };
+  let lastPushAt: string | null = null;
 
-  { date: '2026-05-11', dayType: 'workday', status: DayStatus.Confirmed,
-    claimedMs: Math.round(7.5 * HOUR), tasks: [task('ATL-6781', 4), task('ATL-6701', 3.5)] },
-  { date: '2026-05-12', dayType: 'workday', status: DayStatus.Confirmed,
-    claimedMs: Math.round(6.5 * HOUR), tasks: [task('ATL-6701', 6.5)] },
-  { date: '2026-05-13', dayType: 'workday', status: DayStatus.Confirmed,
-    claimedMs: Math.round(7.0 * HOUR), tasks: [task('ATL-6781', 4), task('ATL-6701', 3)] },
-  { date: '2026-05-14', dayType: 'workday', status: DayStatus.Draft,
-    claimedMs: Math.round(8.0 * HOUR),
-    tasks: [task('ATL-6442', 3), task('ATL-6701', 2), task('ATL-6781', 1.5),
-            task('ATL-6892', 0.5), task('review', 0.5), task('standup', 0.5)] },
-  { date: '2026-05-15', dayType: 'workday', status: DayStatus.Draft,
-    claimedMs: Math.round(7.5 * HOUR),
-    tasks: [task('ATL-6781', 4), task('ATL-6442', 2.5), task('standup', 1)] },
-  { date: '2026-05-16', dayType: 'weekend', status: DayStatus.Draft, claimedMs: 0, tasks: [] },
-  { date: '2026-05-17', dayType: 'weekend', status: DayStatus.Draft,
-    claimedMs: 0, tasks: [task('ATL-6781', 0)] },
-];
+  for (let d = 1; d <= lastDay; d++) {
+    const date = mockIso(year, month, d);
+    const dow = mockDow(year, month, d);
+    const isWeekend = dow === 0 || dow === 6;
+    const empty = isWeekend || date > today || (d === HOLIDAY_DAY && d % 2 === 0);
+    if (empty) {
+      days.push({ date, dayType: null, status: MonthDayStatus.None, claimedMs: 0,
+                  reportedSeconds: 0, taskCount: 0, tasks: [], pushedAt: null });
+      continue;
+    }
+
+    // Recent days pending, one mid-month day outdated, the rest pushed.
+    const age = daysBetween(date, today);
+    const status = age <= 4 ? MonthDayStatus.Pending
+      : (d === 9 ? MonthDayStatus.Outdated : MonthDayStatus.Pushed);
+    const tasks: MonthDayTask[] = d % 3 === 0
+      ? [
+          { task: 'ATL-6781', seconds: 4.5 * 3600, kind: 'session', sessionCount: 2 },
+          { task: 'ATL-6442', seconds: 2.25 * 3600, kind: 'session', sessionCount: 1 },
+          { task: 'ATL-10', seconds: 900, kind: 'manual', sessionCount: 0,
+            description: 'standup', activity: 'Other' },
+        ]
+      : [
+          { task: 'ATL-6781', seconds: 7.5 * 3600, kind: 'session', sessionCount: 3 },
+          { task: 'ATL-6892', seconds: 1800, kind: 'manual', sessionCount: 0,
+            description: 'review: saga retries', activity: 'CodeReview' },
+        ];
+    const reportedSeconds = tasks.reduce((s, t) => s + t.seconds, 0);
+    const pushedAt = status === MonthDayStatus.Pending ? null : `${date}T18:40:00.000Z`;
+
+    days.push({
+      date, dayType: 'workday', status,
+      claimedMs: reportedSeconds * 1000 - 600_000,
+      reportedSeconds,
+      taskCount: new Set(tasks.map(t => t.task)).size,
+      tasks, pushedAt,
+    });
+
+    totals.claimedMs += reportedSeconds * 1000 - 600_000;
+    totals.reportedSeconds += reportedSeconds;
+    totals.daysWithData++;
+    if (status === MonthDayStatus.Pending) totals.pendingDays++;
+    if (status === MonthDayStatus.Outdated) totals.outdatedDays++;
+    if (status === MonthDayStatus.Pushed) totals.pushedDays++;
+    if (pushedAt && (!lastPushAt || pushedAt > lastPushAt)) lastPushAt = pushedAt;
+  }
+
+  return { year, month, from, to, days, totals, lastPushAt };
+}
+
+function buildMockSchedule(year: number, month: number): ScheduleDay[] {
+  const lastDay = new Date(year, month, 0).getDate();
+  const days: ScheduleDay[] = [];
+  for (let d = 1; d <= lastDay; d++) {
+    const dow = mockDow(year, month, d);
+    const isWeekend = dow === 0 || dow === 6;
+    const isHoliday = d === HOLIDAY_DAY && !isWeekend;
+    days.push({
+      date: mockIso(year, month, d),
+      requiredSeconds: isWeekend || isHoliday ? 0 : 8 * 3600,
+      type: isHoliday ? 'HOLIDAY' : (isWeekend ? 'NON_WORKING_DAY' : 'WORKING_DAY'),
+      holidayName: isHoliday ? 'National Holiday' : null,
+    });
+  }
+  return days;
+}
+
+function daysBetween(fromIso: string, toIso: string): number {
+  const [fy, fm, fd] = fromIso.split('-').map(Number);
+  const [ty, tm, td] = toIso.split('-').map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000);
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));

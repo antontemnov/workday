@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · timesheets — итерация 4 (однострочная шапка · статус-пилюля у селектора)</title>
+<style>
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --struct:#26263a;
+    --surface0:#313244; --surface1:#45475a; --overlay0:#6c7086;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --blue:#89b4fa; --peach:#fab387; --teal:#94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0c0c14; color:var(--text);
+    font-family:'Cascadia Code','Consolas',monospace;
+    padding:26px 20px 60px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .page-title { font-size:13px; color:var(--subtext0); letter-spacing:.4px; margin-bottom:6px; }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--overlay0); margin-bottom:22px; text-align:center; line-height:1.6; }
+  .page-sub .k { color:var(--subtext1); background:var(--struct); border-radius:4px; padding:1px 6px; }
+
+  .frame {
+    width:500px; height:600px; background:var(--base);
+    border:1px solid #2c2c40; border-radius:10px; overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .banner { flex-shrink:0; display:flex; align-items:center; padding:8px 12px 10px; background:var(--mantle); border-bottom:1px solid var(--struct); font-size:10px; color:var(--overlay0); letter-spacing:2px; }
+  .banner .wd { display:flex; gap:8px; }
+  .banner .wd span { position:relative; }
+  .banner .wd .on { color:var(--text); }
+  .banner .wd .on::after {
+    content:''; position:absolute; left:50%; transform:translateX(-50%);
+    bottom:-6px; width:3px; height:3px; border-radius:50%; background:var(--yellow);
+  }
+  .banner .nav { margin-left:auto; letter-spacing:4px; font-size:11px; }
+  .banner .nav .cur { color:var(--yellow); }
+
+  /* ══ Шапка: одна строка. Месяц+статус слева · время справа ══ */
+  .ts-head { flex-shrink:0; display:flex; align-items:center; gap:8px; padding:13px 14px 9px; }
+
+  .pager { display:flex; align-items:center; user-select:none; }
+  .pager .pbtn {
+    width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+    border-radius:6px; color:var(--overlay0); cursor:pointer; font-size:12px;
+  }
+  .pager .pbtn:hover { color:var(--text); background:var(--struct); }
+  .pager .plabel {
+    width:112px; text-align:center; font-size:13.5px; font-weight:700;
+    color:var(--text); font-variant-numeric:tabular-nums; letter-spacing:.2px;
+  }
+
+  .pstatus {
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:8.5px; font-weight:700; letter-spacing:.7px; text-transform:uppercase;
+    padding:2px 8px; border-radius:999px;
+  }
+  .pstatus .sdot { width:4px; height:4px; border-radius:50%; background:currentColor; }
+  .pstatus.open      { color:var(--subtext0); background:rgba(166,173,200,.08); border:1px solid rgba(166,173,200,.18); }
+  .pstatus.in_review { color:var(--yellow); background:rgba(249,226,175,.08); border:1px solid rgba(249,226,175,.22); }
+  .pstatus.approved  { color:var(--green); background:rgba(166,227,161,.08); border:1px solid rgba(166,227,161,.22); }
+  .pstatus.rejected  { color:var(--red); background:rgba(243,139,168,.08); border:1px solid rgba(243,139,168,.22); }
+  .pstatus.none      { display:none; }
+
+  .totals { margin-left:auto; display:flex; align-items:baseline; gap:6px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .totals .tmain { font-size:16px; font-weight:700; letter-spacing:.2px; }
+  .totals .tof { font-size:10px; color:var(--overlay0); }
+  .totals .tdelta { font-size:10px; color:var(--subtext0); }
+  .totals .tdelta .mk { color:var(--yellow); opacity:.75; }
+  .totals .tdelta.ahead { color:var(--green); }
+
+  /* ══ Actions ══ */
+  .actions { flex-shrink:0; display:flex; align-items:center; padding:0 14px 11px; border-bottom:1px solid var(--struct); }
+  .push-note { font-size:10px; color:var(--overlay0); font-variant-numeric:tabular-nums; }
+  .push-btn {
+    margin-left:auto; display:inline-flex; align-items:center; gap:7px;
+    font-family:inherit; font-size:10.5px; font-weight:700; color:var(--blue);
+    background:transparent; border:1px solid rgba(137,180,250,.30); border-radius:6px;
+    padding:4px 10px; cursor:pointer; letter-spacing:.2px;
+  }
+  .push-btn:hover { background:rgba(137,180,250,.08); border-color:rgba(137,180,250,.5); }
+  .push-btn .cnt {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:15px; height:15px; padding:0 4px; border-radius:999px;
+    background:rgba(137,180,250,.15); font-size:9.5px; font-weight:700;
+  }
+  .push-btn.clean { color:var(--overlay0); border-color:var(--struct); cursor:default; }
+  .push-btn.clean:hover { background:transparent; border-color:var(--struct); }
+  .push-btn.hidden { display:none; }
+
+  /* ══ Day list ══ */
+  .scroll-zone { flex:1; min-height:0; overflow-y:auto; padding:0 8px 14px; }
+  .scroll-zone::-webkit-scrollbar { width:4px; }
+  .scroll-zone::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .week-sep { display:flex; align-items:center; gap:8px; padding:10px 6px 4px; }
+  .week-sep .l { flex:1; height:1px; background:var(--struct); }
+  .week-sep .t { font-size:8.5px; letter-spacing:1px; text-transform:uppercase; color:#565973; }
+
+  .day { border-radius:7px; }
+  .day-row {
+    display:flex; align-items:center; gap:10px;
+    padding:7px 8px; border-radius:7px; cursor:pointer; user-select:none;
+    font-variant-numeric:tabular-nums;
+  }
+  .day-row:hover { background:rgba(24,24,37,.7); }
+  .day.open .day-row { background:var(--mantle); border-radius:7px 7px 0 0; }
+  .d-num { width:20px; font-size:13.5px; font-weight:700; text-align:right; }
+  .d-wd { width:26px; font-size:8.5px; letter-spacing:.8px; color:var(--overlay0); text-transform:uppercase; padding-top:2px; }
+  .d-chev { font-size:7px; color:#565973; width:10px; transition:transform .18s ease; }
+  .day.open .d-chev { transform:rotate(90deg); color:var(--subtext0); }
+  .d-note { font-size:10px; color:#565973; font-style:italic; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .d-note.holiday { color:var(--teal); opacity:.75; }
+  .d-hours { margin-left:auto; font-size:12px; font-weight:700; color:var(--text); }
+  .d-hours .h { font-weight:400; color:var(--overlay0); font-size:10px; }
+  .d-hours.under { color:var(--peach); }
+  .d-hours.under .h { color:var(--peach); opacity:.6; }
+  .d-hours.zero { color:#565973; font-weight:400; }
+  .d-status { width:66px; display:flex; align-items:center; gap:5px; justify-content:flex-end; font-size:9px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; }
+  .d-status .sdot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .d-status.pushed   { color:var(--green); }
+  .d-status.pending  { color:var(--yellow); }
+  .d-status.outdated { color:var(--peach); }
+  .d-status.none     { color:#3d3d52; }
+  .day.dim .d-num, .day.dim .d-hours { color:#565973; }
+  .day.dim .d-wd { color:#464660; }
+  .day.today .d-num { color:var(--yellow); }
+
+  /* ══ Drawer ══ */
+  .drawer { max-height:0; overflow:hidden; transition:max-height .22s ease; background:var(--mantle); border-radius:0 0 7px 7px; }
+  .day.open .drawer { max-height:300px; border-top:1px solid var(--struct); }
+  .drawer-inner { padding:7px 10px 9px; }
+  .dr-sec { display:flex; align-items:center; gap:6px; padding:4px 0 3px; font-size:9px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; color:var(--overlay0); font-variant-numeric:tabular-nums; }
+  .dr-sec .sum { margin-left:auto; font-weight:700; color:var(--subtext0); text-transform:none; font-size:10px; }
+  .dr-sec .mk { font-size:9px; }
+  .dr-sec.logged { color:var(--mauve); }
+  .dr-row { display:flex; align-items:center; gap:9px; padding:3.5px 6px; border-radius:4px; font-size:11px; font-variant-numeric:tabular-nums; }
+  .dr-row:hover { background:rgba(17,17,27,.5); }
+  .dr-row .task { min-width:70px; color:var(--subtext1); font-weight:600; }
+  .dr-row .act { font-size:9.5px; color:var(--overlay0); background:var(--struct); border-radius:4px; padding:1px 6px; }
+  .dr-row .desc { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--overlay0); font-size:10.5px; }
+  .dr-row .dur { min-width:52px; text-align:right; font-weight:700; color:var(--subtext1); }
+  .dr-row.tracked .task { color:var(--blue); }
+  .dr-row.tracked .dur { color:var(--subtext0); }
+  .dr-row.tracked .src { font-size:9px; color:#565973; }
+  .dr-row.manual .task { color:var(--mauve); }
+  .dr-hint { padding:6px 6px 0; font-size:9px; color:#4a4a63; }
+  .dr-hint .k { color:#565973; }
+
+  /* ══ Context menu (заморожено) ══ */
+  .ctx {
+    position:fixed; z-index:99; min-width:168px;
+    background:var(--crust); border:1px solid var(--surface0); border-radius:8px;
+    padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.5);
+    transform-origin:top left; animation:ctxin .12s ease;
+    display:none; flex-direction:column;
+  }
+  .ctx.show { display:flex; }
+  @keyframes ctxin { from { transform:scale(.85); opacity:0; } to { transform:scale(1); opacity:1; } }
+  .ctx .mi { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--subtext1); padding:6px 9px; border-radius:5px; cursor:pointer; }
+  .ctx .mi:hover { background:var(--struct); color:var(--text); }
+  .ctx .mi .ic { width:12px; font-size:10px; color:var(--overlay0); }
+  .ctx .mi.danger { color:var(--red); }
+  .ctx .mi.danger .ic { color:var(--red); }
+  .ctx .sep { height:1px; background:var(--struct); margin:3px 6px; }
+
+  .variant-note { width:500px; font-size:10.5px; line-height:1.65; color:var(--overlay0); margin:14px 2px 0; }
+  .variant-note b { color:var(--subtext0); font-weight:600; }
+  .variant-note .m { color:var(--mauve); }
+  .variant-note .y { color:var(--yellow); }
+  .variant-note .g { color:var(--green); }
+  .variant-note .p { color:var(--peach); }
+</style>
+</head>
+<body>
+
+<div class="page-title">Workday · <b>Timesheets — итерация 4</b></div>
+<div class="page-sub">
+  шапка в одну строку: <span class="k">‹ July 2026 › approved</span> слева · <span class="k">89h 12m of 176h · ▾ 2h behind</span> справа<br>
+  статус — пилюля вплотную к селектору · листай ‹ › — статус и кнопка push живут
+</div>
+
+<div class="frame">
+  <div class="banner">
+    <div class="wd"><span>M</span><span>T</span><span>W</span><span>T</span><span class="on">F</span><span>S</span><span>S</span></div>
+    <div class="nav">◔ <span class="cur">▦</span> ⚙</div>
+  </div>
+
+  <!-- шапка: одна строка -->
+  <div class="ts-head">
+    <div class="pager">
+      <div class="pbtn" id="pgPrev">‹</div>
+      <div class="plabel" id="pgLabel">July 2026</div>
+      <div class="pbtn" id="pgNext">›</div>
+    </div>
+    <span class="pstatus open" id="pgStatus"><span class="sdot"></span><span class="txt">open</span></span>
+    <div class="totals">
+      <span class="tmain">89h 12m</span>
+      <span class="tof">of 176h</span>
+      <span class="tdelta"><span class="mk">▾</span> 2h behind</span>
+    </div>
+  </div>
+
+  <!-- actions -->
+  <div class="actions">
+    <span class="push-note">last push · 10 Jul, 18:42</span>
+    <button class="push-btn" id="pushBtn">⚡ Push the Tempo <span class="cnt">7</span></button>
+  </div>
+
+  <!-- days -->
+  <div class="scroll-zone">
+
+    <div class="week-sep"><span class="t">13 – 19</span><span class="l"></span></div>
+
+    <div class="day today">
+      <div class="day-row">
+        <span class="d-num">17</span><span class="d-wd">Fri</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours">3h 12m</span>
+        <span class="d-status pending"><span class="sdot"></span>pending</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">2h 47m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">2 sessions</span><span class="desc"></span><span class="dur">2h 47m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h 25m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-10</span><span class="act">Other</span><span class="desc">standup</span><span class="dur">15m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-6892</span><span class="act">CodeReview</span><span class="desc">review: saga retries</span><span class="dur">10m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">16</span><span class="d-wd">Thu</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours under">7h 30m</span>
+        <span class="d-status pending"><span class="sdot"></span>pending</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">6h 45m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">3 sessions</span><span class="desc"></span><span class="dur">4h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6442</span><span class="src">1 session</span><span class="desc"></span><span class="dur">2h 15m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h 45m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-10</span><span class="act">Other</span><span class="desc">standup</span><span class="dur">15m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-6701</span><span class="act">Estimation</span><span class="desc">refinement: Q3 scope</span><span class="dur">30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">15</span><span class="d-wd">Wed</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours under">6h 30m</span>
+        <span class="d-status pending"><span class="sdot"></span>pending</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">6h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6442</span><span class="src">2 sessions</span><span class="desc"></span><span class="dur">6h 30m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <!-- раскрытый пример -->
+    <div class="day open">
+      <div class="day-row">
+        <span class="d-num">14</span><span class="d-wd">Tue</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours">8h 00m</span>
+        <span class="d-status pending"><span class="sdot"></span>pending</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">6h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6442</span><span class="src">2 sessions</span><span class="desc"></span><span class="dur">3h 15m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6701</span><span class="src">1 session</span><span class="desc"></span><span class="dur">2h 15m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">1 session</span><span class="desc"></span><span class="dur">1h 00m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">1h 30m</span></div>
+        <div class="dr-row manual ctx-target"><span class="task">ATL-10</span><span class="act">Other</span><span class="desc">standup</span><span class="dur">15m</span></div>
+        <div class="dr-row manual ctx-target"><span class="task">ATL-6892</span><span class="act">CodeReview</span><span class="desc">review: policy terms saga</span><span class="dur">45m</span></div>
+        <div class="dr-row manual ctx-target"><span class="task">ATL-6900</span><span class="act">DesignAnalysis</span><span class="desc">arch sync: reactivity graph</span><span class="dur">30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">13</span><span class="d-wd">Mon</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours under">7h 30m</span>
+        <span class="d-status pending"><span class="sdot"></span>pending</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">7h 00m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">4 sessions</span><span class="desc"></span><span class="dur">7h 00m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h 30m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-10</span><span class="act">Other</span><span class="desc">standup + retro</span><span class="dur">30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="week-sep"><span class="t">6 – 12</span><span class="l"></span></div>
+
+    <div class="day dim">
+      <div class="day-row">
+        <span class="d-num">12</span><span class="d-wd">Sun</span><span class="d-chev"></span>
+        <span class="d-note"></span>
+        <span class="d-hours zero">—</span>
+        <span class="d-status none"><span class="sdot"></span></span>
+      </div>
+    </div>
+    <div class="day dim">
+      <div class="day-row">
+        <span class="d-num">11</span><span class="d-wd">Sat</span><span class="d-chev"></span>
+        <span class="d-note"></span>
+        <span class="d-hours zero">—</span>
+        <span class="d-status none"><span class="sdot"></span></span>
+      </div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">10</span><span class="d-wd">Fri</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours">8h 30m</span>
+        <span class="d-status pushed"><span class="sdot"></span>pushed</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">8h 00m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6701</span><span class="src">5 sessions</span><span class="desc"></span><span class="dur">8h 00m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h 30m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-10</span><span class="act">Other</span><span class="desc">standup</span><span class="dur">30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">9</span><span class="d-wd">Thu</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours under">7h 00m</span>
+        <span class="d-status outdated"><span class="sdot"></span>outdated</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">6h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6442</span><span class="src">3 sessions</span><span class="desc"></span><span class="dur">6h 30m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h 30m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-6701</span><span class="act">Merge</span><span class="desc">release merge conflicts</span><span class="dur">30m</span></div>
+        <div class="dr-hint">↻ изменён после пуша 10 Jul — в Tempo устаревшая версия, уйдёт как update</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">8</span><span class="d-wd">Wed</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours">8h 00m</span>
+        <span class="d-status pushed"><span class="sdot"></span>pushed</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">8h 00m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">2 sessions</span><span class="desc"></span><span class="dur">8h 00m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">7</span><span class="d-wd">Tue</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours">8h 00m</span>
+        <span class="d-status pushed"><span class="sdot"></span>pushed</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">7h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6442</span><span class="src">2 sessions</span><span class="desc"></span><span class="dur">4h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6701</span><span class="src">2 sessions</span><span class="desc"></span><span class="dur">3h 00m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h 30m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-10</span><span class="act">Other</span><span class="desc">standup</span><span class="dur">30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <!-- праздник с рабочими логами -->
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">6</span><span class="d-wd">Mon</span><span class="d-chev">▶</span>
+        <span class="d-note holiday">☀ National Holiday</span>
+        <span class="d-hours">1h 30m</span>
+        <span class="d-status pending"><span class="sdot"></span>pending</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">1h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">1 session</span><span class="desc">hotfix на празднике</span><span class="dur">1h 30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="week-sep"><span class="t">1 – 5</span><span class="l"></span></div>
+
+    <div class="day dim">
+      <div class="day-row">
+        <span class="d-num">5</span><span class="d-wd">Sun</span><span class="d-chev"></span>
+        <span class="d-note"></span>
+        <span class="d-hours zero">—</span>
+        <span class="d-status none"><span class="sdot"></span></span>
+      </div>
+    </div>
+    <div class="day dim">
+      <div class="day-row">
+        <span class="d-num">4</span><span class="d-wd">Sat</span><span class="d-chev"></span>
+        <span class="d-note"></span>
+        <span class="d-hours zero">—</span>
+        <span class="d-status none"><span class="sdot"></span></span>
+      </div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">3</span><span class="d-wd">Fri</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours under">7h 30m</span>
+        <span class="d-status pushed"><span class="sdot"></span>pushed</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">7h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">3 sessions</span><span class="desc"></span><span class="dur">7h 30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">2</span><span class="d-wd">Thu</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours">8h 00m</span>
+        <span class="d-status pushed"><span class="sdot"></span>pushed</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">8h 00m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6442</span><span class="src">4 sessions</span><span class="desc"></span><span class="dur">8h 00m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+    <div class="day">
+      <div class="day-row">
+        <span class="d-num">1</span><span class="d-wd">Wed</span><span class="d-chev">▶</span>
+        <span class="d-note"></span>
+        <span class="d-hours">8h 00m</span>
+        <span class="d-status pushed"><span class="sdot"></span>pushed</span>
+      </div>
+      <div class="drawer"><div class="drawer-inner">
+        <div class="dr-sec"><span class="mk">⊙</span> tracked <span class="sum">7h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6781</span><span class="src">2 sessions</span><span class="desc"></span><span class="dur">4h 30m</span></div>
+        <div class="dr-row tracked"><span class="task">ATL-6442</span><span class="src">1 session</span><span class="desc"></span><span class="dur">3h 00m</span></div>
+        <div class="dr-sec logged"><span class="mk">✎</span> logged <span class="sum">0h 30m</span></div>
+        <div class="dr-row manual"><span class="task">ATL-10</span><span class="act">Other</span><span class="desc">standup + kickoff</span><span class="dur">30m</span></div>
+        <div class="dr-hint"><span class="k">right-click</span> — actions · <span class="k">double-click</span> — edit</div>
+      </div></div>
+    </div>
+
+  </div><!-- /scroll-zone -->
+</div><!-- /frame -->
+
+<!-- context menu (заморожено в ит.4) -->
+<div class="ctx" id="ctx">
+  <div class="mi"><span class="ic">✎</span> Edit</div>
+  <div class="mi"><span class="ic">＋</span> Add log…</div>
+  <div class="mi"><span class="ic">★</span> Add to favorites</div>
+  <div class="sep"></div>
+  <div class="mi danger"><span class="ic">✕</span> Delete</div>
+</div>
+
+<div class="variant-note">
+  <b>Итерация 4 — переработка шапки после ит.3:</b><br>
+  · <b>Одна строка вместо двух этажей.</b> Слева <span class="k">‹ July 2026 ›</span>,
+  сразу за ним — статус-пилюля периода: читается «July 2026 — approved». Никаких
+  подписей под датой.<br>
+  · <b>Время справа одной строкой</b>: <b>89h 12m</b> <span style="opacity:.7">of 176h</span> ·
+  <span class="y">▾</span> 2h behind. Ничего не переносится на вторую строку.<br>
+  · Пилюля: open (нейтральная) · <span class="y">in review</span> · <span class="g">approved</span> ·
+  <span class="p" style="color:var(--red)">rejected</span>. Листай ‹ › — живёт вместе с кнопкой push
+  (approved → кнопка скрыта, будущий месяц → «nothing to push»).<br>
+  · Статус дня <b>outdated</b> закреплён (ит.3). Остальное без изменений: строки дней,
+  шторки, peach-недоработки, жёлтый today, заголовок «Timesheets» не вернулся.
+</div>
+
+<script>
+  // drawer toggle
+  document.querySelectorAll('.day').forEach(day => {
+    const row = day.querySelector('.day-row');
+    const drawer = day.querySelector('.drawer');
+    if (!drawer) return;
+    row.addEventListener('click', () => day.classList.toggle('open'));
+  });
+
+  // month pager — статус периода и push-кнопка меняются по месяцам
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const PERIODS = {
+    '2026-6': { status:'open',     push:'active' }, // July (текущий)
+    '2026-5': { status:'approved', push:'hidden' }, // June
+    '2026-4': { status:'rejected', push:'active' }, // May
+    '2026-3': { status:'approved', push:'hidden' }, // April
+    '2026-7': { status:'none',     push:'clean'  }, // August (будущее)
+  };
+  let pgY = 2026, pgM = 6; // July
+  const lbl = document.getElementById('pgLabel');
+  const st = document.getElementById('pgStatus');
+  const stTxt = st.querySelector('.txt');
+  const pushBtn = document.getElementById('pushBtn');
+
+  function pgRender() {
+    lbl.textContent = `${MONTHS[pgM]} ${pgY}`;
+    const p = PERIODS[`${pgY}-${pgM}`] || { status:'none', push:'clean' };
+    st.className = 'pstatus ' + p.status;
+    stTxt.textContent = p.status === 'in_review' ? 'in review' : p.status;
+    pushBtn.classList.remove('hidden','clean');
+    if (p.push === 'hidden') { pushBtn.classList.add('hidden'); }
+    else if (p.push === 'clean') { pushBtn.classList.add('clean'); pushBtn.innerHTML = '⚡ nothing to push'; }
+    else { pushBtn.innerHTML = '⚡ Push the Tempo <span class="cnt">7</span>'; }
+  }
+  document.getElementById('pgPrev').addEventListener('click', () => { pgM--; if (pgM < 0) { pgM = 11; pgY--; } pgRender(); });
+  document.getElementById('pgNext').addEventListener('click', () => { pgM++; if (pgM > 11) { pgM = 0; pgY++; } pgRender(); });
+
+  // context menu (заморожено)
+  const ctx = document.getElementById('ctx');
+  document.querySelectorAll('.dr-row.manual').forEach(r => {
+    r.addEventListener('contextmenu', e => {
+      e.preventDefault(); e.stopPropagation();
+      ctx.classList.add('show');
+      const w = 168, h = ctx.offsetHeight || 140;
+      ctx.style.left = Math.min(e.clientX, window.innerWidth - w - 8) + 'px';
+      ctx.style.top = Math.min(e.clientY, window.innerHeight - h - 8) + 'px';
+    });
+  });
+  window.addEventListener('click', () => ctx.classList.remove('show'));
+  window.addEventListener('contextmenu', e => { if (!e.target.closest('.dr-row.manual')) ctx.classList.remove('show'); });
+</script>
+
+</body>
+</html>

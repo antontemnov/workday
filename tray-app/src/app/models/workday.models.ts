@@ -220,32 +220,121 @@ export interface JiraSearchResponse {
   readonly hits: readonly JiraSearchHit[];
 }
 
-// ─── Timesheets ──────────────────────────────────────────────────────────
+// ─── Timesheets (month view) ─────────────────────────────────────────────
+// Mirrors the daemon's month/push/Tempo-meta contract (src/core/types.ts).
 
-// Mirrors src/core/types.ts DayStatus on the daemon side.
-export enum DayStatus {
-  Draft = 'draft',
-  Confirmed = 'confirmed',
+// Sync state of a day vs Tempo, derived offline from the daily log alone:
+// pending — has data, never pushed; outdated — pushed, then edited (Tempo
+// holds a stale version, next push sends updates); pushed — in sync.
+export enum MonthDayStatus {
+  None = 'none',
+  Pending = 'pending',
   Pushed = 'pushed',
+  Outdated = 'outdated',
 }
 
+export type ReportEntryKind = 'session' | 'manual';
+
+// One would-be Tempo worklog line: session aggregate (rounded, session-born
+// entries folded in) or a standalone manual entry.
 export interface MonthDayTask {
-  readonly key: string;        // e.g. 'ATL-6781' or 'standup'
-  readonly ms: number;
+  readonly task: string;
+  readonly seconds: number;
+  readonly kind: ReportEntryKind;
+  readonly sessionCount: number;   // 0 for manual kind
+  readonly description?: string;   // manual kind only
+  readonly activity?: string;      // manual kind only
 }
 
-export interface MonthDay {
-  readonly date: string;       // YYYY-MM-DD
-  readonly dayType: string;    // workday | weekend | holiday | overtime
-  readonly status: DayStatus;
-  readonly claimedMs: number;
+export interface MonthDaySummary {
+  readonly date: string;              // YYYY-MM-DD
+  readonly dayType: string | null;    // null when the day has no data
+  readonly status: MonthDayStatus;
+  readonly claimedMs: number;         // raw local total (sessions + manual)
+  readonly reportedSeconds: number;   // Σ tasks[].seconds — what push would send
+  readonly taskCount: number;
   readonly tasks: readonly MonthDayTask[];
+  readonly pushedAt: string | null;
+}
+
+export interface MonthTotals {
+  readonly claimedMs: number;
+  readonly reportedSeconds: number;
+  readonly daysWithData: number;
+  readonly pendingDays: number;
+  readonly outdatedDays: number;
+  readonly pushedDays: number;
 }
 
 export interface MonthResponse {
   readonly year: number;
-  readonly month: number;      // 1-12
-  readonly days: readonly MonthDay[];
+  readonly month: number;             // 1-12
+  readonly from: string;              // YYYY-MM-DD, first day
+  readonly to: string;                // YYYY-MM-DD, last day
+  // Full calendar month, oldest first — days without data carry status 'none'.
+  readonly days: readonly MonthDaySummary[];
+  readonly totals: MonthTotals;
+  readonly lastPushAt: string | null;
+}
+
+// ─── Tempo month meta (schedule / approvals proxies) ─────────────────────
+
+// Why the Tempo-side data is missing — the UI degrades silently on any of
+// these (no gauge, no holidays, no period pill).
+export type TempoMetaUnavailableReason = 'no-token' | 'scope' | 'error';
+
+export interface ScheduleDay {
+  readonly date: string;
+  readonly requiredSeconds: number;
+  // WORKING_DAY | NON_WORKING_DAY | HOLIDAY | HOLIDAY_AND_NON_WORKING_DAY
+  readonly type: string;
+  readonly holidayName: string | null;
+}
+
+export interface TempoScheduleResponse {
+  readonly available: boolean;
+  readonly reason?: TempoMetaUnavailableReason;
+  readonly days: readonly ScheduleDay[];
+  readonly requiredSecondsTotal: number;
+  readonly fromCache: boolean;
+}
+
+export interface TempoApprovalResponse {
+  readonly available: boolean;
+  readonly reason?: TempoMetaUnavailableReason;
+  readonly period: { readonly from: string; readonly to: string } | null;
+  readonly statusKey: string | null;        // OPEN | IN_REVIEW | APPROVED
+  readonly requiredSeconds: number | null;
+  readonly timeSpentSeconds: number | null; // Tempo-side logged total
+  readonly canSubmit: boolean;
+  readonly fromCache: boolean;
+}
+
+// ─── Push to Tempo ───────────────────────────────────────────────────────
+
+export type PushActionType = 'create' | 'update' | 'skip' | 'error';
+
+export interface PushPlanEntry {
+  readonly date: string;
+  readonly task: string;
+  readonly targetSeconds: number;
+  readonly action: PushActionType;
+  readonly detail: string;
+  readonly kind: ReportEntryKind;
+}
+
+export interface PushResult {
+  readonly posted: number;
+  readonly updated: number;
+  readonly deleted: number;
+  readonly skipped: number;
+  readonly failed: number;
+}
+
+export interface PushResponse {
+  readonly dryRun: boolean;
+  readonly plan: readonly PushPlanEntry[];
+  readonly result?: PushResult;
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────

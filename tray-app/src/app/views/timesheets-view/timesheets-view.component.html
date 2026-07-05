@@ -1,74 +1,105 @@
-<div class="content">
-  <!-- Two-row header: title + total + month-pager (row 1), action buttons (row 2).
-       Splitting into two rows leaves room for a third (or fourth) action button
-       without crowding the title or month-pager. -->
-  <div class="sheet-head">
-    <div class="sheet-head-row">
-      <div class="sheet-title">
-        <h2>Timesheets</h2>
-        <span class="sheet-total" *ngIf="!loading">
-          · <strong>{{ trackedTotal.toFixed(1) }}h</strong> tracked
-        </span>
-      </div>
-      <div class="month-pager">
-        <button class="nav-btn" (click)="prevMonth()" [disabled]="loading">‹</button>
-        <span class="label">{{ monthLabel }}</span>
-        <button class="nav-btn" (click)="nextMonth()" [disabled]="loading">›</button>
-      </div>
+<div class="ts-root">
+  <!-- Header, one line: month pager left · totals right (sum+required, delta under) -->
+  <div class="ts-head">
+    <div class="pager">
+      <button class="pbtn" (click)="prevMonth()" title="Previous month">‹</button>
+      <span class="plabel">{{ monthLabel }}</span>
+      <button class="pbtn" (click)="nextMonth()" title="Next month">›</button>
     </div>
-    <div class="sheet-actions">
-      <button class="btn" (click)="onExport()">Export</button>
-      <button class="btn primary"
-              [disabled]="pushDisabled"
-              [title]="readyToPushHours > 0 ? '' : 'No days are marked Ready'"
-              (click)="onPush()">
-        <ng-container *ngIf="readyToPushHours > 0; else nothingToPush">
-          Push to Tempo · {{ readyToPushHours.toFixed(1) }}h
-        </ng-container>
-        <ng-template #nothingToPush>Push to Tempo</ng-template>
-      </button>
+    <div class="totals" *ngIf="monthData && !loading">
+      <div class="t1">
+        <span class="tmain">{{ totalLabel }}</span>
+        <span class="tof" *ngIf="requiredLabel">of {{ requiredLabel }}</span>
+      </div>
+      <div class="tdelta" *ngIf="delta" [class.ahead]="delta.ahead">
+        <span class="mk">{{ delta.ahead ? '▴' : '▾' }}</span> {{ delta.label }}
+      </div>
     </div>
   </div>
 
-  <div class="status-msg" *ngIf="loading">Loading...</div>
+  <!-- Tempo strip: period status · last push · push button -->
+  <div class="actions" [class.no-status]="!periodStatus">
+    <span class="period-status" *ngIf="periodStatus" [ngClass]="periodStatus.cls">
+      <span class="sdot"></span>{{ periodStatus.label }}
+    </span>
+    <span class="push-note" *ngIf="pushNote; else lastPush">{{ pushNote }}</span>
+    <ng-template #lastPush>
+      <span class="push-note" *ngIf="lastPushLabel">last push {{ lastPushLabel }}</span>
+    </ng-template>
+    <button class="push-btn"
+            *ngIf="monthData && !pushHidden"
+            [class.clean]="pushCount === 0"
+            [disabled]="pushCount === 0 || pushing"
+            (click)="onPush()">
+      <ng-container *ngIf="pushing">⚡ pushing…</ng-container>
+      <ng-container *ngIf="!pushing && pushCount === 0">⚡ nothing to push</ng-container>
+      <ng-container *ngIf="!pushing && pushCount > 0">
+        ⚡ Push the Tempo <span class="cnt">{{ pushCount }}</span>
+      </ng-container>
+    </button>
+  </div>
+  <div class="push-error" *ngIf="pushError">{{ pushError }}</div>
 
-  <div class="sheet-grid" *ngIf="!loading">
-    <ng-container *ngFor="let week of weeks; let i = index">
-      <div class="week-sep" *ngIf="i > 0"></div>
-      <div class="sheet-row"
-           *ngFor="let row of week"
-           [class.today]="row.isToday"
-           [class.weekend]="row.isWeekend"
-           (click)="onRowClick(row)">
-        <div class="sheet-day">
-          <span class="num">{{ row.dayNum }}</span>
-          <span class="wd">{{ row.weekday }}</span>
+  <!-- Day list: newest first, week separators -->
+  <div class="scroll-zone">
+    <div class="status-msg" *ngIf="loading">Loading…</div>
+    <div class="status-msg" *ngIf="!loading && error && !monthData">{{ error }}</div>
+    <div class="status-msg" *ngIf="isEmpty">No days yet — this month hasn't started</div>
+
+    <ng-container *ngIf="!loading">
+      <ng-container *ngFor="let week of weeks; trackBy: trackByWeek">
+        <div class="week-sep"><span class="t">{{ week.label }}</span><span class="l"></span></div>
+
+        <div class="day"
+             *ngFor="let row of week.rows; trackBy: trackByDate"
+             [class.today]="row.isToday"
+             [class.dim]="row.dim"
+             [class.open]="isOpen(row.date)">
+          <div class="day-row" [class.static]="!row.hasData" (click)="toggleDay(row)">
+            <span class="d-num">{{ row.dayNum }}</span>
+            <span class="d-wd">{{ row.weekday }}</span>
+            <span class="d-chev">{{ row.hasData ? '▶' : '' }}</span>
+            <span class="d-note" [class.holiday]="row.holidayName">
+              {{ row.holidayName ? '☀ ' + row.holidayName : '' }}
+            </span>
+            <span class="d-hours" [class.under]="row.under" [class.zero]="!row.hasData">
+              {{ row.hasData ? row.hoursLabel : '—' }}
+            </span>
+            <span class="d-status" [ngClass]="row.status">
+              <span class="sdot"></span>{{ row.status !== 'none' ? row.status : '' }}
+            </span>
+          </div>
+
+          <!-- Drawer: what goes / went to Tempo for this day -->
+          <div class="drawer" *ngIf="row.hasData">
+            <div class="drawer-inner">
+              <div class="dr-sec">
+                <span class="mk">⊙</span> tracked <span class="sum">{{ row.trackedSumLabel }}</span>
+              </div>
+              <div class="dr-row tracked" *ngFor="let t of row.trackedRows">
+                <span class="task">{{ t.task }}</span>
+                <span class="src">{{ t.src }}</span>
+                <span class="desc"></span>
+                <span class="dur">{{ t.durLabel }}</span>
+              </div>
+              <ng-container *ngIf="row.loggedRows.length > 0">
+                <div class="dr-sec logged">
+                  <span class="mk">✎</span> logged <span class="sum">{{ row.loggedSumLabel }}</span>
+                </div>
+                <div class="dr-row manual" *ngFor="let t of row.loggedRows">
+                  <span class="task">{{ t.task }}</span>
+                  <span class="act">{{ t.activity }}</span>
+                  <span class="desc">{{ t.description }}</span>
+                  <span class="dur">{{ t.durLabel }}</span>
+                </div>
+              </ng-container>
+              <div class="dr-hint" *ngIf="row.status === 'outdated'">
+                ↻ edited after push — Tempo holds a stale version, the next push updates it
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="sheet-tasks">
-          <ng-container *ngIf="row.tasks.length > 0; else noTasks">
-            <span class="t"
-                  *ngFor="let t of row.tasks"
-                  [class.blue]="t.tone === 'blue'"
-                  [class.green]="t.tone === 'green'"
-                  [class.peach]="t.tone === 'peach'"
-                  [class.mauve]="t.tone === 'mauve'"
-                  [class.teal]="t.tone === 'teal'">{{ t.key }}</span>
-          </ng-container>
-          <ng-template #noTasks><span class="dash">—</span></ng-template>
-        </div>
-        <div class="sheet-hours">
-          <ng-container *ngIf="row.hours > 0 || row.tasks.length > 0; else dashHours">
-            {{ row.hours.toFixed(1) }}<span class="unit">h</span>
-          </ng-container>
-          <ng-template #dashHours><span class="dash">—</span></ng-template>
-        </div>
-        <div class="sheet-status"
-             [class.pushed]="row.status === 'pushed'"
-             [class.confirmed]="row.status === 'confirmed'"
-             [class.draft]="row.status === 'draft'">
-          {{ statusLabel(row.status) }}
-        </div>
-      </div>
+      </ng-container>
     </ng-container>
   </div>
 </div>

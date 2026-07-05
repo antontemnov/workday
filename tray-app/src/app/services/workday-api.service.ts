@@ -23,6 +23,9 @@ import {
   FavoriteRemoveResponse,
   FavoriteInput,
   JiraSearchResponse,
+  PushResponse,
+  TempoScheduleResponse,
+  TempoApprovalResponse,
 } from '../models/workday.models';
 
 /**
@@ -73,13 +76,14 @@ export abstract class WorkdayApiService {
   // a Settings link; debounce/min-length live on the UI side.
   abstract searchJira(query: string): Promise<ApiResponse<JiraSearchResponse>>;
 
-  // Timesheets view — per-month aggregated day summaries.
+  // Timesheets view — per-month aggregated day summaries (disk truth, offline).
   abstract getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>>;
-  // Mark a day as Confirmed (Draft → Confirmed). Pushed status is set by the
-  // push pipeline, not the user.
-  abstract confirmDay(date: string): Promise<ApiResponse<unknown>>;
   // Trigger the Tempo push for a date range; daemon side wraps runPush().
-  abstract pushToTempo(from: string, to: string): Promise<ApiResponse<unknown>>;
+  abstract pushToTempo(from: string, to: string): Promise<ApiResponse<PushResponse>>;
+  // Tempo-side month meta — cached daemon-side, {available:false} degrades
+  // the UI silently (missing token scope / network failure).
+  abstract getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>>;
+  abstract getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;

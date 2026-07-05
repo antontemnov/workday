@@ -90,8 +90,7 @@
       (favoritesRemoveSubmitted)="submitFavoritesRemove($event)"
       (settingsRequested)="setView('set')" />
 
-    <app-timesheets-view *ngSwitchCase="'sheet'"
-      (daySelected)="onDaySelected($event)" />
+    <app-timesheets-view *ngSwitchCase="'sheet'" />
 
     <app-settings-view *ngSwitchCase="'set'"
       [daemonReachable]="daemonReachable"

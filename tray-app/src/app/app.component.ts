@@ -279,16 +279,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.activeView = v;
   }
 
-  // Timesheets click on a day row → switch to Day view for that date.
-  onDaySelected(date: string): void {
-    this.viewedDate = date;
-    this.activeView = 'day';
-    this.data = null;
-    this.error = null;
-    this.loading = true;
-    void this.refresh();
-  }
-
   // DayView mode pill click → existing pause / sensitivity action.
   async onPillSelected(e: { session: SessionDetail; pill: SensitivityPill }): Promise<void> {
     if (e.pill === 'pause') {
