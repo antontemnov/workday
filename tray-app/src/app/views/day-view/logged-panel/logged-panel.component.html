@@ -22,6 +22,8 @@
         <div class="log-row"
              *ngFor="let e of displayEntries; trackBy: trackByEntry"
              [class.fresh]="isFresh(e)"
+             [class.pop]="poppingIds.has(e.id)"
+             [style.animation-delay.ms]="popDelayMs.get(e.id)"
              [class.editing]="editingId === e.id"
              [class.deleted]="isDeleted(e)"
              [class.removing]="removingIds.has(e.id)"

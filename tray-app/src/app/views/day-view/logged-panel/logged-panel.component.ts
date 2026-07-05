@@ -20,6 +20,9 @@ const PENDING_TTL_MS = 10_000;
 const UNDO_WINDOW_MS = 3000;
 const REMOVE_ANIM_MS = 240;
 const FAV_FEEDBACK_MS = 1200;
+// Batch / instant static rows fly in once with a staggered pop.
+const POP_ANIM_MS = 500;
+const POP_STAGGER_MS = 80;
 
 /**
  * Pinned Logged panel — the manual-entries band docked to the bottom of the
@@ -88,6 +91,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private hiddenIds = new Set<string>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  // Pop pipeline: new static rows (batch / instant) fly in once, staggered.
+  // The fresh draft has its own row-in and is skipped.
+  private seenIds = new Set<string>();
+  private firstEntriesChange = true;
+  poppingIds = new Set<string>();
+  popDelayMs = new Map<string, number>();
+  private popTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
   // "★ added to favorites" feedback riding the description for ~1.2s.
   favDoneId: string | null = null;
   private favDoneTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,6 +128,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       }
       this.reconcilePending();
       this.reconcileDeletes();
+      this.detectPops();
       if (this.editingId !== null && !this.entries.some(e => e.id === this.editingId)) {
         this.editingId = null; // the edited entry is gone (external change)
       }
@@ -137,6 +149,47 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
     this.pendingTimers.forEach(t => clearTimeout(t));
     this.removeTimers.forEach(t => clearTimeout(t));
+    this.popTimers.forEach(t => clearTimeout(t));
+  }
+
+  // ─── Pop-in for new static rows (batch / instant) ──────────────────────
+
+  // Fly in genuinely-new rows once, staggered. Silently adopt on the first
+  // sight, on a past-day view, and on a wholesale set swap (date navigation) —
+  // only incremental additions to today's log pop.
+  private detectPops(): void {
+    const ids = this.entries.map(e => e.id);
+    const curSet = new Set(ids);
+    const prev = this.seenIds;
+    const anyVanished = [...prev].some(id => !curSet.has(id));
+    const anyNew = ids.some(id => !prev.has(id));
+    const swap = this.firstEntriesChange || !this.isViewingToday
+      || (anyVanished && anyNew && prev.size > 0);
+    this.firstEntriesChange = false;
+    this.seenIds = curSet;
+    if (swap) { this.clearPops(); return; }
+
+    let stagger = 0;
+    for (const id of ids) {
+      if (prev.has(id) || id === this.freshId) continue; // existing or draft
+      this.poppingIds.add(id);
+      this.popDelayMs.set(id, stagger);
+      const total = stagger + POP_ANIM_MS;
+      stagger += POP_STAGGER_MS;
+      const t = setTimeout(() => {
+        this.poppingIds.delete(id);
+        this.popDelayMs.delete(id);
+        this.popTimers.delete(id);
+      }, total);
+      this.popTimers.set(id, t);
+    }
+  }
+
+  private clearPops(): void {
+    this.popTimers.forEach(t => clearTimeout(t));
+    this.popTimers.clear();
+    this.poppingIds.clear();
+    this.popDelayMs.clear();
   }
 
   // ─── Header ────────────────────────────────────────────────────────────

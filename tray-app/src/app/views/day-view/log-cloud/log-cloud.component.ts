@@ -54,6 +54,9 @@ const JIRA_MAX_HITS = 5;
 const DEFAULT_FORM_MINUTES = 30;
 const FAV_NAME_MAX = 26;
 const FAV_FEEDBACK_MS = 1200;
+// Removed favorite chips shrink away (staggered in batch) before the emit.
+const SHRINK_STAGGER_MS = 40;
+const SHRINK_ANIM_MS = 180;
 
 /**
  * Log cloud — the chip overlay that opens from the Logged panel's ghost row /
@@ -112,6 +115,10 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   savedJiraKey: string | null = null;
   private savedTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Favorites shrinking away before their removal reaches the daemon.
+  shrinkingIds = new Set<string>();
+  private shrinkTimers: ReturnType<typeof setTimeout>[] = [];
+
   jiraZone: JiraZone = 'idle';
   jiraHits: readonly JiraSearchHit[] = [];
   private jiraTimer: ReturnType<typeof setTimeout> | null = null;
@@ -143,6 +150,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     if (this.spawnTimer) clearTimeout(this.spawnTimer);
     if (this.jiraTimer) clearTimeout(this.jiraTimer);
     if (this.savedTimer) clearTimeout(this.savedTimer);
+    this.shrinkTimers.forEach(t => clearTimeout(t));
   }
 
   private resetState(): void {
@@ -357,9 +365,19 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   removeMarked(): void {
     if (this.marked.size === 0) return;
-    this.favoritesRemoved.emit([...this.marked]);
-    this.setEditMode(false);
-    this.focusFilter(0);
+    const all = [...this.marked];
+    // Shrink the visible marked chips in order, staggered; then emit + exit.
+    const visible = this.filteredFavorites.filter(f => this.marked.has(f.id));
+    visible.forEach((f, i) => {
+      this.shrinkTimers.push(setTimeout(() => this.shrinkingIds.add(f.id), i * SHRINK_STAGGER_MS));
+    });
+    const total = Math.max(0, visible.length - 1) * SHRINK_STAGGER_MS + SHRINK_ANIM_MS;
+    this.shrinkTimers.push(setTimeout(() => {
+      this.favoritesRemoved.emit(all);
+      this.setEditMode(false);
+      this.shrinkingIds.clear();
+      this.focusFilter(0);
+    }, total));
   }
 
   onFavContextMenu(f: Favorite, ev: MouseEvent): void {
@@ -367,8 +385,17 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     ev.stopPropagation();
     openCtxMenu(ev.clientX, ev.clientY, [
       { icon: '✕', label: 'Remove from favorites', danger: true,
-        action: () => this.favoritesRemoved.emit([f.id]) },
+        action: () => this.shrinkFavorite(f.id) },
     ]);
+  }
+
+  // Play the chip's shrink-away, then let the removal reach the daemon.
+  private shrinkFavorite(id: string): void {
+    this.shrinkingIds.add(id);
+    this.shrinkTimers.push(setTimeout(() => {
+      this.favoritesRemoved.emit([id]);
+      this.shrinkingIds.delete(id);
+    }, SHRINK_ANIM_MS));
   }
 
   onJiraContextMenu(h: JiraSearchHit, ev: MouseEvent): void {

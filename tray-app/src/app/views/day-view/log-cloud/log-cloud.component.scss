@@ -84,6 +84,13 @@
   background: rgba(243, 139, 168, 0.08);
 }
 
+// Only one mode active at a time — dim & disable the other's toggle.
+:host(.edit-mode) .f-batch,
+:host(.batch-mode) .f-edit {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .cloud-body {
   max-height: 212px;
   overflow: hidden;
@@ -173,6 +180,14 @@
 
     &::before { content: '✕'; font-size: 9px; color: #f38ba8; font-weight: 700; }
     .f-name { color: #f38ba8; }
+  }
+
+  // Shrinking away just before the removal reaches the daemon.
+  &.shrink {
+    transition: transform 0.18s ease, opacity 0.18s ease;
+    transform: scale(0.5);
+    opacity: 0;
+    pointer-events: none;
   }
 
   // Suggested chips — teal species.
