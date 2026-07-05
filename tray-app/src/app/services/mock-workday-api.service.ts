@@ -28,6 +28,7 @@ import {
   FavoriteAddResponse,
   FavoriteRemoveResponse,
   FavoriteInput,
+  normalizeFavName,
   JiraSearchHit,
   JiraSearchResponse,
 } from '../models/workday.models';
@@ -125,9 +126,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
           repo: 'D:/work/infra-scripts',
           task: 'OPS-512',
           branch: 'OPS-512-pipeline-tweak',
-          state: 'pending',
+          // Idle = activated then auto-paused; a never-activated session can't
+          // be idle (real-data invariant, add-time gate relies on it).
+          state: 'active',
           startedAt: this.iso(11, 30),
-          activatedAt: null,
+          activatedAt: this.iso(11, 33),
           lastSeenAt: this.iso(11, 55),
           paused: true,
           pauseSource: 'idle_timeout',
@@ -381,9 +384,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
     await delay(150);
     if (!input.task) return { ok: false, error: 'Task is required' };
     if (!input.name) return { ok: false, error: 'Name is required' };
+    // Duplicate rule mirrors the daemon: task + name + minutes is the identity.
     const dup = this.mockFavorites.some(f =>
       f.task.toLowerCase() === input.task.toLowerCase()
-      && f.name.toLowerCase() === input.name.toLowerCase());
+      && normalizeFavName(f.name) === normalizeFavName(input.name)
+      && f.minutes === input.minutes);
     if (dup) return { ok: false, error: `Already in favorites: ${input.task} — "${input.name}"` };
     const added: Favorite = {
       id: `f${this.mockFavSeq++}`,

@@ -58,6 +58,13 @@ html, body {
       .ci-ic { color: #f38ba8; }
       &:hover { background: rgba(243, 139, 168, 0.12); color: #f38ba8; }
     }
+
+    &.disabled {
+      color: #585b70;
+      cursor: default;
+      .ci-ic { color: #45475a; }
+      &:hover { background: none; color: #585b70; }
+    }
   }
 }
 

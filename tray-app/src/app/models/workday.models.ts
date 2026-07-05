@@ -177,6 +177,15 @@ export interface Favorite {
   readonly createdAt: string;
 }
 
+/**
+ * Favorite-name comparison key: case-insensitive, inner whitespace collapsed.
+ * Template identity = task + this key + minutes; keep in sync with the
+ * daemon's normalizeFavoriteName (src/core/favorites.ts).
+ */
+export function normalizeFavName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export interface FavoritesResponse {
   readonly favorites: readonly Favorite[];
 }

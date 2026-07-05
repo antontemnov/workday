@@ -45,9 +45,15 @@ export function resolveFavoriteTarget(favorites: readonly Favorite[], target: st
   return favorites.find(f => f.id === target) ?? null;
 }
 
+/** Name comparison key: case-insensitive, inner whitespace collapsed. */
+export function normalizeFavoriteName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 /**
  * Add a favorite template. Duplicate rule mirrors the UI: same task + name
- * (case-insensitive) is one template regardless of minutes/activity.
+ * (case/whitespace-insensitive) + minutes is one template; a different
+ * duration is a distinct template (e.g. Meeting 30m vs Meeting 1h).
  * Throws on validation failure.
  */
 export function addFavorite(
@@ -74,7 +80,8 @@ export function addFavorite(
 
   const dup = favorites.some(f =>
     f.task.toLowerCase() === task.toLowerCase()
-    && f.name.toLowerCase() === name.toLowerCase());
+    && normalizeFavoriteName(f.name) === normalizeFavoriteName(name)
+    && f.minutes === input.minutes);
   if (dup) throw new Error(`Already in favorites: ${task} — "${name}"`);
 
   const favorite: Favorite = {

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
+  normalizeFavName,
 } from '../../../models/workday.models';
 import { activityLabel, activityTone } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
@@ -294,9 +295,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (this.editingId === e.id || this.isFresh(e) || this.isDeleted(e)) return;
     const items = [
       ...(this.canEdit(e) ? [{ icon: '✎', label: 'Edit', action: () => this.onRowDblClick(e) }] : []),
-      // Hidden (not disabled) when the row already has this template.
-      ...(this.canAddToFavorites(e)
-        ? [{ icon: '★', label: 'Add to favorites', action: () => this.addToFavorites(e) }] : []),
+      // Hidden only when structurally impossible (no description to name the
+      // template); an exact duplicate shows as a disabled fact instead.
+      ...(this.canFavorite(e)
+        ? [this.isInFavorites(e)
+          ? { icon: '★', label: 'In favorites', disabled: true,
+              title: 'This exact task + description + duration is already saved', action: (): void => {} }
+          : { icon: '★', label: 'Add to favorites', action: () => this.addToFavorites(e) }]
+        : []),
       ...(this.canDelete(e)
         ? [{ icon: '✕', label: 'Delete', danger: true, action: () => this.deleteEntry(e) }] : []),
     ];
@@ -304,11 +310,19 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   // A favorite is task + name (description) — no description, nothing to save.
-  private canAddToFavorites(e: ManualEntry): boolean {
-    if (!this.canEdit(e)) return false;
-    const name = this.displayDescription(e).trim();
-    if (!name) return false;
-    return !this.favorites.some(f => f.task === e.task && f.name === name);
+  private canFavorite(e: ManualEntry): boolean {
+    return this.canEdit(e) && this.displayDescription(e).trim() !== '';
+  }
+
+  // Template identity mirrors the daemon: task + name (case/whitespace-
+  // insensitive) + minutes. A changed duration is a new template again.
+  private isInFavorites(e: ManualEntry): boolean {
+    const name = normalizeFavName(this.displayDescription(e));
+    const minutes = this.displayMinutes(e);
+    return this.favorites.some(f =>
+      f.task.toLowerCase() === e.task.toLowerCase()
+      && normalizeFavName(f.name) === name
+      && f.minutes === minutes);
   }
 
   private addToFavorites(e: ManualEntry): void {

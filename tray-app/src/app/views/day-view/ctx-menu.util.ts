@@ -7,6 +7,10 @@ export interface CtxMenuItem {
   readonly icon: string;
   readonly label: string;
   readonly danger?: boolean;
+  // Rendered dimmed and inert — states a fact ("In favorites") rather than
+  // hiding the entry, so the mechanic stays discoverable.
+  readonly disabled?: boolean;
+  readonly title?: string;
   readonly action: () => void;
 }
 
@@ -26,12 +30,15 @@ export function openCtxMenu(x: number, y: number, items: readonly CtxMenuItem[])
   menu.className = 'ctx-menu';
   for (const item of items) {
     const el = document.createElement('div');
-    el.className = 'ctx-item' + (item.danger ? ' danger' : '');
+    el.className = 'ctx-item' + (item.danger ? ' danger' : '') + (item.disabled ? ' disabled' : '');
+    if (item.title) el.title = item.title;
     const ic = document.createElement('span');
     ic.className = 'ci-ic';
     ic.textContent = item.icon;
     el.append(ic, document.createTextNode(item.label));
-    el.addEventListener('click', () => { closeCtxMenu(); item.action(); });
+    if (!item.disabled) {
+      el.addEventListener('click', () => { closeCtxMenu(); item.action(); });
+    }
     menu.appendChild(el);
   }
   document.body.appendChild(menu);

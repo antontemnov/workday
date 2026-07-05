@@ -183,10 +183,18 @@ export class SessionCardComponent {
   // Tops up this session's tracked time. Mirrors the LOG TIME composer (shared
   // DurationFieldComponent: free-text "1h 30m", quick-picks, wheel).
 
-  // A session without a task can't produce an entry — the chip is disabled
-  // in the template; use the dock "Log" button with an explicit task instead.
+  // A session without a task can't produce an entry; a pending session is
+  // not in the daily log yet (activity-gated), so the daemon would answer
+  // "Session not found" — the chip stays disabled until activation.
   get canAddTime(): boolean {
-    return this.isViewingToday && !!this.session.task;
+    return this.isViewingToday && !!this.session.task && !!this.session.activatedAt;
+  }
+
+  get timeChipTitle(): string {
+    if (this.canAddTime) return 'Click to add manual time';
+    if (!this.isViewingToday) return '';
+    if (!this.session.task) return 'No task — use Log to add time';
+    return 'Pending — add time becomes available once the session starts';
   }
 
   onTimeClick(): void {

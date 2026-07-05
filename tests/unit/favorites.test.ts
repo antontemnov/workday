@@ -98,12 +98,28 @@ test('save/load round-trip persists the list', () => {
   assert.ok(Array.isArray(raw.favorites));
 });
 
-test('duplicate task+name is rejected (case-insensitive, minutes ignored)', () => {
+test('duplicate task+name+minutes is rejected (case/whitespace-insensitive)', () => {
   const config = makeConfig();
   const favorites: Favorite[] = [];
   addStd(favorites, config);
-  assert.throws(() => addStd(favorites, config, { minutes: 60 }), /Already in favorites/);
-  assert.throws(() => addStd(favorites, config, { name: 'STANDUP' }), /Already in favorites/);
+  assert.throws(() => addStd(favorites, config), /Already in favorites/);
+  assert.throws(() => addStd(favorites, config, { name: '  STANDUP ' }), /Already in favorites/);
+  assert.equal(favorites.length, 1);
+});
+
+test('same task+name with different minutes is a distinct template', () => {
+  const config = makeConfig();
+  const favorites: Favorite[] = [];
+  addStd(favorites, config);
+  addStd(favorites, config, { minutes: 60 });
+  assert.equal(favorites.length, 2);
+});
+
+test('inner whitespace does not fork a template', () => {
+  const config = makeConfig();
+  const favorites: Favorite[] = [];
+  addStd(favorites, config, { name: 'stand up' });
+  assert.throws(() => addStd(favorites, config, { name: 'stand   up' }), /Already in favorites/);
   assert.equal(favorites.length, 1);
 });
 

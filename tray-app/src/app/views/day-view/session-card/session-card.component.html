@@ -19,7 +19,7 @@
               (click)="onTimeClick()"
               [class.active]="addPopoverOpen"
               [disabled]="!canAddTime || actionPending"
-              [title]="canAddTime ? 'Click to add manual time' : 'No task — use Log to add time'">
+              [title]="timeChipTitle">
         <svg class="mi" viewBox="0 0 14 14" aria-hidden="true">
           <circle cx="7" cy="8.4" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"></circle>
           <path d="M7 8.4V5.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>

@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   ActivityType, ApiErrorCode, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, JiraSearchHit,
-  ManualEntryInput,
+  ManualEntryInput, normalizeFavName,
 } from '../../../models/workday.models';
 import { WorkdayApiService } from '../../../services/workday-api.service';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
@@ -401,18 +401,31 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   onJiraContextMenu(h: JiraSearchHit, ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
-    // Already templated — no menu at all (no disabled items by design).
-    if (this.favorites.some(f => f.task === h.key)) return;
+    // Duplicate = the exact template this save would create (task + name +
+    // default minutes), same identity as the daemon; other templates on the
+    // same task don't block saving another one.
+    const name = normalizeFavName(this.jiraFavName(h));
+    const dup = this.favorites.some(f =>
+      f.task.toLowerCase() === h.key.toLowerCase()
+      && normalizeFavName(f.name) === name
+      && f.minutes === DEFAULT_FORM_MINUTES);
     openCtxMenu(ev.clientX, ev.clientY, [
-      { icon: '★', label: 'Save as favorite', action: () => this.saveJiraAsFavorite(h) },
+      dup
+        ? { icon: '★', label: 'In favorites', disabled: true,
+            title: 'This task + summary + default duration is already saved', action: (): void => {} }
+        : { icon: '★', label: 'Save as favorite', action: () => this.saveJiraAsFavorite(h) },
     ]);
+  }
+
+  private jiraFavName(h: JiraSearchHit): string {
+    return h.summary.length > FAV_NAME_MAX
+      ? `${h.summary.slice(0, FAV_NAME_MAX - 1)}…`
+      : h.summary;
   }
 
   // Template without logging: name from the summary, defaults for the rest.
   private saveJiraAsFavorite(h: JiraSearchHit): void {
-    const name = h.summary.length > FAV_NAME_MAX
-      ? `${h.summary.slice(0, FAV_NAME_MAX - 1)}…`
-      : h.summary;
+    const name = this.jiraFavName(h);
     this.favoriteSaved.emit({
       name, task: h.key, minutes: DEFAULT_FORM_MINUTES, activity: 'Other',
     });
