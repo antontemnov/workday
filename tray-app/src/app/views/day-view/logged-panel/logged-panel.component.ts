@@ -1,9 +1,12 @@
 import { Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivityType, DEVELOPMENT_ACTIVITY, ManualEntry, ManualEntryPatch } from '../../../models/workday.models';
+import {
+  ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
+} from '../../../models/workday.models';
 import { activityLabel, activityTone } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
+import { openCtxMenu } from '../ctx-menu.util';
 
 const FRESH_WINDOW_MS = 4000;
 const STEP_MINUTES = 15;
@@ -12,6 +15,11 @@ const MAX_MINUTES = 480;
 // Safety net: a pending patch the data never confirms (failed PATCH) reverts
 // the optimistic row after this long.
 const PENDING_TTL_MS = 10_000;
+// Delete is instant with a client-side undo: the row stays struck-through
+// with a burning ↩ for this long, then collapses and the DELETE goes out.
+const UNDO_WINDOW_MS = 3000;
+const REMOVE_ANIM_MS = 240;
+const FAV_FEEDBACK_MS = 1200;
 
 /**
  * Pinned Logged panel — the manual-entries band docked to the bottom of the
@@ -36,12 +44,17 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input() isViewingToday = true;
   @Input() actionPending = false;
   @Input() activityTypes: readonly ActivityType[] = [];
+  @Input() favorites: readonly Favorite[] = [];
   @Input() suggestedCount = 0;
   // Id of the entry created by the latest cloud pick — opens the draft window.
   @Input() freshEntryId: string | null = null;
 
   @Output() logRequested = new EventEmitter<void>();
   @Output() patchCommitted = new EventEmitter<{ id: string; patch: ManualEntryPatch }>();
+  // Fired when the undo window closes — the entry is gone for the user; the
+  // parent sends the actual DELETE (undo never re-creates server-side).
+  @Output() deleteCommitted = new EventEmitter<string>();
+  @Output() favoriteAdded = new EventEmitter<FavoriteInput>();
   // Uncommitted + unconfirmed local minutes vs the server data — the parent
   // adds it to the Day total so it moves together with the panel Σ.
   @Output() liveDiffChanged = new EventEmitter<number>();
@@ -68,6 +81,17 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private pending = new Map<string, ManualEntryPatch>();
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  // Delete pipeline: undo window (timer) → collapse animation → hidden until
+  // the server data drops the row. Σ excludes an entry from the first stage.
+  private deleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  removingIds = new Set<string>();
+  private hiddenIds = new Set<string>();
+  private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // "★ added to favorites" feedback riding the description for ~1.2s.
+  favDoneId: string | null = null;
+  private favDoneTimer: ReturnType<typeof setTimeout> | null = null;
+
   private prevDisplayedSum: number | null = null;
   private lastEmittedDiff = 0;
 
@@ -92,6 +116,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         if (e) { this.freshMinutes = e.minutes; this.freshBase = e.minutes; }
       }
       this.reconcilePending();
+      this.reconcileDeletes();
       if (this.editingId !== null && !this.entries.some(e => e.id === this.editingId)) {
         this.editingId = null; // the edited entry is gone (external change)
       }
@@ -101,8 +126,17 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   ngOnDestroy(): void {
     this.freeze(); // don't lose a pending stepper diff on teardown
+    // Deletes past their undo click are the user's intent — commit them now
+    // instead of silently resurrecting the rows on the next visit.
+    for (const [id, timer] of this.deleteTimers) {
+      clearTimeout(timer);
+      this.deleteCommitted.emit(id);
+    }
+    this.deleteTimers.clear();
     if (this.flashTimer) clearTimeout(this.flashTimer);
+    if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
     this.pendingTimers.forEach(t => clearTimeout(t));
+    this.removeTimers.forEach(t => clearTimeout(t));
   }
 
   // ─── Header ────────────────────────────────────────────────────────────
@@ -118,8 +152,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   // Newest first — a fresh log lands at the top, right under the ghost row.
+  // Rows whose DELETE is already sent stay hidden until the data confirms.
   get displayEntries(): readonly ManualEntry[] {
-    return [...this.entries].reverse();
+    return [...this.entries].filter(e => !this.hiddenIds.has(e.id)).reverse();
   }
 
   // Σ shown in the header — server data plus every local override.
@@ -127,8 +162,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.displayedSumMinutes * 60_000;
   }
 
+  // A deleted row leaves the Σ the moment the undo window opens.
   private get displayedSumMinutes(): number {
-    return this.entries.reduce((sum, e) => sum + this.displayMinutes(e), 0);
+    return this.entries.reduce(
+      (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
+  }
+
+  private isGoneLocally(id: string): boolean {
+    return this.deleteTimers.has(id) || this.removingIds.has(id) || this.hiddenIds.has(id);
   }
 
   private get rawSumMinutes(): number {
@@ -180,8 +221,102 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.isViewingToday && !e.sourceSessionId && !this.isFresh(e);
   }
 
+  // Session-born entries can't be edited, but deleting them is legal.
+  canDelete(e: ManualEntry): boolean {
+    return this.isViewingToday && !this.isFresh(e);
+  }
+
   rowTitle(e: ManualEntry): string {
-    return this.canEdit(e) && this.editingId !== e.id ? 'double-click — edit' : '';
+    if (this.editingId === e.id || this.isDeleted(e)) return '';
+    if (this.canEdit(e)) return 'right-click — actions · double-click — edit';
+    if (this.canDelete(e)) return 'right-click — actions';
+    return '';
+  }
+
+  // ─── Context menu (right-click) ─────────────────────────────────────────
+
+  onRowContextMenu(e: ManualEntry, ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (this.editingId === e.id || this.isFresh(e) || this.isDeleted(e)) return;
+    const items = [
+      ...(this.canEdit(e) ? [{ icon: '✎', label: 'Edit', action: () => this.onRowDblClick(e) }] : []),
+      // Hidden (not disabled) when the row already has this template.
+      ...(this.canAddToFavorites(e)
+        ? [{ icon: '★', label: 'Add to favorites', action: () => this.addToFavorites(e) }] : []),
+      ...(this.canDelete(e)
+        ? [{ icon: '✕', label: 'Delete', danger: true, action: () => this.deleteEntry(e) }] : []),
+    ];
+    openCtxMenu(ev.clientX, ev.clientY, items);
+  }
+
+  // A favorite is task + name (description) — no description, nothing to save.
+  private canAddToFavorites(e: ManualEntry): boolean {
+    if (!this.canEdit(e)) return false;
+    const name = this.displayDescription(e).trim();
+    if (!name) return false;
+    return !this.favorites.some(f => f.task === e.task && f.name === name);
+  }
+
+  private addToFavorites(e: ManualEntry): void {
+    this.favoriteAdded.emit({
+      name: this.displayDescription(e).trim(),
+      task: e.task,
+      minutes: this.displayMinutes(e),
+      activity: this.displayActivity(e),
+    });
+    this.favDoneId = e.id;
+    if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
+    this.favDoneTimer = setTimeout(() => this.favDoneId = null, FAV_FEEDBACK_MS);
+  }
+
+  // ─── Delete with undo ────────────────────────────────────────────────────
+
+  isDeleted(e: ManualEntry): boolean {
+    return this.deleteTimers.has(e.id) || this.removingIds.has(e.id);
+  }
+
+  private deleteEntry(e: ManualEntry): void {
+    if (this.editingId === e.id) this.editingId = null;
+    this.deleteTimers.set(e.id, setTimeout(() => this.startRemove(e.id), UNDO_WINDOW_MS));
+    this.recomputeLive();
+  }
+
+  undoDelete(e: ManualEntry, ev: MouseEvent): void {
+    ev.stopPropagation();
+    const timer = this.deleteTimers.get(e.id);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.deleteTimers.delete(e.id);
+    this.recomputeLive();
+  }
+
+  // Undo window over: collapse the row, then send the DELETE. Undo past this
+  // point doesn't exist — the design keeps it purely client-side.
+  private startRemove(id: string): void {
+    this.deleteTimers.delete(id);
+    this.removingIds.add(id);
+    this.removeTimers.set(id, setTimeout(() => {
+      this.removingIds.delete(id);
+      this.removeTimers.delete(id);
+      this.hiddenIds.add(id);
+      this.deleteCommitted.emit(id);
+    }, REMOVE_ANIM_MS));
+  }
+
+  // Server data caught up (or the entry vanished externally) — drop the
+  // local delete state for ids the data no longer carries.
+  private reconcileDeletes(): void {
+    const alive = new Set(this.entries.map(e => e.id));
+    for (const id of [...this.hiddenIds]) {
+      if (!alive.has(id)) this.hiddenIds.delete(id);
+    }
+    for (const [id, timer] of [...this.deleteTimers]) {
+      if (!alive.has(id)) {
+        clearTimeout(timer);
+        this.deleteTimers.delete(id);
+      }
+    }
   }
 
   // ─── Pending patches ────────────────────────────────────────────────────
@@ -257,7 +392,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // ─── Inline row edit (double-click) ────────────────────────────────────
 
   onRowDblClick(e: ManualEntry): void {
-    if (!this.canEdit(e) || this.actionPending || this.editingId === e.id) return;
+    if (!this.canEdit(e) || this.actionPending || this.editingId === e.id || this.isDeleted(e)) return;
     this.editingId = e.id;
     this.editMinutes = this.displayMinutes(e);
     this.editActivity = this.displayActivity(e);

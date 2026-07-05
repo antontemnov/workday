@@ -5,10 +5,12 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
-  ActivityType, ApiErrorCode, DEVELOPMENT_ACTIVITY, Favorite, JiraSearchHit, ManualEntryInput,
+  ActivityType, ApiErrorCode, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, JiraSearchHit,
+  ManualEntryInput,
 } from '../../../models/workday.models';
 import { WorkdayApiService } from '../../../services/workday-api.service';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
+import { openCtxMenu } from '../ctx-menu.util';
 
 // Tracker-noticed log suggestion (e.g. a review of someone else's branch).
 // UI-side only for now — the daemon has no suggestions surface yet, so the
@@ -50,6 +52,8 @@ const JIRA_DEBOUNCE_MS = 350;
 const JIRA_MIN_QUERY = 2;
 const JIRA_MAX_HITS = 5;
 const DEFAULT_FORM_MINUTES = 30;
+const FAV_NAME_MAX = 26;
+const FAV_FEEDBACK_MS = 1200;
 
 /**
  * Log cloud — the chip overlay that opens from the Logged panel's ghost row /
@@ -75,6 +79,10 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @Output() chipPicked = new EventEmitter<ChipPick>();
   @Output() formSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
+  // Favorites management: right-click a Jira result → save a template;
+  // right-click a favorite chip / ✎ edit-mode batch → remove (ids).
+  @Output() favoriteSaved = new EventEmitter<FavoriteInput>();
+  @Output() favoritesRemoved = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();
   @Output() closed = new EventEmitter<void>();
 
@@ -89,11 +97,20 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @HostBinding('class.form-mode') get isFormMode(): boolean { return this.mode === 'form'; }
   @HostBinding('class.review-mode') get isReviewMode(): boolean { return this.mode === 'review'; }
   @HostBinding('class.batch-mode') get isBatchMode(): boolean { return this.batch && this.mode === 'chips'; }
+  @HostBinding('class.edit-mode') get isEditMode(): boolean { return this.editMode && this.mode === 'chips'; }
 
   filter = '';
   mode: CloudMode = 'chips';
   batch = false;
   basket: BasketItem[] = [];
+
+  // ✎ edit mode — mark superfluous favorites, remove them in one batch.
+  editMode = false;
+  marked = new Set<string>();
+
+  // "★ saved to favorites" feedback on a Jira chip (its key), ~1.2s.
+  savedJiraKey: string | null = null;
+  private savedTimer: ReturnType<typeof setTimeout> | null = null;
 
   jiraZone: JiraZone = 'idle';
   jiraHits: readonly JiraSearchHit[] = [];
@@ -125,6 +142,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   ngOnDestroy(): void {
     if (this.spawnTimer) clearTimeout(this.spawnTimer);
     if (this.jiraTimer) clearTimeout(this.jiraTimer);
+    if (this.savedTimer) clearTimeout(this.savedTimer);
   }
 
   private resetState(): void {
@@ -132,6 +150,8 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     this.mode = 'chips';
     this.batch = false;
     this.basket = [];
+    this.editMode = false;
+    this.marked.clear();
     this.cancelJira();
   }
 
@@ -157,15 +177,16 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   }
 
   // Suggested row shows only on the unfiltered cloud — typing means the user
-  // is hunting a favorite, not browsing offers.
+  // is hunting a favorite, not browsing offers. Edit mode is favorites-only.
   get showSuggestions(): boolean {
-    return this.suggestions.length > 0 && this.query === '';
+    return this.suggestions.length > 0 && this.query === '' && !this.editMode;
   }
 
   onFilterInput(value: string): void {
     this.filter = value;
     const q = this.query;
     this.cancelJira();
+    if (this.editMode) return; // edit mode: local favorites filter only
     if (!q || this.filteredFavorites.length > 0) return; // stage 1 covers it
     if (q.length < JIRA_MIN_QUERY) {
       this.jiraZone = 'short';
@@ -200,6 +221,10 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   // ─── Picks (instant / batch collect) ───────────────────────────────────
 
   pickFavorite(f: Favorite, ev: MouseEvent): void {
+    if (this.editMode) {
+      this.toggleMarked(f);
+      return;
+    }
     if (this.collectOnPick(ev)) {
       this.toggleBasket(this.favBasketItem(f));
       return;
@@ -245,6 +270,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   // Jira results → first one into the form. Batch: collect the first chip,
   // clear the filter for the next pick; empty filter + basket → review.
   onFilterEnter(): void {
+    if (this.editMode) return; // edit mode: clicks mark chips, Enter is idle
     const q = this.query;
     if (this.batch) {
       if (!q && this.basket.length) {
@@ -289,16 +315,83 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     this.emitPick(entry, label, rect);
   }
 
-  // Esc unwinds one layer at a time: review → form → filter text → batch →
-  // close. A typed query is a layer of its own — the first Esc only clears it.
+  // Esc unwinds one layer at a time: review → form → filter text → edit →
+  // batch → close. A typed query is a layer of its own — the first Esc only
+  // clears it.
   @HostListener('document:keydown.escape')
   onEscape(): void {
     if (!this.open) return;
     if (this.mode === 'review') { this.exitReview(); return; }
     if (this.mode === 'form') { this.exitForm(); return; }
     if (this.filter !== '') { this.onFilterInput(''); this.focusFilter(0); return; }
+    if (this.editMode) { this.setEditMode(false); this.focusFilter(0); return; }
     if (this.batch) { this.setBatch(false); this.focusFilter(0); return; }
     this.closed.emit();
+  }
+
+  // ─── Favorites management (✎ edit mode + context menus) ─────────────────
+
+  toggleEditMode(): void {
+    this.setEditMode(!this.editMode);
+    this.focusFilter(0);
+  }
+
+  private setEditMode(v: boolean): void {
+    this.editMode = v;
+    if (v) {
+      this.setBatch(false);
+      this.cancelJira(); // favorites-only surface: suggested & Jira go dark
+    } else {
+      this.marked.clear();
+    }
+  }
+
+  private toggleMarked(f: Favorite): void {
+    if (this.marked.has(f.id)) this.marked.delete(f.id);
+    else this.marked.add(f.id);
+  }
+
+  isMarked(f: Favorite): boolean {
+    return this.marked.has(f.id);
+  }
+
+  removeMarked(): void {
+    if (this.marked.size === 0) return;
+    this.favoritesRemoved.emit([...this.marked]);
+    this.setEditMode(false);
+    this.focusFilter(0);
+  }
+
+  onFavContextMenu(f: Favorite, ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    openCtxMenu(ev.clientX, ev.clientY, [
+      { icon: '✕', label: 'Remove from favorites', danger: true,
+        action: () => this.favoritesRemoved.emit([f.id]) },
+    ]);
+  }
+
+  onJiraContextMenu(h: JiraSearchHit, ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    // Already templated — no menu at all (no disabled items by design).
+    if (this.favorites.some(f => f.task === h.key)) return;
+    openCtxMenu(ev.clientX, ev.clientY, [
+      { icon: '★', label: 'Save as favorite', action: () => this.saveJiraAsFavorite(h) },
+    ]);
+  }
+
+  // Template without logging: name from the summary, defaults for the rest.
+  private saveJiraAsFavorite(h: JiraSearchHit): void {
+    const name = h.summary.length > FAV_NAME_MAX
+      ? `${h.summary.slice(0, FAV_NAME_MAX - 1)}…`
+      : h.summary;
+    this.favoriteSaved.emit({
+      name, task: h.key, minutes: DEFAULT_FORM_MINUTES, activity: 'Other',
+    });
+    this.savedJiraKey = h.key;
+    if (this.savedTimer) clearTimeout(this.savedTimer);
+    this.savedTimer = setTimeout(() => this.savedJiraKey = null, FAV_FEEDBACK_MS);
   }
 
   // ─── Batch basket ──────────────────────────────────────────────────────

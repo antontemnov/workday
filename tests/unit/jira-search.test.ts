@@ -108,6 +108,11 @@ async function main(): Promise<void> {
     ]);
     assert.equal(fetchCalls.length, 1);
     assert.ok(fetchCalls[0].includes('/rest/api/3/issue/picker?query=first'));
+    // Without currentJQL the picker returns History Search only (empty for a
+    // user with no view history); without showSubTasks sub-tasks are invisible.
+    assert.ok(fetchCalls[0].includes('currentJQL='));
+    assert.ok(fetchCalls[0].includes('showSubTasks=true'));
+    assert.ok(fetchCalls[0].includes('showSubTaskParent=true'));
   });
 
   await test('searchIssues caches a repeated query (case-insensitive)', async () => {

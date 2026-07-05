@@ -96,6 +96,11 @@ const searchCache = new Map<string, { hits: JiraSearchHit[]; expiresAt: number }
  * Live issue search via the Jira Cloud issue picker (made for autocomplete:
  * matches key + summary text, ranks itself). Hits are deduped across picker
  * sections (history vs current search overlap).
+ *
+ * currentJQL is required even empty — without it the picker answers with the
+ * History Search section only (recently viewed issues), so a user with no
+ * view history gets zero hits for everything. showSubTasks keeps sub-task
+ * issues findable (excluded by default).
  */
 export async function searchIssues(query: string, secrets: Secrets): Promise<JiraSearchHit[]> {
   const cacheKey = query.trim().toLowerCase();
@@ -103,7 +108,8 @@ export async function searchIssues(query: string, secrets: Secrets): Promise<Jir
   if (cached && cached.expiresAt > Date.now()) return cached.hits;
 
   const data = await jiraGet(
-    `/rest/api/3/issue/picker?query=${encodeURIComponent(query.trim())}`,
+    `/rest/api/3/issue/picker?query=${encodeURIComponent(query.trim())}`
+      + '&currentJQL=&showSubTasks=true&showSubTaskParent=true',
     secrets,
   ) as PickerResponse;
 

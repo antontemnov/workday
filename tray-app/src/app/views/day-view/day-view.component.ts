@@ -16,6 +16,7 @@ import {
   ManualEntryPatch,
   ActivityType,
   Favorite,
+  FavoriteInput,
 } from '../../models/workday.models';
 
 interface SensitivityPillOption {
@@ -52,6 +53,9 @@ export class DayViewComponent implements OnChanges {
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();
+  @Output() entryDeleteSubmitted = new EventEmitter<string>();
+  @Output() favoriteAddSubmitted = new EventEmitter<FavoriteInput>();
+  @Output() favoritesRemoveSubmitted = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();
 
   @ViewChild(LoggedPanelComponent, { read: ElementRef })

@@ -239,6 +239,48 @@
   }
 
   &.editing { background: rgba(203, 166, 247, 0.07); }
+
+  // Delete: instant with undo — Σ already rolled back, the row stays in
+  // place struck-through with a burning ↩ for ~3s.
+  &.deleted {
+    background: rgba(243, 139, 168, 0.04);
+
+    .l-task, .l-act, .l-desc {
+      opacity: 0.38;
+      text-decoration: line-through;
+    }
+  }
+
+  // Undo window over — collapse and leave (max-height matches row height).
+  &.removing {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+    transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease;
+  }
+  &:not(.removing) { max-height: 30px; }
+
+  .l-undo {
+    flex-shrink: 0;
+    margin-left: auto;
+    border: 1px solid rgba(203, 166, 247, 0.5);
+    border-radius: 4px;
+    background: rgba(203, 166, 247, 0.08);
+    color: #cba6f7;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 8px;
+    cursor: pointer;
+    animation: need-pulse 1.6s ease-in-out infinite;
+
+    &:hover { background: rgba(203, 166, 247, 0.22); }
+  }
+
+  // "★ added to favorites" feedback on the description slot.
+  &.fav-done .l-desc.fav-note { color: #cba6f7; font-style: normal; }
 }
 
 // ─── Edit morph (double-click) — the row becomes a one-line form ─────────

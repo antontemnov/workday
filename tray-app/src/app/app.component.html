@@ -85,6 +85,9 @@
       (logSubmitted)="submitLog($event)"
       (batchSubmitted)="submitLogBatch($event)"
       (entryEditSubmitted)="submitEntryEdit($event)"
+      (entryDeleteSubmitted)="submitEntryDelete($event)"
+      (favoriteAddSubmitted)="submitFavoriteAdd($event)"
+      (favoritesRemoveSubmitted)="submitFavoritesRemove($event)"
       (settingsRequested)="setView('set')" />
 
     <app-timesheets-view *ngSwitchCase="'sheet'"

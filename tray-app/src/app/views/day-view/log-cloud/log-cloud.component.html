@@ -8,6 +8,10 @@
          placeholder="favorites · no match → search Jira"
          autocomplete="off" />
   <button type="button"
+          class="f-edit"
+          (click)="toggleEditMode()"
+          title="edit favorites — mark chips, remove at once">✎ edit</button>
+  <button type="button"
           class="f-batch"
           (click)="toggleBatch()"
           title="collect several · Ctrl+click a chip">⧉ multi</button>
@@ -36,10 +40,12 @@
 
     <span class="fav"
           *ngFor="let f of filteredFavorites; let i = index; trackBy: trackByFavorite"
-          [class.sel]="isFavPicked(f)"
+          [class.sel]="!isEditMode && isFavPicked(f)"
+          [class.marked]="isEditMode && isMarked(f)"
           [style.animation-delay]="chipDelay(i + 1)"
-          [title]="f.activity"
-          (click)="pickFavorite(f, $event)">
+          [title]="isEditMode ? 'click — mark for removal' : f.activity + ' · right-click: remove · Ctrl+click: collect'"
+          (click)="pickFavorite(f, $event)"
+          (contextmenu)="onFavContextMenu(f, $event)">
       <span class="f-task">{{ f.task }}</span>
       <span class="f-name">{{ f.name }}</span>
       <span class="f-min">{{ formatMinutes(f.minutes) }}</span>
@@ -59,10 +65,13 @@
         <span class="fav jira"
               *ngFor="let h of jiraHits; let i = index; trackBy: trackByJira"
               [class.sel]="isJiraPicked(h)"
-              [title]="h.key + ' · ' + h.summary"
-              (click)="pickJira(h, $event)">
+              [class.saved]="savedJiraKey === h.key"
+              [title]="h.key + ' · ' + h.summary + ' · right-click: save as favorite'"
+              (click)="pickJira(h, $event)"
+              (contextmenu)="onJiraContextMenu(h, $event)">
           <span class="f-task">{{ h.key }}</span>
-          <span class="f-name">{{ h.summary }}</span>
+          <span class="f-name" *ngIf="savedJiraKey !== h.key; else savedNote">{{ h.summary }}</span>
+          <ng-template #savedNote><span class="f-name saved-note">★ saved to favorites</span></ng-template>
         </span>
       </ng-container>
 
@@ -76,6 +85,18 @@
       </button>
     </ng-container>
   </div>
+</div>
+
+<!-- Edit-mode footer: marked count + batch removal -->
+<div class="cloud-foot edit-foot" *ngIf="isEditMode">
+  <span class="bk-info" *ngIf="marked.size > 0; else efHint">
+    <b>{{ marked.size }}</b> marked
+  </span>
+  <ng-template #efHint><span class="bk-info">click chips to mark for removal</span></ng-template>
+  <button type="button"
+          class="ef-remove"
+          [disabled]="marked.size === 0 || actionPending"
+          (click)="removeMarked()">Remove {{ marked.size || '' }}</button>
 </div>
 
 <!-- Batch footer: collected count + review entry point -->

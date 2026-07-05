@@ -86,10 +86,13 @@
   [isViewingToday]="isViewingToday"
   [actionPending]="actionPending"
   [activityTypes]="activityTypes"
+  [favorites]="favorites"
   [suggestedCount]="suggestions.length"
   [freshEntryId]="freshEntryId"
   (logRequested)="openCloud()"
   (patchCommitted)="onPanelPatch($event)"
+  (deleteCommitted)="entryDeleteSubmitted.emit($event)"
+  (favoriteAdded)="favoriteAddSubmitted.emit($event)"
   (liveDiffChanged)="onLiveDiff($event)" />
 
 <!-- Log cloud overlay (today only) -->
@@ -105,5 +108,7 @@
   (chipPicked)="onChipPicked($event)"
   (formSubmitted)="onFormSubmitted($event)"
   (batchSubmitted)="onBatchSubmitted($event)"
+  (favoriteSaved)="favoriteAddSubmitted.emit($event)"
+  (favoritesRemoved)="favoritesRemoveSubmitted.emit($event)"
   (settingsRequested)="onSettingsRequested()"
   (closed)="closeCloud()" />

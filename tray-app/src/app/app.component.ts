@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, HostListener, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -13,6 +13,8 @@ import {
   ManualEntryInput,
   ManualEntryPatch,
   Favorite,
+  FavoriteInput,
+  FavoriteRemoveResponse,
 } from './models/workday.models';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
@@ -115,6 +117,16 @@ export class AppComponent implements OnInit, OnDestroy {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private api: WorkdayApiService) {}
+
+  // Kill the WebView2 default context menu app-wide (Back/Refresh/Print…).
+  // Right-click is a first-class action here (design iter.12); text inputs
+  // keep the native menu for copy/paste.
+  @HostListener('document:contextmenu', ['$event'])
+  onGlobalContextMenu(ev: MouseEvent): void {
+    const target = ev.target as HTMLElement | null;
+    if (target?.closest('input, textarea, [contenteditable]')) return;
+    ev.preventDefault();
+  }
 
   ngOnInit(): void {
     void this.watchAppUpdates();
@@ -483,6 +495,35 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async submitEntryEdit(e: { target: string; patch: ManualEntryPatch }): Promise<void> {
     await this.runAction(() => this.api.updateManualEntry(e.target, e.patch));
+  }
+
+  // Deferred DELETE — the panel already played the undo window; a failure
+  // surfaces as the usual toast and the row comes back with the refresh.
+  async submitEntryDelete(target: string): Promise<void> {
+    await this.runAction(() => this.api.deleteManualEntry(target));
+  }
+
+  // ─── Favorites (context-menu management) ───────────────────────────────
+
+  async submitFavoriteAdd(input: FavoriteInput): Promise<void> {
+    await this.runAction(async () => {
+      const res = await this.api.addFavorite(input);
+      if (res.ok && res.data) this.favorites = res.data.favorites;
+      return res;
+    });
+  }
+
+  async submitFavoritesRemove(ids: readonly string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.runAction(async () => {
+      let last: ApiResponse<FavoriteRemoveResponse> = { ok: false, error: 'empty removal' };
+      for (const id of ids) {
+        last = await this.api.removeFavorite(id);
+        if (!last.ok) return last;
+        if (last.data) this.favorites = last.data.favorites;
+      }
+      return last;
+    });
   }
 
   async confirmEndDay(): Promise<void> {

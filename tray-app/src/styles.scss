@@ -22,3 +22,49 @@ html, body {
   background: #313244;
   border-radius: 2px;
 }
+
+// ─── Context menu (ctx-menu.util.ts) ─────────────────────────────────────
+// Global: the popover mounts on document.body, outside any component scope.
+.ctx-menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 158px;
+  background: #191926;
+  border: 1px solid rgba(203, 166, 247, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  user-select: none;
+  transform-origin: 0 0;
+  animation: ctx-menu-in 0.12s cubic-bezier(0.2, 1.2, 0.4, 1);
+
+  .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-radius: 5px;
+    color: #bac2de;
+    cursor: pointer;
+
+    .ci-ic { width: 12px; text-align: center; color: #6c7086; font-size: 10.5px; }
+
+    &:hover { background: #313244; color: #cdd6f4; }
+
+    &.danger {
+      color: #f38ba8;
+      .ci-ic { color: #f38ba8; }
+      &:hover { background: rgba(243, 139, 168, 0.12); color: #f38ba8; }
+    }
+  }
+}
+
+@keyframes ctx-menu-in {
+  0% { transform: scale(0.85); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ctx-menu { animation: none; }
+}
