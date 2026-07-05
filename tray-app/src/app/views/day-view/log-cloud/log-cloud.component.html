@@ -2,11 +2,15 @@
   <span class="f-ic">⌕</span>
   <input #filterInput
          type="text"
-         [(ngModel)]="filter"
-         (keydown.enter)="onEnter()"
-         (keydown.escape)="onEscape()"
-         placeholder="filter favorites…"
+         [ngModel]="filter"
+         (ngModelChange)="onFilterInput($event)"
+         (keydown.enter)="onFilterEnter()"
+         placeholder="favorites · no match → search Jira"
          autocomplete="off" />
+  <button type="button"
+          class="f-batch"
+          (click)="toggleBatch()"
+          title="collect several · Ctrl+click a chip">⧉ multi</button>
   <span class="f-esc">esc</span>
 </div>
 
@@ -18,6 +22,7 @@
       <span class="row-label sugg">✦ suggested — tracker noticed</span>
       <span class="fav sugg"
             *ngFor="let s of suggestions; let i = index"
+            [class.sel]="isSuggPicked(s)"
             [style.animation-delay]="chipDelay(i)"
             [title]="s.activity"
             (click)="pickSuggestion(s, $event)">
@@ -31,6 +36,7 @@
 
     <span class="fav"
           *ngFor="let f of filteredFavorites; let i = index; trackBy: trackByFavorite"
+          [class.sel]="isFavPicked(f)"
           [style.animation-delay]="chipDelay(i + 1)"
           [title]="f.activity"
           (click)="pickFavorite(f, $event)">
@@ -39,14 +45,107 @@
       <span class="f-min">{{ formatMinutes(f.minutes) }}</span>
     </span>
 
-    <span class="cloud-empty" *ngIf="noMatches">
-      no favorites match — Jira search comes next
-    </span>
+    <!-- Jira zone — stage 2/3 of the search, only when favorites don't match. -->
+    <ng-container *ngIf="jiraZone !== 'idle'">
+      <span class="row-label jira">⌕ jira</span>
 
-    <!-- Temporary bridge until Jira search lands: arbitrary-task entry via
-         the composer popover. Remove together with the Jira-search stage. -->
-    <span class="fav custom" (click)="customRequested.emit()">
-      <span class="f-name">⌨ custom…</span>
-    </span>
+      <span class="jira-status" *ngIf="jiraZone === 'short'">keep typing to search Jira…</span>
+
+      <span class="jira-status" *ngIf="jiraZone === 'loading'">
+        <span class="spin">⟳</span> searching Jira for “{{ queryLabel }}”…
+      </span>
+
+      <ng-container *ngIf="jiraZone === 'results'">
+        <span class="fav jira"
+              *ngFor="let h of jiraHits; let i = index; trackBy: trackByJira"
+              [class.sel]="isJiraPicked(h)"
+              [title]="h.key + ' · ' + h.summary"
+              (click)="pickJira(h, $event)">
+          <span class="f-task">{{ h.key }}</span>
+          <span class="f-name">{{ h.summary }}</span>
+        </span>
+      </ng-container>
+
+      <span class="jira-status" *ngIf="jiraZone === 'empty'">nothing found in Jira</span>
+      <span class="jira-status" *ngIf="jiraZone === 'error'">Jira search failed — check the connection</span>
+      <button type="button"
+              class="jira-status link"
+              *ngIf="jiraZone === 'notConfigured'"
+              (click)="settingsRequested.emit()">
+        Jira search needs an API token — open Settings →
+      </button>
+    </ng-container>
   </div>
+</div>
+
+<!-- Batch footer: collected count + review entry point -->
+<div class="cloud-foot" *ngIf="isBatchMode">
+  <span class="bk-info" *ngIf="basket.length > 0; else bkHint">
+    <b>{{ basket.length }}</b> · {{ formatMinutes(basketTotalMinutes) }}
+  </span>
+  <ng-template #bkHint><span class="bk-info">click chips to collect</span></ng-template>
+  <button type="button" class="bk-clear" (click)="clearBasket()">clear</button>
+  <button type="button" class="bk-review" [disabled]="basket.length === 0" (click)="openReview()">Review →</button>
+</div>
+
+<!-- Review screen: scope-edit the collected batch, then Log all -->
+<div class="cloud-review" *ngIf="isReviewMode">
+  <div class="rv-list">
+    <div class="rv-row"
+         *ngFor="let item of basket; trackBy: trackByBasket"
+         [class.jira]="item.src === 'jira'">
+      <div class="rv-top">
+        <span class="rv-key">{{ item.task }}</span>
+        <span class="rv-name" [title]="item.label">{{ item.label }}</span>
+        <button type="button" class="rv-x" title="drop from the batch" (click)="removeFromBasket(item)">×</button>
+      </div>
+      <div class="rv-ctl">
+        <select class="rv-act" [class.need]="!item.activity" [(ngModel)]="item.activity">
+          <option value="" disabled hidden>activity…</option>
+          <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+        </select>
+        <input class="rv-min"
+               [(wdDuration)]="item.minutes"
+               (durEnter)="logAllIfReady()"
+               title="1h 15m · 90 · 45m — wheel: ±15m" />
+        <input class="rv-desc"
+               [class.need]="rvDescNeeded(item)"
+               [(ngModel)]="item.description"
+               (keydown.enter)="logAllIfReady()"
+               placeholder="description" />
+      </div>
+    </div>
+  </div>
+  <div class="rv-foot">
+    <button type="button" class="rv-back" title="back to picking" (click)="exitReview()">←</button>
+    <span class="rv-info">{{ basket.length }} {{ basket.length === 1 ? 'entry' : 'entries' }} · {{ formatMinutes(basketTotalMinutes) }}</span>
+    <span class="rv-hint" *ngIf="reviewInvalid">{{ reviewHint }}</span>
+    <button type="button" class="rv-ok" [disabled]="reviewInvalid || actionPending" (click)="logAll()">Log all</button>
+  </div>
+</div>
+
+<!-- Single-row form — Jira results only; the ticket is a label, not editable -->
+<div class="cloud-form" *ngIf="isFormMode">
+  <button type="button" class="cf-back" title="back" (click)="exitForm()">←</button>
+  <span class="cf-key">{{ formTask }}</span>
+  <select #formAct
+          class="cf-act"
+          [class.need]="formActivityNeeded"
+          [(ngModel)]="formActivity"
+          (ngModelChange)="formActivityNeeded = false">
+    <option value="" disabled hidden>activity…</option>
+    <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+  </select>
+  <input #formMin
+         class="cf-min"
+         [(wdDuration)]="formMinutes"
+         (durEnter)="submitForm()"
+         title="1h 15m · 90 · 45m — wheel: ±15m" />
+  <input #formDesc
+         class="cf-desc"
+         [class.need]="formDescNeeded"
+         [(ngModel)]="formDescription"
+         (keydown.enter)="submitForm()"
+         placeholder="description" />
+  <button type="button" class="cf-submit" [disabled]="actionPending" (click)="submitForm()">Log</button>
 </div>

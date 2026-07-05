@@ -576,6 +576,13 @@ export interface ManualEntryResponse {
   readonly totalManualMinutes: number;   // sum of all manual entries today
 }
 
+export interface ManualEntryDeleteResponse {
+  readonly id: string;
+  readonly task: string;
+  readonly minutes: number;
+  readonly totalManualMinutes: number;   // sum after the delete
+}
+
 export interface FavoritesResponse {
   readonly favorites: readonly Favorite[];
 }

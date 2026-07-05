@@ -233,29 +233,103 @@
     flex-shrink: 0;
   }
 
-  .l-edit {
-    background: transparent;
-    border: none;
-    color: #6c7086;
-    font-size: 12px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 3px;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.12s ease, color 0.15s ease, background 0.15s ease;
-
-    &:hover:not(:disabled) { color: #cba6f7; background: rgba(203, 166, 247, 0.1); }
-    &:disabled { opacity: 0.35; cursor: default; }
-  }
-
-  &:hover .l-edit { opacity: 1; }
-
   &.fresh {
     animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1);
     background: rgba(203, 166, 247, 0.1);
   }
+
+  &.editing { background: rgba(203, 166, 247, 0.07); }
+}
+
+// ─── Edit morph (double-click) — the row becomes a one-line form ─────────
+.le-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  transform-origin: 0 50%;
+  animation: le-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1);
+
+  input, select {
+    background: rgba(17, 17, 27, 0.85);
+    border: 1px solid #313244;
+    border-radius: 5px;
+    color: #cdd6f4;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 3px 7px;
+    outline: none;
+
+    &:focus { border-color: #cba6f7; }
+  }
+
+  select {
+    width: 104px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #bac2de;
+    padding: 3px 3px;
+    cursor: pointer;
+  }
+
+  .le-min {
+    width: 54px;
+    flex-shrink: 0;
+    text-align: center;
+    color: #cba6f7;
+    font-weight: 700;
+  }
+
+  .le-desc {
+    flex: 1;
+    min-width: 0;
+    &::placeholder { color: #4b4d63; }
+    &.need {
+      border-color: rgba(203, 166, 247, 0.65);
+      animation: need-pulse 1.6s ease-in-out infinite;
+
+      &::placeholder { color: rgba(203, 166, 247, 0.55); }
+    }
+  }
+
+  .le-back {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0 2px;
+
+    &:hover { color: #a6adc8; }
+  }
+
+  .le-save {
+    flex-shrink: 0;
+    background: #cba6f7;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 10px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #b894ee; }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+}
+
+@keyframes le-in {
+  0% { transform: scaleX(0.5); opacity: 0; }
+}
+
+@keyframes need-pulse {
+  0%, 100% { border-color: rgba(203, 166, 247, 0.65); }
+  50%      { border-color: rgba(203, 166, 247, 0.25); }
 }
 
 // ─── Stepper (fresh row draft) ───────────────────────────────────────────

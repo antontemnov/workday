@@ -15,6 +15,7 @@ import {
   UpdateApplyResponse,
   ActivityTypesResponse,
   ManualEntryResponse,
+  ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
   FavoritesResponse,
@@ -58,6 +59,8 @@ export abstract class WorkdayApiService {
   abstract getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;
   abstract addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>>;
   abstract updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>>;
+  // Session-born entries are deletable too (unlike edit). target = #index or id.
+  abstract deleteManualEntry(target: string): Promise<ApiResponse<ManualEntryDeleteResponse>>;
 
   // Favorites — reusable log templates for the log cloud (day-independent,
   // stored in the daemon's favorites.json). target = favorite id.

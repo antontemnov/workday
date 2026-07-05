@@ -48,6 +48,7 @@ import type {
   SessionDeleteResponse,
   ManualEntry,
   ManualEntryResponse,
+  ManualEntryDeleteResponse,
   FavoritesResponse,
   FavoriteAddResponse,
   FavoriteRemoveResponse,
@@ -219,6 +220,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/manual-entry/update') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleUpdateManualEntry(body));
+      }
+      if (method === 'POST' && path === '/api/manual-entry/delete') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleDeleteManualEntry(body));
       }
       if (method === 'GET' && path === '/api/favorites') {
         return this.sendJson(res, 200, this.handleGetFavorites());
@@ -463,7 +468,8 @@ export class HttpServer {
         : DEFAULT_MANUAL_ACTIVITY;
 
       if (!task) return { ok: false, error: 'Missing task' };
-      if (!description) return { ok: false, error: 'Missing description' };
+      // Description validated in core against the activity rule (required
+      // for everything but Development).
       // User-picked task must exist in Jira; session-born tasks come from
       // git and are validated at push time instead.
       const jiraError = await this.validateTaskInJira(task);
@@ -520,6 +526,29 @@ export class HttpServer {
         description: entry.description,
         activity: entry.activity,
         totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
+      },
+    };
+  }
+
+  private handleDeleteManualEntry(body: Record<string, unknown>): ApiResponse<ManualEntryDeleteResponse> {
+    const target = typeof body.target === 'string' ? body.target
+      : (typeof body.id === 'string' ? body.id : '');
+    if (!target) return { ok: false, error: 'Missing target (manual entry #index or id)' };
+
+    const tracker = this.deps.sessionTracker;
+    const found = resolveManualEntryTarget(tracker.getDailyLog(), target);
+    if (!found) return { ok: false, error: `Manual entry not found: ${target}` };
+    const result = tracker.deleteManualEntry(found.id);
+    if (!result.ok || !result.deleted) return { ok: false, error: result.error };
+    tracker.flush();
+
+    return {
+      ok: true,
+      data: {
+        id: result.deleted.id,
+        task: result.deleted.task,
+        minutes: result.deleted.minutes,
+        totalManualMinutes: Math.round(computeTotalManualEntryMs(tracker.getDailyLog()) / MS_PER_MINUTE),
       },
     };
   }

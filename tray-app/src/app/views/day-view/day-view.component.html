@@ -89,8 +89,8 @@
   [suggestedCount]="suggestions.length"
   [freshEntryId]="freshEntryId"
   (logRequested)="openCloud()"
-  (editRequested)="openEditPopover($event)"
-  (freshMinutesCommitted)="onFreshMinutesCommitted($event)" />
+  (patchCommitted)="onPanelPatch($event)"
+  (liveDiffChanged)="onLiveDiff($event)" />
 
 <!-- Log cloud overlay (today only) -->
 <div class="cloud-backdrop" [class.open]="cloudOpen" (click)="closeCloud()"></div>
@@ -99,75 +99,11 @@
   [open]="cloudOpen"
   [favorites]="favorites"
   [suggestions]="suggestions"
+  [activityTypes]="activityTypes"
   [actionPending]="actionPending"
   [style.bottom.px]="overlayBottom"
   (chipPicked)="onChipPicked($event)"
-  (customRequested)="openCustomComposer()"
+  (formSubmitted)="onFormSubmitted($event)"
+  (batchSubmitted)="onBatchSubmitted($event)"
+  (settingsRequested)="onSettingsRequested()"
   (closed)="closeCloud()" />
-
-<!-- Compose popover — floats above the Logged panel (custom add + edit) -->
-<div class="log-pop-backdrop" *ngIf="logPopoverOpen" (click)="closeLogPopover()"></div>
-<div class="log-pop" *ngIf="logPopoverOpen" [style.bottom.px]="composerBottom" (keydown.escape)="closeLogPopover()">
-      <div class="log-pop-title">{{ editingId ? 'Edit entry' : 'Log time' }}</div>
-
-      <div class="lp-field">
-        <label>Task</label>
-        <input class="lp-input"
-               [class.invalid]="attemptedLog && logTaskInvalid"
-               [(ngModel)]="logTask"
-               (ngModelChange)="attemptedLog = false"
-               [disabled]="!!editingId"
-               placeholder="ATL-1234" />
-      </div>
-
-      <div class="lp-field">
-        <label>Duration</label>
-        <app-duration-field
-          [value]="logTimeStr"
-          (valueChange)="logTimeStr = $event; attemptedLog = false"
-          [invalid]="attemptedLog && logMinutesInvalid"
-          (enter)="applyLog()" />
-      </div>
-
-      <div class="lp-field lp-activity-field">
-        <label>Activity</label>
-
-        <button *ngIf="!activityListOpen" type="button" class="lp-input lp-activity-trigger"
-                (click)="openActivityList()">
-          <span class="lp-activity-value">{{ activityLabel(logActivity) }}</span>
-          <span class="lp-activity-caret" aria-hidden="true">▾</span>
-        </button>
-
-        <ng-container *ngIf="activityListOpen">
-          <input class="lp-input lp-activity-search"
-                 [(ngModel)]="activitySearch"
-                 (keydown.enter)="selectFirstActivity()"
-                 (keydown.escape)="closeActivityList(); $event.stopPropagation()"
-                 [placeholder]="activityLabel(logActivity)" />
-          <div class="lp-activity-backdrop" (click)="closeActivityList()"></div>
-          <ul class="lp-activity-list">
-            <li *ngFor="let a of filteredActivities"
-                class="lp-activity-option"
-                [class.selected]="a.value === logActivity"
-                (click)="selectActivity(a.value)">{{ a.name }}</li>
-            <li *ngIf="filteredActivities.length === 0" class="lp-activity-empty">No matches</li>
-          </ul>
-        </ng-container>
-      </div>
-
-      <div class="lp-field">
-        <label>Description</label>
-        <input class="lp-input"
-               [class.invalid]="attemptedLog && logDescriptionInvalid"
-               [(ngModel)]="logDescription"
-               (ngModelChange)="attemptedLog = false"
-               (keydown.enter)="applyLog()"
-               placeholder="daily standup" />
-      </div>
-
-      <div class="lp-actions">
-        <button class="lp-btn primary" [disabled]="actionPending" (click)="applyLog()">
-          {{ editingId ? 'Save' : 'Log time' }}
-        </button>
-      </div>
-</div>

@@ -21,27 +21,49 @@
 
         <div class="log-row"
              *ngFor="let e of displayEntries; trackBy: trackByEntry"
-             [class.fresh]="isFresh(e)">
-          <span class="l-task">{{ e.task }}</span>
-          <span class="l-act" [class]="'l-act tone-' + activityTone(e.activity)">{{ activityLabel(e.activity) }}</span>
-          <span class="l-desc" [title]="e.description">{{ e.description }}</span>
+             [class.fresh]="isFresh(e)"
+             [class.editing]="editingId === e.id"
+             [title]="rowTitle(e)"
+             (dblclick)="onRowDblClick(e)">
 
-          <ng-container *ngIf="isFresh(e); else staticMin">
-            <span class="stepper">
-              <button class="s-dec" (click)="stepDown($event)">−</button>
-              <span class="s-val" title="wheel: ±15m" (wheel)="onStepWheel($event)">
-                {{ formatDurationHm((freshMinutes ?? e.minutes) * 60000) }}</span>
-              <button class="s-inc" (click)="stepUp($event)">+</button>
+          <!-- Edit morph: the row becomes a one-line form; the ticket is a
+               label (change task = delete + recreate). -->
+          <ng-container *ngIf="editingId === e.id; else staticRow">
+            <span class="le-form" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
+              <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
+              <span class="l-task">{{ e.task }}</span>
+              <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
+                <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+              </select>
+              <input class="le-min"
+                     [(wdDuration)]="editMinutes"
+                     (durEnter)="saveEdit(e)"
+                     title="1h 15m · 90 · 45m — wheel: ±15m" />
+              <input class="le-desc"
+                     [class.need]="editDescNeeded"
+                     [(ngModel)]="editDescription"
+                     (keydown.enter)="saveEdit(e)"
+                     placeholder="description" />
+              <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
             </span>
           </ng-container>
-          <ng-template #staticMin>
-            <span class="l-min">{{ formatDurationHm(e.minutes * 60000) }}</span>
-            <!-- Session-born entries are not editable — no pencil for them. -->
-            <button class="l-edit"
-                    *ngIf="canEdit(e)"
-                    [disabled]="actionPending"
-                    (click)="onEditClick(e)"
-                    aria-label="Edit entry" title="Edit entry">✎</button>
+
+          <ng-template #staticRow>
+            <span class="l-task">{{ e.task }}</span>
+            <span class="l-act" [class]="'l-act tone-' + activityTone(displayActivity(e))">{{ activityLabel(displayActivity(e)) }}</span>
+            <span class="l-desc" [title]="displayDescription(e)">{{ displayDescription(e) }}</span>
+
+            <ng-container *ngIf="isFresh(e); else staticMin">
+              <span class="stepper">
+                <button class="s-dec" (click)="stepDown($event)">−</button>
+                <span class="s-val" title="wheel: ±15m" (wheel)="onStepWheel($event)">
+                  {{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
+                <button class="s-inc" (click)="stepUp($event)">+</button>
+              </span>
+            </ng-container>
+            <ng-template #staticMin>
+              <span class="l-min">{{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
+            </ng-template>
           </ng-template>
         </div>
       </div>

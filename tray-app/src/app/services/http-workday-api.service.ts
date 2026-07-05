@@ -22,6 +22,7 @@ import {
   ActivityTypesResponse,
   ManualEntry,
   ManualEntryResponse,
+  ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
   FavoritesResponse,
@@ -219,6 +220,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>> {
     return this.post<ManualEntryResponse>('/api/manual-entry/update', { target, ...patch });
+  }
+
+  override async deleteManualEntry(target: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
+    return this.post<ManualEntryDeleteResponse>('/api/manual-entry/delete', { target });
   }
 
   // ─── Favorites ───────────────────────────────────────────────────────

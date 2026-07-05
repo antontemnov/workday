@@ -19,8 +19,10 @@ import {
   ActivityTypesResponse,
   ManualEntry,
   ManualEntryResponse,
+  ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
+  DEVELOPMENT_ACTIVITY,
   Favorite,
   FavoritesResponse,
   FavoriteAddResponse,
@@ -307,13 +309,16 @@ export class MockWorkdayApiService extends WorkdayApiService {
   async addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>> {
     await delay(150);
     if (!input.task) return { ok: false, error: 'Missing task' };
-    if (!input.description) return { ok: false, error: 'Missing description' };
+    const activity = input.activity || 'Other';
+    if (!input.description.trim() && activity !== DEVELOPMENT_ACTIVITY) {
+      return { ok: false, error: 'Description is required (only Development may omit it)' };
+    }
     const entry: ManualEntry = {
       id: `m${this.mockEntrySeq++}`,
       task: input.task,
       minutes: input.minutes,
-      description: input.description,
-      activity: input.activity || 'Other',
+      description: input.description.trim(),
+      activity,
       createdAt: this.iso(12, 0),
     };
     this.mockManualEntries = [...this.mockManualEntries, entry];
@@ -327,11 +332,26 @@ export class MockWorkdayApiService extends WorkdayApiService {
     const updated: ManualEntry = {
       ...this.mockManualEntries[idx],
       minutes: patch.minutes ?? this.mockManualEntries[idx].minutes,
-      description: patch.description ?? this.mockManualEntries[idx].description,
+      description: (patch.description ?? this.mockManualEntries[idx].description).trim(),
       activity: patch.activity ?? this.mockManualEntries[idx].activity,
     };
+    if (!updated.description && updated.activity !== DEVELOPMENT_ACTIVITY) {
+      return { ok: false, error: 'Description is required (only Development may omit it)' };
+    }
     this.mockManualEntries = this.mockManualEntries.map((e, i) => i === idx ? updated : e);
     return { ok: true, data: this.toEntryResponse(updated) };
+  }
+
+  async deleteManualEntry(target: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
+    await delay(150);
+    const removed = this.mockManualEntries.find(e => e.id === target);
+    if (!removed) return { ok: false, error: `Manual entry not found: ${target}` };
+    this.mockManualEntries = this.mockManualEntries.filter(e => e.id !== target);
+    return {
+      ok: true,
+      data: { id: removed.id, task: removed.task, minutes: removed.minutes,
+              totalManualMinutes: this.mockManualMinutes() },
+    };
   }
 
   private toEntryResponse(entry: ManualEntry): ManualEntryResponse {

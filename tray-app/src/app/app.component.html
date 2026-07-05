@@ -83,7 +83,9 @@
       (addTimeSubmitted)="onAddTime($event)"
       (goTodayRequested)="goToday()"
       (logSubmitted)="submitLog($event)"
-      (entryEditSubmitted)="submitEntryEdit($event)" />
+      (batchSubmitted)="submitLogBatch($event)"
+      (entryEditSubmitted)="submitEntryEdit($event)"
+      (settingsRequested)="setView('set')" />
 
     <app-timesheets-view *ngSwitchCase="'sheet'"
       (daySelected)="onDaySelected($event)" />

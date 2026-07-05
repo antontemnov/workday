@@ -2,13 +2,10 @@ import {
   Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { SessionCardComponent } from './session-card/session-card.component';
-import { DurationFieldComponent } from './duration-field/duration-field.component';
 import { LoggedPanelComponent } from './logged-panel/logged-panel.component';
 import { ChipPick, LogCloudComponent, SuggestedLog } from './log-cloud/log-cloud.component';
-import { formatDurationLabel, parseDurationToMinutes } from './duration-field/duration.util';
-import { activityLabel } from './activity.util';
+import { formatDurationLabel } from './duration-field/duration.util';
 import {
   SessionDetail,
   SensitivityLevel,
@@ -28,13 +25,10 @@ interface SensitivityPillOption {
   readonly title: string;
 }
 
-const DEFAULT_ACTIVITY = 'Other';
-
 @Component({
   selector: 'app-day-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, SessionCardComponent, DurationFieldComponent,
-            LoggedPanelComponent, LogCloudComponent],
+  imports: [CommonModule, SessionCardComponent, LoggedPanelComponent, LogCloudComponent],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
@@ -56,27 +50,40 @@ export class DayViewComponent implements OnChanges {
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
   @Output() goTodayRequested = new EventEmitter<void>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
+  @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();
-
-  public constructor(private host: ElementRef<HTMLElement>) {}
+  @Output() settingsRequested = new EventEmitter<void>();
 
   @ViewChild(LoggedPanelComponent, { read: ElementRef })
   private panelRef?: ElementRef<HTMLElement>;
 
-  // Mauve flash on the Day total when the logged share changes.
+  // Mauve flash on the Day total when the logged share changes — server data
+  // and local live diffs (draft stepper ticks) both count.
   dayFlash = false;
   private dayFlashTimer: ReturnType<typeof setTimeout> | null = null;
-  private prevLoggedMs: number | null = null;
+  private prevDisplayedLoggedMs: number | null = null;
+
+  // Uncommitted/unconfirmed panel minutes — keeps the Day total moving in the
+  // same instant as the panel Σ while a draft stepper spins.
+  liveDiffMinutes = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (!changes['data']) return;
-    const logged = this.loggedMs;
-    if (this.prevLoggedMs !== null && logged !== this.prevLoggedMs) {
+    if (changes['data']) this.checkDayFlash();
+  }
+
+  onLiveDiff(minutes: number): void {
+    this.liveDiffMinutes = minutes;
+    this.checkDayFlash();
+  }
+
+  private checkDayFlash(): void {
+    const displayed = this.displayedLoggedMs;
+    if (this.prevDisplayedLoggedMs !== null && displayed !== this.prevDisplayedLoggedMs) {
       this.dayFlash = true;
       if (this.dayFlashTimer) clearTimeout(this.dayFlashTimer);
       this.dayFlashTimer = setTimeout(() => this.dayFlash = false, 400);
     }
-    this.prevLoggedMs = logged;
+    this.prevDisplayedLoggedMs = displayed;
   }
 
   // ─── Sessions ─────────────────────────────────────────────────────────
@@ -114,9 +121,14 @@ export class DayViewComponent implements OnChanges {
     return this.data?.sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0) ?? 0;
   }
 
-  // Day total = Tracked Σ + Logged Σ — "what goes to Tempo today".
+  // Day total = Tracked Σ + Logged Σ — "what goes to Tempo today". Includes
+  // the panel's live diff so a spinning draft stepper moves it immediately.
   get dayTotalMs(): number {
-    return this.trackedTotalMs + this.loggedMs;
+    return this.trackedTotalMs + this.displayedLoggedMs;
+  }
+
+  private get displayedLoggedMs(): number {
+    return this.loggedMs + this.liveDiffMinutes * 60_000;
   }
 
   get totalPauseMs(): number {
@@ -187,17 +199,6 @@ export class DayViewComponent implements OnChanges {
 
   // ─── Manual entries (LOGGED band) ──────────────────────────────────────
 
-  // Compose popover state. editingId = null → adding; otherwise editing that id.
-  logPopoverOpen = false;
-  editingId: string | null = null;
-  logTask = '';
-  logTimeStr = '30m';
-  logActivity = DEFAULT_ACTIVITY;
-  logDescription = '';
-  attemptedLog = false;
-  activityListOpen = false;
-  activitySearch = '';
-
   get manualEntries(): readonly ManualEntry[] {
     return this.data?.manualEntries ?? [];
   }
@@ -206,13 +207,8 @@ export class DayViewComponent implements OnChanges {
     return this.manualEntries.reduce((sum, e) => sum + e.minutes, 0) * 60_000;
   }
 
-  // Dropdown options — fall back to a single Other when types haven't loaded.
-  get activityOptions(): readonly ActivityType[] {
-    return this.activityTypes.length ? this.activityTypes : [{ value: DEFAULT_ACTIVITY, name: DEFAULT_ACTIVITY }];
-  }
-
-  activityLabel(value: string): string {
-    return activityLabel(this.activityTypes, value);
+  onPanelPatch(e: { id: string; patch: ManualEntryPatch }): void {
+    this.entryEditSubmitted.emit({ target: e.id, patch: e.patch });
   }
 
   // ─── Log cloud ─────────────────────────────────────────────────────────
@@ -222,9 +218,8 @@ export class DayViewComponent implements OnChanges {
   readonly suggestions: readonly SuggestedLog[] = [];
 
   cloudOpen = false;
-  // Both overlays sit just above the Logged panel; measured at open time.
+  // The cloud sits just above the Logged panel; measured at open time.
   overlayBottom = 0;
-  composerBottom = 0;
 
   openCloud(): void {
     if (!this.isViewingToday || this.actionPending) return;
@@ -248,8 +243,21 @@ export class DayViewComponent implements OnChanges {
     this.logSubmitted.emit(pick.entry);
   }
 
-  onFreshMinutesCommitted(e: { id: string; minutes: number }): void {
-    this.entryEditSubmitted.emit({ target: e.id, patch: { minutes: e.minutes } });
+  // Jira-result form → a single entry; lands with the usual draft window.
+  onFormSubmitted(entry: ManualEntryInput): void {
+    this.closeCloud();
+    this.logSubmitted.emit(entry);
+  }
+
+  // Batch review → several entries at once; they land as static rows.
+  onBatchSubmitted(entries: readonly ManualEntryInput[]): void {
+    this.closeCloud();
+    this.batchSubmitted.emit(entries);
+  }
+
+  onSettingsRequested(): void {
+    this.closeCloud();
+    this.settingsRequested.emit();
   }
 
   // FLIP clone of the picked chip → flies to the panel header (Σ corner).
@@ -287,116 +295,4 @@ export class DayViewComponent implements OnChanges {
     });
     setTimeout(() => g.remove(), 460);
   }
-
-  // ─── Compose popover (custom add + edit) ───────────────────────────────
-
-  // Temporary custom path (cloud "⌨ custom…") until Jira search lands.
-  openCustomComposer(): void {
-    this.closeCloud();
-    this.openLogPopover();
-  }
-
-  openLogPopover(): void {
-    if (!this.isViewingToday) return;
-    this.editingId = null;
-    this.logTask = '';
-    this.logTimeStr = '30m';
-    this.logActivity = DEFAULT_ACTIVITY;
-    this.logDescription = '';
-    this.attemptedLog = false;
-    this.activityListOpen = false;
-    this.composerBottom = this.panelHeight() + 8;
-    this.logPopoverOpen = true;
-  }
-
-  openEditPopover(entry: ManualEntry): void {
-    if (!this.isViewingToday || entry.sourceSessionId) return;
-    this.editingId = entry.id;
-    this.logTask = entry.task;
-    this.logTimeStr = formatDurationLabel(entry.minutes);
-    this.logActivity = entry.activity;
-    this.logDescription = entry.description;
-    this.attemptedLog = false;
-    this.activityListOpen = false;
-    this.composerBottom = this.panelHeight() + 8;
-    this.logPopoverOpen = true;
-  }
-
-  closeLogPopover(): void {
-    this.logPopoverOpen = false;
-    this.activityListOpen = false;
-  }
-
-  // ─── Activity dropdown (custom — native <select> can't cap height/scroll) ──
-
-  openActivityList(): void {
-    this.activityListOpen = true;
-    this.activitySearch = ''; // start unfiltered; the input filters as you type
-    // *ngIf renders the input on the next tick — query the live DOM and focus.
-    setTimeout(() => this.host.nativeElement
-      .querySelector<HTMLInputElement>('.lp-activity-search')?.focus());
-  }
-
-  closeActivityList(): void {
-    this.activityListOpen = false;
-  }
-
-  selectActivity(value: string): void {
-    this.logActivity = value;
-    this.activityListOpen = false;
-  }
-
-  // Enter in the filter picks the top match (Tempo-style).
-  selectFirstActivity(): void {
-    const first = this.filteredActivities[0];
-    if (first) this.selectActivity(first.value);
-  }
-
-  get filteredActivities(): readonly ActivityType[] {
-    const q = this.activitySearch.trim().toLowerCase();
-    if (!q) return this.activityOptions;
-    return this.activityOptions.filter(a => a.name.toLowerCase().includes(q));
-  }
-
-  // Duration text edited via the shared DurationFieldComponent; parse here for
-  // validation + submit (the field handles input/chips/wheel/normalize).
-  get parsedMinutes(): number | null {
-    return parseDurationToMinutes(this.logTimeStr);
-  }
-
-  get logTaskInvalid(): boolean {
-    return this.logTask.trim().length === 0;
-  }
-
-  get logMinutesInvalid(): boolean {
-    return this.parsedMinutes === null;
-  }
-
-  get logDescriptionInvalid(): boolean {
-    return this.logDescription.trim().length === 0;
-  }
-
-  get logInvalid(): boolean {
-    return this.logTaskInvalid || this.logMinutesInvalid || this.logDescriptionInvalid;
-  }
-
-  applyLog(): void {
-    if (this.actionPending) return;
-    if (this.logInvalid) {
-      this.attemptedLog = true;
-      return;
-    }
-    const task = this.logTask.trim();
-    const minutes = this.parsedMinutes ?? 0;
-    const description = this.logDescription.trim();
-    const activity = this.logActivity || DEFAULT_ACTIVITY;
-
-    if (this.editingId) {
-      this.entryEditSubmitted.emit({ target: this.editingId, patch: { minutes, description, activity } });
-    } else {
-      this.logSubmitted.emit({ task, minutes, description, activity });
-    }
-    this.closeLogPopover();
-  }
-
 }

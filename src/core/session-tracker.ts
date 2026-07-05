@@ -12,6 +12,7 @@ import {
   addSignal,
   addManualEntry,
   editManualEntry,
+  deleteManualEntry,
   resolveSessionTarget,
   getOpenPause,
   trimTrailingPauses,
@@ -315,6 +316,16 @@ export class SessionTracker {
     try {
       editManualEntry(this.dailyLog, id, patch, this.config);
       return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Delete a manual entry from today's log (session-born included) */
+  public deleteManualEntry(id: string): { ok: boolean; error?: string; deleted?: ManualEntry } {
+    try {
+      const deleted = deleteManualEntry(this.dailyLog, id);
+      return { ok: true, deleted };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

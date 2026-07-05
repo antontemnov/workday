@@ -1,6 +1,8 @@
 // Log cloud — positioned by the parent (absolute, above the Logged panel).
 // Opens with a scale-morph from the ghost-row corner; chips pop in a wave
-// only while :host has .spawn (filter re-renders stay still).
+// only while :host has .spawn (filter re-renders stay still). Modes ride
+// host classes: .batch-mode (footer), .review-mode (list swap),
+// .form-mode (body collapses to 30px under the one-line form).
 :host {
   position: absolute;
   left: 10px;
@@ -41,8 +43,24 @@
     color: #cdd6f4;
     font-family: inherit;
     font-size: 11.5px;
+    min-width: 0;
 
     &::placeholder { color: #4b4d63; }
+  }
+
+  .f-batch {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #26263a;
+    border-radius: 4px;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 9px;
+    padding: 2px 7px;
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+
+    &:hover { color: #a6adc8; border-color: #45475a; }
   }
 
   .f-esc {
@@ -54,9 +72,16 @@
   }
 }
 
+:host(.batch-mode) .f-batch {
+  color: #cba6f7;
+  border-color: rgba(203, 166, 247, 0.5);
+  background: rgba(203, 166, 247, 0.1);
+}
+
 .cloud-body {
   max-height: 212px;
   overflow: hidden;
+  transition: max-height 0.13s ease;
 }
 
 .cloud-chips {
@@ -66,6 +91,7 @@
   align-content: flex-start;
   max-height: 212px;
   overflow-y: auto;
+  transition: opacity 0.1s ease;
   // Chips lift 1px on hover — without headroom the scroll container's own
   // overflow clips that lift on the top row, reading as a jump-and-crop.
   // No compensating negative margin: .cloud-body (the parent) has its own
@@ -77,6 +103,16 @@
   &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
 }
 
+// Form mode: filter fades out of flow, body collapses, chips dim — the
+// one-line form (absolute, bottom) spreads over them.
+:host(.form-mode) .cloud-filter { opacity: 0; pointer-events: none; position: absolute; }
+:host(.form-mode) .cloud-body { max-height: 30px; }
+:host(.form-mode) .cloud-chips { opacity: 0; pointer-events: none; }
+
+// Review mode swaps the whole picker for the list.
+:host(.review-mode) .cloud-filter { display: none; }
+:host(.review-mode) .cloud-body { display: none; }
+
 .row-label {
   width: 100%;
   font-size: 8.5px;
@@ -87,6 +123,7 @@
   margin: 2px 0 1px;
 
   &.sugg { color: rgba(148, 226, 213, 0.75); }
+  &.jira { color: rgba(137, 180, 250, 0.75); }
 }
 
 .fav {
@@ -115,6 +152,14 @@
 
   &:hover .f-name { color: #cba6f7; }
 
+  // Collected into the batch basket.
+  &.sel {
+    background: rgba(203, 166, 247, 0.2);
+    border-color: #cba6f7;
+
+    &::before { content: '✓'; font-size: 9px; color: #cba6f7; font-weight: 700; }
+  }
+
   // Suggested chips — teal species.
   &.sugg {
     border: 1px solid rgba(148, 226, 213, 0.4);
@@ -125,18 +170,42 @@
     .f-min   { color: rgba(148, 226, 213, 0.8); }
 
     &:hover { background: rgba(148, 226, 213, 0.13); border-color: #94e2d5; }
+
+    &.sel {
+      background: rgba(148, 226, 213, 0.16);
+      border-color: #94e2d5;
+      &::before { color: #94e2d5; }
+    }
   }
 
-  // Temporary custom bridge — quiet grey until Jira search replaces it.
-  &.custom {
-    background: transparent;
-    border: 1px dashed #45475a;
+  // Jira search results — blue species, summary truncates.
+  &.jira {
+    border: 1px solid rgba(137, 180, 250, 0.32);
+    background: rgba(137, 180, 250, 0.05);
+    border-radius: 8px;
+    max-width: 100%;
 
-    .f-name { color: #6c7086; font-weight: 400; }
+    .f-task { color: #89b4fa; font-size: 10px; flex-shrink: 0; }
+    .f-name {
+      color: #a6adc8;
+      font-weight: 400;
+      font-style: italic;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 300px;
+    }
 
     &:hover {
-      border-color: #6c7086;
-      .f-name { color: #a6adc8; }
+      background: rgba(137, 180, 250, 0.12);
+      border-color: rgba(137, 180, 250, 0.6);
+      .f-name { color: #cdd6f4; }
+    }
+
+    &.sel {
+      background: rgba(137, 180, 250, 0.16);
+      border-color: #89b4fa;
+      &::before { color: #89b4fa; }
     }
   }
 }
@@ -145,16 +214,361 @@
   animation: chip-pop 0.3s cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
 }
 
-.cloud-empty {
+// Status line in the Jira zone: searching / empty / error / settings link.
+.jira-status {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-size: 10px;
   color: #6c7086;
   padding: 3px 2px;
+
+  .spin {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+    color: #89b4fa;
+  }
+
+  &.link {
+    background: none;
+    border: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    color: #89b4fa;
+
+    &:hover { color: #b4d0fb; text-decoration: underline; }
+  }
+}
+
+// ─── Batch footer ─────────────────────────────────────────────────────────
+.cloud-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(203, 166, 247, 0.12);
+
+  .bk-info {
+    font-size: 10px;
+    color: #6c7086;
+    font-variant-numeric: tabular-nums;
+
+    b { color: #cba6f7; font-weight: 700; }
+  }
+
+  .bk-clear {
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 9.5px;
+    cursor: pointer;
+    padding: 2px 4px;
+
+    &:hover { color: #f38ba8; }
+  }
+
+  .bk-review {
+    margin-left: auto;
+    background: #cba6f7;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 4px 13px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #b894ee; }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+}
+
+// ─── Review screen ────────────────────────────────────────────────────────
+.cloud-review {
+  display: flex;
+  flex-direction: column;
+  animation: rv-in 0.16s ease;
+}
+
+.rv-list {
+  max-height: 264px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
+}
+
+.rv-row {
+  background: rgba(17, 17, 27, 0.5);
+  border: 1px solid #26263a;
+  border-radius: 7px;
+  padding: 5px 8px 6px;
+
+  &.jira .rv-key { color: #89b4fa; }
+}
+
+.rv-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 9.5px;
+  margin-bottom: 4px;
+
+  .rv-key { color: #cba6f7; font-weight: 700; flex-shrink: 0; }
+
+  .rv-name {
+    color: #a6adc8;
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .rv-x {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+
+    &:hover { color: #f38ba8; }
+  }
+}
+
+.rv-ctl {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  .rv-act {
+    flex-shrink: 0;
+    width: 118px;
+    background: rgba(17, 17, 27, 0.85);
+    border: 1px solid #313244;
+    border-radius: 5px;
+    color: #bac2de;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 3px 3px;
+    outline: none;
+    cursor: pointer;
+
+    &:focus { border-color: #cba6f7; }
+    &.need {
+      border-color: rgba(203, 166, 247, 0.65);
+      color: #cba6f7;
+      animation: need-pulse 1.6s ease-in-out infinite;
+    }
+  }
+
+  .rv-min {
+    flex-shrink: 0;
+    width: 58px;
+    text-align: center;
+    background: rgba(17, 17, 27, 0.85);
+    border: 1px solid #313244;
+    border-radius: 5px;
+    color: #cba6f7;
+    font-weight: 700;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 3px 4px;
+    outline: none;
+    font-variant-numeric: tabular-nums;
+
+    &:focus { border-color: #cba6f7; }
+  }
+
+  .rv-desc {
+    flex: 1;
+    min-width: 0;
+    background: rgba(17, 17, 27, 0.85);
+    border: 1px solid #313244;
+    border-radius: 5px;
+    color: #cdd6f4;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 3px 7px;
+    outline: none;
+
+    &:focus { border-color: #cba6f7; }
+    &::placeholder { color: #4b4d63; }
+    &.need {
+      border-color: rgba(203, 166, 247, 0.65);
+      animation: need-pulse 1.6s ease-in-out infinite;
+
+      &::placeholder { color: rgba(203, 166, 247, 0.55); }
+    }
+  }
+}
+
+.rv-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+
+  .rv-back {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 3px;
+
+    &:hover { color: #a6adc8; }
+  }
+
+  .rv-info { font-size: 10px; color: #6c7086; font-variant-numeric: tabular-nums; }
+  .rv-hint { font-size: 9px; color: #cba6f7; opacity: 0.8; }
+
+  .rv-ok {
+    margin-left: auto;
+    background: #cba6f7;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 14px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #b894ee; }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+}
+
+// ─── One-line form (Jira result) ──────────────────────────────────────────
+// Spreads left-to-right over the collapsed body (scaleX morph on mount).
+.cloud-form {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  transform-origin: 0 50%;
+  animation: form-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1) 0.05s backwards;
+
+  .cf-key {
+    flex-shrink: 0;
+    color: #89b4fa;
+    font-size: 10.5px;
+    font-weight: 700;
+    background: rgba(137, 180, 250, 0.1);
+    border: 1px solid rgba(137, 180, 250, 0.3);
+    border-radius: 6px;
+    padding: 5px 9px;
+  }
+
+  input, select {
+    background: rgba(17, 17, 27, 0.85);
+    border: 1px solid #313244;
+    border-radius: 6px;
+    color: #cdd6f4;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 5px 8px;
+    outline: none;
+
+    &:focus { border-color: #cba6f7; }
+  }
+
+  select {
+    padding: 4px 3px;
+    font-size: 10px;
+    color: #bac2de;
+    cursor: pointer;
+
+    &.need {
+      border-color: rgba(203, 166, 247, 0.65);
+      color: #cba6f7;
+      animation: need-pulse 1.6s ease-in-out infinite;
+    }
+  }
+
+  .cf-act { width: 104px; flex-shrink: 0; }
+  .cf-min { width: 52px; flex-shrink: 0; text-align: center; }
+  .cf-desc {
+    flex: 1;
+    min-width: 0;
+    &::placeholder { color: #4b4d63; }
+    &.need {
+      border-color: rgba(203, 166, 247, 0.65);
+      animation: need-pulse 1.6s ease-in-out infinite;
+
+      &::placeholder { color: rgba(203, 166, 247, 0.55); }
+    }
+  }
+
+  .cf-submit {
+    flex-shrink: 0;
+    background: #cba6f7;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 12px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #b894ee; }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+
+  .cf-back {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 3px;
+
+    &:hover { color: #a6adc8; }
+  }
 }
 
 @keyframes chip-pop {
   0%   { transform: scale(0.4); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes need-pulse {
+  0%, 100% { border-color: rgba(203, 166, 247, 0.65); }
+  50%      { border-color: rgba(203, 166, 247, 0.25); }
+}
+
+@keyframes rv-in {
+  0% { opacity: 0; transform: translateY(6px); }
+}
+
+@keyframes form-in {
+  0% { opacity: 0; transform: scaleX(0.35); }
 }
 
 @media (prefers-reduced-motion: reduce) {

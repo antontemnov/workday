@@ -30,6 +30,7 @@ import {
   resolveUiDayStart,
   addManualEntry,
   editManualEntry,
+  deleteManualEntry,
   findManualEntry,
   resolveManualEntryTarget,
   computeTotalManualEntryMs,
@@ -53,6 +54,7 @@ import type {
   ReportResponse,
   ManualEntry,
   ManualEntryResponse,
+  ManualEntryDeleteResponse,
   ActivityTypesResponse,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus } from './core/types.js';
@@ -438,10 +440,12 @@ async function handleLog(args: string[]): Promise<void> {
 
   const task = cmdArgs[0];
   const minutesStr = cmdArgs[1];
+  // Description is optional syntactically; the core rejects an empty one
+  // for every activity except Development.
   const description = cmdArgs.slice(2).join(' ');
 
-  if (!task || !minutesStr || !description) {
-    console.log('Usage: workday log <task> <minutes> "<description>" [--activity <type>] [--date YYYY-MM-DD]');
+  if (!task || !minutesStr) {
+    console.log('Usage: workday log <task> <minutes> ["<description>"] [--activity <type>] [--date YYYY-MM-DD]');
     return;
   }
   const minutes = parseInt(minutesStr, 10);
@@ -537,6 +541,49 @@ function handleLogEditOffline(date: string, target: string, patch: { minutes?: n
     writeDailyLog(log);
     const after = findManualEntry(log, entry.id)!;
     console.log(`Updated ${after.task} on ${date}: ${after.minutes}m ${after.activity} — "${after.description}"`);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function handleLogDelete(args: string[]): Promise<void> {
+  // workday log-delete <#index|id> [--date D]
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const target = cmdArgs[0];
+  if (!target) {
+    console.log('Usage: workday log-delete <#index|id> [--date D]');
+    return;
+  }
+
+  if (date) {
+    handleLogDeleteOffline(date, target);
+    return;
+  }
+
+  const result = await apiPost<ManualEntryDeleteResponse>('/api/manual-entry/delete', { target });
+  if (!result.ok) { console.log(result.error); return; }
+  const d = result.data!;
+  console.log(`Deleted ${d.task}: ${d.minutes}m`);
+  console.log(`Total manual: ${d.totalManualMinutes}m`);
+}
+
+function handleLogDeleteOffline(date: string, target: string): void {
+  const log = readDailyLog(date);
+  if (!log) { console.log(`No data for ${date}`); return; }
+  const entry = resolveManualEntryTarget(log, target);
+  if (!entry) { console.log(`Manual entry not found: ${target}`); return; }
+  try {
+    deleteManualEntry(log, entry.id);
+    writeDailyLog(log);
+    console.log(`Deleted ${entry.task} on ${date}: ${entry.minutes}m`);
+    console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m`);
   } catch (err) {
     console.log(err instanceof Error ? err.message : String(err));
   }
@@ -1056,6 +1103,9 @@ async function main(): Promise<void> {
     case 'log-edit':
       await handleLogEdit(args.slice(1));
       break;
+    case 'log-delete':
+      await handleLogDelete(args.slice(1));
+      break;
     case 'log-list':
       await handleLogList(args.slice(1));
       break;
@@ -1104,9 +1154,10 @@ Usage:
   workday sensitivity <level>             Set global default (low|normal|patient|always_on)
   workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
-  workday log <task> <min> "<desc>" [--activity T]     Log manual time (today)
-  workday log <task> <min> "<desc>" --date DATE        Log manual time (past day)
+  workday log <task> <min> ["<desc>"] [--activity T]   Log manual time (today; desc optional for Development)
+  workday log <task> <min> ["<desc>"] --date DATE      Log manual time (past day)
   workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry
+  workday log-delete <#|id> [--date D]                 Delete a manual entry
   workday log-list [--date DATE]                       List manual entries
   workday fav-add <task> <min> "<name>" [--activity T] Add a favorite (log template)
   workday fav-remove <#|id>                            Remove a favorite

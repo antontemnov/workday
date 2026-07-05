@@ -510,11 +510,14 @@ export function addManualEntry(
   }
 
   const sessionBorn = !!input.sourceSessionId;
-  const description = sessionBorn ? '' : input.description.trim();
-  if (!sessionBorn && !description) throw new Error('Description is required');
-
   const activity = sessionBorn ? DEFAULT_ACTIVITY : input.activity.trim();
   if (!activity) throw new Error('Activity is required');
+
+  // Description is user data; only Development entries may leave it empty.
+  const description = sessionBorn ? '' : input.description.trim();
+  if (!sessionBorn && !description && activity !== DEFAULT_ACTIVITY) {
+    throw new Error('Description is required (only Development may omit it)');
+  }
 
   const addMs = input.minutes * MS_PER_MINUTE;
   if (computeTotalClaimedMs(log) + addMs > computeBudgetMs(log, config)) {
@@ -568,19 +571,34 @@ export function editManualEntry(
     entry.minutes = patch.minutes;
   }
 
-  if (patch.description !== undefined) {
-    const d = patch.description.trim();
-    if (!d) throw new Error('Description cannot be empty');
-    entry.description = d;
-  }
-
-  if (patch.activity !== undefined) {
-    const a = patch.activity.trim();
-    if (!a) throw new Error('Activity cannot be empty');
-    entry.activity = a;
+  // Validate description against the final activity — a patch may change
+  // either or both. Only Development may end up with an empty description.
+  if (patch.description !== undefined || patch.activity !== undefined) {
+    const activity = (patch.activity ?? entry.activity).trim();
+    if (!activity) throw new Error('Activity cannot be empty');
+    const description = (patch.description ?? entry.description).trim();
+    if (!description && activity !== DEFAULT_ACTIVITY) {
+      throw new Error('Description is required (only Development may omit it)');
+    }
+    entry.activity = activity;
+    entry.description = description;
   }
 
   unsealForEdit(log);
+}
+
+/**
+ * Delete a manual entry. Session-born entries are deletable too (unlike
+ * edit) — removing one just un-claims the extra session time. Throws when
+ * the id is unknown.
+ */
+export function deleteManualEntry(log: DailyLog, id: string): ManualEntry {
+  const entries = log.manualEntries;
+  const index = entries?.findIndex(e => e.id === id) ?? -1;
+  if (!entries || index === -1) throw new Error(`Manual entry not found: ${id}`);
+  const [removed] = entries.splice(index, 1);
+  unsealForEdit(log);
+  return removed;
 }
 
 /** Parse a date string + hour into a timestamp in the given timezone */

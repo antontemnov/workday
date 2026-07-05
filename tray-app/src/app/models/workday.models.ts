@@ -131,6 +131,10 @@ export interface ActivityTypesResponse {
   readonly fromCache: boolean;                   // false when served from fallback
 }
 
+// Mirrors the daemon's DEFAULT_ACTIVITY — the only activity that may carry
+// an empty description (session-born entries and quiet dev logs).
+export const DEVELOPMENT_ACTIVITY = 'Development';
+
 // Returned by POST /api/manual-entry and /api/manual-entry/update.
 export interface ManualEntryResponse {
   readonly id: string;
@@ -138,6 +142,14 @@ export interface ManualEntryResponse {
   readonly minutes: number;
   readonly description: string;
   readonly activity: string;
+  readonly totalManualMinutes: number;
+}
+
+// Returned by POST /api/manual-entry/delete.
+export interface ManualEntryDeleteResponse {
+  readonly id: string;
+  readonly task: string;
+  readonly minutes: number;
   readonly totalManualMinutes: number;
 }
 

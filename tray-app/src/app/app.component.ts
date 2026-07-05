@@ -466,6 +466,21 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
+  // Batch review → sequential POSTs in one gated action; a failure stops the
+  // run (entries before it stay logged) and surfaces as the usual toast. No
+  // freshEntryId: batch entries land as static rows, no draft window.
+  async submitLogBatch(inputs: readonly ManualEntryInput[]): Promise<void> {
+    if (inputs.length === 0) return;
+    await this.runAction(async () => {
+      let last: ApiResponse<unknown> = { ok: false, error: 'empty batch' };
+      for (const input of inputs) {
+        last = await this.api.addManualEntry(input);
+        if (!last.ok) return last;
+      }
+      return last;
+    });
+  }
+
   async submitEntryEdit(e: { target: string; patch: ManualEntryPatch }): Promise<void> {
     await this.runAction(() => this.api.updateManualEntry(e.target, e.patch));
   }
