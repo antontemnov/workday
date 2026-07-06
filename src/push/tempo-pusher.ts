@@ -8,6 +8,7 @@ import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient } from './tempo-client.js';
 import { invalidateApprovalCache } from './tempo-approvals.js';
 import { loadPushLog, savePushLog, pushLogKey } from './push-log.js';
+import { invalidateSnapshotsInRange } from './tempo-snapshot.js';
 
 // ─── Push plan ───────────────────────────────────────────────────────────
 
@@ -320,9 +321,10 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
   console.log(`Executing ${actionable.length} mutation(s)...`);
   const result = await executePlan(plan, tempoClient, accountId);
 
-  // Tempo-side totals changed — the approval snapshot is stale now.
+  // Tempo-side state changed — approval and worklog snapshots are stale now.
   if (result.posted > 0 || result.updated > 0) {
     invalidateApprovalCache();
+    invalidateSnapshotsInRange(from, to);
   }
 
   // Seal the day only on a clean push. A failed mutation (network, Jira limit, etc.)

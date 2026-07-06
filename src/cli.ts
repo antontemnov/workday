@@ -1098,6 +1098,46 @@ function printMonth(data: MonthResponse): void {
   console.log('TOTAL'.padEnd(COL_DATE + COL_STATUS) + formatReportHours(t.reportedSeconds).padStart(COL_HOURS));
 }
 
+async function handleTempoSync(args: string[]): Promise<void> {
+  const { parseYearMonth } = await import('./push/month-report.js');
+  const ym = args[0] ? parseYearMonth(args[0]) : currentYearMonth();
+  if (!ym) { console.log('Usage: workday tempo-sync [YYYY-MM]'); return; }
+
+  const secrets = tryLoadSecrets();
+  if (!secrets) { console.log('Secrets not configured — run "workday init".'); return; }
+
+  const { fetchMonthSnapshot, getSnapshotPath } = await import('./push/tempo-snapshot.js');
+  let snapshot;
+  try {
+    snapshot = await fetchMonthSnapshot(ym.year, ym.month, secrets);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  const totalSeconds = snapshot.worklogs.reduce((sum, w) => sum + w.timeSpentSeconds, 0);
+  console.log(`Tempo snapshot ${snapshot.month}: ${snapshot.worklogs.length} worklog(s), ${formatReportHours(totalSeconds)}`);
+  console.log(`Fetched: ${snapshot.fetchedAt}`);
+  console.log(`Cache:   ${getSnapshotPath(ym.year, ym.month)}`);
+
+  if (snapshot.worklogs.length === 0) return;
+  console.log('');
+  const byDate = new Map<string, { count: number; seconds: number }>();
+  for (const wl of snapshot.worklogs) {
+    const day = byDate.get(wl.startDate) ?? { count: 0, seconds: 0 };
+    day.count++;
+    day.seconds += wl.timeSpentSeconds;
+    byDate.set(wl.startDate, day);
+  }
+  for (const date of [...byDate.keys()].sort()) {
+    const day = byDate.get(date)!;
+    console.log(`  ${date}  ${String(day.count).padStart(2)} worklog(s) ${formatReportHours(day.seconds).padStart(7)}`);
+  }
+  const withActivity = snapshot.worklogs.filter(w => w.activity !== undefined).length;
+  console.log('');
+  console.log(`Fields captured: activity on ${withActivity}/${snapshot.worklogs.length}, description on ${snapshot.worklogs.filter(w => !!w.description).length}, updatedAt on ${snapshot.worklogs.filter(w => !!w.updatedAt).length}`);
+}
+
 async function handleSchedule(args: string[]): Promise<void> {
   const { parseYearMonth } = await import('./push/month-report.js');
   const ym = args[0] ? parseYearMonth(args[0]) : currentYearMonth();
@@ -1216,6 +1256,9 @@ async function main(): Promise<void> {
     case 'month':
       await handleMonth(args.slice(1));
       break;
+    case 'tempo-sync':
+      await handleTempoSync(args.slice(1));
+      break;
     case 'schedule':
       await handleSchedule(args.slice(1));
       break;
@@ -1265,6 +1308,7 @@ Usage:
   workday tempo --file report.json --push              Push from saved report
   workday tempo --push                                 Push computed data to Tempo
   workday month [YYYY-MM]                              Month view: day statuses vs Tempo (pending/outdated/pushed)
+  workday tempo-sync [YYYY-MM]                         Fetch the month's Tempo worklogs into the local snapshot cache
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
   workday approval [YYYY-MM]                           Tempo timesheet approval status for the period
 

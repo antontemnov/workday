@@ -765,6 +765,18 @@ export interface TempoWorklog {
   readonly issueId: number;
   readonly startDate: string;
   readonly timeSpentSeconds: number;
+  readonly description?: string;   // plain worklog text as Tempo has it now
+  readonly activity?: string;      // _Activity_ attribute value
+  readonly updatedAt?: string;     // Tempo-side last modification (ISO)
+}
+
+// One month of the user's Tempo worklogs as last fetched — the remote side
+// of mirror-sync. Cached in data/tempo-cache/YYYY-MM.json.
+export interface TempoMonthSnapshot {
+  readonly month: string;          // YYYY-MM
+  readonly accountId: string;
+  readonly fetchedAt: string;
+  readonly worklogs: readonly TempoWorklog[];
 }
 
 export interface JiraIssue {

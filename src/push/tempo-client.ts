@@ -18,6 +18,32 @@ export interface TempoWorkAttribute {
   readonly names?: Readonly<Record<string, string>>; // value → display label
 }
 
+/** Worklog as the /4/worklogs list endpoints return it. */
+export interface RawTempoWorklog {
+  readonly tempoWorklogId: number;
+  readonly issue?: { readonly id: number };
+  readonly issueId?: number;
+  readonly startDate: string;
+  readonly timeSpentSeconds: number;
+  readonly description?: string;
+  readonly updatedAt?: string;
+  readonly attributes?: { readonly values?: ReadonlyArray<{ readonly key: string; readonly value: string }> };
+}
+
+/** Map a raw API worklog to our full snapshot shape (description/activity/updatedAt kept). */
+export function mapTempoWorklog(raw: RawTempoWorklog): TempoWorklog {
+  const activity = raw.attributes?.values?.find(v => v.key === ACTIVITY_ATTRIBUTE_KEY)?.value;
+  return {
+    tempoWorklogId: raw.tempoWorklogId,
+    issueId: raw.issue?.id ?? raw.issueId ?? 0,
+    startDate: raw.startDate,
+    timeSpentSeconds: raw.timeSpentSeconds,
+    ...(raw.description !== undefined ? { description: raw.description } : {}),
+    ...(activity !== undefined ? { activity } : {}),
+    ...(raw.updatedAt !== undefined ? { updatedAt: raw.updatedAt } : {}),
+  };
+}
+
 /** Tempo HTTP failure with the status preserved — 403 means "scope missing". */
 export class TempoApiError extends Error {
   public readonly status: number;
@@ -102,23 +128,12 @@ export class TempoClient {
       const path = `/4/worklogs/user/${encodeURIComponent(accountId)}`
         + `?from=${from}&to=${to}&offset=${offset}&limit=${limit}`;
       const response = await this.request('GET', path) as {
-        results?: Array<{
-          tempoWorklogId: number;
-          issue?: { id: number };
-          issueId?: number;
-          startDate: string;
-          timeSpentSeconds: number;
-        }>;
+        results?: RawTempoWorklog[];
         metadata?: { count: number };
       };
 
       for (const wl of response.results ?? []) {
-        allWorklogs.push({
-          tempoWorklogId: wl.tempoWorklogId,
-          issueId: wl.issue?.id ?? wl.issueId ?? 0,
-          startDate: wl.startDate,
-          timeSpentSeconds: wl.timeSpentSeconds,
-        });
+        allWorklogs.push(mapTempoWorklog(wl));
       }
 
       const meta = response.metadata;

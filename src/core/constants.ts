@@ -87,6 +87,7 @@ export const ISSUE_CACHE_FILE = 'issue-cache.json';
 export const PUSH_LOG_FILE = 'push-log.json';
 export const PUSH_TOMBSTONES_FILE = 'push-tombstones.json';
 export const TEMPO_REPORT_DIR = 'tempo';
+export const TEMPO_CACHE_DIR = 'tempo-cache';
 export const TEMPO_BASE_URL = 'https://api.tempo.io';
 export const TEMPO_RATE_LIMIT_MS = 210;
 export const TEMPO_TOLERANCE_SECONDS = 60;
