@@ -662,6 +662,9 @@ export interface MonthDaySummary {
   readonly taskCount: number;         // unique task keys
   readonly tasks: readonly MonthDayTask[];
   readonly pushedAt: string | null;
+  // Present only when the month has a Tempo snapshot: what exactly diverges
+  // from Tempo, one human line per drift (empty array = verified parity).
+  readonly drift?: readonly string[];
 }
 
 export interface MonthTotals {
@@ -682,6 +685,9 @@ export interface MonthResponse {
   readonly days: readonly MonthDaySummary[];
   readonly totals: MonthTotals;
   readonly lastPushAt: string | null; // max pushedAt across the month
+  // fetchedAt of the Tempo snapshot the statuses were derived from,
+  // null = no snapshot → statuses fall back to local pushed-flags.
+  readonly syncedAt?: string | null;
 }
 
 // ─── Tempo month meta (schedule / approvals proxies) ────────────────────
@@ -784,7 +790,7 @@ export interface JiraIssue {
   readonly summary: string;
 }
 
-export type PushActionType = 'create' | 'update' | 'skip' | 'error';
+export type PushActionType = 'create' | 'update' | 'delete' | 'skip' | 'error';
 
 export interface PushPlanEntry {
   readonly date: string;
@@ -799,6 +805,7 @@ export interface PushPlanEntry {
   readonly entryId?: string;       // manual kind: ManualEntry.id (pushLog key + snapshot)
   readonly description?: string;   // manual kind: text to send
   readonly activity?: string;      // manual kind: _Activity_ value to send
+  readonly conflict?: boolean;     // the worklog was edited/removed on the Tempo side since our push
 }
 
 export interface PushResult {

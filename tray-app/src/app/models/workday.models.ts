@@ -255,6 +255,9 @@ export interface MonthDaySummary {
   readonly taskCount: number;
   readonly tasks: readonly MonthDayTask[];
   readonly pushedAt: string | null;
+  // Present only when the month has a Tempo snapshot: what exactly diverges
+  // from Tempo, one human line per drift (empty array = verified parity).
+  readonly drift?: readonly string[];
 }
 
 export interface MonthTotals {
@@ -275,6 +278,9 @@ export interface MonthResponse {
   readonly days: readonly MonthDaySummary[];
   readonly totals: MonthTotals;
   readonly lastPushAt: string | null;
+  // fetchedAt of the Tempo snapshot the statuses were derived from,
+  // null/absent = no snapshot → statuses fall back to local pushed-flags.
+  readonly syncedAt?: string | null;
 }
 
 // ─── Tempo month meta (schedule / approvals proxies) ─────────────────────
@@ -312,7 +318,7 @@ export interface TempoApprovalResponse {
 
 // ─── Push to Tempo ───────────────────────────────────────────────────────
 
-export type PushActionType = 'create' | 'update' | 'skip' | 'error';
+export type PushActionType = 'create' | 'update' | 'delete' | 'skip' | 'error';
 
 export interface PushPlanEntry {
   readonly date: string;
@@ -321,6 +327,7 @@ export interface PushPlanEntry {
   readonly action: PushActionType;
   readonly detail: string;
   readonly kind: ReportEntryKind;
+  readonly conflict?: boolean;     // worklog edited/removed on the Tempo side since our push
 }
 
 export interface PushResult {

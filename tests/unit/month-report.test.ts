@@ -9,8 +9,10 @@ import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before 
 import assert from 'node:assert/strict';
 import { createEmptyLog, writeDailyLog } from '../../src/core/daily-log.js';
 import { buildMonthResponse, getMonthRange, parseYearMonth } from '../../src/push/month-report.js';
+import { savePushLog } from '../../src/push/push-log.js';
+import { saveMonthSnapshot } from '../../src/push/tempo-snapshot.js';
 import { DayStatus, MonthDayStatus, SensitivityLevel } from '../../src/core/types.js';
-import type { AppConfig, DailyLog, ManualEntry } from '../../src/core/types.js';
+import type { AppConfig, DailyLog, ManualEntry, TempoWorklog } from '../../src/core/types.js';
 
 let passed = 0;
 let failed = 0;
@@ -151,6 +153,93 @@ test('totals count statuses and sum hours', () => {
 
 test('lastPushAt is the max pushedAt across the month', () => {
   assert.equal(month.lastPushAt, '2026-06-04T19:30:00.000Z');
+});
+
+test('no snapshot → legacy statuses, no drift field, syncedAt null', () => {
+  assert.equal(month.syncedAt, null);
+  assert.equal(byDate.get('2026-06-03')!.drift, undefined);
+});
+
+// ─── Diff-based statuses: July has a Tempo snapshot on disk ─────────────
+//  01 — pushed flag, parity            → pushed
+//  02 — draft flag + pushedAt, parity  → pushed (stuck-OUTDATED self-heal)
+//  03 — pushed flag, remote time edit  → outdated + drift line
+//  04 — never pushed                   → pending, drift "not pushed"
+
+writeDay(config, '2026-07-01', log => {
+  log.manualEntries.push(makeEntry({ id: 'm1', task: 'ATL-1', minutes: 30 }));
+  log.status = DayStatus.Pushed;
+  log.pushedAt = '2026-07-01T18:00:00.000Z';
+});
+writeDay(config, '2026-07-02', log => {
+  log.manualEntries.push(makeEntry({ id: 'm2', task: 'ATL-1', minutes: 30 }));
+  log.status = DayStatus.Draft; // edited-then-reverted: flag says outdated
+  log.pushedAt = '2026-07-02T18:00:00.000Z';
+});
+writeDay(config, '2026-07-03', log => {
+  log.manualEntries.push(makeEntry({ id: 'm3', task: 'ATL-1', minutes: 30 }));
+  log.status = DayStatus.Pushed; // flag says pushed, Tempo says otherwise
+  log.pushedAt = '2026-07-03T18:00:00.000Z';
+});
+writeDay(config, '2026-07-04', log => {
+  log.manualEntries.push(makeEntry({ id: 'm4', task: 'ATL-1', minutes: 30 }));
+});
+
+savePushLog({
+  '2026-07-01|ATL-1|m:m1': { tempoWorklogId: 900, timeSpentSeconds: 1800, pushedAt: 'x', description: 'Daily standup', activity: 'Meeting' },
+  '2026-07-02|ATL-1|m:m2': { tempoWorklogId: 901, timeSpentSeconds: 1800, pushedAt: 'x', description: 'Daily standup', activity: 'Meeting' },
+  '2026-07-03|ATL-1|m:m3': { tempoWorklogId: 902, timeSpentSeconds: 1800, pushedAt: 'x', description: 'Daily standup', activity: 'Meeting' },
+});
+
+function snapWl(id: number, date: string, seconds: number): TempoWorklog {
+  return { tempoWorklogId: id, issueId: 1, startDate: date, timeSpentSeconds: seconds, description: 'Daily standup', activity: 'Meeting' };
+}
+
+saveMonthSnapshot({
+  month: '2026-07',
+  accountId: 'acc',
+  fetchedAt: '2026-07-07T10:00:00.000Z',
+  worklogs: [
+    snapWl(900, '2026-07-01', 1800),
+    snapWl(901, '2026-07-02', 1800),
+    snapWl(902, '2026-07-03', 7200), // remote edit: 0.5h → 2h
+  ],
+});
+
+const july = buildMonthResponse(2026, 7, config);
+const julyByDate = new Map(july.days.map(d => [d.date, d]));
+
+console.log('');
+console.log('Month report — diff-based statuses (snapshot present)');
+
+test('syncedAt carries the snapshot fetchedAt', () => {
+  assert.equal(july.syncedAt, '2026-07-07T10:00:00.000Z');
+});
+
+test('parity + pushed flag → pushed, empty drift', () => {
+  const day = julyByDate.get('2026-07-01')!;
+  assert.equal(day.status, MonthDayStatus.Pushed);
+  assert.deepEqual(day.drift, []);
+});
+
+test('parity heals a stuck-OUTDATED flag → pushed', () => {
+  const day = julyByDate.get('2026-07-02')!;
+  assert.equal(day.status, MonthDayStatus.Pushed);
+  assert.deepEqual(day.drift, []);
+});
+
+test('remote time edit overrides a pushed flag → outdated + drift line', () => {
+  const day = julyByDate.get('2026-07-03')!;
+  assert.equal(day.status, MonthDayStatus.Outdated);
+  assert.equal(day.drift?.length, 1);
+  assert.match(day.drift![0], /2\.0h in Tempo vs 0\.5h local/);
+});
+
+test('never-pushed day → pending with "not pushed" drift', () => {
+  const day = julyByDate.get('2026-07-04')!;
+  assert.equal(day.status, MonthDayStatus.Pending);
+  assert.equal(day.drift?.length, 1);
+  assert.match(day.drift![0], /not pushed/);
 });
 
 console.log('');

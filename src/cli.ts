@@ -1034,15 +1034,15 @@ function printPushPlan(plan: readonly PushPlanEntry[]): void {
       + entry.task.padEnd(COL_TASK)
       + hoursStr.padStart(COL_HOURS)
       + '  ' + actionStr.padEnd(COL_ACTION)
-      + '  ' + entry.detail
+      + '  ' + (entry.conflict ? '⚠ edited in Tempo — ' : '') + entry.detail
       + tag,
     );
   }
 
-  const counts = { create: 0, update: 0, skip: 0, error: 0 };
+  const counts = { create: 0, update: 0, delete: 0, skip: 0, error: 0 };
   for (const e of plan) counts[e.action]++;
   console.log('');
-  console.log(`Create: ${counts.create}  Update: ${counts.update}  Skip: ${counts.skip}  Error: ${counts.error}`);
+  console.log(`Create: ${counts.create}  Update: ${counts.update}  Delete: ${counts.delete}  Skip: ${counts.skip}  Error: ${counts.error}`);
 }
 
 // ─── Month view / Tempo meta ─────────────────────────────────────────────
@@ -1075,6 +1075,9 @@ function printMonth(data: MonthResponse): void {
   console.log(`Month: ${data.from.slice(0, 7)}`);
   console.log(`Days with data: ${t.daysWithData}  (pending ${t.pendingDays} · outdated ${t.outdatedDays} · pushed ${t.pushedDays})`);
   if (data.lastPushAt) console.log(`Last push: ${data.lastPushAt}`);
+  console.log(data.syncedAt
+    ? `Statuses verified against Tempo snapshot of ${data.syncedAt}`
+    : 'No Tempo snapshot — statuses from local flags (run `workday tempo-sync`)');
   console.log('');
 
   const COL_DATE = 13;
@@ -1092,6 +1095,11 @@ function printMonth(data: MonthResponse): void {
       + formatReportHours(day.reportedSeconds).padStart(COL_HOURS)
       + (tasks ? `  ${tasks}` : ''),
     );
+    if (day.status === MonthDayStatus.Outdated && day.drift) {
+      for (const line of day.drift) {
+        console.log(''.padEnd(COL_DATE) + `  ⚠ ${line}`);
+      }
+    }
   }
 
   console.log('─'.repeat(COL_DATE + COL_STATUS + COL_HOURS + 24));

@@ -8,8 +8,12 @@ import type {
   MonthDayTask,
   MonthResponse,
   TaskDayReport,
+  TempoWorklog,
 } from '../core/types.js';
 import { buildReport } from './report-builder.js';
+import { loadPushLog } from './push-log.js';
+import { loadMonthSnapshot } from './tempo-snapshot.js';
+import { computeDayDrift } from './reconcile.js';
 
 /** First/last calendar day of a month as YYYY-MM-DD. */
 export function getMonthRange(year: number, month: number): { from: string; to: string } {
@@ -31,11 +35,20 @@ export function parseYearMonth(value: string): { year: number; month: number } |
   return { year, month };
 }
 
-// Sync state vs Tempo, from the daily log alone (offline). Confirmed is dead
-// but old files may still carry it — anything not pushed counts as draft.
+// Flag-based fallback (no Tempo snapshot): sync state from the daily log
+// alone. Confirmed is dead but old files may still carry it — anything not
+// pushed counts as draft.
 function deriveDayStatus(log: DailyLog | null): MonthDayStatus {
   if (!log) return MonthDayStatus.None;
   if (log.status === DayStatus.Pushed) return MonthDayStatus.Pushed;
+  return log.pushedAt ? MonthDayStatus.Outdated : MonthDayStatus.Pending;
+}
+
+// Diff-based status: parity with the snapshot IS pushed, drift on a pushed
+// day IS outdated — regardless of what the local flag says. Self-heals both
+// stuck-Outdated (edit reverted → parity) and false-Pushed (remote edits).
+function deriveDayStatusFromDrift(log: DailyLog, drift: readonly string[]): MonthDayStatus {
+  if (drift.length === 0) return log.pushedAt ? MonthDayStatus.Pushed : MonthDayStatus.Pending;
   return log.pushedAt ? MonthDayStatus.Outdated : MonthDayStatus.Pending;
 }
 
@@ -60,11 +73,23 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
   const { from, to } = getMonthRange(year, month);
 
   const tasksByDate = new Map<string, MonthDayTask[]>();
+  const entriesByDate = new Map<string, TaskDayReport[]>();
   for (const entry of buildReport(from, to, config)) {
     const list = tasksByDate.get(entry.date) ?? [];
     list.push(toMonthDayTask(entry));
     tasksByDate.set(entry.date, list);
+    const raw = entriesByDate.get(entry.date) ?? [];
+    raw.push(entry);
+    entriesByDate.set(entry.date, raw);
   }
+
+  // With a Tempo snapshot on disk the statuses come from the actual diff;
+  // without one they fall back to the local pushed-flags.
+  const snapshot = loadMonthSnapshot(year, month);
+  const snapById = snapshot
+    ? new Map<number, TempoWorklog>(snapshot.worklogs.map(w => [w.tempoWorklogId, w]))
+    : null;
+  const pushLog = snapshot ? loadPushLog() : {};
 
   const days: MonthDaySummary[] = [];
   const totals = {
@@ -81,10 +106,16 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
   for (let dayNum = 1; dayNum <= lastDay; dayNum++) {
     const date = `${from.slice(0, 8)}${String(dayNum).padStart(2, '0')}`;
     const log = readDailyLog(date);
-    const status = deriveDayStatus(log);
     const tasks = tasksByDate.get(date) ?? [];
     const claimedMs = log ? computeTotalClaimedMs(log) : 0;
     const reportedSeconds = tasks.reduce((sum, t) => sum + t.seconds, 0);
+
+    const drift = snapById && log
+      ? computeDayDrift(date, entriesByDate.get(date) ?? [], pushLog, snapById)
+      : null;
+    const status = drift !== null
+      ? deriveDayStatusFromDrift(log!, drift)
+      : deriveDayStatus(log);
 
     days.push({
       date,
@@ -95,6 +126,7 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
       taskCount: new Set(tasks.map(t => t.task)).size,
       tasks,
       pushedAt: log?.pushedAt ?? null,
+      ...(drift !== null ? { drift } : {}),
     });
 
     totals.claimedMs += claimedMs;
@@ -108,5 +140,5 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
     }
   }
 
-  return { year, month, from, to, days, totals, lastPushAt };
+  return { year, month, from, to, days, totals, lastPushAt, syncedAt: snapshot?.fetchedAt ?? null };
 }
