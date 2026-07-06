@@ -129,15 +129,17 @@ export class TempoClient {
         + `?from=${from}&to=${to}&offset=${offset}&limit=${limit}`;
       const response = await this.request('GET', path) as {
         results?: RawTempoWorklog[];
-        metadata?: { count: number };
+        metadata?: { count: number; next?: string };
       };
 
-      for (const wl of response.results ?? []) {
+      const items = response.results ?? [];
+      for (const wl of items) {
         allWorklogs.push(mapTempoWorklog(wl));
       }
 
-      const meta = response.metadata;
-      if (!meta || offset + limit >= meta.count) break;
+      // metadata.count is the PAGE size, not the total — the only reliable
+      // "more pages" signal is metadata.next (verified live 2026-07-07).
+      if (!response.metadata?.next || items.length === 0) break;
       offset += limit;
     }
 
