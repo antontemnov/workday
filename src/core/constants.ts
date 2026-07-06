@@ -85,6 +85,7 @@ export const JIRA_SEARCH_CACHE_MAX_ENTRIES = 50;
 // ─── Push / Tempo ───────────────────────────────────────────────────────
 export const ISSUE_CACHE_FILE = 'issue-cache.json';
 export const PUSH_LOG_FILE = 'push-log.json';
+export const PUSH_TOMBSTONES_FILE = 'push-tombstones.json';
 export const TEMPO_REPORT_DIR = 'tempo';
 export const TEMPO_BASE_URL = 'https://api.tempo.io';
 export const TEMPO_RATE_LIMIT_MS = 210;

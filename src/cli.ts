@@ -33,6 +33,7 @@ import {
 import { addEntryOnDate, editEntryOnDate, deleteEntryOnDate } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
+import { recordEntryDeletion } from './push/push-log.js';
 import type {
   ApiResponse,
   StatusResponse,
@@ -563,6 +564,7 @@ async function handleLogDelete(args: string[]): Promise<void> {
 function handleLogDeleteOffline(date: string, target: string): void {
   try {
     const { deleted, log, dayFileDeleted } = deleteEntryOnDate(date, target);
+    recordEntryDeletion(date, deleted.task, deleted.id);
     console.log(`Deleted ${deleted.task} on ${date}: ${deleted.minutes}m`);
     if (dayFileDeleted) {
       console.log('Day had no other facts — file removed.');

@@ -17,7 +17,7 @@
     "build": "tsc",
     "start": "node dist/daemon.js",
     "cli": "tsx src/cli.ts",
-    "test": "tsx tests/unit/stamina-evidence.test.ts && tsx tests/unit/candidate-lifecycle.test.ts && tsx tests/unit/honest-session-end.test.ts && tsx tests/unit/gap-detection.test.ts && tsx tests/unit/janitor.test.ts && tsx tests/unit/stop-marker.test.ts && tsx tests/unit/report-clamp.test.ts && tsx tests/unit/update-manager.test.ts && tsx tests/unit/manual-entries.test.ts && tsx tests/unit/favorites.test.ts && tsx tests/unit/jira-search.test.ts && tsx tests/unit/day-start.test.ts && tsx tests/unit/push-plan.test.ts && tsx tests/unit/month-report.test.ts && tsx tests/unit/day-edit.test.ts && tsx tests/integration/evidence-rebase.test.ts && tsx tests/integration/commit-ledger.test.ts",
+    "test": "tsx tests/unit/stamina-evidence.test.ts && tsx tests/unit/candidate-lifecycle.test.ts && tsx tests/unit/honest-session-end.test.ts && tsx tests/unit/gap-detection.test.ts && tsx tests/unit/janitor.test.ts && tsx tests/unit/stop-marker.test.ts && tsx tests/unit/report-clamp.test.ts && tsx tests/unit/update-manager.test.ts && tsx tests/unit/manual-entries.test.ts && tsx tests/unit/favorites.test.ts && tsx tests/unit/jira-search.test.ts && tsx tests/unit/day-start.test.ts && tsx tests/unit/push-plan.test.ts && tsx tests/unit/push-log.test.ts && tsx tests/unit/month-report.test.ts && tsx tests/unit/day-edit.test.ts && tsx tests/integration/evidence-rebase.test.ts && tsx tests/integration/commit-ledger.test.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

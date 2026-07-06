@@ -813,6 +813,16 @@ export interface PushLogEntry {
   readonly activity?: string;      // snapshot of last pushed _Activity_ value
 }
 
+// A pushed manual entry deleted locally: its Tempo worklog must eventually be
+// deleted too. Recorded on local delete, consumed by the push delete pass.
+export interface PushTombstone {
+  readonly date: string;
+  readonly task: string;
+  readonly entryId: string;
+  readonly tempoWorklogId: number;
+  readonly deletedAt: string;
+}
+
 export interface PushResponse {
   readonly dryRun: boolean;
   readonly plan: readonly PushPlanEntry[];

@@ -28,6 +28,7 @@ import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-cl
 import { buildMonthResponse } from './push/month-report.js';
 import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
 import { runPush } from './push/tempo-pusher.js';
+import { recordEntryDeletion } from './push/push-log.js';
 import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
 import { resolveMonthApproval, approvalUnavailable } from './push/tempo-approvals.js';
 import {
@@ -608,6 +609,7 @@ export class HttpServer {
     if (parsed.date) {
       try {
         const { deleted, log, dayFileDeleted } = deleteEntryOnDate(parsed.date, target);
+        recordEntryDeletion(parsed.date, deleted.task, deleted.id);
         return {
           ok: true,
           data: {
@@ -630,6 +632,7 @@ export class HttpServer {
     const result = tracker.deleteManualEntry(found.id);
     if (!result.ok || !result.deleted) return { ok: false, error: result.error };
     tracker.flush();
+    recordEntryDeletion(tracker.getDailyLog().date, result.deleted.task, result.deleted.id);
 
     return {
       ok: true,

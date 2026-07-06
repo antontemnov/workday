@@ -1,37 +1,13 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { getDataDir, loadConfig, loadSecrets } from '../core/config.js';
+import { readFileSync } from 'node:fs';
+import { loadConfig, loadSecrets } from '../core/config.js';
 import { readDailyLog, writeDailyLog } from '../core/daily-log.js';
-import { PUSH_LOG_FILE, TEMPO_TOLERANCE_SECONDS } from '../core/constants.js';
+import { TEMPO_TOLERANCE_SECONDS } from '../core/constants.js';
 import { DayStatus, type AppConfig, type Secrets, type TaskDayReport, type TempoWorklog, type JiraIssue, type PushPlanEntry, type PushLogEntry, type PushResult, type PushResponse } from '../core/types.js';
 import { buildReport, buildReportResponse, getDefaultFromDate, getDefaultToDate } from './report-builder.js';
 import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient } from './tempo-client.js';
 import { invalidateApprovalCache } from './tempo-approvals.js';
-
-// ─── Push log persistence ────────────────────────────────────────────────
-
-function getPushLogPath(): string {
-  return join(getDataDir(), PUSH_LOG_FILE);
-}
-
-function loadPushLog(): Record<string, PushLogEntry> {
-  const path = getPushLogPath();
-  if (!existsSync(path)) return {};
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function savePushLog(log: Record<string, PushLogEntry>): void {
-  writeFileSync(getPushLogPath(), JSON.stringify(log, null, 2), 'utf-8');
-}
-
-function pushLogKey(date: string, task: string, entryId?: string): string {
-  return entryId ? `${date}|${task}|m:${entryId}` : `${date}|${task}`;
-}
+import { loadPushLog, savePushLog, pushLogKey } from './push-log.js';
 
 // ─── Push plan ───────────────────────────────────────────────────────────
 
@@ -332,6 +308,12 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
   const actionable = plan.filter(e => e.action === 'create' || e.action === 'update');
   if (actionable.length === 0) {
     console.log('Nothing to push.');
+    // Parity with Tempo is still a successful sync — seal the days, or an
+    // edited-then-reverted day stays Outdated forever (no mutation ever
+    // triggers the seal below). Plan errors (unresolved Jira) block it.
+    if (!plan.some(e => e.action === 'error')) {
+      markDaysPushed(from, to);
+    }
     return { dryRun: false, plan, result: { posted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0 } };
   }
 
