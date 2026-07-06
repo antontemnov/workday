@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { buildPushPlan } from '../../src/push/tempo-pusher.js';
 import { computeDayDrift } from '../../src/push/reconcile.js';
-import type { TaskDayReport, JiraIssue, PushLogEntry, TempoWorklog } from '../../src/core/types.js';
+import type { TaskDayReport, JiraIssue, PushLogEntry, PushTombstone, TempoWorklog } from '../../src/core/types.js';
 
 let passed = 0;
 let failed = 0;
@@ -275,6 +275,74 @@ test('unresolved Jira → error', () => {
   assert.equal(plan[0].kind, 'manual');
 });
 
+console.log('\nbuildPushPlan — delete propagation');
+
+function tombstone(worklogId: number, over: Partial<PushTombstone> = {}): PushTombstone {
+  return { date: DATE, task: 'ATL-10', entryId: 'dead1', tempoWorklogId: worklogId, deletedAt: 'x', ...over };
+}
+
+const rangeOpts = { from: DATE, to: DATE, datesWithData: new Set([DATE]) };
+
+test('stray session worklog (line deleted locally) → delete', () => {
+  const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
+  const plan = buildPushPlan([], jiraMap, pushLog, [worklog(100, 3600)], rangeOpts);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].action, 'delete');
+  assert.equal(plan[0].existingWorklogId, 100);
+  assert.equal(plan[0].kind, 'session');
+  assert.equal(plan[0].task, 'ATL-10');
+});
+
+test('stray on a date with NO local data → kept (skip), data loss never deletes', () => {
+  const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
+  const plan = buildPushPlan([], jiraMap, pushLog, [worklog(100, 3600)],
+    { from: DATE, to: DATE, datesWithData: new Set<string>() });
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].action, 'skip');
+  assert.match(plan[0].detail, /kept/);
+});
+
+test('stray outside the push range is untouched', () => {
+  const pushLog = { ['2026-05-01|ATL-10']: sessionLog(100, 3600) };
+  const plan = buildPushPlan([], jiraMap, pushLog, [worklog(100, 3600, { startDate: '2026-05-01' })], rangeOpts);
+  // Not a delete — surfaces only as a Tempo-only line for visibility.
+  assert.ok(!plan.some(p => p.action === 'delete'));
+});
+
+test('no range options → no stray scan (legacy callers)', () => {
+  const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
+  const plan = buildPushPlan([], jiraMap, pushLog, [worklog(100, 3600)]);
+  assert.ok(!plan.some(p => p.action === 'delete'));
+});
+
+test('tombstoned manual entry alive in Tempo → delete with entryId', () => {
+  const plan = buildPushPlan([], jiraMap, {}, [manualWorklog(700)],
+    { ...rangeOpts, tombstones: [tombstone(700)] });
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].action, 'delete');
+  assert.equal(plan[0].existingWorklogId, 700);
+  assert.equal(plan[0].kind, 'manual');
+  assert.equal(plan[0].entryId, 'dead1');
+});
+
+test('tombstone whose worklog is already gone → no plan entry', () => {
+  const plan = buildPushPlan([], jiraMap, {}, [], { ...rangeOpts, tombstones: [tombstone(700)] });
+  assert.equal(plan.length, 0);
+});
+
+test('live entries and a stray coexist: stray deleted, entry untouched', () => {
+  const pushLog = {
+    [`${DATE}|ATL-10|m:e1`]: manualLog(100, 1800, 'Daily standup', 'Other'),
+    [`${DATE}|ATL-99`]: sessionLog(101, 3600), // task line gone from report
+  };
+  const plan = buildPushPlan([manual()], jiraMap, pushLog,
+    [manualWorklog(100), worklog(101, 3600)], rangeOpts);
+  assert.equal(plan.find(p => p.kind === 'manual')?.action, 'skip');
+  const del = plan.find(p => p.action === 'delete');
+  assert.equal(del?.existingWorklogId, 101);
+  assert.equal(del?.task, 'ATL-99');
+});
+
 console.log('\ncomputeDayDrift — offline status diff');
 
 function snapOf(...worklogs: TempoWorklog[]): Map<number, TempoWorklog> {
@@ -312,6 +380,24 @@ test('manual text drift → drift line', () => {
   const drift = computeDayDrift(DATE, [manual()], pushLog, snapOf(manualWorklog(100, 1800, { description: 'edited' })));
   assert.equal(drift.length, 1);
   assert.match(drift[0], /description\/activity/);
+});
+
+test('stray ownership key → drift line', () => {
+  const pushLog = { [`${DATE}|ATL-99`]: sessionLog(101, 3600) };
+  const drift = computeDayDrift(DATE, [], pushLog, snapOf(worklog(101, 3600)));
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /ATL-99: deleted locally, still in Tempo/);
+});
+
+test('tombstone alive → pending-delete drift line', () => {
+  const drift = computeDayDrift(DATE, [], {}, snapOf(manualWorklog(700)), [tombstone(700)]);
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /pending delete/);
+});
+
+test('tombstone already gone from Tempo → no drift', () => {
+  const drift = computeDayDrift(DATE, [], {}, snapOf(), [tombstone(700)]);
+  assert.deepEqual(drift, []);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -11,7 +11,7 @@ import type {
   TempoWorklog,
 } from '../core/types.js';
 import { buildReport } from './report-builder.js';
-import { loadPushLog } from './push-log.js';
+import { loadPushLog, loadTombstones } from './push-log.js';
 import { loadMonthSnapshot } from './tempo-snapshot.js';
 import { computeDayDrift } from './reconcile.js';
 
@@ -90,6 +90,7 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
     ? new Map<number, TempoWorklog>(snapshot.worklogs.map(w => [w.tempoWorklogId, w]))
     : null;
   const pushLog = snapshot ? loadPushLog() : {};
+  const tombstones = snapshot ? loadTombstones() : [];
 
   const days: MonthDaySummary[] = [];
   const totals = {
@@ -111,7 +112,7 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
     const reportedSeconds = tasks.reduce((sum, t) => sum + t.seconds, 0);
 
     const drift = snapById && log
-      ? computeDayDrift(date, entriesByDate.get(date) ?? [], pushLog, snapById)
+      ? computeDayDrift(date, entriesByDate.get(date) ?? [], pushLog, snapById, tombstones)
       : null;
     const status = drift !== null
       ? deriveDayStatusFromDrift(log!, drift)

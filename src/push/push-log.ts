@@ -46,6 +46,12 @@ export function saveTombstones(tombstones: readonly PushTombstone[]): void {
   writeJsonAtomic(join(getDataDir(), PUSH_TOMBSTONES_FILE), tombstones);
 }
 
+/** Drop tombstones whose worklogs are gone from Tempo (deleted by our push or remotely). */
+export function removeTombstonesByWorklogIds(ids: ReadonlySet<number>): void {
+  const rest = loadTombstones().filter(t => !ids.has(t.tempoWorklogId));
+  saveTombstones(rest);
+}
+
 /**
  * Manual entry deleted locally after being pushed: drop its ownership key and
  * remember the worklog as a tombstone. No-op (false) for entries that never

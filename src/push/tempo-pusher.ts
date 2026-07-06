@@ -6,7 +6,7 @@ import { buildReport, buildReportResponse, getDefaultFromDate, getDefaultToDate 
 import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient } from './tempo-client.js';
 import { invalidateApprovalCache } from './tempo-approvals.js';
-import { loadPushLog, savePushLog, pushLogKey } from './push-log.js';
+import { loadPushLog, savePushLog, pushLogKey, loadTombstones, removeTombstonesByWorklogIds } from './push-log.js';
 import { refreshSnapshotsInRange } from './tempo-snapshot.js';
 import { buildPushPlan, formatHours } from './reconcile.js';
 
@@ -24,6 +24,7 @@ export async function executePlan(
   accountId: string,
 ): Promise<PushResult> {
   const pushLog = loadPushLog();
+  const deletedWorklogIds = new Set<number>();
   let posted = 0;
   let updated = 0;
   let deleted = 0;
@@ -92,6 +93,21 @@ export async function executePlan(
         break;
       }
 
+      case 'delete': {
+        if (!entry.existingWorklogId) { failed++; break; }
+        try {
+          await tempoClient.deleteWorklog(entry.existingWorklogId);
+          delete pushLog[key];                       // stray ownership, if any
+          deletedWorklogIds.add(entry.existingWorklogId);
+          deleted++;
+          console.log(`  DEL  ${entry.date} ${entry.task} ${formatHours(entry.targetSeconds)}`);
+        } catch (err) {
+          failed++;
+          console.error(`  FAIL DEL ${entry.date} ${entry.task}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        break;
+      }
+
       case 'error':
         failed++;
         break;
@@ -99,10 +115,26 @@ export async function executePlan(
   }
 
   savePushLog(pushLog);
+  if (deletedWorklogIds.size > 0) {
+    removeTombstonesByWorklogIds(deletedWorklogIds);
+  }
   return { posted, updated, deleted, skipped, failed };
 }
 
 // ─── Mark daily logs as pushed ───────────────────────────────────────────
+
+/** Dates in [from, to] whose local day file exists — the stray-delete guard. */
+function collectDatesWithData(from: string, to: string): Set<string> {
+  const dates = new Set<string>();
+  const current = new Date(from + 'T12:00:00Z');
+  const end = new Date(to + 'T12:00:00Z');
+  while (current <= end) {
+    const date = current.toISOString().slice(0, 10);
+    if (readDailyLog(date)) dates.add(date);
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
+}
 
 function markDaysPushed(from: string, to: string): void {
   const current = new Date(from + 'T12:00:00Z');
@@ -150,7 +182,16 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
     console.log(`Built report: ${report.length} entries (${from} → ${to})`);
   }
 
-  if (report.length === 0) {
+  // Local deletions may still need Tempo-side propagation even when the
+  // report is empty (a fully cleared pushed day, tombstoned entries).
+  const pushLog = loadPushLog();
+  const rangeTombstones = loadTombstones().filter(t => t.date >= from && t.date <= to);
+  const hasRangeOwnership = Object.keys(pushLog).some(k => {
+    const date = k.slice(0, 10);
+    return date >= from && date <= to;
+  });
+
+  if (report.length === 0 && rangeTombstones.length === 0 && !hasRangeOwnership) {
     return { dryRun: !commit, plan: [], result: { posted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0 } };
   }
 
@@ -173,16 +214,27 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
   const tempoWorklogs = await tempoClient.getUserWorklogs(accountId, from, to);
   console.log(`Found ${tempoWorklogs.length} existing worklog(s)`);
 
-  // Step 4: Build plan
-  const pushLog = loadPushLog();
-  const plan = buildPushPlan(report, jiraMap, pushLog, tempoWorklogs);
+  // Step 4: Build plan. Tombstones whose worklog is already gone from Tempo
+  // (deleted remotely too) have nothing left to do — purge them silently.
+  const aliveIds = new Set(tempoWorklogs.map(w => w.tempoWorklogId));
+  const deadTombstones = rangeTombstones.filter(t => !aliveIds.has(t.tempoWorklogId));
+  if (deadTombstones.length > 0) {
+    removeTombstonesByWorklogIds(new Set(deadTombstones.map(t => t.tempoWorklogId)));
+  }
+
+  const plan = buildPushPlan(report, jiraMap, pushLog, tempoWorklogs, {
+    tombstones: rangeTombstones.filter(t => aliveIds.has(t.tempoWorklogId)),
+    from,
+    to,
+    datesWithData: collectDatesWithData(from, to),
+  });
 
   if (!commit) {
     return { dryRun: true, plan };
   }
 
   // Step 5: Execute
-  const actionable = plan.filter(e => e.action === 'create' || e.action === 'update');
+  const actionable = plan.filter(e => e.action === 'create' || e.action === 'update' || e.action === 'delete');
   if (actionable.length === 0) {
     console.log('Nothing to push.');
     // Parity with Tempo is still a successful sync — seal the days, or an

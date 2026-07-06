@@ -18,7 +18,9 @@ import {
   saveTombstones,
   recordEntryDeletion,
 } from '../../src/push/push-log.js';
-import type { PushLogEntry } from '../../src/core/types.js';
+import { executePlan } from '../../src/push/tempo-pusher.js';
+import type { TempoClient } from '../../src/push/tempo-client.js';
+import type { PushLogEntry, PushPlanEntry } from '../../src/core/types.js';
 
 let passed = 0;
 let failed = 0;
@@ -108,6 +110,68 @@ test('second deletion accumulates tombstones', () => {
   assert.deepEqual(tombstones.map(t => t.tempoWorklogId).sort(), [100, 101]);
   assert.deepEqual(loadPushLog(), {});
 });
+
+console.log('\nexecutePlan — delete branch');
+
+function stubClient(over: Partial<Record<'create' | 'update' | 'delete', () => Promise<unknown>>> = {}): { client: TempoClient; deletedIds: number[] } {
+  const deletedIds: number[] = [];
+  const client = {
+    createWorklog: over.create ?? (async () => ({ tempoWorklogId: 1 })),
+    updateWorklog: over.update ?? (async () => ({ tempoWorklogId: 1 })),
+    deleteWorklog: over.delete ?? (async (id: number) => { deletedIds.push(id); }),
+  } as unknown as TempoClient;
+  return { client, deletedIds };
+}
+
+function deletePlanEntry(over: Partial<PushPlanEntry> = {}): PushPlanEntry {
+  return {
+    date: DATE, task: TASK, targetSeconds: 3600,
+    action: 'delete', detail: 'Deleted locally → removing from Tempo (1.0h)',
+    issueId: 1, existingWorklogId: 100, kind: 'session',
+    ...over,
+  };
+}
+
+await (async () => {
+  // Successful delete drops the stray ownership key and the tombstone.
+  savePushLog({ [pushLogKey(DATE, TASK)]: logEntry(100) });
+  saveTombstones([{ date: DATE, task: TASK, entryId: 'e9', tempoWorklogId: 200, deletedAt: 'x' }]);
+
+  const { client, deletedIds } = stubClient();
+  const result = await executePlan([
+    deletePlanEntry(),
+    deletePlanEntry({ existingWorklogId: 200, kind: 'manual', entryId: 'e9' }),
+  ], client, 'acc');
+
+  test('delete executes and reports counts', () => {
+    assert.deepEqual(deletedIds, [100, 200]);
+    assert.equal(result.deleted, 2);
+    assert.equal(result.failed, 0);
+  });
+  test('stray ownership key removed after delete', () => {
+    assert.deepEqual(loadPushLog(), {});
+  });
+  test('tombstone removed after its worklog is deleted', () => {
+    assert.deepEqual(loadTombstones(), []);
+  });
+})();
+
+await (async () => {
+  // Failed delete keeps the tombstone for the next push and counts as failed.
+  savePushLog({});
+  saveTombstones([{ date: DATE, task: TASK, entryId: 'e9', tempoWorklogId: 300, deletedAt: 'x' }]);
+
+  const { client } = stubClient({ delete: async () => { throw new Error('boom'); } });
+  const result = await executePlan([
+    deletePlanEntry({ existingWorklogId: 300, kind: 'manual', entryId: 'e9' }),
+  ], client, 'acc');
+
+  test('failed delete → failed count, tombstone kept', () => {
+    assert.equal(result.deleted, 0);
+    assert.equal(result.failed, 1);
+    assert.equal(loadTombstones().length, 1);
+  });
+})();
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

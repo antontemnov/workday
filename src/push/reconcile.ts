@@ -6,7 +6,7 @@
 // side (verified live 2026-07-07); only a ticket move recreates the worklog.
 
 import { TEMPO_TOLERANCE_SECONDS } from '../core/constants.js';
-import type { JiraIssue, PushLogEntry, PushPlanEntry, TaskDayReport, TempoWorklog } from '../core/types.js';
+import type { JiraIssue, PushLogEntry, PushPlanEntry, PushTombstone, TaskDayReport, TempoWorklog } from '../core/types.js';
 import { pushLogKey } from './push-log.js';
 
 export function formatHours(seconds: number): string {
@@ -47,6 +47,18 @@ interface PendingEntry {
   readonly hadOwnership: boolean; // key existed but its worklog is gone from Tempo (remote delete / ticket move)
 }
 
+export interface PushPlanOptions {
+  // Pushed-then-deleted manual entries whose worklogs await removal in Tempo.
+  readonly tombstones?: readonly PushTombstone[];
+  // Range for stray detection: ownership keys inside [from, to] whose local
+  // line vanished get their live worklogs deleted. No range → no stray scan.
+  readonly from?: string;
+  readonly to?: string;
+  // Dates whose local day file exists. A stray on a date with NO local data
+  // is kept untouched — data loss must never cascade into Tempo deletions.
+  readonly datesWithData?: ReadonlySet<string>;
+}
+
 /**
  * Build the push plan: desired report vs Tempo snapshot, ownership from
  * push-log. Orphaned desired entries re-adopt unowned worklogs on the same
@@ -58,8 +70,10 @@ export function buildPushPlan(
   jiraMap: Map<string, JiraIssue>,
   pushLog: Record<string, PushLogEntry>,
   tempoWorklogs: readonly TempoWorklog[],
+  options: PushPlanOptions = {},
 ): PushPlanEntry[] {
   const plan: PushPlanEntry[] = [];
+  const tombstones = options.tombstones ?? [];
 
   const snapById = new Map<number, TempoWorklog>();
   const byDateIssue = new Map<string, TempoWorklog[]>();
@@ -198,7 +212,47 @@ export function buildPushPlan(
     }
   }
 
-  // ── Pass 3: unmatched Tempo worklogs — show, never mutate ──
+  // ── Pass 3: delete propagation ──
+  // Strays: ownership keys inside the range whose local line vanished (the
+  // user deleted a session / re-tasked a day after pushing) while the worklog
+  // still lives in Tempo. Local state is the source of truth — delete, unless
+  // the day file itself is missing (that is data loss, not intent).
+  if (options.from && options.to) {
+    for (const [key, own] of Object.entries(pushLog)) {
+      const [kDate, kTask, kManual] = key.split('|');
+      if (kDate < options.from || kDate > options.to) continue;
+      const wl = snapById.get(own.tempoWorklogId);
+      if (!wl || accounted.has(wl.tempoWorklogId)) continue;
+      accounted.add(wl.tempoWorklogId);
+
+      const base = {
+        date: kDate, task: kTask, targetSeconds: wl.timeSpentSeconds,
+        issueId: wl.issueId, existingWorklogId: wl.tempoWorklogId,
+        kind: (kManual ? 'manual' : 'session') as TaskDayReport['kind'],
+        ...(kManual ? { entryId: kManual.slice(2) } : {}),
+      };
+      if (options.datesWithData?.has(kDate)) {
+        plan.push({ ...base, action: 'delete', detail: `Deleted locally → removing from Tempo (${formatHours(wl.timeSpentSeconds)})` });
+      } else {
+        plan.push({ ...base, action: 'skip', detail: `Owned worklog kept — no local data for ${kDate}` });
+      }
+    }
+  }
+
+  // Tombstones: explicit local deletions of pushed manual entries.
+  for (const t of tombstones) {
+    const wl = snapById.get(t.tempoWorklogId);
+    if (!wl || accounted.has(wl.tempoWorklogId)) continue;
+    accounted.add(wl.tempoWorklogId);
+    plan.push({
+      date: t.date, task: t.task, targetSeconds: wl.timeSpentSeconds,
+      issueId: wl.issueId, existingWorklogId: wl.tempoWorklogId,
+      kind: 'manual', entryId: t.entryId,
+      action: 'delete', detail: `Deleted locally → removing from Tempo (${formatHours(wl.timeSpentSeconds)})`,
+    });
+  }
+
+  // ── Pass 4: unmatched Tempo worklogs — show, never mutate ──
   for (const wl of tempoWorklogs) {
     if (accounted.has(wl.tempoWorklogId)) continue;
     let taskKey = `issue:${wl.issueId}`;
@@ -226,8 +280,10 @@ export function computeDayDrift(
   entries: readonly TaskDayReport[],
   pushLog: Record<string, PushLogEntry>,
   snapById: ReadonlyMap<number, TempoWorklog>,
+  tombstones: readonly PushTombstone[] = [],
 ): string[] {
   const drift: string[] = [];
+  const claimed = new Set<number>();
 
   for (const entry of entries) {
     const key = pushLogKey(date, entry.task, entry.kind === 'manual' ? entry.entryId : undefined);
@@ -239,6 +295,7 @@ export function computeDayDrift(
       drift.push(`${label}: not pushed (${formatHours(entry.totalSeconds)})`);
       continue;
     }
+    claimed.add(wl.tempoWorklogId);
     if (wl.startDate !== date) {
       drift.push(`${label}: moved to ${wl.startDate} in Tempo`);
     }
@@ -248,6 +305,23 @@ export function computeDayDrift(
     if (entry.kind === 'manual' && manualTextDrifts(entry, wl)) {
       drift.push(`${label}: description/activity differ`);
     }
+  }
+
+  // Strays: ownership keys of this date whose local line is gone while the
+  // worklog still lives in Tempo — the next push deletes it.
+  for (const [key, own] of Object.entries(pushLog)) {
+    if (!key.startsWith(`${date}|`)) continue;
+    const wl = snapById.get(own.tempoWorklogId);
+    if (!wl || claimed.has(own.tempoWorklogId)) continue;
+    drift.push(`${key.split('|')[1]}: deleted locally, still in Tempo (${formatHours(wl.timeSpentSeconds)})`);
+  }
+
+  // Tombstoned manual entries awaiting the delete pass.
+  for (const t of tombstones) {
+    if (t.date !== date) continue;
+    const wl = snapById.get(t.tempoWorklogId);
+    if (!wl || claimed.has(t.tempoWorklogId)) continue;
+    drift.push(`${t.task}: pending delete in Tempo (${formatHours(wl.timeSpentSeconds)})`);
   }
 
   return drift;
