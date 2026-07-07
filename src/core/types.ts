@@ -644,13 +644,17 @@ export enum MonthDayStatus {
 
 // One would-be Tempo worklog line: session aggregate (rounded, session-born
 // entries folded in) or a standalone manual entry.
+// Month-view line kinds: the push kinds plus 'foreign' — a Tempo-only
+// worklog we do not own (created directly in Tempo). Read-only mirror rows.
+export type MonthTaskKind = ReportEntryKind | 'foreign';
+
 export interface MonthDayTask {
   readonly task: string;
   readonly seconds: number;
-  readonly kind: ReportEntryKind;
-  readonly sessionCount: number;   // 0 for manual kind
-  readonly description?: string;   // manual kind only
-  readonly activity?: string;      // manual kind only
+  readonly kind: MonthTaskKind;
+  readonly sessionCount: number;   // 0 for manual/foreign kind
+  readonly description?: string;   // manual/foreign kind only
+  readonly activity?: string;      // manual/foreign kind only
 }
 
 export interface MonthDaySummary {
@@ -790,6 +794,9 @@ export interface TempoMonthSnapshot {
   readonly accountId: string;
   readonly fetchedAt: string;
   readonly worklogs: readonly TempoWorklog[];
+  // issueId → ticket key ('ATL-7446') — resolved at fetch time so foreign
+  // rows render offline. Best-effort: an unresolved id is simply absent.
+  readonly issueKeys?: Readonly<Record<string, string>>;
 }
 
 export interface JiraIssue {

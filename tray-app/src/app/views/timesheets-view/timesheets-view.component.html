@@ -115,6 +115,19 @@
                   <span class="dur">{{ t.durLabel }}</span>
                 </div>
               </ng-container>
+              <!-- Foreign worklogs: live in Tempo only, read-only mirror -->
+              <ng-container *ngIf="row.tempoRows.length > 0">
+                <div class="dr-sec tempo">
+                  <span class="mk">◆</span> tempo <span class="sum">{{ row.tempoSumLabel }}</span>
+                </div>
+                <div class="dr-row foreign" *ngFor="let t of row.tempoRows"
+                     title="Created directly in Tempo — read-only here">
+                  <span class="task">{{ t.task }}</span>
+                  <span class="act" *ngIf="t.activity">{{ t.activity }}</span>
+                  <span class="desc">{{ t.description }}</span>
+                  <span class="dur">{{ t.durLabel }}</span>
+                </div>
+              </ng-container>
               <div class="dr-hint" *ngIf="row.status === 'outdated'">
                 <ng-container *ngIf="row.driftLines.length > 0; else genericOutdated">
                   <div class="dr-drift" *ngFor="let line of row.driftLines">↻ {{ line }}</div>

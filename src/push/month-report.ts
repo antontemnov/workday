@@ -92,6 +92,27 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
   const pushLog = snapshot ? loadPushLog() : {};
   const tombstones = snapshot ? loadTombstones() : [];
 
+  // Foreign worklogs — in Tempo but not ours (unowned and not pending
+  // delete): read-only mirror rows, counted into the day totals. They never
+  // affect day statuses or the push.
+  if (snapshot) {
+    const ownedIds = new Set(Object.values(pushLog).map(e => e.tempoWorklogId));
+    const tombstoneIds = new Set(tombstones.map(t => t.tempoWorklogId));
+    for (const wl of snapshot.worklogs) {
+      if (ownedIds.has(wl.tempoWorklogId) || tombstoneIds.has(wl.tempoWorklogId)) continue;
+      const list = tasksByDate.get(wl.startDate) ?? [];
+      list.push({
+        task: snapshot.issueKeys?.[String(wl.issueId)] ?? `issue #${wl.issueId}`,
+        seconds: wl.timeSpentSeconds,
+        kind: 'foreign',
+        sessionCount: 0,
+        ...(wl.description !== undefined ? { description: wl.description } : {}),
+        ...(wl.activity !== undefined ? { activity: wl.activity } : {}),
+      });
+      tasksByDate.set(wl.startDate, list);
+    }
+  }
+
   const days: MonthDaySummary[] = [];
   const totals = {
     claimedMs: 0,

@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 10;
+export const EXPECTED_API_VERSION = 11;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -235,15 +235,19 @@ export enum MonthDayStatus {
 
 export type ReportEntryKind = 'session' | 'manual';
 
+// Month-view line kinds: the push kinds plus 'foreign' — a Tempo-only
+// worklog we do not own (created directly in Tempo). Read-only mirror rows.
+export type MonthTaskKind = ReportEntryKind | 'foreign';
+
 // One would-be Tempo worklog line: session aggregate (rounded, session-born
-// entries folded in) or a standalone manual entry.
+// entries folded in), a standalone manual entry, or a foreign Tempo row.
 export interface MonthDayTask {
   readonly task: string;
   readonly seconds: number;
-  readonly kind: ReportEntryKind;
-  readonly sessionCount: number;   // 0 for manual kind
-  readonly description?: string;   // manual kind only
-  readonly activity?: string;      // manual kind only
+  readonly kind: MonthTaskKind;
+  readonly sessionCount: number;   // 0 for manual/foreign kind
+  readonly description?: string;   // manual/foreign kind only
+  readonly activity?: string;      // manual/foreign kind only
 }
 
 export interface MonthDaySummary {

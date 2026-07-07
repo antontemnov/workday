@@ -163,6 +163,49 @@ export async function checkIssueExists(key: string, secrets: Secrets): Promise<J
   return issue;
 }
 
+/**
+ * Resolve Jira issue IDs back to their keys — foreign worklogs carry only
+ * issueId. The issue-cache covers every task we ever pushed (reverse lookup);
+ * unknown ids are fetched one by one, failures are skipped (best-effort).
+ */
+export async function resolveIssueKeys(
+  issueIds: readonly number[],
+  secrets: Secrets,
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  const cache = loadCache();
+
+  const reverse = new Map<number, string>();
+  for (const [key, value] of Object.entries(cache)) {
+    if (key === ACCOUNT_ID_CACHE_KEY) continue;
+    const issue = value as JiraIssue;
+    if (issue && typeof issue.issueId === 'number') reverse.set(issue.issueId, key);
+  }
+
+  const toFetch: number[] = [];
+  for (const id of issueIds) {
+    const known = reverse.get(id);
+    if (known) result[String(id)] = known;
+    else toFetch.push(id);
+  }
+
+  if (toFetch.length > 0) {
+    for (const id of toFetch) {
+      try {
+        const data = await jiraGet(`/rest/api/3/issue/${id}?fields=summary`, secrets) as
+          { id: string; key: string; fields?: { summary?: string } };
+        result[String(id)] = data.key;
+        cache[data.key] = { issueId: Number(data.id), summary: data.fields?.summary ?? '' };
+      } catch (err) {
+        console.error(`WARNING: Failed to resolve issue #${id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    saveCache(cache);
+  }
+
+  return result;
+}
+
 /** Resolve task keys to Jira issue IDs and summaries (cached) */
 export async function resolveIssueIds(keys: readonly string[], secrets: Secrets): Promise<Map<string, JiraIssue>> {
   const results = new Map<string, JiraIssue>();

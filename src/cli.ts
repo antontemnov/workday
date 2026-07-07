@@ -1094,11 +1094,12 @@ function printMonth(data: MonthResponse): void {
   console.log('─'.repeat(COL_DATE + COL_STATUS + COL_HOURS + 24));
 
   for (const day of data.days) {
-    if (day.status === MonthDayStatus.None) continue;
+    // Foreign-only days have no local data (status none) but still render.
+    if (day.status === MonthDayStatus.None && day.tasks.length === 0) continue;
     const tasks = [...new Set(day.tasks.map(task => task.task))].join(', ');
     console.log(
       day.date.padEnd(COL_DATE)
-      + day.status.padEnd(COL_STATUS)
+      + (day.status === MonthDayStatus.None ? '' : day.status).padEnd(COL_STATUS)
       + formatReportHours(day.reportedSeconds).padStart(COL_HOURS)
       + (tasks ? `  ${tasks}` : ''),
     );

@@ -10,7 +10,7 @@ import { getDataDir } from '../core/config.js';
 import { TEMPO_CACHE_DIR, TMP_EXTENSION } from '../core/constants.js';
 import type { Secrets, TempoMonthSnapshot } from '../core/types.js';
 import { TempoClient } from './tempo-client.js';
-import { getAccountId } from './jira-client.js';
+import { getAccountId, resolveIssueKeys } from './jira-client.js';
 import { getMonthRange } from './month-report.js';
 
 function monthKey(year: number, month: number): string {
@@ -53,11 +53,20 @@ export async function fetchMonthSnapshot(
   const { from, to } = getMonthRange(year, month);
   const worklogs = await client.getUserWorklogs(accountId, from, to);
 
+  // Foreign rows render offline by ticket key, but Tempo carries only
+  // issueId — resolve here while we are online. Best-effort: Jira being
+  // unreachable must not fail the snapshot itself.
+  let issueKeys: Record<string, string> = {};
+  try {
+    issueKeys = await resolveIssueKeys([...new Set(worklogs.map(w => w.issueId))], secrets);
+  } catch { /* keys stay partial — foreign rows fall back to issue #id */ }
+
   const snapshot: TempoMonthSnapshot = {
     month: monthKey(year, month),
     accountId,
     fetchedAt: new Date().toISOString(),
     worklogs,
+    issueKeys,
   };
   saveMonthSnapshot(snapshot);
   return snapshot;

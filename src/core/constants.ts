@@ -21,7 +21,7 @@ export const DEFAULT_API_PORT = 9213;
 // pick it up (they re-check every 6h), THEN npm-publish the daemon —
 // a tray with the old exact-match check meeting a newer apiVersion would
 // reinstall-loop the daemon.
-export const API_VERSION = 10;
+export const API_VERSION = 11;
 
 // ─── Auto-update ────────────────────────────────────────────────────────
 export const NPM_PACKAGE_NAME = 'workday-daemon';

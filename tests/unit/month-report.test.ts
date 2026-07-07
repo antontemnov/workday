@@ -9,7 +9,7 @@ import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before 
 import assert from 'node:assert/strict';
 import { createEmptyLog, writeDailyLog } from '../../src/core/daily-log.js';
 import { buildMonthResponse, getMonthRange, parseYearMonth } from '../../src/push/month-report.js';
-import { savePushLog } from '../../src/push/push-log.js';
+import { savePushLog, saveTombstones } from '../../src/push/push-log.js';
 import { saveMonthSnapshot } from '../../src/push/tempo-snapshot.js';
 import { DayStatus, MonthDayStatus, SensitivityLevel } from '../../src/core/types.js';
 import type { AppConfig, DailyLog, ManualEntry, TempoWorklog } from '../../src/core/types.js';
@@ -191,9 +191,12 @@ savePushLog({
   '2026-07-03|ATL-1|m:m3': { tempoWorklogId: 902, timeSpentSeconds: 1800, pushedAt: 'x', description: 'Daily standup', activity: 'Meeting' },
 });
 
-function snapWl(id: number, date: string, seconds: number): TempoWorklog {
-  return { tempoWorklogId: id, issueId: 1, startDate: date, timeSpentSeconds: seconds, description: 'Daily standup', activity: 'Meeting' };
+function snapWl(id: number, date: string, seconds: number, over: Partial<TempoWorklog> = {}): TempoWorklog {
+  return { tempoWorklogId: id, issueId: 1, startDate: date, timeSpentSeconds: seconds, description: 'Daily standup', activity: 'Meeting', ...over };
 }
+
+// 905 was pushed then deleted locally — pending delete, must not render as foreign.
+saveTombstones([{ date: '2026-07-05', task: 'ATL-1', entryId: 'dead', tempoWorklogId: 905, deletedAt: 'x' }]);
 
 saveMonthSnapshot({
   month: '2026-07',
@@ -203,7 +206,13 @@ saveMonthSnapshot({
     snapWl(900, '2026-07-01', 1800),
     snapWl(901, '2026-07-02', 1800),
     snapWl(902, '2026-07-03', 7200), // remote edit: 0.5h → 2h
+    // Foreign rows: created directly in Tempo, we own none of these.
+    snapWl(903, '2026-07-05', 7200, { issueId: 2, description: 'code review', activity: 'CodeReview' }),
+    snapWl(904, '2026-07-01', 1800, { issueId: 2 }),
+    snapWl(905, '2026-07-05', 600),  // tombstoned — excluded
+    snapWl(906, '2026-07-06', 900, { issueId: 99 }), // unknown issue id
   ],
+  issueKeys: { '1': 'ATL-1', '2': 'IN-2' },
 });
 
 const july = buildMonthResponse(2026, 7, config);
@@ -240,6 +249,42 @@ test('never-pushed day → pending with "not pushed" drift', () => {
   assert.equal(day.status, MonthDayStatus.Pending);
   assert.equal(day.drift?.length, 1);
   assert.match(day.drift![0], /not pushed/);
+});
+
+console.log('');
+console.log('Month report — foreign worklogs (Tempo-only rows)');
+
+test('foreign worklog on an empty day → row + hours, status stays none', () => {
+  const day = julyByDate.get('2026-07-05')!;
+  assert.equal(day.status, MonthDayStatus.None);
+  assert.equal(day.tasks.length, 1);
+  assert.equal(day.tasks[0].kind, 'foreign');
+  assert.equal(day.tasks[0].task, 'IN-2');
+  assert.equal(day.tasks[0].description, 'code review');
+  assert.equal(day.tasks[0].activity, 'CodeReview');
+  assert.equal(day.reportedSeconds, 7200);
+});
+
+test('foreign worklog joins a day with local data, status unaffected', () => {
+  const day = julyByDate.get('2026-07-01')!;
+  assert.equal(day.status, MonthDayStatus.Pushed);
+  assert.deepEqual(day.drift, []);
+  const foreign = day.tasks.filter(t => t.kind === 'foreign');
+  assert.equal(foreign.length, 1);
+  assert.equal(foreign[0].task, 'IN-2');
+  assert.equal(day.reportedSeconds, 1800 + 1800);
+});
+
+test('tombstoned worklog is pending delete, not a foreign row', () => {
+  const day = julyByDate.get('2026-07-05')!;
+  assert.ok(!day.tasks.some(t => t.seconds === 600));
+});
+
+test('unresolved issue id falls back to issue #id', () => {
+  const day = julyByDate.get('2026-07-06')!;
+  assert.equal(day.tasks.length, 1);
+  assert.equal(day.tasks[0].kind, 'foreign');
+  assert.equal(day.tasks[0].task, 'issue #99');
 });
 
 console.log('');

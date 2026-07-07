@@ -35,8 +35,10 @@ interface DayRow {
   readonly driftTitle: string;             // driftLines joined for the status tooltip
   readonly trackedRows: readonly DrawerRow[];
   readonly loggedRows: readonly DrawerRow[];
+  readonly tempoRows: readonly DrawerRow[];   // foreign worklogs — read-only mirror
   readonly trackedSumLabel: string;
   readonly loggedSumLabel: string;
+  readonly tempoSumLabel: string;
 }
 
 interface WeekGroup {
@@ -360,12 +362,14 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     const js = new Date(y, mo - 1, dd);
     const dow = js.getDay();
     const s = sched.get(d.date);
-    const hasData = d.status !== MonthDayStatus.None;
+    // Foreign-only days carry no local log (status none) but still open.
+    const hasData = d.status !== MonthDayStatus.None || d.tasks.length > 0;
     const isToday = d.date === today;
     const nonWorking = s ? s.requiredSeconds === 0 : (dow === 0 || dow === 6);
     const isHoliday = s !== undefined && s.type.includes('HOLIDAY');
     const tracked = d.tasks.filter(t => t.kind === 'session');
     const logged = d.tasks.filter(t => t.kind === 'manual');
+    const foreign = d.tasks.filter(t => t.kind === 'foreign');
     const driftLines = d.drift ?? [];
 
     return {
@@ -396,8 +400,16 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
         description: t.description ?? '',
         durLabel: fmtDur(t.seconds),
       })),
+      tempoRows: foreign.map(t => ({
+        task: t.task,
+        src: '',
+        activity: t.activity ?? '',
+        description: t.description ?? '',
+        durLabel: fmtDur(t.seconds),
+      })),
       trackedSumLabel: fmtSum(tracked.reduce((sum, t) => sum + t.seconds, 0)),
       loggedSumLabel: fmtSum(logged.reduce((sum, t) => sum + t.seconds, 0)),
+      tempoSumLabel: fmtSum(foreign.reduce((sum, t) => sum + t.seconds, 0)),
     };
   }
 
