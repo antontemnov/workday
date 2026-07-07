@@ -425,7 +425,11 @@ export class HttpServer {
     ])];
     if (keys.length === 0) return {};
     const secrets = tryLoadSecrets();
-    if (secrets && isJiraConfigured(secrets)) void backfillIssueSummaries(keys, secrets);
+    if (secrets && isJiraConfigured(secrets)) {
+      // Fire-and-forget: a floating rejection would crash the daemon (no global
+      // unhandledRejection handler), so neutralize it at the boundary too.
+      backfillIssueSummaries(keys, secrets).catch(() => {});
+    }
     return loadCachedSummaries(keys);
   }
 

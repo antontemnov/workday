@@ -282,7 +282,15 @@ export async function backfillIssueSummaries(keys: readonly string[], secrets: S
   });
   if (toFetch.length === 0) return;
 
-  await resolveIssueIds(toFetch, secrets); // caches successes, logs per-key failures
-  const after = loadCache();
-  for (const key of toFetch) if (!after[key]) backfillFailures.set(key, now);
+  // Fire-and-forget callers rely on this never rejecting — an unhandled
+  // rejection would crash the daemon (no global handler). resolveIssueIds
+  // catches per-key network errors but its cache write (writeFileSync) can
+  // still throw on a disk/permission fault, so guard the whole section.
+  try {
+    await resolveIssueIds(toFetch, secrets); // caches successes, logs per-key failures
+    const after = loadCache();
+    for (const key of toFetch) if (!after[key]) backfillFailures.set(key, now);
+  } catch (err) {
+    console.error(`WARNING: Issue-summary backfill failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
