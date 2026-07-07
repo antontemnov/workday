@@ -776,6 +776,13 @@ export interface TempoWorklog {
   readonly updatedAt?: string;     // Tempo-side last modification (ISO)
 }
 
+// POST /api/tempo-sync — refresh the month's Tempo snapshot on demand.
+export interface TempoSyncResponse {
+  readonly month: string;          // YYYY-MM
+  readonly syncedAt: string;       // snapshot fetchedAt
+  readonly worklogCount: number;
+}
+
 // One month of the user's Tempo worklogs as last fetched — the remote side
 // of mirror-sync. Cached in data/tempo-cache/YYYY-MM.json.
 export interface TempoMonthSnapshot {

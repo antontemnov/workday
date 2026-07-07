@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 9;
+export const EXPECTED_API_VERSION = 10;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -281,6 +281,13 @@ export interface MonthResponse {
   // fetchedAt of the Tempo snapshot the statuses were derived from,
   // null/absent = no snapshot → statuses fall back to local pushed-flags.
   readonly syncedAt?: string | null;
+}
+
+// POST /api/tempo-sync — refresh the month's Tempo snapshot on demand.
+export interface TempoSyncResponse {
+  readonly month: string;          // YYYY-MM
+  readonly syncedAt: string;       // snapshot fetchedAt
+  readonly worklogCount: number;
 }
 
 // ─── Tempo month meta (schedule / approvals proxies) ─────────────────────

@@ -15,6 +15,7 @@ import {
   ScheduleDay,
   TempoScheduleResponse,
   TempoApprovalResponse,
+  TempoSyncResponse,
   PushResponse,
   SettingsResponse,
   SettingsPatch,
@@ -448,6 +449,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
       ok: true,
       data: { dryRun: false, plan: [], result: { posted: 3, updated: 1, deleted: 0, skipped: 12, failed: 0 } },
     };
+  }
+
+  async syncTempo(year: number, month: number): Promise<ApiResponse<TempoSyncResponse>> {
+    await delay(600);
+    const mm = `${year}-${String(month).padStart(2, '0')}`;
+    return { ok: true, data: { month: mm, syncedAt: new Date().toISOString(), worklogCount: 42 } };
   }
 
   async getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>> {

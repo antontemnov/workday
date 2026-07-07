@@ -26,6 +26,7 @@ import {
   PushResponse,
   TempoScheduleResponse,
   TempoApprovalResponse,
+  TempoSyncResponse,
 } from '../models/workday.models';
 
 /**
@@ -84,6 +85,9 @@ export abstract class WorkdayApiService {
   // the UI silently (missing token scope / network failure).
   abstract getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>>;
   abstract getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>>;
+  // Refetch the month's Tempo snapshot so day statuses reflect the actual
+  // remote state. Read-only pull — never required for (and never blocks) push.
+  abstract syncTempo(year: number, month: number): Promise<ApiResponse<TempoSyncResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;

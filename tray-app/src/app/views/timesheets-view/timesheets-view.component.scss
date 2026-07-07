@@ -135,6 +135,34 @@
 
 .actions.no-status .push-note::before { content: none; }
 
+.sync-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-family: inherit;
+  font-size: 13px;
+  color: #6c7086;
+  background: transparent;
+  border: 1px solid #26263a;
+  border-radius: 6px;
+  padding: 0;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { color: #cdd6f4; border-color: #45475a; }
+  &:disabled { cursor: default; }
+  &.spin { animation: sync-rotate 1s linear infinite; color: #89b4fa; }
+}
+
+@keyframes sync-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.sync-btn + .push-btn { margin-left: 0; }
+
 .push-btn {
   margin-left: auto;
   display: inline-flex;
@@ -364,4 +392,7 @@
   padding: 6px 6px 0;
   font-size: 9px;
   color: #4a4a63;
+
+  // Snapshot-verified drift lines — what exactly diverges from Tempo.
+  .dr-drift { color: #8a6a4f; line-height: 1.6; }
 }

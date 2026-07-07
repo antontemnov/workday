@@ -26,6 +26,14 @@
     <ng-template #lastPush>
       <span class="push-note" *ngIf="lastPushLabel">last push {{ lastPushLabel }}</span>
     </ng-template>
+    <button class="sync-btn"
+            *ngIf="monthData"
+            [class.spin]="syncing"
+            [disabled]="syncing"
+            (click)="onSync()"
+            [title]="syncedLabel ? 'Statuses verified against Tempo · synced ' + syncedLabel : 'Fetch Tempo worklogs to verify day statuses'">
+      ⟳
+    </button>
     <button class="push-btn"
             *ngIf="monthData && !pushHidden"
             [class.clean]="pushCount === 0"
@@ -65,7 +73,7 @@
             <span class="d-hours" [class.under]="row.under" [class.zero]="!row.hasData">
               {{ row.hasData ? row.hoursLabel : '—' }}
             </span>
-            <span class="d-status" [ngClass]="row.status">
+            <span class="d-status" [ngClass]="row.status" [title]="row.driftTitle">
               <span class="sdot"></span>{{ row.status !== 'none' ? row.status : '' }}
             </span>
           </div>
@@ -94,7 +102,12 @@
                 </div>
               </ng-container>
               <div class="dr-hint" *ngIf="row.status === 'outdated'">
-                ↻ edited after push — Tempo holds a stale version, the next push updates it
+                <ng-container *ngIf="row.driftLines.length > 0; else genericOutdated">
+                  <div class="dr-drift" *ngFor="let line of row.driftLines">↻ {{ line }}</div>
+                </ng-container>
+                <ng-template #genericOutdated>
+                  ↻ edited after push — Tempo holds a stale version, the next push updates it
+                </ng-template>
               </div>
             </div>
           </div>

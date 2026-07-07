@@ -30,6 +30,8 @@ interface DayRow {
   readonly hoursLabel: string;
   readonly under: boolean;               // closed day short of its required hours
   readonly status: MonthDayStatus;
+  readonly driftLines: readonly string[];  // what diverges from Tempo (snapshot-verified)
+  readonly driftTitle: string;             // driftLines joined for the status tooltip
   readonly trackedRows: readonly DrawerRow[];
   readonly loggedRows: readonly DrawerRow[];
   readonly trackedSumLabel: string;
@@ -72,6 +74,12 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   pushError: string | null = null;
   pushNote: string | null = null;
 
+  syncing = false;
+  // Months already snapshot-synced this session — auto-sync fires once per
+  // month view; failures retry on the upkeep tick (self-heal), the button
+  // re-syncs on demand.
+  private readonly syncedMonths = new Set<string>();
+
   private readonly openDates = new Set<string>();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private pushNoteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -86,15 +94,17 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.load(true);
+    void this.autoSync();
     // Quiet upkeep: failed loads retry until they land (one-shot fetches must
     // self-heal), and today's row stays fresh while the current month is on
-    // screen. No refresh button by design; meta calls are cached daemon-side.
+    // screen. Meta calls are cached daemon-side.
     this.refreshTimer = setInterval(() => {
       if (this.pushing) return;
       if (!this.monthData || this.error) { void this.load(false); return; }
       if (this.monthContainsToday) void this.reloadMonthQuiet();
       if (this.schedule === null) void this.loadSchedule(this.loadSeq);
       if (this.approval === null) void this.loadApproval(this.loadSeq);
+      void this.autoSync();
     }, 30_000);
   }
 
@@ -146,6 +156,44 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.approval = res.ok && res.data ? res.data : null;
   }
 
+  // ─── Tempo snapshot sync ───────────────────────────────────────────────
+
+  private get monthKey(): string {
+    return `${this.year}-${String(this.month).padStart(2, '0')}`;
+  }
+
+  /** Once-per-month-view pull; failed attempts retry via the upkeep tick. */
+  private autoSync(): Promise<void> {
+    if (this.syncedMonths.has(this.monthKey)) return Promise.resolve();
+    return this.runSync();
+  }
+
+  onSync(): void {
+    if (this.syncing) return;
+    void this.runSync();
+  }
+
+  private async runSync(): Promise<void> {
+    if (this.syncing) return;
+    const key = this.monthKey;
+    this.syncing = true;
+    const res = await this.api.syncTempo(this.year, this.month);
+    this.syncing = false;
+    if (!res.ok) return; // offline / no tokens — statuses stay flag-based, retried by upkeep
+    this.syncedMonths.add(key);
+    // Fresh snapshot changes day statuses only through the month payload.
+    if (key === this.monthKey) void this.reloadMonthQuiet();
+  }
+
+  get syncedLabel(): string | null {
+    const iso = this.monthData?.syncedAt;
+    if (!iso) return null;
+    const d = new Date(iso);
+    const day = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return `${day}, ${time}`;
+  }
+
   // ─── Month pager ───────────────────────────────────────────────────────
 
   prevMonth(): void { this.shiftMonth(-1); }
@@ -161,6 +209,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.pushError = null;
     this.pushNote = null;
     void this.load(true);
+    void this.autoSync();
   }
 
   get monthLabel(): string {
@@ -239,7 +288,8 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
       const r = res.data.result;
       if (r) {
         if (r.failed > 0) this.pushError = `push finished with ${r.failed} failed worklog(s)`;
-        this.setPushNote(`pushed · ${r.posted} created · ${r.updated} updated`);
+        const deleted = r.deleted > 0 ? ` · ${r.deleted} deleted` : '';
+        this.setPushNote(`pushed · ${r.posted} created · ${r.updated} updated${deleted}`);
       }
     } else {
       this.pushError = res.error ?? 'Push failed';
@@ -295,6 +345,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     const isHoliday = s !== undefined && s.type.includes('HOLIDAY');
     const tracked = d.tasks.filter(t => t.kind === 'session');
     const logged = d.tasks.filter(t => t.kind === 'manual');
+    const driftLines = d.drift ?? [];
 
     return {
       date: d.date,
@@ -309,6 +360,8 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
         && s !== undefined && s.requiredSeconds > 0
         && d.reportedSeconds < s.requiredSeconds,
       status: d.status,
+      driftLines,
+      driftTitle: driftLines.join('\n'),
       trackedRows: tracked.map(t => ({
         task: t.task,
         src: t.sessionCount === 1 ? '1 session' : `${t.sessionCount} sessions`,

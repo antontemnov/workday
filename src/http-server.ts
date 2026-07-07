@@ -29,6 +29,7 @@ import { buildMonthResponse } from './push/month-report.js';
 import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
 import { runPush } from './push/tempo-pusher.js';
 import { recordEntryDeletion } from './push/push-log.js';
+import { fetchMonthSnapshot } from './push/tempo-snapshot.js';
 import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
 import { resolveMonthApproval, approvalUnavailable } from './push/tempo-approvals.js';
 import {
@@ -79,6 +80,7 @@ import type {
   PushResponse,
   TempoScheduleResponse,
   TempoApprovalResponse,
+  TempoSyncResponse,
 } from './core/types.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
@@ -275,6 +277,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/push') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handlePush(body));
+      }
+      if (method === 'POST' && path === '/api/tempo-sync') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleTempoSync(body));
       }
       if (method === 'GET' && path === '/api/tempo/schedule') {
         return this.sendJson(res, 200, await this.handleTempoSchedule(url));
@@ -973,6 +979,45 @@ export class HttpServer {
         }
       }
       return { ok: true, data: response };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // ─── Tempo snapshot sync (mirror pull) ────────────────────────────
+
+  /**
+   * Refetch the month's Tempo snapshot on demand — mirrors the CLI
+   * `tempo-sync`. Body: {year?, month?}, both default to the current
+   * working month. Read-only against Tempo; never blocks or gates push
+   * (push does its own live fetch before planning).
+   */
+  private async handleTempoSync(body: Record<string, unknown>): Promise<ApiResponse<TempoSyncResponse>> {
+    const today = this.deps.getCurrentDate();
+    const year = typeof body.year === 'number' ? body.year : Number(today.slice(0, 4));
+    const month = typeof body.month === 'number' ? body.month : Number(today.slice(5, 7));
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      return { ok: false, error: `Invalid year: ${body.year}` };
+    }
+    if (!Number.isInteger(month) || month < 1 || month > 12) {
+      return { ok: false, error: `Invalid month: ${body.month}` };
+    }
+
+    const secrets = tryLoadSecrets();
+    if (!secrets || !secrets.Tempo_Token?.trim() || !isJiraConfigured(secrets)) {
+      return { ok: false, error: 'Jira/Tempo tokens are not configured — set them in Settings' };
+    }
+
+    try {
+      const snapshot = await fetchMonthSnapshot(year, month, secrets);
+      return {
+        ok: true,
+        data: {
+          month: snapshot.month,
+          syncedAt: snapshot.fetchedAt,
+          worklogCount: snapshot.worklogs.length,
+        },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

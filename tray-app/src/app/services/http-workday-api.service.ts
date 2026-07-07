@@ -32,6 +32,7 @@ import {
   PushResponse,
   TempoScheduleResponse,
   TempoApprovalResponse,
+  TempoSyncResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -262,6 +263,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>> {
     return this.get<TempoApprovalResponse>(`/api/tempo/approval?year=${year}&month=${month}`);
+  }
+
+  override async syncTempo(year: number, month: number): Promise<ApiResponse<TempoSyncResponse>> {
+    return this.post<TempoSyncResponse>('/api/tempo-sync', { year, month });
   }
 
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {
