@@ -296,14 +296,17 @@ export function computeDayDrift(
       continue;
     }
     claimed.add(wl.tempoWorklogId);
+    // Field-drift lines only — an entry whose remote copy matches the local
+    // desired state stays parity even when the push-log baseline is stale.
+    const suffix = remoteChanged(own, wl, date, entry.kind) ? ' — edited in Tempo' : '';
     if (wl.startDate !== date) {
       drift.push(`${label}: moved to ${wl.startDate} in Tempo`);
     }
     if (timeDrifts(wl.timeSpentSeconds, entry.totalSeconds)) {
-      drift.push(`${label}: ${formatHours(wl.timeSpentSeconds)} in Tempo vs ${formatHours(entry.totalSeconds)} local`);
+      drift.push(`${label}: ${formatHours(wl.timeSpentSeconds)} in Tempo vs ${formatHours(entry.totalSeconds)} local${suffix}`);
     }
     if (entry.kind === 'manual' && manualTextDrifts(entry, wl)) {
-      drift.push(`${label}: description/activity differ`);
+      drift.push(`${label}: description/activity differ${suffix}`);
     }
   }
 

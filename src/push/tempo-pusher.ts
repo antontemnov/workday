@@ -164,11 +164,14 @@ interface RunPushOptions {
   readonly config: AppConfig;
   readonly secrets: Secrets;
   readonly filePath?: string;
+  // Overwrite Tempo-side edits (conflict entries). Without it a commit push
+  // containing conflicts is refused so the caller can confirm the choice.
+  readonly force?: boolean;
 }
 
 /** Full push pipeline: build report → resolve Jira → fetch Tempo → plan → execute */
 export async function runPush(options: RunPushOptions): Promise<PushResponse> {
-  const { from, to, commit, config, secrets, filePath } = options;
+  const { from, to, commit, config, secrets, filePath, force } = options;
 
   // Step 1: Build or load report
   let report: TaskDayReport[];
@@ -231,6 +234,17 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
 
   if (!commit) {
     return { dryRun: true, plan };
+  }
+
+  // Conflict gate: "local wins" is a choice, not a default. A commit push
+  // that would overwrite Tempo-side edits stops here until the caller
+  // explicitly forces it — nothing (conflicted or not) is executed.
+  if (!force) {
+    const conflicted = plan.filter(e => e.conflict);
+    if (conflicted.length > 0) {
+      console.log(`Push blocked: ${conflicted.length} worklog(s) edited in Tempo since our push.`);
+      return { dryRun: false, plan, blockedByConflicts: true };
+    }
   }
 
   // Step 5: Execute

@@ -400,5 +400,21 @@ test('tombstone already gone from Tempo → no drift', () => {
   assert.deepEqual(drift, []);
 });
 
+test('remote-edited time drift carries the edited-in-Tempo marker', () => {
+  // We sent 1.0h; Tempo now holds 2.0h — someone edited it there.
+  const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
+  const drift = computeDayDrift(DATE, [session()], pushLog, snapOf(worklog(100, 7200)));
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /edited in Tempo/);
+});
+
+test('local-only drift has no edited-in-Tempo marker', () => {
+  // Baseline equals remote (2.0h); the local desired changed to 1.0h.
+  const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 7200) };
+  const drift = computeDayDrift(DATE, [session()], pushLog, snapOf(worklog(100, 7200)));
+  assert.equal(drift.length, 1);
+  assert.doesNotMatch(drift[0], /edited in Tempo/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

@@ -954,6 +954,7 @@ export class HttpServer {
     const from = typeof body.from === 'string' ? body.from : getDefaultFromDate(config);
     const to = typeof body.to === 'string' ? body.to : getDefaultToDate(config);
     const dryRun = body.dryRun === true;
+    const force = body.force === true;
     if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
       return { ok: false, error: 'Invalid from/to. Use YYYY-MM-DD' };
     }
@@ -967,7 +968,7 @@ export class HttpServer {
     // Report reads from disk — make sure today's live log is there.
     this.deps.sessionTracker.flush();
     try {
-      const response = await runPush({ from, to, commit: !dryRun, config, secrets });
+      const response = await runPush({ from, to, commit: !dryRun, config, secrets, force });
 
       // markDaysPushed sealed today's file behind the in-memory log — re-sync
       // so the next flush doesn't revert the day to draft.

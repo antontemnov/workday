@@ -5,6 +5,7 @@ import {
   MonthDaySummary,
   MonthDayStatus,
   MonthResponse,
+  PushPlanEntry,
   ScheduleDay,
   TempoApprovalResponse,
   TempoScheduleResponse,
@@ -73,6 +74,9 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   pushing = false;
   pushError: string | null = null;
   pushNote: string | null = null;
+  // Push refused by the conflict gate — these worklogs were edited in Tempo
+  // after our push. The user chooses: force-push (ours) or leave Tempo as is.
+  conflicts: readonly PushPlanEntry[] = [];
 
   syncing = false;
   // Months already snapshot-synced this session — auto-sync fires once per
@@ -208,6 +212,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.approval = null;
     this.pushError = null;
     this.pushNote = null;
+    this.conflicts = [];
     void this.load(true);
     void this.autoSync();
   }
@@ -278,13 +283,19 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return this.approval?.available === true && this.approval.statusKey === 'APPROVED';
   }
 
-  async onPush(): Promise<void> {
-    if (this.pushing || !this.monthData || this.pushCount === 0) return;
+  async onPush(force = false): Promise<void> {
+    if (this.pushing || !this.monthData || (this.pushCount === 0 && !force)) return;
     this.pushing = true;
     this.pushError = null;
-    const res = await this.api.pushToTempo(this.monthData.from, this.monthData.to);
+    this.conflicts = [];
+    const res = await this.api.pushToTempo(this.monthData.from, this.monthData.to, force);
     this.pushing = false;
     if (res.ok && res.data) {
+      if (res.data.blockedByConflicts) {
+        // Nothing was executed — surface the choice, no reload needed.
+        this.conflicts = res.data.plan.filter(e => e.conflict);
+        return;
+      }
       const r = res.data.result;
       if (r) {
         if (r.failed > 0) this.pushError = `push finished with ${r.failed} failed worklog(s)`;
@@ -296,6 +307,16 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     }
     // Statuses changed on disk and the daemon dropped its approval cache.
     await this.load(false);
+  }
+
+  onPushForce(): void {
+    void this.onPush(true);
+  }
+
+  // "Keep Tempo": no mutation — the day stays outdated with its drift
+  // visible; aligning local data (or a later force) resolves it.
+  dismissConflicts(): void {
+    this.conflicts = [];
   }
 
   private setPushNote(note: string): void {

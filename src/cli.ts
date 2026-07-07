@@ -920,21 +920,28 @@ async function handleTempo(args: string[]): Promise<void> {
   const rawFile = parseArgValue(args, '--file');
   const filePath = rawFile ? resolveTempoFilePath(rawFile) : null;
   const push = args.includes('--push');
+  const force = args.includes('--force');
 
   if (push) {
     // Push mode
     const secrets = loadSecrets();
     let response;
     try {
-      response = await runPush({ from, to, commit: true, config, secrets, filePath: filePath ?? undefined });
+      response = await runPush({ from, to, commit: true, config, secrets, filePath: filePath ?? undefined, force });
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       return;
     }
     printPushPlan(response.plan);
+    if (response.blockedByConflicts) {
+      console.log('');
+      console.log('Push blocked: the ⚠ entries above were edited in Tempo after our last push.');
+      console.log('Re-run with --force to overwrite them (local wins), or align the local data first.');
+      return;
+    }
     if (response.result) {
       console.log('');
-      console.log(`Result: ${response.result.posted} posted, ${response.result.updated} updated, ${response.result.skipped} skipped, ${response.result.failed} failed`);
+      console.log(`Result: ${response.result.posted} posted, ${response.result.updated} updated, ${response.result.deleted} deleted, ${response.result.skipped} skipped, ${response.result.failed} failed`);
     }
   } else if (filePath) {
     // Save report to file
@@ -1315,6 +1322,7 @@ Usage:
   workday tempo --file report.json                     Save report to JSON file
   workday tempo --file report.json --push              Push from saved report
   workday tempo --push                                 Push computed data to Tempo
+  workday tempo --push --force                         Also overwrite worklogs edited in Tempo (conflicts)
   workday month [YYYY-MM]                              Month view: day statuses vs Tempo (pending/outdated/pushed)
   workday tempo-sync [YYYY-MM]                         Fetch the month's Tempo worklogs into the local snapshot cache
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays

@@ -443,7 +443,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: buildMockMonth(year, month, this.today) };
   }
 
-  async pushToTempo(_from: string, _to: string): Promise<ApiResponse<PushResponse>> {
+  async pushToTempo(_from: string, _to: string, _force = false): Promise<ApiResponse<PushResponse>> {
     await delay(400);
     return {
       ok: true,

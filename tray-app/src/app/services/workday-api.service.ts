@@ -80,7 +80,8 @@ export abstract class WorkdayApiService {
   // Timesheets view — per-month aggregated day summaries (disk truth, offline).
   abstract getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>>;
   // Trigger the Tempo push for a date range; daemon side wraps runPush().
-  abstract pushToTempo(from: string, to: string): Promise<ApiResponse<PushResponse>>;
+  // force overwrites Tempo-side edits after the user confirmed the conflicts.
+  abstract pushToTempo(from: string, to: string, force?: boolean): Promise<ApiResponse<PushResponse>>;
   // Tempo-side month meta — cached daemon-side, {available:false} degrades
   // the UI silently (missing token scope / network failure).
   abstract getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>>;

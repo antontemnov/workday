@@ -48,6 +48,20 @@
   </div>
   <div class="push-error" *ngIf="pushError">{{ pushError }}</div>
 
+  <!-- Conflict gate: push stopped, nothing executed — user picks a side -->
+  <div class="conflict-panel" *ngIf="conflicts.length > 0">
+    <div class="cf-head">⚠ edited in Tempo after last push — pushing overwrites:</div>
+    <div class="cf-row" *ngFor="let c of conflicts">
+      <span class="cf-date">{{ c.date.slice(5) }}</span>
+      <span class="cf-task">{{ c.task }}</span>
+      <span class="cf-detail">{{ c.detail }}</span>
+    </div>
+    <div class="cf-actions">
+      <button class="cf-btn ours" (click)="onPushForce()" [disabled]="pushing">⚡ Push ours</button>
+      <button class="cf-btn keep" (click)="dismissConflicts()" [disabled]="pushing">Keep Tempo</button>
+    </div>
+  </div>
+
   <!-- Day list: newest first, week separators -->
   <div class="scroll-zone">
     <div class="status-msg" *ngIf="loading">Loading…</div>

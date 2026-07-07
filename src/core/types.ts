@@ -853,6 +853,9 @@ export interface PushResponse {
   readonly dryRun: boolean;
   readonly plan: readonly PushPlanEntry[];
   readonly result?: PushResult;
+  // Commit push refused: the plan contains conflict entries (edited in Tempo
+  // since our push) and force was not set. Nothing was executed.
+  readonly blockedByConflicts?: boolean;
 }
 
 // ─── Activity Evaluator ─────────────────────────────────────────────────

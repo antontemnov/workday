@@ -253,8 +253,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.get<MonthResponse>(`/api/month?year=${year}&month=${month}`);
   }
 
-  override async pushToTempo(from: string, to: string): Promise<ApiResponse<PushResponse>> {
-    return this.post<PushResponse>('/api/push', { from, to });
+  override async pushToTempo(from: string, to: string, force = false): Promise<ApiResponse<PushResponse>> {
+    return this.post<PushResponse>('/api/push', { from, to, force });
   }
 
   override async getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>> {

@@ -211,6 +211,60 @@
   border-bottom: 1px solid #26263a;
 }
 
+.conflict-panel {
+  flex-shrink: 0;
+  padding: 8px 14px 10px;
+  border-bottom: 1px solid #26263a;
+  background: rgba(250, 179, 135, 0.05);
+
+  .cf-head {
+    font-size: 10px;
+    font-weight: 700;
+    color: #fab387;
+    margin-bottom: 5px;
+  }
+
+  .cf-row {
+    display: flex;
+    gap: 8px;
+    font-size: 10px;
+    line-height: 1.7;
+    color: #a6adc8;
+
+    .cf-date { color: #6c7086; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+    .cf-task { color: #cdd6f4; font-weight: 600; flex-shrink: 0; }
+    .cf-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+
+  .cf-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 7px;
+
+    .cf-btn {
+      font-family: inherit;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 6px;
+      padding: 3px 10px;
+      cursor: pointer;
+      background: transparent;
+
+      &:disabled { opacity: 0.5; cursor: default; }
+    }
+    .ours {
+      color: #fab387;
+      border: 1px solid rgba(250, 179, 135, 0.35);
+      &:hover:not(:disabled) { background: rgba(250, 179, 135, 0.1); }
+    }
+    .keep {
+      color: #6c7086;
+      border: 1px solid #26263a;
+      &:hover:not(:disabled) { color: #cdd6f4; border-color: #45475a; }
+    }
+  }
+}
+
 // ─── Day list ───────────────────────────────────────────────────────────
 
 .scroll-zone {
