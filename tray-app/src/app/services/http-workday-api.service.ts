@@ -29,6 +29,7 @@ import {
   FavoriteRemoveResponse,
   FavoriteInput,
   JiraSearchResponse,
+  JiraProjectsResponse,
   PushResponse,
   TempoScheduleResponse,
   TempoApprovalResponse,
@@ -247,6 +248,14 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async searchJira(query: string): Promise<ApiResponse<JiraSearchResponse>> {
     return this.get<JiraSearchResponse>(`/api/jira/search?q=${encodeURIComponent(query)}`);
+  }
+
+  override async getJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>> {
+    return this.get<JiraProjectsResponse>('/api/jira/projects');
+  }
+
+  override async refreshJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>> {
+    return this.post<JiraProjectsResponse>('/api/jira/projects/refresh');
   }
 
   // ─── Timesheets (month view) ─────────────────────────────────────────

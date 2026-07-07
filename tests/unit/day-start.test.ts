@@ -89,8 +89,8 @@ test('REGRESSION: returns EARLIEST activatedAt, not sessions[0]', () => {
   // another repo held cross-repo leadership first. Must return the earliest.
   const config = makeConfig();
   const log = makeLog(config, [
-    makeSession({ id: 'a', repo: 'atlas-frontend', activatedAt: `${DATE}T13:07:00.000Z` }),
-    makeSession({ id: 'b', repo: 'appone-backend', activatedAt: `${DATE}T10:54:00.000Z` }),
+    makeSession({ id: 'a', repo: 'web-frontend', activatedAt: `${DATE}T13:07:00.000Z` }),
+    makeSession({ id: 'b', repo: 'api-backend', activatedAt: `${DATE}T10:54:00.000Z` }),
   ]);
   assert.equal(resolveUiDayStart(log), `${DATE}T10:54:00.000Z`);
 });

@@ -14,7 +14,7 @@ import { UpdateManager } from './core/update-manager.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { AppConfig, Secrets, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
+import type { AppConfig, Secrets, SearchConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
@@ -186,6 +186,16 @@ export class Daemon {
     // sensitivity.default — delegate so manual pauses get auto-resumed
     if (patch.sensitivity?.default && patch.sensitivity.default !== this.config.sensitivity.default) {
       this.sessionTracker.setSensitivity(patch.sensitivity.default);
+    }
+
+    // search — deep-merge so a selection change keeps the cached catalog and
+    // a catalog refresh keeps the selection.
+    if (patch.search) {
+      const cur = this.config.search;
+      (this.config as { search: SearchConfig }).search = {
+        projectKeys: patch.search.projectKeys ?? cur.projectKeys,
+        knownProjects: patch.search.knownProjects ?? cur.knownProjects,
+      };
     }
   }
 

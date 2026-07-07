@@ -223,6 +223,24 @@ export interface JiraSearchResponse {
   readonly hits: readonly JiraSearchHit[];
 }
 
+// A Jira project shown in the search-scope picker (Settings).
+export interface ProjectRef {
+  readonly key: string;    // 'ATL'
+  readonly name: string;   // 'Core Platform'
+  readonly id: string;     // Jira numeric project id, as string
+}
+
+// GET /api/jira/projects (cached) and POST .../refresh (live fetch).
+export interface JiraProjectsResponse {
+  readonly projects: readonly ProjectRef[];
+  readonly selected: readonly string[];   // configured allow-list (order = priority)
+}
+
+export interface SearchConfig {
+  readonly projectKeys: readonly string[];
+  readonly knownProjects: readonly ProjectRef[];
+}
+
 // ─── Timesheets (month view) ─────────────────────────────────────────────
 // Mirrors the daemon's month/push/Tempo-meta contract (src/core/types.ts).
 
@@ -400,6 +418,9 @@ export interface SettingsConfigSubset {
     readonly default: SensitivityLevel;
     readonly perRepo?: Readonly<Record<string, SensitivityLevel>>;
   };
+  // Optional so an older daemon (no search config) doesn't break the type;
+  // the UI reads it defensively (projectKeys ?? []).
+  readonly search?: SearchConfig;
 }
 
 // GET /api/settings returns config + metadata about which secrets are set

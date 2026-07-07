@@ -230,6 +230,12 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
       default: patch.sensitivity?.default ?? current.sensitivity.default,
       perRepo: patch.sensitivity?.perRepo ?? current.sensitivity.perRepo,
     },
+    // Deep-merge: a patch that only sets projectKeys must not wipe the cached
+    // catalog, and a catalog refresh must not wipe the selection.
+    search: {
+      projectKeys: patch.search?.projectKeys ?? current.search.projectKeys,
+      knownProjects: patch.search?.knownProjects ?? current.search.knownProjects,
+    },
   };
   validateConfig(merged);
   return merged;

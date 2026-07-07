@@ -204,30 +204,30 @@ async function main(): Promise<void> {
   await test('parseProjectSearchPage keeps well-formed entries, drops the rest', () => {
     const refs = parseProjectSearchPage({
       values: [
-        { id: '10000', key: 'ATL', name: 'Atlas' },
-        { id: 10001, key: 'CNF', name: 'Confie Atlas' } as unknown as { id: string; key: string; name: string },
+        { id: '10000', key: 'ATL', name: 'Core Platform' },
+        { id: 10001, key: 'WEB', name: 'Web Portal' } as unknown as { id: string; key: string; name: string },
         { key: 'BAD', name: 'No id' },              // dropped: no id
         { id: '10002', name: 'No key' },            // dropped: no key
       ],
     });
     assert.deepEqual(refs, [
-      { key: 'ATL', name: 'Atlas', id: '10000' },
-      { key: 'CNF', name: 'Confie Atlas', id: '10001' }, // numeric id coerced to string
+      { key: 'ATL', name: 'Core Platform', id: '10000' },
+      { key: 'WEB', name: 'Web Portal', id: '10001' }, // numeric id coerced to string
     ]);
   });
 
   await test('fetchProjects paginates until isLast and sorts by key', async () => {
     stubFetch(
       { status: 200, body: { isLast: false, values: [
-        { id: '3', key: 'IN', name: 'Internal' },
-        { id: '1', key: 'ATL', name: 'Atlas' },
+        { id: '3', key: 'OPS', name: 'Infra & Ops' },
+        { id: '1', key: 'ATL', name: 'Core Platform' },
       ] } },
       { status: 200, body: { isLast: true, values: [
-        { id: '2', key: 'CNF', name: 'Confie Atlas' },
+        { id: '2', key: 'APP', name: 'Mobile App' },
       ] } },
     );
     const projects = await fetchProjects(secrets);
-    assert.deepEqual(projects.map(p => p.key), ['ATL', 'CNF', 'IN']);
+    assert.deepEqual(projects.map(p => p.key), ['APP', 'ATL', 'OPS']);
     assert.equal(fetchCalls.length, 2);
     assert.ok(fetchCalls[0].includes('/rest/api/3/project/search'));
     assert.ok(fetchCalls[0].includes('startAt=0'));
@@ -236,7 +236,7 @@ async function main(): Promise<void> {
 
   await test('fetchProjects stops on an empty page (no isLast flag)', async () => {
     stubFetch(
-      { status: 200, body: { values: [{ id: '1', key: 'ATL', name: 'Atlas' }] } },
+      { status: 200, body: { values: [{ id: '1', key: 'ATL', name: 'Core Platform' }] } },
       { status: 200, body: { values: [] } },
     );
     const projects = await fetchProjects(secrets);

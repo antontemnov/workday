@@ -31,7 +31,7 @@ export interface AppConfig {
 // A Jira project as shown in the search-scope picker.
 export interface ProjectRef {
   readonly key: string;   // "ATL"
-  readonly name: string;  // "Atlas"
+  readonly name: string;  // "Core Platform"
   readonly id: string;    // Jira numeric project id, as string
 }
 
@@ -637,6 +637,12 @@ export interface JiraSearchResponse {
   readonly hits: readonly JiraSearchHit[];
 }
 
+// GET /api/jira/projects (cached catalog) and POST .../refresh (live fetch).
+export interface JiraProjectsResponse {
+  readonly projects: readonly ProjectRef[];   // catalog for the search-scope picker
+  readonly selected: readonly string[];         // configured allow-list (order = priority)
+}
+
 export interface ActivityType {
   readonly value: string;   // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly name: string;    // display label, e.g. 'Code Review'
@@ -764,6 +770,7 @@ export interface SettingsConfigSubset {
     readonly default: SensitivityLevel;
     readonly perRepo: Readonly<Record<string, SensitivityLevel>>;
   };
+  readonly search: SearchConfig;
 }
 
 export interface SettingsResponse {

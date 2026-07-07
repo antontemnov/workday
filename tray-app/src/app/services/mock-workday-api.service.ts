@@ -39,6 +39,8 @@ import {
   normalizeFavName,
   JiraSearchHit,
   JiraSearchResponse,
+  JiraProjectsResponse,
+  ProjectRef,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -48,13 +50,20 @@ import {
 export class MockWorkdayApiService extends WorkdayApiService {
 
   // Mutable so addRepo/removeRepo feels real in mock mode.
-  private mockRepos: string[] = ['D:/work/atlas-frontend', 'D:/work/appone-backend'];
+  private mockRepos: string[] = ['D:/work/web-frontend', 'D:/work/api-backend'];
   private mockSensitivity: SensitivityLevel = SensitivityLevel.Normal;
   private mockJiraConfigured = true;
   private mockTempoConfigured = true;
   private mockBoundaryHour = 4;
   private mockTimezone = 'Europe/Moscow';
   private mockTaskPattern = 'ATL-\\d+';
+  private mockProjectKeys: string[] = ['ATL'];
+  private mockKnownProjects: ProjectRef[] = [
+    { key: 'ATL', name: 'Core Platform', id: '10001' },
+    { key: 'APP', name: 'Mobile App', id: '10002' },
+    { key: 'OPS', name: 'Infra & Ops', id: '10003' },
+    { key: 'WEB', name: 'Web Portal', id: '10004' },
+  ];
 
   // Mutable so add/edit manual entries feel real in mock mode.
   private mockManualEntries: ManualEntry[] = [
@@ -89,7 +98,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       sessions: [
         {
           id: 's1',
-          repo: 'D:/work/atlas-frontend',
+          repo: 'D:/work/web-frontend',
           task: 'ATL-6781',
           branch: 'ATL-6781-atemnov-save-fee-endpoints',
           state: 'active',
@@ -110,7 +119,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
         },
         {
           id: 's2',
-          repo: 'D:/work/appone-backend',
+          repo: 'D:/work/api-backend',
           task: 'APP-1024',
           branch: 'APP-1024-refactor-pricing-engine',
           state: 'pending',
@@ -155,7 +164,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
         // Closed sessions
         {
           id: 'c1',
-          repo: 'D:/work/atlas-frontend',
+          repo: 'D:/work/web-frontend',
           task: 'ATL-6712',
           branch: 'ATL-6712-fix-leak',
           state: 'active',
@@ -176,7 +185,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
         },
         {
           id: 'c2',
-          repo: 'D:/work/appone-backend',
+          repo: 'D:/work/api-backend',
           task: 'APP-1019',
           branch: 'APP-1019-cleanup',
           state: 'active',
@@ -223,12 +232,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
       claimedMs: this.mockManualMinutes() * 60_000,
       dayStart: this.iso(9, 18),
       activeIntervals: [
-        { from: this.iso(9, 18),  to: this.iso(10, 45), sessionId: 'c1', repo: 'D:/work/atlas-frontend' },
-        { from: this.iso(11, 0),  to: this.iso(11, 30), sessionId: 's1', repo: 'D:/work/atlas-frontend' },
+        { from: this.iso(9, 18),  to: this.iso(10, 45), sessionId: 'c1', repo: 'D:/work/web-frontend' },
+        { from: this.iso(11, 0),  to: this.iso(11, 30), sessionId: 's1', repo: 'D:/work/web-frontend' },
         { from: this.iso(11, 35), to: this.iso(11, 55), sessionId: 's3', repo: 'D:/work/infra-scripts' },
-        { from: this.iso(13, 8),  to: this.iso(14, 50), sessionId: 'c2', repo: 'D:/work/appone-backend' },
-        { from: this.iso(15, 5),  to: this.iso(16, 10), sessionId: 's1', repo: 'D:/work/atlas-frontend' },
-        { from: this.iso(16, 12), to: this.iso(16, 25), sessionId: 's2', repo: 'D:/work/appone-backend' },
+        { from: this.iso(13, 8),  to: this.iso(14, 50), sessionId: 'c2', repo: 'D:/work/api-backend' },
+        { from: this.iso(15, 5),  to: this.iso(16, 10), sessionId: 's1', repo: 'D:/work/web-frontend' },
+        { from: this.iso(16, 12), to: this.iso(16, 25), sessionId: 's2', repo: 'D:/work/api-backend' },
       ],
       downtimeMs: 1 * 3600_000 + 12 * 60_000,
       issueSummaries: {
@@ -443,6 +452,16 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: { hits } };
   }
 
+  async getJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>> {
+    await delay(120);
+    return { ok: true, data: { projects: this.mockKnownProjects.map(p => ({ ...p })), selected: [...this.mockProjectKeys] } };
+  }
+
+  async refreshJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>> {
+    await delay(500); // simulates the Jira /project/search round-trip
+    return { ok: true, data: { projects: this.mockKnownProjects.map(p => ({ ...p })), selected: [...this.mockProjectKeys] } };
+  }
+
   // ─── Timesheets / Settings mocks ──────────────────────────────────────
 
   async getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>> {
@@ -514,6 +533,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           timezone: this.mockTimezone,
           taskPattern: this.mockTaskPattern,
           sensitivity: { default: this.mockSensitivity },
+          search: { projectKeys: [...this.mockProjectKeys], knownProjects: this.mockKnownProjects.map(p => ({ ...p })) },
         },
         secretsMeta: { jiraConfigured: this.mockJiraConfigured, tempoConfigured: this.mockTempoConfigured },
       },
@@ -528,6 +548,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       if (patch.config.timezone) this.mockTimezone = patch.config.timezone;
       if (patch.config.taskPattern !== undefined) this.mockTaskPattern = patch.config.taskPattern;
       if (patch.config.sensitivity?.default) this.mockSensitivity = patch.config.sensitivity.default;
+      if (patch.config.search?.projectKeys) this.mockProjectKeys = [...patch.config.search.projectKeys];
     }
     if (patch.secrets) {
       if (patch.secrets.jiraToken !== undefined) {

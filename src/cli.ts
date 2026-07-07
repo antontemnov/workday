@@ -54,6 +54,8 @@ import type {
   ActivityTypesResponse,
   MonthResponse,
   TempoImportResponse,
+  JiraProjectsResponse,
+  SettingsResponse,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus, MonthDayStatus } from './core/types.js';
 
@@ -668,6 +670,46 @@ async function handleJiraSearch(args: string[]): Promise<void> {
     }
   } catch (err) {
     console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+// workday projects [refresh | set <KEY...>]
+// Manages the search-scope allow-list. Goes through the daemon so the running
+// config stays consistent (list + cached catalog persisted together).
+async function handleProjects(args: string[]): Promise<void> {
+  const sub = args[0];
+
+  if (sub === 'refresh') {
+    const res = await apiPost<JiraProjectsResponse>('/api/jira/projects/refresh');
+    if (!res.ok || !res.data) { console.log(res.error ?? 'Refresh failed.'); return; }
+    console.log(`Fetched ${res.data.projects.length} projects from Jira.`);
+    printProjects(res.data);
+    return;
+  }
+
+  if (sub === 'set') {
+    const keys = args.slice(1).map(k => k.toUpperCase());
+    const res = await apiPost<SettingsResponse>('/api/settings', { config: { search: { projectKeys: keys } } });
+    if (!res.ok || !res.data) { console.log(res.error ?? 'Update failed.'); return; }
+    console.log(`Search scope set to: ${res.data.config.search.projectKeys.join(', ') || '(none — all projects)'}`);
+    return;
+  }
+
+  const res = await apiGet<JiraProjectsResponse>('/api/jira/projects');
+  if (!res.ok || !res.data) { console.log(res.error ?? 'Failed to load projects.'); return; }
+  printProjects(res.data);
+}
+
+function printProjects(data: JiraProjectsResponse): void {
+  const selected = new Set(data.selected.map(k => k.toUpperCase()));
+  console.log(`Search scope (order = priority): ${data.selected.join(', ') || '(none — all projects)'}`);
+  if (data.projects.length === 0) {
+    console.log('Catalog is empty — run "workday projects refresh".');
+    return;
+  }
+  console.log('Known projects:');
+  for (const p of data.projects) {
+    console.log(`  ${selected.has(p.key.toUpperCase()) ? '✓' : ' '} ${p.key.padEnd(10)} ${p.name}`);
   }
 }
 
@@ -1307,6 +1349,9 @@ async function main(): Promise<void> {
     case 'jira-search':
       await handleJiraSearch(args.slice(1));
       break;
+    case 'projects':
+      await handleProjects(args.slice(1));
+      break;
     case 'activities':
       await handleActivities();
       break;
@@ -1364,6 +1409,7 @@ Usage:
   workday fav-remove <#|id>                            Remove a favorite
   workday fav-list                                     List favorites
   workday jira-search "<query>"                        Live Jira issue search (key + summary)
+  workday projects [refresh | set <KEY...>]            Show / refresh / set the search-scope projects
   workday activities                                   Show Tempo activity types
   workday tempo                                        Show report (1st of month → today)
   workday tempo --from DATE --to DATE                  Report for a custom range

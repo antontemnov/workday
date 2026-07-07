@@ -57,7 +57,7 @@ function makeConfig(): AppConfig {
 function makeSession(task: string | null): Session {
   return {
     id: 'sess-1',
-    repo: 'atlas',
+    repo: 'web',
     task,
     branch: task ? `feature/${task}-x` : 'main',
     state: SessionState.Active,

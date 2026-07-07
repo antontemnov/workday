@@ -26,7 +26,7 @@ import {
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import {
   isJiraConfigured, searchIssues, checkIssueExists,
-  loadCachedSummaries, backfillIssueSummaries,
+  loadCachedSummaries, backfillIssueSummaries, fetchProjects,
 } from './push/jira-client.js';
 import { buildMonthResponse } from './push/month-report.js';
 import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
@@ -70,6 +70,7 @@ import type {
   FavoriteAddResponse,
   FavoriteRemoveResponse,
   JiraSearchResponse,
+  JiraProjectsResponse,
   ActivityTypesResponse,
   DaysResponse,
   Session,
@@ -265,6 +266,12 @@ export class HttpServer {
       if (method === 'GET' && path === '/api/jira/search') {
         const query = url.searchParams.get('q') ?? '';
         return this.sendJson(res, 200, await this.handleJiraSearch(query));
+      }
+      if (method === 'GET' && path === '/api/jira/projects') {
+        return this.sendJson(res, 200, this.handleGetJiraProjects());
+      }
+      if (method === 'POST' && path === '/api/jira/projects/refresh') {
+        return this.sendJson(res, 200, await this.handleRefreshJiraProjects());
       }
       if (method === 'GET' && path === '/api/activity-types') {
         return this.sendJson(res, 200, await this.handleActivityTypes());
@@ -735,6 +742,34 @@ export class HttpServer {
     }
   }
 
+  // Cached project catalog + current selection — no network.
+  private handleGetJiraProjects(): ApiResponse<JiraProjectsResponse> {
+    const s = this.deps.config.search;
+    return { ok: true, data: { projects: s.knownProjects.map(p => ({ ...p })), selected: [...s.projectKeys] } };
+  }
+
+  // Refresh the catalog from Jira, persist it into config.search.knownProjects.
+  private async handleRefreshJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>> {
+    const secrets = tryLoadSecrets();
+    if (!secrets || !isJiraConfigured(secrets)) {
+      return {
+        ok: false,
+        error: 'Jira API is not configured — set the token in Settings',
+        errorCode: ApiErrorCode.JiraNotConfigured,
+      };
+    }
+    try {
+      const projects = await fetchProjects(secrets);
+      const patch = { search: { ...this.deps.config.search, knownProjects: projects } };
+      const merged = buildPatchedConfig(this.deps.config, patch);
+      await this.deps.applyConfigUpdate(patch);
+      writeConfig(merged);
+      return { ok: true, data: { projects, selected: [...this.deps.config.search.projectKeys] } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   /**
    * Existence gate for user-picked tasks. Returns the error response to send,
    * or null when logging may proceed: issue found, Jira not configured, or
@@ -804,6 +839,10 @@ export class HttpServer {
           sensitivity: {
             default: c.sensitivity.default,
             perRepo: { ...c.sensitivity.perRepo },
+          },
+          search: {
+            projectKeys: [...c.search.projectKeys],
+            knownProjects: c.search.knownProjects.map(p => ({ ...p })),
           },
         },
         secretsMeta: { jiraConfigured, tempoConfigured },

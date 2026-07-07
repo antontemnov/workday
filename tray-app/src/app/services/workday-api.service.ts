@@ -23,6 +23,7 @@ import {
   FavoriteRemoveResponse,
   FavoriteInput,
   JiraSearchResponse,
+  JiraProjectsResponse,
   PushResponse,
   TempoScheduleResponse,
   TempoApprovalResponse,
@@ -78,6 +79,11 @@ export abstract class WorkdayApiService {
   // errorCode 'jira-not-configured' → the UI blocks the search section with
   // a Settings link; debounce/min-length live on the UI side.
   abstract searchJira(query: string): Promise<ApiResponse<JiraSearchResponse>>;
+
+  // Search-scope projects (Settings): cached catalog + selection, and a live
+  // refresh that re-fetches the catalog from Jira and persists it.
+  abstract getJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>>;
+  abstract refreshJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>>;
 
   // Timesheets view — per-month aggregated day summaries (disk truth, offline).
   abstract getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>>;
