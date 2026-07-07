@@ -94,6 +94,55 @@
         </div>
       </div>
     </div>
+
+    <!-- Search scope -->
+    <div class="settings-section">
+      <h3>Search <span class="sub">Jira projects the issue search is limited to</span></h3>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Search scope</span>
+          <span class="hint">Only these projects appear in issue search; order = priority. Empty = all projects.</span>
+        </div>
+        <div class="right">
+          <button class="btn small"
+                  [disabled]="projectsRefreshing || !settings.secretsMeta.jiraConfigured"
+                  [title]="settings.secretsMeta.jiraConfigured ? 'Fetch the project list from Jira' : 'Set the Jira token first'"
+                  (click)="refreshProjects()">
+            {{ projectsRefreshing ? 'Fetching…' : 'Refresh from Jira' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="opt-row" *ngIf="selectedProjects.length">
+        <div class="left"><span class="name">Selected</span></div>
+        <div class="right repo-cluster">
+          <span class="repo-pill" *ngFor="let p of selectedProjects" [title]="p.name">
+            <span class="proj-key">{{ p.key }}</span>
+            <span class="x" (click)="removeProject(p.key)" title="Remove">×</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="proj-picker" *ngIf="knownProjects.length; else noProjects">
+        <input class="input-mini wide proj-search"
+               type="text"
+               placeholder="Find spaces…"
+               [(ngModel)]="projectFilter" />
+        <div class="proj-list">
+          <label class="proj-item" *ngFor="let p of filteredProjects" [class.on]="isProjectSelected(p.key)">
+            <input type="checkbox" [checked]="isProjectSelected(p.key)" (change)="toggleProject(p.key)" />
+            <span class="proj-key">{{ p.key }}</span>
+            <span class="proj-name">{{ p.name }}</span>
+          </label>
+          <div class="proj-empty" *ngIf="!filteredProjects.length">No spaces match “{{ projectFilter }}”.</div>
+        </div>
+      </div>
+      <ng-template #noProjects>
+        <div class="opt-row">
+          <div class="left"><span class="hint">No catalog yet — click “Refresh from Jira”.</span></div>
+        </div>
+      </ng-template>
+    </div>
   </ng-container>
 
   <!-- Daemon: rendered даже без settings — the Start toggle must work while

@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, S
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
-import { SensitivityLevel, SettingsConfigSubset, SettingsPatch, SettingsResponse } from '../../models/workday.models';
+import { ProjectRef, SensitivityLevel, SettingsConfigSubset, SettingsResponse } from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
 type UpdateState = 'idle' | 'checking' | 'available' | 'applying' | 'restarting' | 'done' | 'error';
@@ -200,6 +200,71 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     this.queue({ taskPattern: value }, 'debounced', 800);
   }
 
+  // ─── Search scope (Jira projects) ──────────────────────────────────────
+
+  projectFilter = '';
+  projectsRefreshing = false;
+
+  get knownProjects(): readonly ProjectRef[] {
+    return this.settings?.config.search?.knownProjects ?? [];
+  }
+
+  get selectedProjectKeys(): readonly string[] {
+    return this.settings?.config.search?.projectKeys ?? [];
+  }
+
+  // Selected projects in priority order; a selected key missing from the
+  // catalog still shows (bare ref) so it can be removed.
+  get selectedProjects(): ProjectRef[] {
+    const byKey = new Map(this.knownProjects.map(p => [p.key, p]));
+    return this.selectedProjectKeys.map(k => byKey.get(k) ?? { key: k, name: k, id: '' });
+  }
+
+  get filteredProjects(): readonly ProjectRef[] {
+    const q = this.projectFilter.trim().toLowerCase();
+    if (!q) return this.knownProjects;
+    return this.knownProjects.filter(p =>
+      p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+  }
+
+  isProjectSelected(key: string): boolean {
+    return this.selectedProjectKeys.includes(key);
+  }
+
+  toggleProject(key: string): void {
+    const cur = this.selectedProjectKeys;
+    this.setProjectKeys(cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key]);
+  }
+
+  removeProject(key: string): void {
+    this.setProjectKeys(this.selectedProjectKeys.filter(k => k !== key));
+  }
+
+  // Persist the selection. Carries the current catalog so the daemon's
+  // deep-merge keeps it (and the type wants a full SearchConfig).
+  private setProjectKeys(keys: readonly string[]): void {
+    const knownProjects = this.knownProjects.map(p => ({ ...p }));
+    const search = { projectKeys: [...keys], knownProjects };
+    this.applyLocal(c => ({ ...c, search }));
+    this.queue({ search }, 'debounced', 400);
+  }
+
+  async refreshProjects(): Promise<void> {
+    if (this.projectsRefreshing) return;
+    this.projectsRefreshing = true;
+    this.setIndicator('saving', 'Fetching projects…');
+    const res = await this.api.refreshJiraProjects();
+    this.projectsRefreshing = false;
+    if (res.ok && res.data) {
+      const search = { projectKeys: [...res.data.selected], knownProjects: res.data.projects.map(p => ({ ...p })) };
+      this.applyLocal(c => ({ ...c, search }));
+      this.setIndicator('saved', `Fetched ${res.data.projects.length} projects`);
+      this.scheduleSavedFlash();
+    } else {
+      this.setIndicator('error', res.error ?? 'Failed to fetch projects');
+    }
+  }
+
   // ─── Repo list ────────────────────────────────────────────────────────
 
   repoName(path: string): string {
@@ -376,5 +441,6 @@ function mergeConfigPatch(
     ...(a ?? {}),
     ...b,
     sensitivity: b.sensitivity ?? a?.sensitivity,
+    search: b.search ?? a?.search,
   };
 }

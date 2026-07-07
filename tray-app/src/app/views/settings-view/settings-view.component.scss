@@ -363,3 +363,69 @@
 .hint.update-error {
   color: #f38ba8;
 }
+
+// ─── Search-scope project picker ─────────────────────────────────────────
+.repo-pill .proj-key {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.proj-picker {
+  margin-top: 8px;
+}
+
+.input-mini.proj-search {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+}
+
+.proj-list {
+  max-height: 168px;
+  overflow-y: auto;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  background: #11111b;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
+}
+
+.proj-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(49, 50, 68, 0.4);
+
+  &:last-child { border-bottom: none; }
+  &:hover { background: rgba(137, 180, 250, 0.06); }
+  &.on { background: rgba(137, 180, 250, 0.1); }
+
+  input[type='checkbox'] {
+    accent-color: #89b4fa;
+    cursor: pointer;
+  }
+
+  .proj-key {
+    color: #bac2de;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    min-width: 52px;
+  }
+  .proj-name {
+    color: #6c7086;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.proj-empty {
+  padding: 10px 9px;
+  font-size: 11px;
+  color: #6c7086;
+  text-align: center;
+}
