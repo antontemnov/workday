@@ -44,6 +44,8 @@ workday session-delete <target>        Delete a junk session (add --date for pas
 workday tempo                          Show report (month to date)
 workday tempo --push                   Push to Tempo
 workday month [YYYY-MM]                Month view: day statuses vs Tempo
+workday tempo-sync [YYYY-MM]           Refresh the month's Tempo snapshot (mirror pull)
+workday tempo-import [YYYY-MM]         Adopt Tempo-only worklogs as local entries
 workday schedule [YYYY-MM]             Tempo work schedule (required hours, holidays)
 workday approval [YYYY-MM]             Tempo timesheet approval status
 workday daemon                         Run in foreground (live dashboard)

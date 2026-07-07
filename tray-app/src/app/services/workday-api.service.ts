@@ -27,6 +27,8 @@ import {
   TempoScheduleResponse,
   TempoApprovalResponse,
   TempoSyncResponse,
+  TempoImportRequest,
+  TempoImportResponse,
 } from '../models/workday.models';
 
 /**
@@ -89,6 +91,9 @@ export abstract class WorkdayApiService {
   // Refetch the month's Tempo snapshot so day statuses reflect the actual
   // remote state. Read-only pull — never required for (and never blocks) push.
   abstract syncTempo(year: number, month: number): Promise<ApiResponse<TempoSyncResponse>>;
+  // Adopt foreign (Tempo-only) worklogs as local manual entries with
+  // ownership — they become editable/deletable mirror citizens.
+  abstract importTempo(request: TempoImportRequest): Promise<ApiResponse<TempoImportResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;

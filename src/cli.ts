@@ -53,6 +53,7 @@ import type {
   ManualEntryDeleteResponse,
   ActivityTypesResponse,
   MonthResponse,
+  TempoImportResponse,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus, MonthDayStatus } from './core/types.js';
 
@@ -1154,6 +1155,49 @@ async function handleTempoSync(args: string[]): Promise<void> {
   console.log(`Fields captured: activity on ${withActivity}/${snapshot.worklogs.length}, description on ${snapshot.worklogs.filter(w => !!w.description).length}, updatedAt on ${snapshot.worklogs.filter(w => !!w.updatedAt).length}`);
 }
 
+async function handleTempoImport(args: string[]): Promise<void> {
+  // workday tempo-import [YYYY-MM] [--date YYYY-MM-DD] [--ids 1,2,3]
+  // Goes through the daemon: today's entries must land in the live log.
+  const usage = 'Usage: workday tempo-import [YYYY-MM] [--date YYYY-MM-DD] [--ids 1,2,3]';
+  const body: Record<string, unknown> = {};
+
+  const dateIdx = args.indexOf('--date');
+  if (dateIdx !== -1) {
+    const date = args[dateIdx + 1];
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { console.log(usage); return; }
+    body.date = date;
+    args = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+  const idsIdx = args.indexOf('--ids');
+  if (idsIdx !== -1) {
+    const ids = (args[idsIdx + 1] ?? '').split(',').map(s => parseInt(s.trim(), 10));
+    if (ids.length === 0 || ids.some(isNaN)) { console.log(usage); return; }
+    body.worklogIds = ids;
+    args = [...args.slice(0, idsIdx), ...args.slice(idsIdx + 2)];
+  }
+  if (args[0]) {
+    const { parseYearMonth } = await import('./push/month-report.js');
+    const ym = parseYearMonth(args[0]);
+    if (!ym) { console.log(usage); return; }
+    body.year = ym.year;
+    body.month = ym.month;
+  }
+
+  const result = await apiPost<TempoImportResponse>('/api/tempo-import', body);
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+
+  const d = result.data;
+  console.log(`Tempo import ${d.month}: ${d.imported} imported, ${d.failed} failed (snapshot ${d.syncedAt})`);
+  for (const item of d.items) {
+    const mark = item.error ? '✗' : '✓';
+    const detail = item.error ?? `→ manual entry ${item.entryId}`;
+    console.log(`  ${mark} ${item.date} ${item.task} ${formatReportHours(item.seconds).padStart(7)}  ${detail}`);
+  }
+  if (d.imported === 0 && d.items.length === 0) {
+    console.log('  Nothing foreign to import — the mirror is complete.');
+  }
+}
+
 async function handleSchedule(args: string[]): Promise<void> {
   const { parseYearMonth } = await import('./push/month-report.js');
   const ym = args[0] ? parseYearMonth(args[0]) : currentYearMonth();
@@ -1275,6 +1319,9 @@ async function main(): Promise<void> {
     case 'tempo-sync':
       await handleTempoSync(args.slice(1));
       break;
+    case 'tempo-import':
+      await handleTempoImport(args.slice(1));
+      break;
     case 'schedule':
       await handleSchedule(args.slice(1));
       break;
@@ -1326,6 +1373,7 @@ Usage:
   workday tempo --push --force                         Also overwrite worklogs edited in Tempo (conflicts)
   workday month [YYYY-MM]                              Month view: day statuses vs Tempo (pending/outdated/pushed)
   workday tempo-sync [YYYY-MM]                         Fetch the month's Tempo worklogs into the local snapshot cache
+  workday tempo-import [YYYY-MM]                       Adopt Tempo-only worklogs as local entries (--date / --ids to narrow)
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
   workday approval [YYYY-MM]                           Tempo timesheet approval status for the period
 

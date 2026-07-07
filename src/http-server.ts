@@ -30,6 +30,7 @@ import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
 import { runPush } from './push/tempo-pusher.js';
 import { recordEntryDeletion } from './push/push-log.js';
 import { fetchMonthSnapshot } from './push/tempo-snapshot.js';
+import { importTempoWorklogs, type ImportEntryInput } from './push/tempo-import.js';
 import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
 import { resolveMonthApproval, approvalUnavailable } from './push/tempo-approvals.js';
 import {
@@ -81,6 +82,7 @@ import type {
   TempoScheduleResponse,
   TempoApprovalResponse,
   TempoSyncResponse,
+  TempoImportResponse,
 } from './core/types.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
@@ -281,6 +283,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/tempo-sync') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleTempoSync(body));
+      }
+      if (method === 'POST' && path === '/api/tempo-import') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleTempoImport(body));
       }
       if (method === 'GET' && path === '/api/tempo/schedule') {
         return this.sendJson(res, 200, await this.handleTempoSchedule(url));
@@ -1019,6 +1025,66 @@ export class HttpServer {
           worklogCount: snapshot.worklogs.length,
         },
       };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * Adopt foreign Tempo worklogs as local manual entries (mirror import).
+   * Body: {year?, month?, date?, worklogIds?} — a date implies its month;
+   * no filter imports every foreign worklog of the month. Today's entries
+   * go through the live tracker, past days straight to disk.
+   */
+  private async handleTempoImport(body: Record<string, unknown>): Promise<ApiResponse<TempoImportResponse>> {
+    const today = this.deps.getCurrentDate();
+
+    let date: string | undefined;
+    if (body.date !== undefined && body.date !== null) {
+      if (typeof body.date !== 'string' || !DATE_RE.test(body.date)) {
+        return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
+      }
+      date = body.date;
+    }
+
+    const year = typeof body.year === 'number' ? body.year : Number((date ?? today).slice(0, 4));
+    const month = typeof body.month === 'number' ? body.month : Number((date ?? today).slice(5, 7));
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      return { ok: false, error: `Invalid year: ${body.year}` };
+    }
+    if (!Number.isInteger(month) || month < 1 || month > 12) {
+      return { ok: false, error: `Invalid month: ${body.month}` };
+    }
+
+    let worklogIds: number[] | undefined;
+    if (body.worklogIds !== undefined && body.worklogIds !== null) {
+      if (!Array.isArray(body.worklogIds) || body.worklogIds.some(id => typeof id !== 'number')) {
+        return { ok: false, error: 'worklogIds must be an array of numbers' };
+      }
+      worklogIds = body.worklogIds as number[];
+      if (worklogIds.length === 0) return { ok: false, error: 'worklogIds is empty' };
+    }
+
+    const secrets = tryLoadSecrets();
+    if (!secrets || !secrets.Tempo_Token?.trim() || !isJiraConfigured(secrets)) {
+      return { ok: false, error: 'Jira/Tempo tokens are not configured — set them in Settings' };
+    }
+
+    const tracker = this.deps.sessionTracker;
+    try {
+      const result = await importTempoWorklogs(year, month, secrets, {
+        config: this.deps.config,
+        today,
+        date,
+        worklogIds,
+        addEntryToday: (input: ImportEntryInput) => {
+          const r = tracker.importManualEntry(input);
+          if (!r.ok || !r.entry) throw new Error(r.error ?? 'Import failed');
+          tracker.flush();
+          return r.entry;
+        },
+      });
+      return { ok: true, data: result };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

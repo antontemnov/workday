@@ -407,6 +407,25 @@
   .mk { font-size: 9px; }
 
   &.logged { color: #cba6f7; }
+
+  // Day-level adopt: pulls every foreign worklog of the day into the log.
+  .imp-all {
+    font-family: inherit;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: none;
+    color: #fab387;
+    background: transparent;
+    border: 1px solid rgba(250, 179, 135, 0.3);
+    border-radius: 5px;
+    padding: 1px 7px;
+    margin-left: 4px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: rgba(250, 179, 135, 0.1); border-color: rgba(250, 179, 135, 0.5); }
+    &:disabled { opacity: 0.5; cursor: default; }
+  }
 }
 
 .dr-row {
@@ -442,6 +461,30 @@
   &.manual .task { color: #cba6f7; }
 
   &.foreign .task { color: #fab387; }
+
+  // Row-level adopt — revealed on hover so the mirror stays quiet.
+  .imp {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    font-size: 11px;
+    color: #fab387;
+    background: transparent;
+    border: 1px solid rgba(250, 179, 135, 0.3);
+    border-radius: 5px;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+
+    &:hover:not(:disabled) { background: rgba(250, 179, 135, 0.12); border-color: rgba(250, 179, 135, 0.55); }
+    &:disabled { cursor: default; }
+    &.busy { opacity: 1; }
+  }
+  &:hover .imp { opacity: 1; }
 }
 
 .dr-hint {

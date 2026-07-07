@@ -8,6 +8,7 @@ import {
   PushPlanEntry,
   ScheduleDay,
   TempoApprovalResponse,
+  TempoImportRequest,
   TempoScheduleResponse,
 } from '../../models/workday.models';
 
@@ -18,6 +19,7 @@ interface DrawerRow {
   readonly activity: string;     // manual kind
   readonly description: string;  // manual kind
   readonly durLabel: string;
+  readonly worklogId?: number;   // foreign kind — the import handle
 }
 
 interface DayRow {
@@ -85,6 +87,10 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   // month view; failures retry on the upkeep tick (self-heal), the button
   // re-syncs on demand.
   private readonly syncedMonths = new Set<string>();
+
+  // Import in flight: the day date, or 'date|worklogId' for a single row.
+  importingKey: string | null = null;
+  importError: string | null = null;
 
   private readonly openDates = new Set<string>();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -215,6 +221,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.pushError = null;
     this.pushNote = null;
     this.conflicts = [];
+    this.importError = null;
     void this.load(true);
     void this.autoSync();
   }
@@ -321,6 +328,41 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.conflicts = [];
   }
 
+  // ─── Tempo import (adopt foreign worklogs) ─────────────────────────────
+
+  onImportRow(row: DayRow, t: DrawerRow): void {
+    if (t.worklogId === undefined) return;
+    void this.runImport(`${row.date}|${t.worklogId}`,
+      { year: this.year, month: this.month, worklogIds: [t.worklogId] });
+  }
+
+  onImportDay(row: DayRow): void {
+    void this.runImport(row.date, { year: this.year, month: this.month, date: row.date });
+  }
+
+  isImporting(key: string): boolean {
+    return this.importingKey === key;
+  }
+
+  private async runImport(key: string, request: TempoImportRequest): Promise<void> {
+    if (this.importingKey) return;
+    this.importingKey = key;
+    this.importError = null;
+    const res = await this.api.importTempo(request);
+    this.importingKey = null;
+    if (res.ok && res.data) {
+      if (res.data.failed > 0) {
+        const first = res.data.items.find(i => i.error);
+        this.importError = `${res.data.failed} worklog(s) not imported — ${first?.error ?? 'unknown error'}`;
+      }
+      // Adopted rows move from the tempo section into logged; the daemon
+      // already refetched the snapshot, so statuses and syncedAt are fresh.
+      await this.reloadMonthQuiet();
+    } else {
+      this.importError = res.error ?? 'Import failed';
+    }
+  }
+
   private setPushNote(note: string): void {
     this.pushNote = note;
     if (this.pushNoteTimer) clearTimeout(this.pushNoteTimer);
@@ -406,6 +448,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
         activity: t.activity ?? '',
         description: t.description ?? '',
         durLabel: fmtDur(t.seconds),
+        worklogId: t.tempoWorklogId,
       })),
       trackedSumLabel: fmtSum(tracked.reduce((sum, t) => sum + t.seconds, 0)),
       loggedSumLabel: fmtSum(logged.reduce((sum, t) => sum + t.seconds, 0)),

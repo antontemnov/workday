@@ -10,6 +10,7 @@ import {
   deleteDailyLog,
   createEmptyLog,
   addManualEntry,
+  addImportedEntry,
   editManualEntry,
   deleteManualEntry,
   findManualEntry,
@@ -37,6 +38,22 @@ export function addEntryOnDate(
 ): { entry: ManualEntry; log: DailyLog } {
   const log = readDailyLog(date) ?? createEmptyLog(date, config);
   const entry = addManualEntry(log, input, config);
+  writeDailyLog(log);
+  return { entry, log };
+}
+
+/**
+ * Adopt a Tempo worklog as a manual entry on a date (mirror import). The
+ * worklog is a confirmed fact — the day file is created when absent.
+ * Throws on validation failure.
+ */
+export function importEntryOnDate(
+  date: string,
+  input: { task: string; minutes: number; description: string; activity: string },
+  config: AppConfig,
+): { entry: ManualEntry; log: DailyLog } {
+  const log = readDailyLog(date) ?? createEmptyLog(date, config);
+  const entry = addImportedEntry(log, input, config);
   writeDailyLog(log);
   return { entry, log };
 }

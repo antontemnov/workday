@@ -106,6 +106,7 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
         seconds: wl.timeSpentSeconds,
         kind: 'foreign',
         sessionCount: 0,
+        tempoWorklogId: wl.tempoWorklogId,
         ...(wl.description !== undefined ? { description: wl.description } : {}),
         ...(wl.activity !== undefined ? { activity: wl.activity } : {}),
       });

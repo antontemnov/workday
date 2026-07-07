@@ -11,6 +11,7 @@ import {
   deleteDailyLog,
   addSignal,
   addManualEntry,
+  addImportedEntry,
   editManualEntry,
   deleteManualEntry,
   resolveSessionTarget,
@@ -305,6 +306,16 @@ export class SessionTracker {
   public addManualEntry(input: { task: string; minutes: number; description: string; activity: string }): { ok: boolean; error?: string; entry?: ManualEntry } {
     try {
       const entry = addManualEntry(this.dailyLog, input, this.config);
+      return { ok: true, entry };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Adopt a Tempo worklog into today's log (mirror import — relaxed rules) */
+  public importManualEntry(input: { task: string; minutes: number; description: string; activity: string }): { ok: boolean; error?: string; entry?: ManualEntry } {
+    try {
+      const entry = addImportedEntry(this.dailyLog, input, this.config);
       return { ok: true, entry };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

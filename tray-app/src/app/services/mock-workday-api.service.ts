@@ -16,6 +16,8 @@ import {
   TempoScheduleResponse,
   TempoApprovalResponse,
   TempoSyncResponse,
+  TempoImportRequest,
+  TempoImportResponse,
   PushResponse,
   SettingsResponse,
   SettingsPatch,
@@ -455,6 +457,13 @@ export class MockWorkdayApiService extends WorkdayApiService {
     await delay(600);
     const mm = `${year}-${String(month).padStart(2, '0')}`;
     return { ok: true, data: { month: mm, syncedAt: new Date().toISOString(), worklogCount: 42 } };
+  }
+
+  async importTempo(request: TempoImportRequest): Promise<ApiResponse<TempoImportResponse>> {
+    await delay(500);
+    const mm = request.date?.slice(0, 7)
+      ?? `${request.year ?? 2026}-${String(request.month ?? 1).padStart(2, '0')}`;
+    return { ok: true, data: { month: mm, syncedAt: new Date().toISOString(), imported: request.worklogIds?.length ?? 1, failed: 0, items: [] } };
   }
 
   async getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>> {

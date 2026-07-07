@@ -47,6 +47,7 @@
     </button>
   </div>
   <div class="push-error" *ngIf="pushError">{{ pushError }}</div>
+  <div class="push-error" *ngIf="importError">{{ importError }}</div>
 
   <!-- Conflict gate: push stopped, nothing executed — user picks a side -->
   <div class="conflict-panel" *ngIf="conflicts.length > 0">
@@ -115,16 +116,30 @@
                   <span class="dur">{{ t.durLabel }}</span>
                 </div>
               </ng-container>
-              <!-- Foreign worklogs: live in Tempo only, read-only mirror -->
+              <!-- Foreign worklogs: live in Tempo only — ⤓ adopts them locally -->
               <ng-container *ngIf="row.tempoRows.length > 0">
                 <div class="dr-sec tempo">
-                  <span class="mk">◆</span> tempo <span class="sum">{{ row.tempoSumLabel }}</span>
+                  <span class="mk">◆</span> tempo
+                  <button class="imp-all" *ngIf="row.tempoRows.length > 1"
+                          (click)="onImportDay(row)"
+                          [disabled]="importingKey !== null"
+                          title="Adopt all of this day's Tempo-only worklogs as local entries">
+                    {{ isImporting(row.date) ? 'importing…' : '⤓ import all' }}
+                  </button>
+                  <span class="sum">{{ row.tempoSumLabel }}</span>
                 </div>
                 <div class="dr-row foreign" *ngFor="let t of row.tempoRows"
-                     title="Created directly in Tempo — read-only here">
+                     title="Created directly in Tempo — ⤓ adopts it into the local log">
                   <span class="task">{{ t.task }}</span>
                   <span class="act" *ngIf="t.activity">{{ t.activity }}</span>
                   <span class="desc">{{ t.description }}</span>
+                  <button class="imp" *ngIf="t.worklogId !== undefined"
+                          (click)="onImportRow(row, t)"
+                          [disabled]="importingKey !== null"
+                          [class.busy]="isImporting(row.date + '|' + t.worklogId)"
+                          title="Adopt into the local log — becomes editable & deletable">
+                    {{ isImporting(row.date + '|' + t.worklogId) ? '…' : '⤓' }}
+                  </button>
                   <span class="dur">{{ t.durLabel }}</span>
                 </div>
               </ng-container>

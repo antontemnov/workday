@@ -541,6 +541,45 @@ export function addManualEntry(
 }
 
 /**
+ * Add a manual entry adopted from a Tempo worklog (mirror import). The
+ * content already exists in Tempo, so authoring rules are relaxed: no
+ * description-required rule, no per-entry minutes cap. Structural invariants
+ * (valid task key, positive minutes, day window) still hold.
+ */
+export function addImportedEntry(
+  log: DailyLog,
+  input: { task: string; minutes: number; description: string; activity: string },
+  config: AppConfig,
+): ManualEntry {
+  const task = input.task.trim();
+  if (!task) throw new Error('Task is required');
+  assertValidTask(task, config);
+
+  if (!Number.isFinite(input.minutes) || input.minutes <= 0) {
+    throw new Error('Minutes must be positive');
+  }
+
+  const addMs = input.minutes * MS_PER_MINUTE;
+  if (computeTotalClaimedMs(log) + addMs > computeBudgetMs(log, config)) {
+    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
+    throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
+  }
+
+  unsealForEdit(log);
+  if (!log.manualEntries) log.manualEntries = [];
+  const entry: ManualEntry = {
+    id: generateSessionId(),
+    task,
+    minutes: input.minutes,
+    description: input.description.trim(),
+    activity: input.activity.trim(),
+    createdAt: new Date().toISOString(),
+  };
+  log.manualEntries.push(entry);
+  return entry;
+}
+
+/**
  * Edit a manual entry in place (absolute set of provided fields).
  * Budget re-checked when minutes increase. Throws on validation failure.
  */

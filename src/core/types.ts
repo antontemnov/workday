@@ -655,6 +655,7 @@ export interface MonthDayTask {
   readonly sessionCount: number;   // 0 for manual/foreign kind
   readonly description?: string;   // manual/foreign kind only
   readonly activity?: string;      // manual/foreign kind only
+  readonly tempoWorklogId?: number; // foreign kind only — the import handle
 }
 
 export interface MonthDaySummary {
@@ -785,6 +786,25 @@ export interface TempoSyncResponse {
   readonly month: string;          // YYYY-MM
   readonly syncedAt: string;       // snapshot fetchedAt
   readonly worklogCount: number;
+}
+
+// POST /api/tempo-import — adopt foreign worklogs into local manual entries
+// with push-log ownership (mirror pull). One item per targeted worklog.
+export interface TempoImportItem {
+  readonly tempoWorklogId: number;
+  readonly date: string;           // worklog startDate
+  readonly task: string;           // resolved key, or 'issue #<id>' when unresolved
+  readonly seconds: number;
+  readonly entryId?: string;       // created ManualEntry id (success only)
+  readonly error?: string;         // failure reason; absent = imported
+}
+
+export interface TempoImportResponse {
+  readonly month: string;          // YYYY-MM
+  readonly syncedAt: string;       // import re-fetches the snapshot first
+  readonly imported: number;
+  readonly failed: number;
+  readonly items: readonly TempoImportItem[];
 }
 
 // One month of the user's Tempo worklogs as last fetched — the remote side
