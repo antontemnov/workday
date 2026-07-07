@@ -36,34 +36,37 @@
                (dblclick)="onRowDblClick(e)"
                (contextmenu)="onRowContextMenu(e, $event)">
 
-            <!-- Edit morph: the row becomes a one-line form; the ticket is a
-                 label (change task = delete + recreate). -->
+            <!-- Edit morph: two-level — caption (key + ticket name) over the
+                 one-line form. Task is a read-only caption (change = delete +
+                 recreate). No separator glyph between key and name. -->
             <ng-container *ngIf="editingId === e.id; else staticRow">
-              <span class="le-form" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
-                <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
-                <span class="l-task">{{ e.task }}</span>
-                <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
-                  <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
-                </select>
-                <input class="le-min"
-                       [(wdDuration)]="editMinutes"
-                       (durEnter)="saveEdit(e)"
-                       title="1h 15m · 90 · 45m — wheel: ±15m" />
-                <input class="le-desc"
-                       [class.need]="editDescNeeded"
-                       [(ngModel)]="editDescription"
-                       (keydown.enter)="saveEdit(e)"
-                       placeholder="description" />
-                <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
-              </span>
+              <div class="le-wrap" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
+                <div class="le-cap"><span class="le-k">{{ e.task }}</span><span class="le-n" *ngIf="summaryOf(e)">{{ summaryOf(e) }}</span></div>
+                <div class="le-form">
+                  <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
+                  <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
+                    <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+                  </select>
+                  <input class="le-min"
+                         [(wdDuration)]="editMinutes"
+                         (durEnter)="saveEdit(e)"
+                         title="1h 15m · 90 · 45m — wheel: ±15m" />
+                  <input class="le-desc"
+                         [class.need]="editDescNeeded"
+                         [(ngModel)]="editDescription"
+                         (keydown.enter)="saveEdit(e)"
+                         placeholder="description" />
+                  <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
+                </div>
+              </div>
             </ng-container>
 
             <!-- Static row — grid: key | name | type | desc | time.
                  .c-full is the row-level hover overlay (full ticket name). -->
             <ng-template #staticRow>
               <span class="c-key">{{ e.task }}</span>
-              <span class="c-nm" [class.none]="!summaryOf(e)" [title]="summaryOf(e)">
-                <span class="txt">{{ summaryOf(e) || '— name not cached' }}</span>
+              <span class="c-nm" [title]="summaryOf(e)">
+                <span class="txt">{{ summaryOf(e) }}</span>
               </span>
               <span class="c-type">
                 <span class="pill" [class]="'pill tone-' + activityTone(displayActivity(e))"

@@ -207,16 +207,15 @@
   &:hover { background: #211f30; }
   & + & { border-top: 1px solid rgba(205, 214, 244, 0.05); }
 
-  .c-key, .l-task {
+  .c-key {
     color: #cba6f7;
     font-weight: 600;
     background: rgba(203, 166, 247, 0.12);
     padding: 1px 7px;
     border-radius: 4px;
     white-space: nowrap;
+    justify-self: start;
   }
-  .c-key { justify-self: start; }
-  .l-task { flex-shrink: 0; }   // ticket label inside the edit form
 
   // Name cell fills the whole track height so entering the cell (not the
   // glyphs) triggers the hover-grow; plain arrow cursor, never a caret.
@@ -236,8 +235,6 @@
       text-overflow: ellipsis;
       color: #bac2de;
     }
-
-    &.none .txt { color: #585b70; font-style: italic; }
   }
 
   .c-type {
@@ -313,12 +310,11 @@
     background: rgba(203, 166, 247, 0.08);
   }
 
-  // Editing row falls back to a plain flex line so the single .le-form fills
-  // the width instead of being squeezed into the first grid track.
+  // Editing row becomes a two-level block: caption (key + ticket name) over
+  // the one-line form. Overrides the grid so .le-wrap fills the width.
   &.editing {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    display: block;
+    padding: 6px 8px 7px;
     background: rgba(203, 166, 247, 0.07);
   }
 
@@ -342,7 +338,7 @@
     overflow: hidden;
     transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease;
   }
-  &:not(.removing) { max-height: 30px; }
+  &:not(.removing):not(.editing) { max-height: 30px; }  // two-level edit needs room
 
   .l-undo {
     justify-self: end;
@@ -387,7 +383,32 @@
 .grip-type { left: calc(98px + var(--w-name) + var(--w-type)); } // + 8 gap + w-type + 4
 .lp-table.edit-lock .col-grip { display: none; }
 
-// ─── Edit morph (double-click) — the row becomes a one-line form ─────────
+// ─── Edit morph (double-click) — two-level: caption over the one-line form ─
+.le-wrap { min-width: 0; }
+
+// Caption: mauve key + dimmed ticket name, one line, no separator glyph —
+// the tail fades out (not a hard cut) when the name is long.
+.le-cap {
+  padding: 1px 2px 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: #767e9d;
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+  opacity: 0;
+  transform: translateY(3px);
+  animation: cap-in 0.18s ease 0.04s forwards;
+
+  .le-k { color: rgba(203, 166, 247, 0.9); font-weight: 700; margin-right: 7px; }
+  .le-n { color: #767e9d; }
+}
+
+@keyframes cap-in {
+  to { opacity: 1; transform: none; }
+}
+
 .le-form {
   display: flex;
   align-items: center;
