@@ -20,17 +20,26 @@ function timeDrifts(a: number, b: number): boolean {
   return Math.abs(a - b) > TEMPO_TOLERANCE_SECONDS;
 }
 
+// Tempo fills "Working on work item <KEY>" into worklogs saved with an empty
+// description — the placeholder and an empty description are the same thing.
+// Without this a pushed empty-description entry drifts forever: our PUT sends
+// '' and Tempo immediately re-inserts the placeholder.
+function normalizeDescription(description: string | undefined, task: string): string {
+  const desc = description ?? '';
+  return desc === `Working on work item ${task}` ? '' : desc;
+}
+
 function manualTextDrifts(entry: TaskDayReport, wl: TempoWorklog): boolean {
-  return (wl.description ?? '') !== (entry.description ?? '')
+  return normalizeDescription(wl.description, entry.task) !== normalizeDescription(entry.description, entry.task)
     || (wl.activity ?? '') !== (entry.activity ?? '');
 }
 
 /** The worklog no longer matches what we sent — someone edited it in Tempo. */
-function remoteChanged(own: PushLogEntry, wl: TempoWorklog, entryDate: string, kind: TaskDayReport['kind']): boolean {
+function remoteChanged(own: PushLogEntry, wl: TempoWorklog, entryDate: string, kind: TaskDayReport['kind'], task: string): boolean {
   if (own.timeSpentSeconds !== wl.timeSpentSeconds) return true;
   if (wl.startDate !== entryDate) return true;
   if (kind === 'manual') {
-    return (own.description ?? '') !== (wl.description ?? '')
+    return normalizeDescription(own.description, task) !== normalizeDescription(wl.description, task)
       || (own.activity ?? '') !== (wl.activity ?? '');
   }
   return false;
@@ -144,7 +153,7 @@ export function buildPushPlan(
         // manage — carry the current remote values through the PUT untouched.
         description: entry.kind === 'manual' ? entry.description : wl.description,
         activity: entry.kind === 'manual' ? entry.activity : wl.activity,
-        ...(remoteChanged(own, wl, entry.date, entry.kind) ? { conflict: true } : {}),
+        ...(remoteChanged(own, wl, entry.date, entry.kind, entry.task) ? { conflict: true } : {}),
       });
       continue;
     }
@@ -298,7 +307,7 @@ export function computeDayDrift(
     claimed.add(wl.tempoWorklogId);
     // Field-drift lines only — an entry whose remote copy matches the local
     // desired state stays parity even when the push-log baseline is stale.
-    const suffix = remoteChanged(own, wl, date, entry.kind) ? ' — edited in Tempo' : '';
+    const suffix = remoteChanged(own, wl, date, entry.kind, entry.task) ? ' — edited in Tempo' : '';
     if (wl.startDate !== date) {
       drift.push(`${label}: moved to ${wl.startDate} in Tempo`);
     }

@@ -416,5 +416,43 @@ test('local-only drift has no edited-in-Tempo marker', () => {
   assert.doesNotMatch(drift[0], /edited in Tempo/);
 });
 
+console.log('\nTempo description placeholder — "Working on work item <KEY>"');
+
+// Empty-description manual entry as Tempo stores it: our '' became the
+// placeholder on the Tempo side (the live 07-05 case).
+const emptyDescEntry = () => manual({ description: '', activity: 'Development' });
+const placeholderWorklog = (id: number) =>
+  worklog(id, 1800, { description: 'Working on work item ATL-10', activity: 'Development' });
+
+test('placeholder vs empty local description → parity, no drift', () => {
+  const pushLog = { [`${DATE}|ATL-10|m:e1`]: manualLog(100, 1800, '', 'Development') };
+  const drift = computeDayDrift(DATE, [emptyDescEntry()], pushLog, snapOf(placeholderWorklog(100)));
+  assert.deepEqual(drift, []);
+});
+
+test('placeholder vs empty local description → plan skip, no conflict', () => {
+  const pushLog = { [`${DATE}|ATL-10|m:e1`]: manualLog(100, 1800, '', 'Development') };
+  const plan = buildPushPlan([emptyDescEntry()], jiraMap, pushLog, [placeholderWorklog(100)]);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].action, 'skip');
+  assert.equal(plan[0].conflict, undefined);
+});
+
+test('placeholder of a DIFFERENT task is a real description', () => {
+  const pushLog = { [`${DATE}|ATL-10|m:e1`]: manualLog(100, 1800, '', 'Development') };
+  const drift = computeDayDrift(DATE, [emptyDescEntry()], pushLog,
+    snapOf(worklog(100, 1800, { description: 'Working on work item ATL-99', activity: 'Development' })));
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /description\/activity/);
+});
+
+test('real remote description still drifts against empty local', () => {
+  const pushLog = { [`${DATE}|ATL-10|m:e1`]: manualLog(100, 1800, '', 'Development') };
+  const drift = computeDayDrift(DATE, [emptyDescEntry()], pushLog,
+    snapOf(worklog(100, 1800, { description: 'edited by hand', activity: 'Development' })));
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /edited in Tempo/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
