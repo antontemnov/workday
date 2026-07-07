@@ -13,6 +13,8 @@
 | Версия | `package.json` | `tray-app/src-tauri/tauri.conf.json` (`tray-app/package.json` = 0.0.0, не используется) |
 | Релиз | `npm publish` — ТОЛЬКО пользователь вручную (у Claude нет npm auth) | push тега `tray-v<version>` → CI `.github/workflows/release-tray-app.yml` |
 
+**⚠ Публичный репозиторий:** не использовать реальные имена клиента/продукта/внутренних проектов в коде/тестах/моках/комментариях — только нейтральные плейсхолдеры (ключ `ATL` как обобщённый плейсхолдер допустим; `*.atlassian.net` — домен вендора Jira, ОК).
+
 **Три независимые версии** (см. память reference_versioning_scheme): `API_VERSION` (`src/core/constants.ts`) — HTTP-контракт демон↔tray, tray проверяет **exact-match** (`EXPECTED_API_VERSION` в `tray-app/src/app/models/workday.models.ts`) — менять строго парой; npm-версия демона; tray-версия. Одинокий bump API_VERSION = reinstall-loop у tray.
 
 ## Структура
