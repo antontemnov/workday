@@ -728,7 +728,7 @@ export class HttpServer {
     }
 
     try {
-      const hits = await searchIssues(trimmed, secrets);
+      const hits = await searchIssues(trimmed, secrets, this.deps.config.search.projectKeys);
       return { ok: true, data: { hits } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

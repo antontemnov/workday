@@ -86,51 +86,78 @@ async function main(): Promise<void> {
     assert.equal(isJiraConfigured(makeSecrets({ Jira_Email: '' })), false);
   });
 
-  await test('searchIssues parses picker sections and dedupes across them', async () => {
-    stubFetch({
-      status: 200,
-      body: {
-        sections: [
-          { issues: [
-            { key: 'ATL-1', summaryText: 'First issue', summary: '<b>First</b> issue' },
-            { key: 'ATL-2', summary: '<b>Second</b> issue' },
-          ] },
-          { issues: [
-            { key: 'ATL-1', summaryText: 'First issue (dup section)' },
-            { key: 'ATL-3', summaryText: 'Third issue' },
-          ] },
-        ],
-      },
-    });
-    const hits = await searchIssues('first', secrets);
-    assert.deepEqual(hits, [
-      { key: 'ATL-1', summary: 'First issue' },
-      { key: 'ATL-2', summary: 'Second issue' },   // HTML stripped from fallback
-      { key: 'ATL-3', summary: 'Third issue' },
-    ]);
-    assert.equal(fetchCalls.length, 1);
-    assert.ok(fetchCalls[0].includes('/rest/api/3/issue/picker?query=first'));
-    // Without currentJQL the picker returns History Search only (empty for a
-    // user with no view history); without showSubTasks sub-tasks are invisible.
-    assert.ok(fetchCalls[0].includes('currentJQL='));
-    assert.ok(fetchCalls[0].includes('showSubTasks=true'));
-    assert.ok(fetchCalls[0].includes('showSubTaskParent=true'));
+  await test('searchIssues resolves keys and words separately, then merges the picker', async () => {
+    stubFetch(
+      // 1) key JQL — exact-key lookup, never crowded out by word hits.
+      { status: 200, body: { issues: [{ key: 'ATL-16', fields: { summary: 'Retrospective' } }] } },
+      // 2) word JQL — summary prefix search.
+      { status: 200, body: { issues: [{ key: 'ATL-16', fields: { summary: 'Retrospective' } }] } },
+      // 3) picker fill (merged set < a page) — a sibling from the key-number family.
+      { status: 200, body: { sections: [{ id: 'cs', issues: [
+        { key: 'ATL-16', summaryText: 'Retrospective' },
+        { key: 'ATL-1650', summaryText: 'Retro board cleanup' },
+      ] }] } },
+    );
+    const hits = await searchIssues('ATL-16 Retrospective', secrets, ['ATL']);
+    assert.equal(hits[0].key, 'ATL-16');                 // exact key ranked first
+    assert.ok(hits.some(h => h.key === 'ATL-1650'));     // picker family kept below
+    assert.equal(fetchCalls.length, 3);
+    assert.ok(decodeURIComponent(fetchCalls[0]).includes('key in ("ATL-16")'));
+    assert.ok(!decodeURIComponent(fetchCalls[0]).includes('summary ~')); // keys are isolated
+    assert.ok(decodeURIComponent(fetchCalls[1]).includes('summary ~ "retrospective*"'));
+    assert.ok(fetchCalls[2].includes('/rest/api/3/issue/picker'));
   });
 
-  await test('searchIssues caches a repeated query (case-insensitive)', async () => {
-    stubFetch({
-      status: 200,
-      body: { sections: [{ issues: [{ key: 'ATL-9', summaryText: 'Cached' }] }] },
-    });
-    const first = await searchIssues('cache-me', secrets);
-    const second = await searchIssues('  CACHE-ME ', secrets);
+  await test('searchIssues widens words AND → OR when the precise query is empty', async () => {
+    stubFetch(
+      { status: 200, body: { issues: [] } },                                          // AND — no hits
+      { status: 200, body: { issues: [{ key: 'ATL-5', fields: { summary: 'Alpha only' } }] } }, // OR — a hit
+      { status: 200, body: { sections: [] } },                                        // picker fill
+    );
+    const hits = await searchIssues('alpha beta', secrets, ['ATL']);
+    assert.deepEqual(hits.map(h => h.key), ['ATL-5']);
+    assert.ok(decodeURIComponent(fetchCalls[0]).includes('"alpha*" AND summary ~ "beta*"'));
+    assert.ok(decodeURIComponent(fetchCalls[1]).includes('"alpha*" OR summary ~ "beta*"'));
+  });
+
+  await test('searchIssues drops picker leaks outside the allow-list', async () => {
+    stubFetch(
+      { status: 200, body: { issues: [{ key: 'ATL-16', fields: { summary: 'Retrospective' } }] } },
+      { status: 200, body: { sections: [{ id: 'hs', issues: [
+        { key: 'APP-23719', summaryText: 'Retrospective' },   // history section, foreign project
+      ] }] } },
+    );
+    const hits = await searchIssues('retrospective', secrets, ['ATL']);
+    assert.ok(hits.every(h => h.key.startsWith('ATL-')));
+    assert.ok(!hits.some(h => h.key.startsWith('APP-')));
+  });
+
+  await test('searchIssues skips the picker when JQL already fills a page', async () => {
+    const issues = Array.from({ length: 8 }, (_, i) => ({ key: `ATL-${i + 1}`, fields: { summary: `Issue ${i + 1}` } }));
+    stubFetch({ status: 200, body: { issues } });
+    const hits = await searchIssues('issue', secrets, ['ATL']);
+    assert.equal(fetchCalls.length, 1); // no picker call
+    assert.equal(hits.length, 8);
+  });
+
+  await test('searchIssues caches by query + scope', async () => {
+    stubFetch(
+      { status: 200, body: { issues: [{ key: 'ATL-9', fields: { summary: 'Cached' } }] } },
+      { status: 200, body: { sections: [] } },
+    );
+    const first = await searchIssues('cache-me', secrets, ['ATL']);
+    const second = await searchIssues('  CACHE-ME ', secrets, ['ATL']);
     assert.deepEqual(second, first);
-    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls.length, 2); // both fetches on the first call; second is cached
   });
 
-  await test('searchIssues tolerates an empty picker response', async () => {
-    stubFetch({ status: 200, body: {} });
-    assert.deepEqual(await searchIssues('nothing-here', secrets), []);
+  await test('searchIssues returns [] when nothing matches', async () => {
+    stubFetch(
+      { status: 200, body: { issues: [] } },   // AND
+      { status: 200, body: { issues: [] } },   // OR (two words)
+      { status: 200, body: { sections: [] } }, // picker
+    );
+    assert.deepEqual(await searchIssues('nothing here', secrets, ['ATL']), []);
   });
 
   await test('checkIssueExists returns the issue and caches it on disk', async () => {

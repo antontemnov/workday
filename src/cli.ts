@@ -658,7 +658,7 @@ async function handleJiraSearch(args: string[]): Promise<void> {
   }
 
   try {
-    const hits = await searchIssues(query, secrets);
+    const hits = await searchIssues(query, secrets, loadConfig().search.projectKeys);
     if (hits.length === 0) {
       console.log('No matches.');
       return;

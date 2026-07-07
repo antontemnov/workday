@@ -81,6 +81,14 @@ export const JIRA_SEARCH_MIN_QUERY_LENGTH = 2;
 // persisted to disk.
 export const JIRA_SEARCH_CACHE_TTL_MS = 5 * 60_000;
 export const JIRA_SEARCH_CACHE_MAX_ENTRIES = 50;
+// JQL page size for a live search, and the max ranked hits handed back.
+export const JQL_SEARCH_MAX_RESULTS = 20;
+export const SEARCH_MAX_HITS = 10;
+// Below this many JQL hits, also pull the picker (recency + key-number prefix
+// the enhanced search can't do) and merge. Words shorter than the min never
+// go into a `summary ~` clause (a 1-char prefix matches half the backlog).
+export const SEARCH_PICKER_FILL_THRESHOLD = 8;
+export const SEARCH_MIN_WORD_LENGTH = 2;
 
 // ─── Push / Tempo ───────────────────────────────────────────────────────
 export const ISSUE_CACHE_FILE = 'issue-cache.json';
