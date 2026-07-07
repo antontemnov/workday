@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { AppConfig, Secrets, SensitivityConfig } from './types.js';
+import type { AppConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef } from './types.js';
 import { SensitivityLevel } from './types.js';
 import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
@@ -90,6 +90,8 @@ export function validateConfig(config: AppConfig): void {
     }
   }
 
+  validateSearchConfig(config.search);
+
   if (config.defaultBranch !== undefined && typeof config.defaultBranch !== 'string') {
     throw new Error('config.json: defaultBranch must be a string');
   }
@@ -103,6 +105,33 @@ export function validateConfig(config: AppConfig): void {
       }
     }
   }
+}
+
+function validateSearchConfig(search: SearchConfig): void {
+  if (!search || typeof search !== 'object') {
+    throw new Error('config.json: search must be an object');
+  }
+  if (!Array.isArray(search.projectKeys) || search.projectKeys.some(k => typeof k !== 'string')) {
+    throw new Error('config.json: search.projectKeys must be an array of strings');
+  }
+  if (!Array.isArray(search.knownProjects)) {
+    throw new Error('config.json: search.knownProjects must be an array');
+  }
+  for (const p of search.knownProjects) {
+    if (typeof p?.key !== 'string' || typeof p?.name !== 'string' || typeof p?.id !== 'string') {
+      throw new Error('config.json: search.knownProjects entries must be { key, name, id } strings');
+    }
+  }
+}
+
+/**
+ * Uppercase project keys embedded in the branch taskPattern regex — e.g.
+ * "ATL-\\d+" → ["ATL"], "(?:ATL|CNF)-\\d+" → ["ATL", "CNF"]. Used only to seed
+ * search.projectKeys on first run; the two decouple afterwards.
+ */
+export function deriveProjectKeysFromTaskPattern(pattern: string): string[] {
+  const matches = pattern.match(/[A-Z][A-Z0-9]+/g) ?? [];
+  return [...new Set(matches)];
 }
 
 function isValidSensitivity(level: string): level is SensitivityLevel {
@@ -148,12 +177,22 @@ export function loadConfig(): AppConfig {
   };
 
   const rawSession = (raw.session ?? {}) as Record<string, unknown>;
+
+  // search config: default on first run, seeding projectKeys from taskPattern.
+  const rawSearch = (raw.search ?? {}) as Partial<SearchConfig>;
+  const taskPattern = (raw.taskPattern as string) ?? '';
+  const search: SearchConfig = {
+    projectKeys: rawSearch.projectKeys ?? deriveProjectKeysFromTaskPattern(taskPattern),
+    knownProjects: rawSearch.knownProjects ?? [],
+  };
+
   const config = {
     ...raw,
     boundaryHour: raw.boundaryHour ?? 4,
     apiPort: raw.apiPort ?? DEFAULT_API_PORT,
     timezone: raw.timezone ?? systemTimezone,
     sensitivity,
+    search,
     session: {
       ...rawSession,
       idleCloseHours: rawSession.idleCloseHours ?? DEFAULT_IDLE_CLOSE_HOURS,

@@ -6,7 +6,7 @@ import {
   JIRA_SEARCH_CACHE_TTL_MS,
   JIRA_SEARCH_CACHE_MAX_ENTRIES,
 } from '../core/constants.js';
-import type { Secrets, JiraIssue, JiraSearchHit } from '../core/types.js';
+import type { Secrets, JiraIssue, JiraSearchHit, ProjectRef } from '../core/types.js';
 
 const ACCOUNT_ID_CACHE_KEY = '__accountId__';
 
@@ -243,6 +243,47 @@ export async function resolveIssueIds(keys: readonly string[], secrets: Secrets)
   }
 
   return results;
+}
+
+// ─── Project catalog (search-scope settings picker) ───────────────────────
+
+interface ProjectSearchPage {
+  readonly values?: ReadonlyArray<{ id?: string; key?: string; name?: string }>;
+  readonly isLast?: boolean;
+}
+
+const PROJECT_SEARCH_PAGE_SIZE = 50;
+const PROJECT_SEARCH_MAX_PAGES = 40; // 2000 projects — a hard runaway cap.
+
+/** Map one /project/search page to ProjectRefs, dropping malformed entries. */
+export function parseProjectSearchPage(page: ProjectSearchPage): ProjectRef[] {
+  const out: ProjectRef[] = [];
+  for (const v of page.values ?? []) {
+    if (typeof v.key === 'string' && typeof v.name === 'string' && v.id != null) {
+      out.push({ key: v.key, name: v.name, id: String(v.id) });
+    }
+  }
+  return out;
+}
+
+/**
+ * Fetch the full Jira project catalog (all pages) for the search-scope picker.
+ * Sorted by key. Throws on network/auth failure — caller decides how to surface.
+ */
+export async function fetchProjects(secrets: Secrets): Promise<ProjectRef[]> {
+  const all: ProjectRef[] = [];
+  let startAt = 0;
+  for (let pageNum = 0; pageNum < PROJECT_SEARCH_MAX_PAGES; pageNum++) {
+    const page = await jiraGet(
+      `/rest/api/3/project/search?maxResults=${PROJECT_SEARCH_PAGE_SIZE}&startAt=${startAt}&orderBy=key`,
+      secrets,
+    ) as ProjectSearchPage;
+    const refs = parseProjectSearchPage(page);
+    all.push(...refs);
+    if (page.isLast || refs.length === 0) break;
+    startAt += PROJECT_SEARCH_PAGE_SIZE;
+  }
+  return all.sort((a, b) => a.key.localeCompare(b.key));
 }
 
 // ─── Cached summaries (Logged table / today response) ─────────────────────

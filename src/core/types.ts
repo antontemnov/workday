@@ -23,6 +23,25 @@ export interface AppConfig {
   // per-session baseSha logic takes over.
   readonly defaultBranch?: string;
   readonly defaultBranches?: Readonly<Record<string, string>>;
+  readonly search: SearchConfig;
+}
+
+// ─── Jira search ─────────────────────────────────────────────────────────
+
+// A Jira project as shown in the search-scope picker.
+export interface ProjectRef {
+  readonly key: string;   // "ATL"
+  readonly name: string;  // "Atlas"
+  readonly id: string;    // Jira numeric project id, as string
+}
+
+export interface SearchConfig {
+  // Allow-list of project keys the search is scoped to; list order = ranking
+  // priority. Empty → no project scope (all accessible projects, legacy).
+  readonly projectKeys: readonly string[];
+  // Cached Jira project catalog for the settings picker — refreshed on demand,
+  // never consulted by the search itself.
+  readonly knownProjects: readonly ProjectRef[];
 }
 
 // ─── Sensitivity ────────────────────────────────────────────────────────

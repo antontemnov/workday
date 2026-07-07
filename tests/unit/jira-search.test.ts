@@ -14,8 +14,10 @@ import {
   searchIssues,
   checkIssueExists,
   JiraApiError,
+  fetchProjects,
+  parseProjectSearchPage,
 } from '../../src/push/jira-client.js';
-import { getDataDir } from '../../src/core/config.js';
+import { getDataDir, deriveProjectKeysFromTaskPattern } from '../../src/core/config.js';
 import type { Secrets } from '../../src/core/types.js';
 
 let passed = 0;
@@ -159,6 +161,60 @@ async function main(): Promise<void> {
       () => checkIssueExists('ATL-503', secrets),
       (err: unknown) => err instanceof JiraApiError && err.status === 503,
     );
+  });
+
+  // ─── Phase 1: project catalog + taskPattern seeding ──────────────────────
+
+  await test('deriveProjectKeysFromTaskPattern extracts uppercase keys', () => {
+    assert.deepEqual(deriveProjectKeysFromTaskPattern('ATL-\\d+'), ['ATL']);
+    assert.deepEqual(deriveProjectKeysFromTaskPattern('PROJ-\\d+'), ['PROJ']);
+    assert.deepEqual(deriveProjectKeysFromTaskPattern('(?:ATL|CNF)-\\d+'), ['ATL', 'CNF']);
+    assert.deepEqual(deriveProjectKeysFromTaskPattern(''), []);
+    // Single-letter runs and lowercase are ignored (no false project keys).
+    assert.deepEqual(deriveProjectKeysFromTaskPattern('x-\\d+'), []);
+  });
+
+  await test('parseProjectSearchPage keeps well-formed entries, drops the rest', () => {
+    const refs = parseProjectSearchPage({
+      values: [
+        { id: '10000', key: 'ATL', name: 'Atlas' },
+        { id: 10001, key: 'CNF', name: 'Confie Atlas' } as unknown as { id: string; key: string; name: string },
+        { key: 'BAD', name: 'No id' },              // dropped: no id
+        { id: '10002', name: 'No key' },            // dropped: no key
+      ],
+    });
+    assert.deepEqual(refs, [
+      { key: 'ATL', name: 'Atlas', id: '10000' },
+      { key: 'CNF', name: 'Confie Atlas', id: '10001' }, // numeric id coerced to string
+    ]);
+  });
+
+  await test('fetchProjects paginates until isLast and sorts by key', async () => {
+    stubFetch(
+      { status: 200, body: { isLast: false, values: [
+        { id: '3', key: 'IN', name: 'Internal' },
+        { id: '1', key: 'ATL', name: 'Atlas' },
+      ] } },
+      { status: 200, body: { isLast: true, values: [
+        { id: '2', key: 'CNF', name: 'Confie Atlas' },
+      ] } },
+    );
+    const projects = await fetchProjects(secrets);
+    assert.deepEqual(projects.map(p => p.key), ['ATL', 'CNF', 'IN']);
+    assert.equal(fetchCalls.length, 2);
+    assert.ok(fetchCalls[0].includes('/rest/api/3/project/search'));
+    assert.ok(fetchCalls[0].includes('startAt=0'));
+    assert.ok(fetchCalls[1].includes('startAt=50'));
+  });
+
+  await test('fetchProjects stops on an empty page (no isLast flag)', async () => {
+    stubFetch(
+      { status: 200, body: { values: [{ id: '1', key: 'ATL', name: 'Atlas' }] } },
+      { status: 200, body: { values: [] } },
+    );
+    const projects = await fetchProjects(secrets);
+    assert.deepEqual(projects.map(p => p.key), ['ATL']);
+    assert.equal(fetchCalls.length, 2);
   });
 
   console.log('');
