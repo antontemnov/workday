@@ -231,6 +231,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
         { from: this.iso(16, 12), to: this.iso(16, 25), sessionId: 's2', repo: 'D:/work/appone-backend' },
       ],
       downtimeMs: 1 * 3600_000 + 12 * 60_000,
+      issueSummaries: {
+        'ATL-6781': 'Daily standup and team sync',
+        'ATL-6712': 'Existing Transaction: add missing reactive behaviour for Policy Dictionaries',
+        // APP-1024 left unmapped → its Logged row shows the "name not cached" placeholder
+      },
     };
   }
 

@@ -83,6 +83,7 @@
 <app-logged-panel
   *ngIf="data && !error && (isViewingToday || manualEntries.length > 0)"
   [entries]="manualEntries"
+  [issueSummaries]="issueSummaries"
   [isViewingToday]="isViewingToday"
   [actionPending]="actionPending"
   [activityTypes]="activityTypes"

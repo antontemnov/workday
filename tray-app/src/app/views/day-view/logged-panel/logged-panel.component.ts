@@ -25,6 +25,15 @@ const FAV_FEEDBACK_MS = 1200;
 const POP_ANIM_MS = 500;
 const POP_STAGGER_MS = 80;
 
+// Resizable columns: name and type are user-draggable px widths (desc is the
+// elastic remainder). Persisted so the user's layout survives reloads.
+const COL_DEFAULT = { name: 140, type: 92 };
+const COL_MIN = { name: 64, type: 56, desc: 44 };
+const COL_STORAGE_KEY = 'workday.logged.cols';
+// The panel is re-created on every tab switch, so the collapsed state must
+// live outside the instance or it resets to expanded on each return.
+const COLLAPSE_STORAGE_KEY = 'workday.logged.collapsed';
+
 /**
  * Pinned Logged panel — the manual-entries band docked to the bottom of the
  * day view. Collapses by header click (grid-rows animation); the collapsed
@@ -45,6 +54,8 @@ const POP_STAGGER_MS = 80;
 })
 export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input({ required: true }) entries: readonly ManualEntry[] = [];
+  // Task key → ticket summary, for the name column. Absent key → placeholder.
+  @Input() issueSummaries: Readonly<Record<string, string>> = {};
   @Input() isViewingToday = true;
   @Input() actionPending = false;
   @Input() activityTypes: readonly ActivityType[] = [];
@@ -63,10 +74,17 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // adds it to the Day total so it moves together with the panel Σ.
   @Output() liveDiffChanged = new EventEmitter<number>();
 
-  public constructor(private host: ElementRef<HTMLElement>) {}
+  public constructor(private host: ElementRef<HTMLElement>) {
+    this.loadCols();
+    this.collapsed = this.readCollapsed();
+  }
 
   collapsed = false;
   sumFlash = false;
+
+  // Resizable column widths (px), bound to --w-name / --w-type on the table.
+  colName = COL_DEFAULT.name;
+  colType = COL_DEFAULT.type;
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
@@ -203,6 +221,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   toggleCollapsed(ev: MouseEvent): void {
     if ((ev.target as HTMLElement).closest('.lp-mini')) return;
     this.collapsed = !this.collapsed;
+    this.persistCollapsed();
   }
 
   onMiniClick(ev: MouseEvent): void {
@@ -504,6 +523,88 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (Object.keys(patch).length === 0) return;
     this.commitPatch(e.id, patch);
     this.recomputeLive();
+  }
+
+  // ─── Resizable columns + ticket name ───────────────────────────────────
+
+  summaryOf(e: ManualEntry): string {
+    return this.issueSummaries[e.task] ?? '';
+  }
+
+  private loadCols(): void {
+    try {
+      const raw = localStorage.getItem(COL_STORAGE_KEY);
+      if (!raw) return;
+      const v = JSON.parse(raw) as { name?: number; type?: number };
+      if (typeof v.name === 'number') this.colName = Math.max(COL_MIN.name, v.name);
+      if (typeof v.type === 'number') this.colType = Math.max(COL_MIN.type, v.type);
+    } catch { /* no persisted layout */ }
+  }
+
+  private persistCols(): void {
+    try {
+      localStorage.setItem(COL_STORAGE_KEY, JSON.stringify({ name: this.colName, type: this.colType }));
+    } catch { /* storage unavailable — keep the in-memory widths */ }
+  }
+
+  // Collapsed state survives the panel's re-creation on tab switches (and app
+  // restarts) — default expanded when nothing is stored.
+  private readCollapsed(): boolean {
+    try {
+      return localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1';
+    } catch { return false; }
+  }
+
+  private persistCollapsed(): void {
+    try {
+      localStorage.setItem(COLLAPSE_STORAGE_KEY, this.collapsed ? '1' : '0');
+    } catch { /* storage unavailable — keep the in-memory state */ }
+  }
+
+  // Drag a column boundary: the adjacent column absorbs the delta so downstream
+  // boundaries stay put, and nothing shrinks below its min. Off while editing.
+  onGripDown(which: 'name' | 'type', ev: PointerEvent): void {
+    if (this.editingId !== null) return;
+    ev.preventDefault();
+    const grip = ev.currentTarget as HTMLElement;
+    const startX = ev.clientX;
+    const sName = this.colName, sType = this.colType;
+    let minDx: number, maxDx: number;
+    if (which === 'name') {
+      minDx = COL_MIN.name - sName;   // name shrinks to its min
+      maxDx = sType - COL_MIN.type;   // type shrinks to its min
+    } else {
+      const desc = this.descWidth();
+      minDx = COL_MIN.type - sType;
+      maxDx = Math.max(0, desc - COL_MIN.desc);
+    }
+    const body = this.host.nativeElement.ownerDocument.body;
+    const prevCursor = body.style.cursor, prevSelect = body.style.userSelect;
+    body.style.cursor = 'col-resize';
+    body.style.userSelect = 'none';
+    grip.setPointerCapture(ev.pointerId);
+    const move = (e: PointerEvent): void => {
+      const dx = Math.round(Math.min(maxDx, Math.max(minDx, e.clientX - startX)));
+      if (which === 'name') { this.colName = sName + dx; this.colType = sType - dx; }
+      else { this.colType = sType + dx; }
+    };
+    const up = (): void => {
+      grip.releasePointerCapture(ev.pointerId);
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      body.style.cursor = prevCursor;
+      body.style.userSelect = prevSelect;
+      this.persistCols();
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  }
+
+  // Live desc-column px (elastic 1fr), read once at drag start to bound how far
+  // the type column may grow before desc hits its min.
+  private descWidth(): number {
+    const el = this.host.nativeElement.querySelector<HTMLElement>('.log-row:not(.editing) .c-ds');
+    return el ? el.getBoundingClientRect().width : 160;
   }
 
   // ─── Formatters ────────────────────────────────────────────────────────

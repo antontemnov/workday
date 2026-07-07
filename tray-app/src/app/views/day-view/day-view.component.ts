@@ -207,6 +207,12 @@ export class DayViewComponent implements OnChanges {
     return this.data?.manualEntries ?? [];
   }
 
+  // Task key → ticket summary, for the Logged rows. Empty until the daemon
+  // caches the names (older daemon omits the field entirely).
+  get issueSummaries(): Readonly<Record<string, string>> {
+    return this.data?.issueSummaries ?? {};
+  }
+
   get loggedMs(): number {
     return this.manualEntries.reduce((sum, e) => sum + e.minutes, 0) * 60_000;
   }

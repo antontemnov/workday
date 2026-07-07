@@ -24,7 +24,10 @@ import {
   deleteEntryOnDate,
 } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
-import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
+import {
+  isJiraConfigured, searchIssues, checkIssueExists,
+  loadCachedSummaries, backfillIssueSummaries,
+} from './push/jira-client.js';
 import { buildMonthResponse } from './push/month-report.js';
 import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
 import { runPush } from './push/tempo-pusher.js';
@@ -407,8 +410,23 @@ export class HttpServer {
         dayStart: resolveUiDayStart(log),
         activeIntervals: computeActiveIntervals(log.sessions),
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
+        issueSummaries: this.buildIssueSummaries(log),
       },
     };
+  }
+
+  // Ticket summaries for the day's tasks (Logged table). Cached lookups only —
+  // synchronous, never blocks the response; a background fill pulls any missing
+  // ones into the cache so they surface on the next poll.
+  private buildIssueSummaries(log: DailyLog): Record<string, string> {
+    const keys = [...new Set([
+      ...(log.manualEntries ?? []).map(e => e.task),
+      ...log.sessions.map(s => s.task).filter((t): t is string => !!t),
+    ])];
+    if (keys.length === 0) return {};
+    const secrets = tryLoadSecrets();
+    if (secrets && isJiraConfigured(secrets)) void backfillIssueSummaries(keys, secrets);
+    return loadCachedSummaries(keys);
   }
 
   private async handlePause(body: Record<string, unknown>): Promise<ApiResponse<PauseResponse>> {
@@ -914,6 +932,7 @@ export class HttpServer {
         dayStart: resolveUiDayStart(log),
         activeIntervals: computeActiveIntervals(log.sessions),
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
+        issueSummaries: this.buildIssueSummaries(log),
       },
     };
   }

@@ -530,6 +530,10 @@ export interface TodayResponse {
   readonly activeIntervals: readonly ActiveInterval[];
   // Time when no session was active (union of work intervals subtracted from full span).
   readonly downtimeMs: number;
+  // Ticket summaries (task key → Jira summary) for the day's tasks, cached
+  // lookups only. Display-only; a key is absent when its summary isn't cached
+  // yet (a background fill pulls it in for the next poll).
+  readonly issueSummaries?: Readonly<Record<string, string>>;
 }
 
 export interface SessionDetail extends SessionSummary {

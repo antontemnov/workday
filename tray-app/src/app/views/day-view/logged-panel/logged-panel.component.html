@@ -11,7 +11,10 @@
 
   <div class="lp-body">
     <div class="lp-clip">
-      <div class="lp-table">
+      <div class="lp-table"
+           [class.edit-lock]="editingId !== null"
+           [style.--w-name]="colName + 'px'"
+           [style.--w-type]="colType + 'px'">
         <div class="ghost-row" *ngIf="isViewingToday" (click)="logRequested.emit()">
           <span class="g-plus">＋</span><span>Log time…</span>
           <span class="g-sugg" *ngIf="suggestedCount > 0">
@@ -19,65 +22,83 @@
           </span>
         </div>
 
-        <div class="log-row"
-             *ngFor="let e of displayEntries; trackBy: trackByEntry"
-             [class.fresh]="isFresh(e)"
-             [class.pop]="poppingIds.has(e.id)"
-             [style.animation-delay.ms]="popDelayMs.get(e.id)"
-             [class.editing]="editingId === e.id"
-             [class.deleted]="isDeleted(e)"
-             [class.removing]="removingIds.has(e.id)"
-             [class.fav-done]="favDoneId === e.id"
-             [title]="rowTitle(e)"
-             (dblclick)="onRowDblClick(e)"
-             (contextmenu)="onRowContextMenu(e, $event)">
+        <div class="lp-rows">
+          <div class="log-row"
+               *ngFor="let e of displayEntries; trackBy: trackByEntry"
+               [class.fresh]="isFresh(e)"
+               [class.pop]="poppingIds.has(e.id)"
+               [style.animation-delay.ms]="popDelayMs.get(e.id)"
+               [class.editing]="editingId === e.id"
+               [class.deleted]="isDeleted(e)"
+               [class.removing]="removingIds.has(e.id)"
+               [class.fav-done]="favDoneId === e.id"
+               [title]="rowTitle(e)"
+               (dblclick)="onRowDblClick(e)"
+               (contextmenu)="onRowContextMenu(e, $event)">
 
-          <!-- Edit morph: the row becomes a one-line form; the ticket is a
-               label (change task = delete + recreate). -->
-          <ng-container *ngIf="editingId === e.id; else staticRow">
-            <span class="le-form" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
-              <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
-              <span class="l-task">{{ e.task }}</span>
-              <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
-                <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
-              </select>
-              <input class="le-min"
-                     [(wdDuration)]="editMinutes"
-                     (durEnter)="saveEdit(e)"
-                     title="1h 15m · 90 · 45m — wheel: ±15m" />
-              <input class="le-desc"
-                     [class.need]="editDescNeeded"
-                     [(ngModel)]="editDescription"
-                     (keydown.enter)="saveEdit(e)"
-                     placeholder="description" />
-              <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
-            </span>
-          </ng-container>
-
-          <ng-template #staticRow>
-            <span class="l-task">{{ e.task }}</span>
-            <span class="l-act" [class]="'l-act tone-' + activityTone(displayActivity(e))">{{ activityLabel(displayActivity(e)) }}</span>
-            <span class="l-desc" *ngIf="favDoneId !== e.id; else favDone"
-                  [title]="displayDescription(e)">{{ displayDescription(e) }}</span>
-            <ng-template #favDone><span class="l-desc fav-note">★ added to favorites</span></ng-template>
-
-            <ng-container *ngIf="isDeleted(e); else aliveMin">
-              <button type="button" class="l-undo" (click)="undoDelete(e, $event)">↩ undo</button>
+            <!-- Edit morph: the row becomes a one-line form; the ticket is a
+                 label (change task = delete + recreate). -->
+            <ng-container *ngIf="editingId === e.id; else staticRow">
+              <span class="le-form" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
+                <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
+                <span class="l-task">{{ e.task }}</span>
+                <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
+                  <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+                </select>
+                <input class="le-min"
+                       [(wdDuration)]="editMinutes"
+                       (durEnter)="saveEdit(e)"
+                       title="1h 15m · 90 · 45m — wheel: ±15m" />
+                <input class="le-desc"
+                       [class.need]="editDescNeeded"
+                       [(ngModel)]="editDescription"
+                       (keydown.enter)="saveEdit(e)"
+                       placeholder="description" />
+                <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
+              </span>
             </ng-container>
-            <ng-template #aliveMin>
-              <ng-container *ngIf="isFresh(e); else staticMin">
-                <span class="stepper">
-                  <button class="s-dec" (click)="stepDown($event)">−</button>
-                  <span class="s-val" title="wheel: ±15m" (wheel)="onStepWheel($event)">
-                    {{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
-                  <button class="s-inc" (click)="stepUp($event)">+</button>
-                </span>
+
+            <!-- Static row — grid: key | name | type | desc | time.
+                 .c-full is the row-level hover overlay (full ticket name). -->
+            <ng-template #staticRow>
+              <span class="c-key">{{ e.task }}</span>
+              <span class="c-nm" [class.none]="!summaryOf(e)" [title]="summaryOf(e)">
+                <span class="txt">{{ summaryOf(e) || '— name not cached' }}</span>
+              </span>
+              <span class="c-type">
+                <span class="pill" [class]="'pill tone-' + activityTone(displayActivity(e))"
+                      [title]="activityLabel(displayActivity(e))">{{ activityLabel(displayActivity(e)) }}</span>
+              </span>
+              <span class="c-ds" *ngIf="favDoneId !== e.id; else favDone"
+                    [title]="displayDescription(e)">{{ displayDescription(e) }}</span>
+              <ng-template #favDone><span class="c-ds fav-note">★ added to favorites</span></ng-template>
+
+              <ng-container *ngIf="isDeleted(e); else aliveMin">
+                <button type="button" class="l-undo" (click)="undoDelete(e, $event)">↩ undo</button>
               </ng-container>
-              <ng-template #staticMin>
-                <span class="l-min">{{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
+              <ng-template #aliveMin>
+                <ng-container *ngIf="isFresh(e); else staticMin">
+                  <span class="stepper">
+                    <button class="s-dec" (click)="stepDown($event)">−</button>
+                    <span class="s-val" title="wheel: ±15m" (wheel)="onStepWheel($event)">
+                      {{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
+                    <button class="s-inc" (click)="stepUp($event)">+</button>
+                  </span>
+                </ng-container>
+                <ng-template #staticMin>
+                  <span class="c-dur">{{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
+                </ng-template>
               </ng-template>
+
+              <span class="c-full" *ngIf="summaryOf(e)" aria-hidden="true">{{ summaryOf(e) }}</span>
             </ng-template>
-          </ng-template>
+          </div>
+
+          <!-- Invisible resize grips (cursor-only), positioned from --w-name/--w-type -->
+          <div class="col-grip grip-name" (pointerdown)="onGripDown('name', $event)"
+               title="drag — resize name / type"></div>
+          <div class="col-grip grip-type" (pointerdown)="onGripDown('type', $event)"
+               title="drag — resize type / description"></div>
         </div>
       </div>
     </div>

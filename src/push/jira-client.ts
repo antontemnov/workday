@@ -244,3 +244,45 @@ export async function resolveIssueIds(keys: readonly string[], secrets: Secrets)
 
   return results;
 }
+
+// ─── Cached summaries (Logged table / today response) ─────────────────────
+
+/**
+ * Ticket summaries straight from the issue-cache — synchronous, never hits the
+ * network. Keys with no cached (or empty) summary are simply omitted.
+ */
+export function loadCachedSummaries(keys: readonly string[]): Record<string, string> {
+  const cache = loadCache();
+  const out: Record<string, string> = {};
+  for (const key of keys) {
+    if (key === ACCOUNT_ID_CACHE_KEY) continue;
+    const issue = cache[key] as JiraIssue | undefined;
+    if (issue && typeof issue.summary === 'string' && issue.summary !== '') out[key] = issue.summary;
+  }
+  return out;
+}
+
+// Keys we recently tried and failed to resolve — a broken / 404 / not-yet-
+// created key must not trigger a fetch on every ~30s today poll.
+const backfillFailures = new Map<string, number>();
+const BACKFILL_RETRY_MS = 10 * 60_000;
+
+/**
+ * Best-effort background fill of missing issue summaries into the cache.
+ * Fetches only uncached keys that haven't just failed; never throws. Callers
+ * fire-and-forget — the summaries surface on the next today poll.
+ */
+export async function backfillIssueSummaries(keys: readonly string[], secrets: Secrets): Promise<void> {
+  const now = Date.now();
+  const cache = loadCache();
+  const toFetch = keys.filter(key => {
+    if (key === ACCOUNT_ID_CACHE_KEY || cache[key]) return false;
+    const failedAt = backfillFailures.get(key);
+    return failedAt === undefined || now - failedAt > BACKFILL_RETRY_MS;
+  });
+  if (toFetch.length === 0) return;
+
+  await resolveIssueIds(toFetch, secrets); // caches successes, logs per-key failures
+  const after = loadCache();
+  for (const key of toFetch) if (!after[key]) backfillFailures.set(key, now);
+}

@@ -90,6 +90,9 @@ export interface TodayResponse {
   dayStart: string | null;
   activeIntervals: ActiveInterval[];
   downtimeMs?: number;
+  // Ticket summaries (task key → Jira summary) for the day's tasks, cached
+  // lookups only. A key is absent until its summary lands in the daemon cache.
+  issueSummaries?: Readonly<Record<string, string>>;
 }
 
 export interface StatusResponse {

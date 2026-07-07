@@ -130,6 +130,9 @@
   max-height: 100%;
   overflow-y: auto;
   transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
+  // Resizable column widths — overridden inline by the component's bindings.
+  --w-name: 140px;
+  --w-type: 92px;
 
   &::-webkit-scrollbar { width: 4px; }
   &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
@@ -181,56 +184,121 @@
   }
 }
 
-// ─── Entry rows ──────────────────────────────────────────────────────────
+// ─── Entry rows — resizable grid: key | name | type | desc | time ─────────
+// name/type are draggable px widths (--w-name / --w-type), desc is the elastic
+// 1fr remainder, time is fixed so the fresh-row stepper never misaligns the
+// columns across rows. Boundaries are dragged via the .col-grip bands below.
+.lp-rows { position: relative; }
+
 .log-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 70px var(--w-name) var(--w-type) minmax(44px, 1fr) 88px;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   padding: 4px 8px;
   border-radius: 4px;
+  position: relative;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   transition: background 0.4s ease;
 
-  &:hover { background: rgba(203, 166, 247, 0.05); }
+  // Solid hover colour (mantle + 5% mauve) so the name overlay reads as the
+  // field growing, not a floating card.
+  &:hover { background: #211f30; }
+  & + & { border-top: 1px solid rgba(205, 214, 244, 0.05); }
 
-  .l-task {
+  .c-key, .l-task {
     color: #cba6f7;
     font-weight: 600;
     background: rgba(203, 166, 247, 0.12);
     padding: 1px 7px;
     border-radius: 4px;
-    flex-shrink: 0;
-  }
-
-  .l-act {
-    font-size: 10px;
-    padding: 1px 7px;
-    border-radius: 4px;
-    flex-shrink: 0;
     white-space: nowrap;
+  }
+  .c-key { justify-self: start; }
+  .l-task { flex-shrink: 0; }   // ticket label inside the edit form
 
-    &.tone-other { color: #9399b2; background: rgba(147, 153, 178, 0.1); }
-    &.tone-rev   { color: #89b4fa; background: rgba(137, 180, 250, 0.1); }
-    &.tone-dev   { color: #a6e3a1; background: rgba(166, 227, 161, 0.1); }
+  // Name cell fills the whole track height so entering the cell (not the
+  // glyphs) triggers the hover-grow; plain arrow cursor, never a caret.
+  .c-nm {
+    position: relative;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    cursor: default;
+
+    .txt {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: #bac2de;
+    }
+
+    &.none .txt { color: #585b70; font-style: italic; }
   }
 
-  .l-desc {
+  .c-type {
+    min-width: 0;
+    overflow: hidden;
+
+    .pill {
+      display: inline-block;
+      max-width: 100%;
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: bottom;
+
+      &.tone-other { color: #9399b2; background: rgba(147, 153, 178, 0.1); }
+      &.tone-rev   { color: #89b4fa; background: rgba(137, 180, 250, 0.1); }
+      &.tone-dev   { color: #a6e3a1; background: rgba(166, 227, 161, 0.1); }
+    }
+  }
+
+  .c-ds {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     color: #7f849c;
     font-style: italic;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
   }
 
-  .l-min {
-    min-width: 50px;
+  .c-dur {
+    justify-self: end;
     text-align: right;
     color: #cdd6f4;
     font-weight: 700;
-    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  // Full-name overlay: same row-hover bg, exactly row height, grows from the
+  // name column up to (not over) the time column. Pure CSS — the fixed left /
+  // right below encode the key (70) and time (88) column geometry.
+  .c-full {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 86px;                      // 8 pad + 70 key + 8 gap
+    width: max-content;
+    max-width: calc(100% - 190px);   // 86 left + 104 (8 pad + 88 time + 8 gap)
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    overflow: hidden;
+    background: #211f30;
+    color: #bac2de;
+    z-index: 6;
+    opacity: 0;
+    transform: translateX(-4px);
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.14s cubic-bezier(0.2, 0.9, 0.25, 1);
   }
 
   &.fresh {
@@ -245,14 +313,21 @@
     background: rgba(203, 166, 247, 0.08);
   }
 
-  &.editing { background: rgba(203, 166, 247, 0.07); }
+  // Editing row falls back to a plain flex line so the single .le-form fills
+  // the width instead of being squeezed into the first grid track.
+  &.editing {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(203, 166, 247, 0.07);
+  }
 
   // Delete: instant with undo — Σ already rolled back, the row stays in
   // place struck-through with a burning ↩ for ~3s.
   &.deleted {
     background: rgba(243, 139, 168, 0.04);
 
-    .l-task, .l-act, .l-desc {
+    .c-key, .c-type, .c-ds, .c-nm .txt {
       opacity: 0.38;
       text-decoration: line-through;
     }
@@ -270,8 +345,7 @@
   &:not(.removing) { max-height: 30px; }
 
   .l-undo {
-    flex-shrink: 0;
-    margin-left: auto;
+    justify-self: end;
     border: 1px solid rgba(203, 166, 247, 0.5);
     border-radius: 4px;
     background: rgba(203, 166, 247, 0.08);
@@ -287,8 +361,31 @@
   }
 
   // "★ added to favorites" feedback on the description slot.
-  &.fav-done .l-desc.fav-note { color: #cba6f7; font-style: normal; }
+  &.fav-done .c-ds.fav-note { color: #cba6f7; font-style: normal; }
 }
+
+// Reveal the overlay only when hovering the name cell, and never during edit
+// (both hover-grow and resize are off while a row is being edited).
+.lp-table:not(.edit-lock) .log-row:not(.editing) .c-nm:hover ~ .c-full {
+  opacity: 1;
+  transform: none;
+}
+
+// Invisible resize grips — cursor-only bands at the column boundaries,
+// positioned purely from the width vars. Hidden entirely while editing.
+.col-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  margin-left: -5.5px;
+  z-index: 15;
+  cursor: col-resize;
+  touch-action: none;
+}
+.grip-name { left: calc(90px + var(--w-name)); }                 // 86 + w-name + 4 (½ gap)
+.grip-type { left: calc(98px + var(--w-name) + var(--w-type)); } // + 8 gap + w-type + 4
+.lp-table.edit-lock .col-grip { display: none; }
 
 // ─── Edit morph (double-click) — the row becomes a one-line form ─────────
 .le-form {
@@ -387,6 +484,7 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  justify-self: end;   // right-align in the fixed time column
 
   button {
     width: 16px;
