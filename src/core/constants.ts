@@ -90,6 +90,12 @@ export const SEARCH_MAX_HITS = 10;
 export const SEARCH_PICKER_FILL_THRESHOLD = 8;
 export const SEARCH_MIN_WORD_LENGTH = 2;
 
+// Generic Jira issue-key shape (PROJECT-NUMBER). Logging accepts any real Jira
+// key — existence is confirmed against Jira — so this is only a garbage guard,
+// NOT project-scoped. config.taskPattern stays reserved for git-activity
+// tracking (whose branches/commits to follow), never for what you may log.
+export const JIRA_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
+
 // ─── Push / Tempo ───────────────────────────────────────────────────────
 export const ISSUE_CACHE_FILE = 'issue-cache.json';
 export const PUSH_LOG_FILE = 'push-log.json';

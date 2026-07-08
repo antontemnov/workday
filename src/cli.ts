@@ -622,10 +622,9 @@ async function handleFavAdd(args: string[]): Promise<void> {
     return;
   }
 
-  const config = loadConfig();
   try {
     const favorites = loadFavorites();
-    const added = addFavorite(favorites, { name, task, minutes, activity }, config);
+    const added = addFavorite(favorites, { name, task, minutes, activity });
     // Existence gate, same soft rule as the daemon: 404 → reject,
     // unconfigured/unreachable → proceed (push re-validates).
     const secrets = tryLoadSecrets();

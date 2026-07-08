@@ -123,7 +123,7 @@ export enum ClosedBy {
 //   Not editable — delete-and-redo is the correction path.
 export interface ManualEntry {
   readonly id: string;
-  readonly task: string;          // matches config.taskPattern, e.g. ATL-10
+  readonly task: string;          // any Jira key (PROJECT-NUMBER), e.g. ATL-10
   minutes: number;                // > 0, max MAX_ENTRY_MINUTES
   description: string;            // → worklog.description ('' for session-born)
   activity: string;              // Tempo _Activity_ value, e.g. 'CodeReview'
@@ -139,7 +139,7 @@ export interface ManualEntry {
 export interface Favorite {
   readonly id: string;
   readonly name: string;          // chip label; becomes the entry description
-  readonly task: string;          // matches config.taskPattern, e.g. ATL-10
+  readonly task: string;          // any Jira key (PROJECT-NUMBER), e.g. ATL-10
   readonly minutes: number;       // default duration, > 0, max MAX_ENTRY_MINUTES
   readonly activity: string;      // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;     // ISO timestamp

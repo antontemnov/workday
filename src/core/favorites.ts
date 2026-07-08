@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { getWorkdayHome } from './config.js';
 import { generateSessionId, assertValidTask } from './daily-log.js';
 import { FAVORITES_FILE_NAME, TMP_EXTENSION, MAX_ENTRY_MINUTES } from './constants.js';
-import type { AppConfig, Favorite } from './types.js';
+import type { Favorite } from './types.js';
 
 // Favorites — day-independent manual-entry templates ("log cloud" chips).
 // Single source of truth is favorites.json in WORKDAY_HOME: the daemon holds
@@ -59,14 +59,13 @@ export function normalizeFavoriteName(name: string): string {
 export function addFavorite(
   favorites: Favorite[],
   input: { name: string; task: string; minutes: number; activity: string },
-  config: AppConfig,
 ): Favorite {
   const name = input.name.trim();
   if (!name) throw new Error('Name is required');
 
   const task = input.task.trim();
   if (!task) throw new Error('Task is required');
-  assertValidTask(task, config);
+  assertValidTask(task);
 
   if (!Number.isFinite(input.minutes) || input.minutes <= 0) {
     throw new Error('Minutes must be positive');

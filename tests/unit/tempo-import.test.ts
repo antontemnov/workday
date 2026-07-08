@@ -54,8 +54,8 @@ function wl(over: Partial<TempoWorklog> & { tempoWorklogId: number; issueId: num
 const config = makeConfig();
 const TODAY = '2026-06-20';
 
-// June 2026 remote fixture. issue 1 = ATL-1, issue 2 = IN-2 (off-pattern),
-// issue 3 = unresolved key.
+// June 2026 remote fixture. issue 1 = ATL-1, issue 2 = IN-2 (foreign project,
+// still adoptable — logging is not scoped to taskPattern), issue 3 = unresolved key.
 const snapshot: TempoMonthSnapshot = {
   month: '2026-06',
   accountId: 'acc-1',
@@ -92,13 +92,13 @@ console.log('Tempo import — tempo-import');
 
 test('imports every adoptable foreign worklog, reports the rest', () => {
   assert.equal(result.month, '2026-06');
-  assert.equal(result.imported, 3);   // 901, 907, 908
-  assert.equal(result.failed, 3);     // 902 pattern, 903 unresolved, 904 future
+  assert.equal(result.imported, 4);   // 901, 902, 907, 908
+  assert.equal(result.failed, 2);     // 903 unresolved, 904 future
 });
 
 test('placeholder description imports as empty', () => {
   const log = readDailyLog('2026-06-05')!;
-  assert.equal(log.manualEntries.length, 1);
+  assert.equal(log.manualEntries.length, 2); // ATL-1 (901) + IN-2 (902)
   const entry = log.manualEntries[0];
   assert.equal(entry.task, 'ATL-1');
   assert.equal(entry.minutes, 60);
@@ -124,11 +124,14 @@ test('odd seconds round to the nearest minute (within Tempo tolerance)', () => {
   assert.equal(entry.activity, 'CodeReview');
 });
 
-test('off-pattern task fails as an item, day file untouched by it', () => {
+test('foreign-project key imports (logging is not scoped to taskPattern)', () => {
   const item = result.items.find(i => i.tempoWorklogId === 902)!;
-  assert.match(item.error ?? '', /not a valid key/);
+  assert.equal(item.error, undefined);
   assert.equal(item.task, 'IN-2');
-  assert.equal(readDailyLog('2026-06-05')!.manualEntries.length, 1);
+  const imported = readDailyLog('2026-06-05')!.manualEntries.find(e => e.task === 'IN-2');
+  assert.ok(imported, 'IN-2 adopted onto its day');
+  assert.equal(imported!.minutes, 30);            // 1800s
+  assert.equal(imported!.description, 'foreign project');
 });
 
 test('unresolved issue key fails as an item', () => {
@@ -168,8 +171,8 @@ test('explicit ids get per-id feedback', () => {
 test('re-import is a no-op (adopted worklogs are owned now)', () => {
   const again = importFromSnapshot(snapshot, { config, today: TODAY, addEntryToday });
   assert.equal(again.imported, 0);
-  assert.equal(again.failed, 3);     // the same three unadoptable ones
-  assert.equal(readDailyLog('2026-06-05')!.manualEntries.length, 1);
+  assert.equal(again.failed, 2);     // the same two unadoptable ones (903 unresolved, 904 future)
+  assert.equal(readDailyLog('2026-06-05')!.manualEntries.length, 2);
   assert.equal(todayCalls.length, 1);
 });
 
@@ -191,16 +194,14 @@ test('day window overflow fails as an item', () => {
   assert.equal(readDailyLog('2026-06-10'), null);
 });
 
-test('month report: adopted row is manual and in parity, not foreign', () => {
+test('month report: adopted rows are manual and in parity, not foreign', () => {
   saveMonthSnapshot(snapshot);
   const month = buildMonthResponse(2026, 6, config);
   const day = month.days.find(d => d.date === '2026-06-05')!;
   const manual = day.tasks.filter(t => t.kind === 'manual');
   const foreign = day.tasks.filter(t => t.kind === 'foreign');
-  assert.equal(manual.length, 1);
-  assert.equal(manual[0].seconds, 3600);
-  assert.equal(foreign.length, 1);               // 902 stayed foreign
-  assert.equal(foreign[0].tempoWorklogId, 902);
+  assert.equal(manual.length, 2);                // ATL-1 (901) + IN-2 (902) both adopted
+  assert.equal(foreign.length, 0);               // 902 is no longer foreign — it was imported
   assert.equal(day.status, MonthDayStatus.Pending);  // parity, but never sealed by a push
   assert.deepEqual(day.drift, []);
   assert.equal(day.reportedSeconds, 3600 + 1800);

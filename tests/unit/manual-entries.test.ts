@@ -109,38 +109,38 @@ test('computeTotalClaimedMs includes manual entries', () => {
   assert.equal(computeTotalClaimedMs(log), 60 * 60_000);
 });
 
-test('rejects invalid task key (full-string match)', () => {
+test('rejects non-key garbage (shape guard)', () => {
   const config = makeConfig();
   const log = makeLog(config);
-  assert.throws(() => addStd(log, config, { task: 'nonsense' }), /not a valid key/);
-  assert.throws(() => addStd(log, config, { task: 'fix ATL-10 stuff' }), /not a valid key/);
-});
-
-test('rejects a different project prefix', () => {
-  const config = makeConfig(); // taskPattern ATL-\d+
-  const log = makeLog(config);
-  assert.throws(() => addStd(log, config, { task: 'WEB-10' }), /not a valid key/);
-  assert.throws(() => addStd(log, config, { task: 'PROJ-123' }), /not a valid key/);
-  assert.throws(() => addStd(log, config, { task: 'JIRA-1' }), /not a valid key/);
-  assert.equal(log.manualEntries.length, 0); // nothing created on rejection
-});
-
-test('rejects case mismatch and partial prefix matches', () => {
-  const config = makeConfig();
-  const log = makeLog(config);
-  assert.throws(() => addStd(log, config, { task: 'atl-10' }), /not a valid key/);    // lowercase
-  assert.throws(() => addStd(log, config, { task: 'WEBATL-10' }), /not a valid key/); // prefix junk
-  assert.throws(() => addStd(log, config, { task: 'ATL-10X' }), /not a valid key/);   // suffix junk
-  assert.throws(() => addStd(log, config, { task: 'ATL-' }), /not a valid key/);      // no number
+  assert.throws(() => addStd(log, config, { task: 'nonsense' }), /not a valid Jira key/);
+  assert.throws(() => addStd(log, config, { task: 'fix ATL-10 stuff' }), /not a valid Jira key/);
   assert.equal(log.manualEntries.length, 0);
 });
 
-test('validation follows config.taskPattern, not a hardcoded ATL', () => {
-  const config = makeConfig({ taskPattern: 'WEB-\\d+' }); // different project
+test('accepts any project prefix — logging is not scoped to taskPattern', () => {
+  const config = makeConfig(); // taskPattern ATL-\d+ governs git tracking, not logging
   const log = makeLog(config);
-  assert.throws(() => addStd(log, config, { task: 'ATL-10' }), /not a valid key/); // ATL now wrong
-  const e = addStd(log, config, { task: 'WEB-42' });                              // WEB now right
-  assert.equal(e.task, 'WEB-42');
+  assert.equal(addStd(log, config, { task: 'WEB-10' }).task, 'WEB-10');
+  assert.equal(addStd(log, config, { task: 'IN-66' }).task, 'IN-66');
+  assert.equal(addStd(log, config, { task: 'PROJ-123' }).task, 'PROJ-123');
+  assert.equal(log.manualEntries.length, 3);
+});
+
+test('rejects case mismatch and malformed keys', () => {
+  const config = makeConfig();
+  const log = makeLog(config);
+  assert.throws(() => addStd(log, config, { task: 'atl-10' }), /not a valid Jira key/);  // lowercase
+  assert.throws(() => addStd(log, config, { task: 'ATL-10X' }), /not a valid Jira key/); // suffix junk
+  assert.throws(() => addStd(log, config, { task: 'ATL-' }), /not a valid Jira key/);    // no number
+  assert.throws(() => addStd(log, config, { task: '10-20' }), /not a valid Jira key/);   // no letter prefix
+  assert.equal(log.manualEntries.length, 0);
+});
+
+test('taskPattern does not gate logging (git-tracking scope only)', () => {
+  const config = makeConfig({ taskPattern: 'WEB-\\d+' }); // git tracks WEB; logging unaffected
+  const log = makeLog(config);
+  assert.equal(addStd(log, config, { task: 'ATL-10' }).task, 'ATL-10'); // still loggable
+  assert.equal(addStd(log, config, { task: 'IN-66' }).task, 'IN-66');
 });
 
 test('rejects non-positive and oversized minutes', () => {

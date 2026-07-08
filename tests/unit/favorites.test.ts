@@ -55,13 +55,15 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 
 type FavOverride = Partial<{ name: string; task: string; minutes: number; activity: string }>;
 
-function addStd(favorites: Favorite[], config: AppConfig, over: FavOverride = {}): Favorite {
+// config kept in the signature so call sites stay stable — addFavorite no
+// longer validates against taskPattern (logging is not project-scoped).
+function addStd(favorites: Favorite[], _config: AppConfig, over: FavOverride = {}): Favorite {
   return addFavorite(favorites, {
     name: over.name ?? 'standup',
     task: over.task ?? 'ATL-10',
     minutes: over.minutes ?? 15,
     activity: over.activity ?? 'Other',
-  }, config);
+  });
 }
 
 console.log('Favorites — templates in favorites.json');
@@ -131,11 +133,12 @@ test('same name on a different task is allowed', () => {
   assert.equal(favorites.length, 2);
 });
 
-test('task must match taskPattern (full-string)', () => {
+test('task must look like a Jira key (any project allowed)', () => {
   const config = makeConfig();
   const favorites: Favorite[] = [];
-  assert.throws(() => addStd(favorites, config, { task: 'FOO-1' }), /not a valid key/);
-  assert.throws(() => addStd(favorites, config, { task: 'ATL-10-extra' }), /not a valid key/);
+  assert.equal(addStd(favorites, config, { task: 'FOO-1' }).task, 'FOO-1'); // any project ok
+  assert.throws(() => addStd(favorites, config, { task: 'ATL-10-extra' }), /not a valid Jira key/);
+  assert.throws(() => addStd(favorites, config, { task: 'nonsense' }), /not a valid Jira key/);
   assert.throws(() => addStd(favorites, config, { task: '' }), /Task is required/);
 });
 

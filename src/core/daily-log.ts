@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
 import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualEntry, type ActiveInterval } from './types.js';
-import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ENTRY_MINUTES, MS_PER_MINUTE, DEFAULT_ACTIVITY } from './constants.js';
+import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ENTRY_MINUTES, MS_PER_MINUTE, DEFAULT_ACTIVITY, JIRA_KEY_PATTERN } from './constants.js';
 
 /** Generate short unique session id */
 export function generateSessionId(): string {
@@ -479,11 +479,14 @@ export function resolveManualEntryTarget(log: DailyLog, target: string): ManualE
   return entries.find(e => e.id === target) ?? null;
 }
 
-/** Validate a task key against the configured pattern (full-string match). */
-export function assertValidTask(task: string, config: AppConfig): void {
-  const match = task.match(new RegExp(config.taskPattern));
-  if (!match || match[0] !== task) {
-    throw new Error(`Task "${task}" is not a valid key (pattern: ${config.taskPattern})`);
+/**
+ * Validate a task looks like a Jira issue key (PROJECT-NUMBER). Shape guard
+ * only — any project is allowed; the caller confirms existence against Jira.
+ * config.taskPattern is git-tracking scope, NOT a logging gate.
+ */
+export function assertValidTask(task: string): void {
+  if (!JIRA_KEY_PATTERN.test(task)) {
+    throw new Error(`Task "${task}" is not a valid Jira key (expected e.g. ABC-123)`);
   }
 }
 
@@ -500,7 +503,7 @@ export function addManualEntry(
 ): ManualEntry {
   const task = input.task.trim();
   if (!task) throw new Error('Task is required');
-  assertValidTask(task, config);
+  assertValidTask(task);
 
   if (!Number.isFinite(input.minutes) || input.minutes <= 0) {
     throw new Error('Minutes must be positive');
@@ -553,7 +556,7 @@ export function addImportedEntry(
 ): ManualEntry {
   const task = input.task.trim();
   if (!task) throw new Error('Task is required');
-  assertValidTask(task, config);
+  assertValidTask(task);
 
   if (!Number.isFinite(input.minutes) || input.minutes <= 0) {
     throw new Error('Minutes must be positive');

@@ -707,7 +707,7 @@ export class HttpServer {
 
     try {
       const favorites = loadFavorites();
-      const added = addFavorite(favorites, { name, task, minutes, activity }, this.deps.config);
+      const added = addFavorite(favorites, { name, task, minutes, activity });
       const jiraError = await this.validateTaskInJira(added.task);
       if (jiraError) return jiraError;
       saveFavorites(favorites);
