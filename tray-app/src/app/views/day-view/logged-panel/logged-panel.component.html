@@ -1,11 +1,10 @@
 <div class="logged-pane" [class.collapsed]="collapsed">
-  <div class="lp-head" (click)="toggleCollapsed($event)" title="Collapse / expand">
+  <div class="lp-head" (click)="toggleCollapsed($event)">
     <span class="label">Logged</span>
     <button class="lp-mini"
             *ngIf="isViewingToday"
             (click)="onMiniClick($event)"
-            [disabled]="actionPending"
-            title="Log time…">＋<span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
+            [disabled]="actionPending"><span class="mini-glyph">＋</span><span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
     <span class="sum" [class.flash]="sumFlash">{{ formatDurationHm(sumMs) }}</span>
   </div>
 
@@ -32,7 +31,6 @@
                [class.deleted]="isDeleted(e)"
                [class.removing]="removingIds.has(e.id)"
                [class.fav-done]="favDoneId === e.id"
-               [title]="rowTitle(e)"
                (dblclick)="onRowDblClick(e)"
                (contextmenu)="onRowContextMenu(e, $event)">
 
@@ -65,15 +63,13 @@
                  .c-full is the row-level hover overlay (full ticket name). -->
             <ng-template #staticRow>
               <span class="c-key">{{ e.task }}</span>
-              <span class="c-nm" [title]="summaryOf(e)">
+              <span class="c-nm">
                 <span class="txt">{{ summaryOf(e) }}</span>
               </span>
               <span class="c-type">
-                <span class="pill" [class]="'pill tone-' + activityTone(displayActivity(e))"
-                      [title]="activityLabel(displayActivity(e))">{{ activityLabel(displayActivity(e)) }}</span>
+                <span class="pill" [class]="'pill tone-' + activityTone(displayActivity(e))">{{ activityLabel(displayActivity(e)) }}</span>
               </span>
-              <span class="c-ds" *ngIf="favDoneId !== e.id; else favDone"
-                    [title]="displayDescription(e)">{{ displayDescription(e) }}</span>
+              <span class="c-ds" *ngIf="favDoneId !== e.id; else favDone">{{ displayDescription(e) }}</span>
               <ng-template #favDone><span class="c-ds fav-note">★ added to favorites</span></ng-template>
 
               <ng-container *ngIf="isDeleted(e); else aliveMin">
@@ -83,7 +79,7 @@
                 <ng-container *ngIf="isFresh(e); else staticMin">
                   <span class="stepper">
                     <button class="s-dec" (click)="stepDown($event)">−</button>
-                    <span class="s-val" title="wheel: ±15m" (wheel)="onStepWheel($event)">
+                    <span class="s-val" (wheel)="onStepWheel($event)">
                       {{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
                     <button class="s-inc" (click)="stepUp($event)">+</button>
                   </span>
@@ -98,10 +94,8 @@
           </div>
 
           <!-- Invisible resize grips (cursor-only), positioned from --w-name/--w-type -->
-          <div class="col-grip grip-name" (pointerdown)="onGripDown('name', $event)"
-               title="drag — resize name / type"></div>
-          <div class="col-grip grip-type" (pointerdown)="onGripDown('type', $event)"
-               title="drag — resize type / description"></div>
+          <div class="col-grip grip-name" (pointerdown)="onGripDown('name', $event)"></div>
+          <div class="col-grip grip-type" (pointerdown)="onGripDown('type', $event)"></div>
         </div>
       </div>
     </div>

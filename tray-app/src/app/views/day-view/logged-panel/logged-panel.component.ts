@@ -304,13 +304,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.isViewingToday && !this.isFresh(e);
   }
 
-  rowTitle(e: ManualEntry): string {
-    if (this.editingId === e.id || this.isDeleted(e)) return '';
-    if (this.canEdit(e)) return 'right-click — actions · double-click — edit';
-    if (this.canDelete(e)) return 'right-click — actions';
-    return '';
-  }
-
   // ─── Context menu (right-click) ─────────────────────────────────────────
 
   onRowContextMenu(e: ManualEntry, ev: MouseEvent): void {
