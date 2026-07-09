@@ -36,13 +36,17 @@ export function saveFavorites(favorites: readonly Favorite[]): void {
   renameSync(tmpPath, filePath);
 }
 
-/** Resolve a favorite by 1-based index (#2) or id */
+/** Resolve a favorite by id, or 1-based index (#2) as a CLI fallback. */
 export function resolveFavoriteTarget(favorites: readonly Favorite[], target: string): Favorite | null {
+  // Ids win over the index parse: an 8-hex id can start with digits and
+  // parseInt would read it as an index and hit the wrong favorite.
+  const byId = favorites.find(f => f.id === target);
+  if (byId) return byId;
   const index = parseInt(target.replace('#', ''), 10);
   if (!isNaN(index) && index >= 1 && index <= favorites.length) {
     return favorites[index - 1];
   }
-  return favorites.find(f => f.id === target) ?? null;
+  return null;
 }
 
 /** Name comparison key: case-insensitive, inner whitespace collapsed. */

@@ -343,13 +343,17 @@ export function computeDaySummary(sessions: readonly Session[]): {
 
 // ─── Session target resolution ───────────────────────────────────────────
 
-/** Resolve session by 1-based index or hex id */
+/** Resolve session by hex id, or 1-based index (#2) as a CLI fallback. */
 export function resolveSessionTarget(log: DailyLog, target: string): Session | null {
+  // Ids win over the index parse: a hex id can start with digits and parseInt
+  // would read it as an index and hit the wrong session.
+  const byId = log.sessions.find(s => s.id === target);
+  if (byId) return byId;
   const index = parseInt(target.replace('#', ''), 10);
   if (!isNaN(index) && index >= 1 && index <= log.sessions.length) {
     return log.sessions[index - 1];
   }
-  return log.sessions.find(s => s.id === target) ?? null;
+  return null;
 }
 
 // ─── Budget computation ─────────────────────────────────────────────────
@@ -469,14 +473,18 @@ export function findManualEntry(log: DailyLog, id: string): ManualEntry | undefi
   return (log.manualEntries ?? []).find(e => e.id === id);
 }
 
-/** Resolve a manual entry by 1-based index (#2) or id */
+/** Resolve a manual entry by id, or 1-based index (#2) as a CLI fallback. */
 export function resolveManualEntryTarget(log: DailyLog, target: string): ManualEntry | null {
   const entries = log.manualEntries ?? [];
+  // Ids win over the index parse: an 8-hex id can start with digits (e.g.
+  // "3cfb58a5"), and parseInt would read it as index 3 and hit the wrong entry.
+  const byId = entries.find(e => e.id === target);
+  if (byId) return byId;
   const index = parseInt(target.replace('#', ''), 10);
   if (!isNaN(index) && index >= 1 && index <= entries.length) {
     return entries[index - 1];
   }
-  return entries.find(e => e.id === target) ?? null;
+  return null;
 }
 
 /**

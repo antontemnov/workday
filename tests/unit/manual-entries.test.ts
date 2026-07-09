@@ -235,6 +235,25 @@ test('resolveManualEntryTarget by #index and id', () => {
   assert.equal(resolveManualEntryTarget(log, '#9'), null);
 });
 
+// Regression: an 8-hex id can start with digits (randomBytes), and parseInt
+// reads "3cfb58a5" as index 3 — an edit/delete by id would land on entries[2]
+// (the next row) instead. The id must always win over the index parse.
+test('resolveManualEntryTarget: digit-leading id wins over index', () => {
+  const config = makeConfig();
+  const log = makeLog(config);
+  const a = addStd(log, config, { description: 'first' });
+  const b = addStd(log, config, { description: 'second' });
+  const c = addStd(log, config, { description: 'third' });
+  a.id = 'aaaaaaaa';
+  b.id = '3cfb58a5'; // parseInt → 3, which used to hit entries[2] (c)
+  c.id = 'cccccccc';
+  assert.equal(resolveManualEntryTarget(log, '3cfb58a5')?.id, b.id);
+  assert.equal(resolveManualEntryTarget(log, '3cfb58a5')?.description, 'second');
+  // Explicit #index and a bare numeric (no id collision) still resolve by index.
+  assert.equal(resolveManualEntryTarget(log, '#3')?.id, c.id);
+  assert.equal(resolveManualEntryTarget(log, '2')?.id, b.id);
+});
+
 test('editManualEntry sets provided fields', () => {
   const config = makeConfig();
   const log = makeLog(config);
