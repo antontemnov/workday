@@ -88,6 +88,7 @@
     <app-settings-view *ngSwitchCase="'set'"
       [daemonReachable]="daemonReachable"
       [daemonStarting]="daemonStarting"
+      [appUpdateVersion]="appUpdateVersion"
       (stopDaemonRequested)="endDayModalOpen = true"
       (startDaemonRequested)="startDaemon()" />
   </ng-container>

@@ -610,6 +610,15 @@ export class MockWorkdayApiService extends WorkdayApiService {
     await delay(1200);
     return { ok: true, data: { updating: true, target: '0.6.1', message: 'Installed v0.6.1 — daemon restarting' } };
   }
+
+  async getAppVersion(): Promise<string> {
+    return '0.0.0-mock';
+  }
+
+  async checkAppUpdate(): Promise<string | null> {
+    await delay(600);
+    return null; // mock: always up to date (no Tauri updater in browser)
+  }
 }
 
 // ─── Mock activity types (mirrors daemon FALLBACK_ACTIVITIES) ─────────────

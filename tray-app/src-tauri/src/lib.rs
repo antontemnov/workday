@@ -110,13 +110,20 @@ async fn upgrade_daemon() -> Result<String, String> {
     Ok("Daemon upgraded and restarted".to_string())
 }
 
-/// Frontend-triggered tray self-update check (e.g. when the daemon's API
-/// version is ahead of this app). Same check-only flow as the periodic check:
-/// a found update raises the banner, install waits for the user's click.
+/// Frontend-triggered tray self-update check (Settings "Check updates").
+/// Same check-only flow as the periodic check: a found update raises the
+/// banner, install waits for the user's click. Returns the found version
+/// (None = already up to date) so the UI can show the result inline.
 #[tauri::command]
-async fn check_app_update(app: AppHandle) -> Result<String, String> {
-    check_for_updates(app).await.map_err(|e| e.to_string())?;
-    Ok("Update check finished".to_string())
+async fn check_app_update(app: AppHandle) -> Result<Option<String>, String> {
+    check_for_updates(app).await.map_err(|e| e.to_string())
+}
+
+/// Current tray-app version (from tauri.conf.json). A command instead of the
+/// app JS plugin so no extra capability or npm package is needed.
+#[tauri::command]
+fn get_app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
 }
 
 /// Pending tray update found by a background check, if any. Called once by
@@ -290,7 +297,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart-launch"]),
         ))
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -418,7 +425,7 @@ pub fn run() {
 /// announced to the webview (banner with a restart button); the install
 /// itself runs only when the user clicks — a silent mid-work restart used
 /// to kill the window (and any half-typed manual entry) without warning.
-async fn check_for_updates(handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+async fn check_for_updates(handle: tauri::AppHandle) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let updater = handle.updater()?;
 
     match updater.check().await {
@@ -430,14 +437,12 @@ async fn check_for_updates(handle: tauri::AppHandle) -> Result<(), Box<dyn std::
             );
             *PENDING_APP_UPDATE.lock().unwrap() = Some(update.version.clone());
             let _ = handle.emit("app-update-available", update.version.clone());
+            Ok(Some(update.version))
         }
         Ok(None) => {
             eprintln!("workday: app is up to date");
+            Ok(None)
         }
-        Err(e) => {
-            eprintln!("workday: could not check for updates: {}", e);
-        }
+        Err(e) => Err(e.into()),
     }
-
-    Ok(())
 }

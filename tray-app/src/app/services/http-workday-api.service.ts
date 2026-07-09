@@ -310,6 +310,21 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post<UpdateApplyResponse>('/api/update/apply');
   }
 
+  // ─── Tray-app self-update (Tauri commands, not daemon HTTP) ──────────
+
+  override async getAppVersion(): Promise<string> {
+    try {
+      return await invoke<string>('get_app_version');
+    } catch {
+      return 'dev'; // outside Tauri (browser dev) — no bundled version
+    }
+  }
+
+  override async checkAppUpdate(): Promise<string | null> {
+    // Throws outside Tauri / on updater error — the caller surfaces it.
+    return await invoke<string | null>('check_app_update');
+  }
+
   // ─── Disk fallback (no daemon) ──────────────────────────────────────
 
   private async readDayFromDisk(date: string): Promise<ApiResponse<TodayResponse> | null> {

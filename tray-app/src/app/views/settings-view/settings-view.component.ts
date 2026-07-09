@@ -29,6 +29,10 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   @Input() daemonReachable = true;
   @Input() daemonStarting = false;
 
+  // Pending tray update announced by the shell's background check — lets the
+  // App version row show "update available" without re-checking on open.
+  @Input() appUpdateVersion: string | null = null;
+
   settings: SettingsResponse | null = null;
   loading = true;
 
@@ -61,6 +65,12 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   private updateTarget: string | null = null;
   private updatePollTimer: number | null = null;
 
+  // Tray-app update flow — separate from the daemon's. Install is banner-driven
+  // (the shell raises it), so there's no inline "Update now" here.
+  appVersion = '';
+  appUpdateState: UpdateState = 'idle';
+  appUpdateLabel = '';
+
   private pending: PendingPatch = {};
   private debounceTimer: number | null = null;
   private inFlight = false;
@@ -70,6 +80,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     this.autoStartWithOs = await this.api.getAutostartEnabled();
+    this.appVersion = await this.api.getAppVersion();
     await this.refresh();
     this.loading = false;
   }
@@ -110,8 +121,16 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     return this.settings?.daemonVersion ? `v${this.settings.daemonVersion}` : 'unknown';
   }
 
+  get appVersionLabel(): string {
+    return this.appVersion ? `v${this.appVersion}` : 'unknown';
+  }
+
   get updateBusy(): boolean {
     return this.updateState === 'checking' || this.updateState === 'applying' || this.updateState === 'restarting';
+  }
+
+  get appUpdateBusy(): boolean {
+    return this.appUpdateState === 'checking';
   }
 
   async checkUpdates(): Promise<void> {
@@ -178,6 +197,31 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     if (this.updatePollTimer !== null) {
       window.clearInterval(this.updatePollTimer);
       this.updatePollTimer = null;
+    }
+  }
+
+  // ─── Tray-app updates ───────────────────────────────────────────────────
+
+  // Check-only: a found version raises the shell's install banner (Rust emits
+  // 'app-update-available'). Install itself is the banner's job — no inline
+  // "Update now" here (a mid-work restart would kill a half-typed entry).
+  async checkAppUpdates(): Promise<void> {
+    if (this.appUpdateBusy) return;
+    this.appUpdateState = 'checking';
+    this.appUpdateLabel = 'Checking for app updates…';
+    try {
+      const version = await this.api.checkAppUpdate();
+      if (version) {
+        this.appUpdateVersion = version;
+        this.appUpdateState = 'available';
+        this.appUpdateLabel = `v${version} ready — install from the banner above`;
+      } else {
+        this.appUpdateState = 'done';
+        this.appUpdateLabel = `Up to date (v${this.appVersion})`;
+      }
+    } catch {
+      this.appUpdateState = 'error';
+      this.appUpdateLabel = 'Update check failed';
     }
   }
 

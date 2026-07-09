@@ -179,27 +179,6 @@
         <div class="toggle" [class.on]="autoStartWithOs" (click)="toggleAutostart()"></div>
       </div>
     </div>
-    <div class="opt-row">
-      <div class="left">
-        <span class="name">Version <span class="version-tag">{{ daemonVersionLabel }}</span></span>
-        <span class="hint" [ngClass]="{'update-error': updateState === 'error'}">
-          {{ updateLabel || 'Background tracker · updates itself twice a day' }}
-        </span>
-      </div>
-      <div class="right">
-        <button class="btn small"
-                *ngIf="updateState !== 'available'"
-                [disabled]="updateBusy || !daemonReachable"
-                (click)="checkUpdates()">
-          {{ updateBusy ? 'Working...' : 'Check updates' }}
-        </button>
-        <button class="btn small primary"
-                *ngIf="updateState === 'available'"
-                (click)="applyUpdate()">
-          Update now
-        </button>
-      </div>
-    </div>
   </div>
 
   <ng-container *ngIf="!loading && settings">
@@ -266,4 +245,54 @@
       </div>
     </div>
   </ng-container>
+
+  <!-- Versions & updates — last section. Rendered without settings so the App
+       check works even while the daemon is down (Tauri updater, not a daemon
+       call); the daemon row degrades to "unknown" + disabled button. -->
+  <div class="settings-section" *ngIf="!loading">
+    <h3>Updates <span class="sub">component versions · both self-update in the background</span></h3>
+
+    <!-- Daemon: npm self-update, inline "Update now". -->
+    <div class="opt-row">
+      <div class="left">
+        <span class="name">Daemon <span class="version-tag">{{ daemonVersionLabel }}</span></span>
+        <span class="hint" [ngClass]="{'update-error': updateState === 'error'}">
+          {{ updateLabel || 'Background tracker · updates itself twice a day' }}
+        </span>
+      </div>
+      <div class="right">
+        <button class="btn small"
+                *ngIf="updateState !== 'available'"
+                [disabled]="updateBusy || !daemonReachable"
+                (click)="checkUpdates()">
+          {{ updateBusy ? 'Working...' : 'Check updates' }}
+        </button>
+        <button class="btn small primary"
+                *ngIf="updateState === 'available'"
+                (click)="applyUpdate()">
+          Update now
+        </button>
+      </div>
+    </div>
+
+    <!-- Tray app: Tauri updater; install is the banner's job (no inline apply). -->
+    <div class="opt-row">
+      <div class="left">
+        <span class="name">App <span class="version-tag">{{ appVersionLabel }}</span></span>
+        <span class="hint" [ngClass]="{'update-error': appUpdateState === 'error'}">
+          {{ appUpdateLabel
+             || (appUpdateVersion
+                  ? 'v' + appUpdateVersion + ' ready — install from the banner above'
+                  : 'Desktop tray · updates itself, restart to apply') }}
+        </span>
+      </div>
+      <div class="right">
+        <button class="btn small"
+                [disabled]="appUpdateBusy"
+                (click)="checkAppUpdates()">
+          {{ appUpdateBusy ? 'Working...' : 'Check updates' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </div>

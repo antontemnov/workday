@@ -111,4 +111,10 @@ export abstract class WorkdayApiService {
   // Daemon updates — check npm registry / install + restart the daemon.
   abstract checkDaemonUpdate(): Promise<ApiResponse<UpdateCheckResponse>>;
   abstract applyDaemonUpdate(): Promise<ApiResponse<UpdateApplyResponse>>;
+
+  // Tray-app self-update (Tauri updater, not daemon HTTP). getAppVersion reads
+  // the bundled version; checkAppUpdate returns the found version (null = up to
+  // date) and raises the install banner as a side effect. Install is banner-only.
+  abstract getAppVersion(): Promise<string>;
+  abstract checkAppUpdate(): Promise<string | null>;
 }
