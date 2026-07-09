@@ -60,7 +60,8 @@
 // state shrinks it to zero width so the header doesn't jump.
 .lp-mini {
   order: 1;
-  position: relative;                    // disc on the line-box centre reads level with LOGGED
+  position: relative;
+  top: -1px;                             // centre the disc on the visible LOGGED caps (uppercase sits above the line-box centre)
   width: 0;
   height: 20px;
   border-radius: 999px;
