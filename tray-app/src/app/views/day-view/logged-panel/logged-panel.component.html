@@ -2,7 +2,6 @@
   <div class="lp-head" (click)="toggleCollapsed($event)">
     <span class="label">Logged</span>
     <button class="lp-mini"
-            *ngIf="isViewingToday"
             (click)="onMiniClick($event)"
             [disabled]="actionPending"
             aria-label="Log time"><svg class="mini-glyph" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4" /></svg><span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
@@ -15,7 +14,7 @@
            [class.edit-lock]="editingId !== null"
            [style.--w-name]="colName + 'px'"
            [style.--w-type]="colType + 'px'">
-        <div class="ghost-row" *ngIf="isViewingToday" (click)="logRequested.emit()">
+        <div class="ghost-row" (click)="logRequested.emit()">
           <span class="g-plus">＋</span><span>Log time…</span>
           <span class="g-sugg" *ngIf="suggestedCount > 0">
             <span class="sdot"></span>{{ suggestedCount }} suggested

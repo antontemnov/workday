@@ -35,7 +35,6 @@ type TrackingAction = 'pause' | 'resume';
 })
 export class SessionCardComponent {
   @Input({ required: true }) session!: SessionDetail;
-  @Input() isViewingToday = true;
   @Input() actionPending = false;
   @Input() speedPills: readonly SpeedPillOption[] = [];
 
@@ -94,7 +93,6 @@ export class SessionCardComponent {
   // status badge stands alone.
   get trackingAction(): TrackingAction | null {
     const s = this.session;
-    if (!this.isViewingToday) return null;
     if (s.paused) {
       return (s.pauseSource ?? '').toLowerCase() === 'manual' ? 'resume' : null;
     }
@@ -162,7 +160,7 @@ export class SessionCardComponent {
   // ─── Actions ───────────────────────────────────────────────────────────
 
   onSpeedClick(level: SensitivityLevel): void {
-    if (this.isManualPaused || this.actionPending || !this.isViewingToday) return;
+    if (this.isManualPaused || this.actionPending) return;
     if (level === this.session.sensitivity) return;
     this.pillSelected.emit({ session: this.session, pill: level });
   }
@@ -187,12 +185,11 @@ export class SessionCardComponent {
   // not in the daily log yet (activity-gated), so the daemon would answer
   // "Session not found" — the chip stays disabled until activation.
   get canAddTime(): boolean {
-    return this.isViewingToday && !!this.session.task && !!this.session.activatedAt;
+    return !!this.session.task && !!this.session.activatedAt;
   }
 
   get timeChipTitle(): string {
     if (this.canAddTime) return 'Click to add manual time';
-    if (!this.isViewingToday) return '';
     if (!this.session.task) return 'No task — use Log to add time';
     return 'Pending — add time becomes available once the session starts';
   }

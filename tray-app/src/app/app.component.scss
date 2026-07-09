@@ -72,22 +72,17 @@
     background: transparent;
   }
 
-  // S3 soft highlight — navigable days (saved data) get a faint fill chip +
-  // readable letter, and become clickable.
-  &.nav {
-    cursor: pointer;
-    .wd-letter { color: #9399b2; background: rgba(147, 153, 178, 0.10); }
-    &:hover .wd-letter { color: #cdd6f4; background: rgba(147, 153, 178, 0.18); }
+  // Worked days (saved data) — faint fill chip + readable letter.
+  // Display-only: the full history lives on the Timesheets tab.
+  &.worked .wd-letter {
+    color: #9399b2;
+    background: rgba(147, 153, 178, 0.10);
   }
 
-  // Active (viewed) day — just a brighter letter, no chip / outline. Pure
-  // minimalism: today is marked by the dot alone.
-  &.active .wd-letter {
+  // Today — bright letter + small amber dot under it.
+  &.today .wd-letter {
     color: #cdd6f4;
-    background: transparent;
   }
-
-  // Today — small amber dot under the letter, regardless of the viewed day.
   &.today .wd-dot {
     background: #f9e2af;
   }

@@ -12,8 +12,27 @@
       (act)="onTrackingClick()" />
   </div>
 
-  <!-- 2 · Metrics: time · git · mode picker (Pause/Resume now lives in the badge) -->
+  <!-- 2 · Metrics: git · mode picker · time (right edge — time is always right) -->
   <div class="metrics">
+    <span class="chip git" [title]="session.evidence.filesChanged + ' files changed'">
+      <svg class="mi" viewBox="0 0 14 14" aria-hidden="true">
+        <circle cx="7" cy="7" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"></circle>
+        <path d="M0.7 7h2M11.3 7h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+      </svg>
+      <span class="commits">{{ session.evidence.commits }}</span>
+      <span class="sep"></span>
+      <span class="added">+{{ session.evidence.linesAdded }}</span>
+      <span class="removed">−{{ session.evidence.linesRemoved }}</span>
+    </span>
+
+    <!-- Mode picker — collapses the old scale row onto this line -->
+    <app-mode-dropdown
+      [options]="speedPills"
+      [value]="session.sensitivity"
+      [disabled]="isManualPaused || actionPending"
+      (selected)="onSpeedClick($event)"
+      (openChange)="menuOpen = $event" />
+
     <span class="time-anchor">
       <button class="chip time"
               (click)="onTimeClick()"
@@ -47,25 +66,6 @@
         </div>
       </div>
     </span>
-    <span class="chip git" [title]="session.evidence.filesChanged + ' files changed'">
-      <svg class="mi" viewBox="0 0 14 14" aria-hidden="true">
-        <circle cx="7" cy="7" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"></circle>
-        <path d="M0.7 7h2M11.3 7h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
-      </svg>
-      <span class="commits">{{ session.evidence.commits }}</span>
-      <span class="sep"></span>
-      <span class="added">+{{ session.evidence.linesAdded }}</span>
-      <span class="removed">−{{ session.evidence.linesRemoved }}</span>
-    </span>
-
-    <!-- Mode picker — collapses the old scale row onto this line -->
-    <app-mode-dropdown
-      [options]="speedPills"
-      [value]="session.sensitivity"
-      [disabled]="isManualPaused || actionPending || !isViewingToday"
-      (selected)="onSpeedClick($event)"
-      (openChange)="menuOpen = $event" />
-
   </div>
 
   <!-- Stamina = bottom edge: length + colour encode the level; hover shows a tip -->

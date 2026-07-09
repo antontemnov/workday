@@ -37,7 +37,6 @@ export class DayViewComponent implements OnChanges {
   @Input() data: TodayResponse | null = null;
   @Input() loading = false;
   @Input() error: string | null = null;
-  @Input() isViewingToday = true;
   @Input() dateLabel = '';
   @Input() actionPending = false;
   @Input() daemonUserStopped = false;
@@ -49,7 +48,6 @@ export class DayViewComponent implements OnChanges {
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
-  @Output() goTodayRequested = new EventEmitter<void>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();
@@ -135,30 +133,6 @@ export class DayViewComponent implements OnChanges {
     return this.loggedMs + this.liveDiffMinutes * 60_000;
   }
 
-  get totalPauseMs(): number {
-    if (!this.data) return 0;
-    if (typeof this.data.downtimeMs === 'number') return this.data.downtimeMs;
-    return this.computeIdleFromIntervals();
-  }
-
-  private computeIdleFromIntervals(): number {
-    const intervals = this.data?.activeIntervals;
-    if (!intervals || intervals.length === 0) return 0;
-    const sorted = intervals
-      .map(iv => ({ from: new Date(iv.from).getTime(), to: new Date(iv.to).getTime() }))
-      .sort((a, b) => a.from - b.from);
-    const merged: Array<{ from: number; to: number }> = [{ ...sorted[0] }];
-    for (let i = 1; i < sorted.length; i++) {
-      const last = merged[merged.length - 1];
-      const curr = sorted[i];
-      if (curr.from <= last.to) last.to = Math.max(last.to, curr.to);
-      else merged.push({ ...curr });
-    }
-    const span = merged[merged.length - 1].to - merged[0].from;
-    const work = merged.reduce((sum, iv) => sum + (iv.to - iv.from), 0);
-    return span - work;
-  }
-
   // ─── Formatters ───────────────────────────────────────────────────────
 
   formatDurationHm(ms: number): string {
@@ -232,7 +206,7 @@ export class DayViewComponent implements OnChanges {
   overlayBottom = 0;
 
   openCloud(): void {
-    if (!this.isViewingToday || this.actionPending) return;
+    if (this.actionPending) return;
     this.overlayBottom = this.panelHeight() + 6;
     this.cloudOpen = true;
   }

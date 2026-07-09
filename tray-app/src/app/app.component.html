@@ -7,15 +7,10 @@
          [title]="dayWeekdayLabel + ' · ' + data.dayType">
       <span class="weekday-cell"
             *ngFor="let c of weekdayNav; trackBy: trackByWeekday"
-            [class.active]="c.active"
             [class.today]="c.isToday"
-            [class.nav]="c.navigable && !c.active"
-            [attr.role]="c.navigable && !c.active ? 'button' : null"
-            [attr.tabindex]="c.navigable && !c.active ? 0 : null"
-            [attr.aria-current]="c.active ? 'date' : null"
-            (click)="selectWeekday(c)"
-            (keydown.enter)="selectWeekday(c)"
-            [title]="weekdayTitle(c)">
+            [class.worked]="c.worked && !c.isToday"
+            [attr.aria-current]="c.isToday ? 'date' : null"
+            [title]="c.full">
         <span class="wd-letter">{{ c.letter }}</span>
         <span class="wd-dot"></span>
       </span>
@@ -71,7 +66,6 @@
       [data]="data"
       [loading]="loading"
       [error]="error"
-      [isViewingToday]="isViewingToday"
       [dateLabel]="formattedDate"
       [actionPending]="actionPending"
       [daemonUserStopped]="daemonUserStopped"
@@ -81,7 +75,6 @@
       [freshEntryId]="freshEntryId"
       (pillSelected)="onPillSelected($event)"
       (addTimeSubmitted)="onAddTime($event)"
-      (goTodayRequested)="goToday()"
       (logSubmitted)="submitLog($event)"
       (batchSubmitted)="submitLogBatch($event)"
       (entryEditSubmitted)="submitEntryEdit($event)"

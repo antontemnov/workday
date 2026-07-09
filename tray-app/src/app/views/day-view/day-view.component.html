@@ -1,10 +1,9 @@
 <!-- Loading -->
 <div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
 
-<!-- Daemon offline (only on "today" view). No Start button here: the
-     watchdog brings a crashed daemon back on its own; a deliberate stop is
-     reverted from Settings. -->
-<div class="start-screen" *ngIf="error && !loading && isViewingToday">
+<!-- Daemon offline. No Start button here: the watchdog brings a crashed
+     daemon back on its own; a deliberate stop is reverted from Settings. -->
+<div class="start-screen" *ngIf="error && !loading">
   <div class="daemon-state" [class.stopped]="daemonUserStopped">
     {{ daemonUserStopped ? 'Daemon stopped' : 'Daemon unreachable' }}
   </div>
@@ -13,20 +12,12 @@
   </div>
 </div>
 
-<!-- No data for past day -->
-<div class="status-msg empty-day" *ngIf="error && !loading && !isViewingToday">
-  No data for this day
-</div>
-
 <!-- Content (scrolls; the dock below stays pinned) -->
 <div class="content" *ngIf="data && !error">
   <!-- Day block: date · Day total (the only day-level aggregate) -->
   <section class="day-block">
     <div class="day-line">
-      <h1 class="day-date"
-          [class.past]="!isViewingToday"
-          (click)="goTodayRequested.emit()"
-          [title]="isViewingToday ? '' : 'Back to today'">{{ dateLabel }}</h1>
+      <h1 class="day-date">{{ dateLabel }}</h1>
       <span class="day-total"
             *ngIf="dayTotalMs > 0"
             [class.flash]="dayFlash"
@@ -38,17 +29,12 @@
   <section class="tracked" *ngIf="hasSessions">
     <h2 class="tracked-head">
       Tracked
-      <ng-container *ngIf="totalPauseMs > 0">
-        <span class="idle-sep"></span>
-        <span class="idle-in"><span class="v">{{ formatDurationHm(totalPauseMs) }}</span> idle</span>
-      </ng-container>
       <span class="sum">{{ formatDurationHm(trackedTotalMs) }}</span>
     </h2>
 
     <app-session-card
       *ngFor="let s of openSessions"
       [session]="s"
-      [isViewingToday]="isViewingToday"
       [actionPending]="actionPending"
       [speedPills]="sensitivityPills"
       (pillSelected)="pillSelected.emit($event)"
@@ -81,10 +67,9 @@
 
 <!-- Pinned Logged panel — collapses by header click; ghost-row opens the cloud -->
 <app-logged-panel
-  *ngIf="data && !error && (isViewingToday || manualEntries.length > 0)"
+  *ngIf="data && !error"
   [entries]="manualEntries"
   [issueSummaries]="issueSummaries"
-  [isViewingToday]="isViewingToday"
   [actionPending]="actionPending"
   [activityTypes]="activityTypes"
   [favorites]="favorites"
@@ -96,10 +81,10 @@
   (favoriteAdded)="favoriteAddSubmitted.emit($event)"
   (liveDiffChanged)="onLiveDiff($event)" />
 
-<!-- Log cloud overlay (today only) -->
+<!-- Log cloud overlay -->
 <div class="cloud-backdrop" [class.open]="cloudOpen" (click)="closeCloud()"></div>
 <app-log-cloud
-  *ngIf="isViewingToday && data && !error"
+  *ngIf="data && !error"
   [open]="cloudOpen"
   [favorites]="favorites"
   [suggestions]="suggestions"

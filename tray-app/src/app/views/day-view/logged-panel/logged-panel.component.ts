@@ -56,7 +56,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input({ required: true }) entries: readonly ManualEntry[] = [];
   // Task key → ticket summary, for the name column. Absent key → placeholder.
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
-  @Input() isViewingToday = true;
   @Input() actionPending = false;
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() favorites: readonly Favorite[] = [];
@@ -131,7 +130,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     // freshEntryId as a firstChange; ignore it, or the last row re-opens its
     // draft stepper every time the user returns to the Day view.
     if (changes['freshEntryId'] && !changes['freshEntryId'].firstChange
-        && this.freshEntryId && this.isViewingToday) {
+        && this.freshEntryId) {
       this.freeze(); // a new pick supersedes any still-open draft
       // Draft window (mauve stepper) is an expanded-panel affordance only. A
       // pick into a collapsed panel fixes the time immediately and lands as a
@@ -179,15 +178,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // ─── Pop-in for new static rows (batch / instant) ──────────────────────
 
   // Fly in genuinely-new rows once, staggered. Silently adopt on the first
-  // sight, on a past-day view, and on a wholesale set swap (date navigation) —
-  // only incremental additions to today's log pop.
+  // sight and on a wholesale set swap — only incremental additions to
+  // today's log pop.
   private detectPops(): void {
     const ids = this.entries.map(e => e.id);
     const curSet = new Set(ids);
     const prev = this.seenIds;
     const anyVanished = [...prev].some(id => !curSet.has(id));
     const anyNew = ids.some(id => !prev.has(id));
-    const swap = this.firstEntriesChange || !this.isViewingToday
+    const swap = this.firstEntriesChange
       || (anyVanished && anyNew && prev.size > 0);
     this.firstEntriesChange = false;
     this.seenIds = curSet;
@@ -296,12 +295,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   canEdit(e: ManualEntry): boolean {
-    return this.isViewingToday && !e.sourceSessionId && !this.isFresh(e);
+    return !e.sourceSessionId && !this.isFresh(e);
   }
 
   // Session-born entries can't be edited, but deleting them is legal.
   canDelete(e: ManualEntry): boolean {
-    return this.isViewingToday && !this.isFresh(e);
+    return !this.isFresh(e);
   }
 
   // ─── Context menu (right-click) ─────────────────────────────────────────

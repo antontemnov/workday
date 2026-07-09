@@ -148,9 +148,11 @@
 }
 
 // ─── Add-time popover (anchored to the time chip) ────────────────────────────
+// The chip sits at the row's right edge — time is right-aligned app-wide.
 .time-anchor {
   position: relative;
   display: inline-flex;
+  margin-left: auto;
 }
 
 // Chip reads "armed" while its popover is open.
@@ -168,7 +170,7 @@
 .add-pop {
   position: absolute;
   top: calc(100% + 8px); // opens downward from the chip
-  left: 0;
+  right: 0;              // chip lives at the right edge — hang left
   z-index: 50;
   width: 236px;
   box-sizing: border-box;
@@ -183,7 +185,7 @@
     content: '';
     position: absolute;
     top: -5px;
-    left: 18px;
+    right: 18px;
     width: 9px;
     height: 9px;
     background: #1e1e2e;

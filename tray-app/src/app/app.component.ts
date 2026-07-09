@@ -30,15 +30,14 @@ interface SensitivityPillOption {
   readonly title: string;
 }
 
-// One weekday cell resolved to a concrete date in the currently-viewed week.
+// One weekday cell resolved to a concrete date in the current week.
 interface WeekdayNavCell {
   readonly letter: string;
   readonly full: string;
   readonly weekend: boolean;
-  readonly date: string;       // YYYY-MM-DD for this weekday in the viewed week
+  readonly date: string;       // YYYY-MM-DD for this weekday in the current week
   readonly isToday: boolean;
-  readonly active: boolean;    // the currently-viewed date
-  readonly navigable: boolean; // has saved data (or is today) → clickable
+  readonly worked: boolean;    // has saved data → highlighted (display-only)
 }
 
 @Component({
@@ -102,8 +101,7 @@ export class AppComponent implements OnInit, OnDestroy {
   appUpdateInstalling = false;
   private unlistenAppUpdate: UnlistenFn | null = null;
 
-  // Day navigation: null = viewing today, otherwise a YYYY-MM-DD past date.
-  viewedDate: string | null = null;
+  // Worked-day dots on the week strip (display-only, no navigation).
   private todayDate: string | null = null;
   private availableDates: string[] = [];
   private navLoaded = false;
@@ -135,7 +133,7 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.refreshFavorites();
     this.refresh();
     this.pollTimer = setInterval(() => {
-      if (this.isViewingToday) this.refresh();
+      this.refresh();
       // Activity types load once on startup; if that first fetch failed
       // (daemon not ready at launch / transient version mismatch) the
       // composer is stuck on "Other" until app restart. Retry until loaded.
@@ -241,10 +239,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async refresh(): Promise<void> {
-    const date = this.viewedDate;
-    const res = date
-      ? await this.api.getDay(date)
-      : await this.api.getToday();
+    const res = await this.api.getToday();
     if (res.ok && res.data) {
       this.data = res.data;
       this.error = null;
@@ -258,7 +253,7 @@ export class AppComponent implements OnInit, OnDestroy {
         void this.refreshActivityTypes();
         void this.refreshFavorites();
       }
-      if (!date) this.todayDate = res.data.date;
+      this.todayDate = res.data.date;
       if (res.data.sessions.length > 0 && !this.availableDates.includes(res.data.date)) {
         this.availableDates = [res.data.date, ...this.availableDates].sort().reverse();
       }
@@ -270,7 +265,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.daemonWasReachable = false;
     }
     this.loading = false;
-    if (this.isViewingToday) this.syncTrayStatus();
+    this.syncTrayStatus();
   }
 
   // ─── View switching ─────────────────────────────────────────────────────
@@ -292,16 +287,16 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  // ─── Header: weekday grid + date display ───────────────────────────────
+  // ─── Header: weekday strip + date display ──────────────────────────────
 
   /** Full weekday label — shown as the tooltip on the day-grid cell. */
   get dayWeekdayLabel(): string {
-    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
+    const date = this.data?.date ?? this.computeLocalToday();
     const [y, m, d] = date.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'long' });
   }
 
-  /** Week-day grid (Mon..Sun). Highlights the active cell for the currently viewed date. */
+  /** Week-day grid (Mon..Sun). */
   readonly weekdayCells: ReadonlyArray<{ letter: string; full: string; idx: number; weekend: boolean }> = [
     { letter: 'M', full: 'Monday',    idx: 1, weekend: false },
     { letter: 'T', full: 'Tuesday',   idx: 2, weekend: false },
@@ -312,31 +307,19 @@ export class AppComponent implements OnInit, OnDestroy {
     { letter: 'S', full: 'Sunday',    idx: 0, weekend: true  },
   ];
 
-  get activeWeekdayCell(): number {
-    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
-    const [y, m, d] = date.split('-').map(Number);
-    const dow = new Date(y, m - 1, d).getDay();
-    return this.weekdayCells.findIndex(c => c.idx === dow);
-  }
-
-  /** Mon..Sun of the viewed week, each cell resolved to a date + navigability.
-   *  A cell is navigable when it has saved data (or is today) → click jumps to it. */
+  /** Mon..Sun of the current week — worked days highlighted, display-only. */
   get weekdayNav(): readonly WeekdayNavCell[] {
-    const ref = this.viewedDate ?? this.todayDate ?? this.computeLocalToday();
-    const monday = this.mondayOf(ref);
     const today = this.todayDate ?? this.computeLocalToday();
-    const activeIdx = this.activeWeekdayCell;
+    const monday = this.mondayOf(today);
     return this.weekdayCells.map((c, i) => {
       const date = this.addDays(monday, i);
-      const isToday = date === today;
       return {
         letter: c.letter,
         full: c.full,
         weekend: c.weekend,
         date,
-        isToday,
-        active: i === activeIdx,
-        navigable: isToday || this.availableDates.includes(date),
+        isToday: date === today,
+        worked: this.availableDates.includes(date),
       };
     });
   }
@@ -345,47 +328,12 @@ export class AppComponent implements OnInit, OnDestroy {
     return c.date;
   }
 
-  /** Per-cell tooltip — full weekday, plus the date (and "today") when navigable. */
-  weekdayTitle(c: WeekdayNavCell): string {
-    if (!c.navigable || c.active) return c.full;
-    const [y, m, d] = c.date.split('-').map(Number);
-    const label = new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    return `${c.full} · ${label}${c.isToday ? ' (today)' : ''}`;
-  }
-
-  /** Weekday cell click → switch to Day view for that date. No-op without data. */
-  selectWeekday(c: WeekdayNavCell): void {
-    if (!c.navigable) return;
-    this.activeView = 'day';
-    if (c.active) return;           // already this day — just surfaced the Day view
-    if (c.isToday) this.goToday();
-    else this.navigateTo(c.date);
-  }
-
   get formattedDate(): string {
-    const date = this.viewedDate ?? this.data?.date ?? this.computeLocalToday();
+    const date = this.data?.date ?? this.computeLocalToday();
     const [y, m, d] = date.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
-  }
-
-  get isViewingToday(): boolean {
-    return this.viewedDate === null;
-  }
-
-  goToday(): void {
-    if (this.isViewingToday) return;
-    this.navigateTo(null);
-    void this.refreshAvailableDates();
-  }
-
-  private navigateTo(date: string | null): void {
-    this.viewedDate = date;
-    this.data = null;
-    this.error = null;
-    this.loading = true;
-    void this.refresh();
   }
 
   private computeLocalToday(): string {
