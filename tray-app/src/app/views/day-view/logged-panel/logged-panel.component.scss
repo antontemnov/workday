@@ -454,6 +454,22 @@
   }
 }
 
+// Breakdown expand/collapse — the panel's own grid-rows mechanic: rows stay
+// in the DOM, the wrapper animates 0fr→1fr both ways; the rows fade and
+// slide in a touch behind the height.
+.trk-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &.open { grid-template-rows: 1fr; }
+}
+
+.trk-clip {
+  overflow: hidden;
+  min-height: 0;
+}
+
 // Per-session breakdown — one line per session on a fixed grid, so the
 // columns align across rows: repo│branch (one identity pairing, like the
 // session-card head) | interval | reason | duration. Repo and branch
@@ -467,7 +483,14 @@
   font-size: 10.5px;
   color: #565973;
   font-variant-numeric: tabular-nums;
-  animation: sub-in 0.16s ease;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.16s ease, transform 0.2s ease;
+
+  .trk-detail.open & {
+    opacity: 1;
+    transform: none;
+  }
 
   // repo + branch — the session-card identity pairing, scaled down and
   // quieter: bold-ish repo, dim branch right behind it.
@@ -514,10 +537,6 @@
     color: #8b90ab;
     white-space: nowrap;
   }
-}
-
-@keyframes sub-in {
-  0% { opacity: 0; transform: translateY(-2px); }
 }
 
 // Invisible resize grips — cursor-only bands at the column boundaries,

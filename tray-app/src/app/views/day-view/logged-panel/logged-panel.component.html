@@ -112,17 +112,19 @@
               <span class="c-dur">{{ formatDurationHm(g.totalMs) }}</span>
               <span class="c-full" *ngIf="summaryOfTask(g.task)" aria-hidden="true">{{ summaryOfTask(g.task) }}</span>
             </div>
-            <ng-container *ngIf="isExpanded(g)">
-              <div class="trk-sub" *ngFor="let s of g.sessions">
-                <span class="s-id">
-                  <span class="s-repo" [title]="repoName(s.repo)">{{ repoName(s.repo) }}</span>
-                  <span class="s-branch" [title]="s.branch">{{ s.branch }}</span>
-                </span>
-                <span class="s-int">{{ sessionInterval(s) }}</span>
-                <span class="s-reason" [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
-                <span class="s-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
+            <div class="trk-detail" [class.open]="isExpanded(g)">
+              <div class="trk-clip">
+                <div class="trk-sub" *ngFor="let s of g.sessions">
+                  <span class="s-id">
+                    <span class="s-repo" [title]="repoName(s.repo)">{{ repoName(s.repo) }}</span>
+                    <span class="s-branch" [title]="s.branch">{{ s.branch }}</span>
+                  </span>
+                  <span class="s-int">{{ sessionInterval(s) }}</span>
+                  <span class="s-reason" [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
+                  <span class="s-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
+                </div>
               </div>
-            </ng-container>
+            </div>
           </ng-container>
 
           <!-- Invisible resize grips (cursor-only), positioned from --w-name/--w-type -->
