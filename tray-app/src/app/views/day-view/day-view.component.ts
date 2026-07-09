@@ -90,8 +90,10 @@ export class DayViewComponent implements OnChanges {
 
   // ─── Sessions ─────────────────────────────────────────────────────────
 
+  // Only sessions with real activity: pending candidates and watching cards
+  // (activatedAt == null) stay hidden — the radar placeholder covers them.
   get openSessions(): SessionDetail[] {
-    return this.data?.sessions.filter(s => !s.closedBy) ?? [];
+    return this.data?.sessions.filter(s => !s.closedBy && s.activatedAt !== null) ?? [];
   }
 
   // Closed sessions render as read-only rows inside the Logged panel.

@@ -118,6 +118,56 @@
   }
 }
 
+// ─── Waiting radar ──────────────────────────────────────────────────────────
+// Shown while no session has activity yet — tracking is connected and quiet.
+// Reappears whenever the last active session closes.
+.waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 42px 0 34px;
+}
+
+.radar {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 14px;
+  // The only motion here: a slow, barely visible fade — no moving parts.
+  animation: radar-breathe 4s ease-in-out infinite;
+
+  .ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(148, 226, 213, 0.28);
+  }
+
+  svg {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@keyframes radar-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.waiting-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #bac2de;
+  margin-bottom: 4px;
+}
+
+.waiting-sub {
+  font-size: 11px;
+  color: #6c7086;
+}
+
 // ─── Log cloud backdrop ──────────────────────────────────────────────────────
 // Dims the day view while the cloud is open; sits under the cloud overlay.
 .cloud-backdrop {

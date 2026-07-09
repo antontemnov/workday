@@ -26,10 +26,10 @@
   </section>
 
   <!-- Tracked: live cards only — closed sessions live in the Logged panel. -->
-  <section class="tracked" *ngIf="openSessions.length > 0">
+  <section class="tracked">
     <h2 class="tracked-head">
       Tracked
-      <span class="sum">{{ formatDurationHm(trackedTotalMs) }}</span>
+      <span class="sum" *ngIf="openSessions.length > 0">{{ formatDurationHm(trackedTotalMs) }}</span>
     </h2>
 
     <app-session-card
@@ -39,12 +39,21 @@
       [speedPills]="sensitivityPills"
       (pillSelected)="pillSelected.emit($event)"
       (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
-  </section>
 
-  <!-- No sessions -->
-  <div class="status-msg" *ngIf="data.sessions.length === 0 && manualEntries.length === 0">
-    No sessions yet. Waiting for git activity...
-  </div>
+    <!-- Radar: nothing has activity yet (or everything closed) — calm waiting state -->
+    <div class="waiting" *ngIf="openSessions.length === 0">
+      <div class="radar">
+        <span class="ring"></span>
+        <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
+          <circle cx="11" cy="11" r="3.2" fill="#94e2d5"/>
+          <path d="M11 3.5 a7.5 7.5 0 0 1 7.5 7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
+          <path d="M11 18.5 a7.5 7.5 0 0 1 -7.5 -7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
+        </svg>
+      </div>
+      <div class="waiting-title">Tracking is on</div>
+      <div class="waiting-sub">any activity in your repos starts tracking</div>
+    </div>
+  </section>
 </div>
 
 <!-- Pinned Logged panel — collapses by header click; ghost-row opens the cloud -->
