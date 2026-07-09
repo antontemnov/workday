@@ -60,8 +60,7 @@
 // state shrinks it to zero width so the header doesn't jump.
 .lp-mini {
   order: 1;
-  position: relative;
-  top: 1px;                              // optical: the visible LOGGED glyphs sit below the line-box centre
+  position: relative;                    // disc on the line-box centre reads level with LOGGED
   width: 0;
   height: 20px;
   border-radius: 999px;
