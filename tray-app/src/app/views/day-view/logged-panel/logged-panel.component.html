@@ -4,7 +4,8 @@
     <button class="lp-mini"
             *ngIf="isViewingToday"
             (click)="onMiniClick($event)"
-            [disabled]="actionPending"><span class="mini-glyph">＋</span><span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
+            [disabled]="actionPending"
+            aria-label="Log time"><span class="mini-glyph" aria-hidden="true"></span><span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
     <span class="sum" [class.flash]="sumFlash">{{ formatDurationHm(sumMs) }}</span>
   </div>
 
