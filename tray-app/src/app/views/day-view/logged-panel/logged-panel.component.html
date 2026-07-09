@@ -114,8 +114,10 @@
             </div>
             <ng-container *ngIf="isExpanded(g)">
               <div class="trk-sub" *ngFor="let s of g.sessions">
-                <span class="s-repo" [title]="repoName(s.repo)">{{ repoName(s.repo) }}</span>
-                <span class="s-branch" [title]="s.branch">{{ s.branch }}</span>
+                <span class="s-id">
+                  <span class="s-repo" [title]="repoName(s.repo)">{{ repoName(s.repo) }}</span>
+                  <span class="s-branch" [title]="s.branch">{{ s.branch }}</span>
+                </span>
                 <span class="s-int">{{ sessionInterval(s) }}</span>
                 <span class="s-reason" [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
                 <span class="s-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>

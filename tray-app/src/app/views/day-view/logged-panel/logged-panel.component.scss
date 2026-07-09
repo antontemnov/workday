@@ -455,11 +455,12 @@
 }
 
 // Per-session breakdown — one line per session on a fixed grid, so the
-// columns align across rows: repo | branch (elastic) | interval | reason |
-// duration. Repo and branch truncate with an ellipsis when they don't fit.
+// columns align across rows: repo│branch (one identity pairing, like the
+// session-card head) | interval | reason | duration. Repo and branch
+// truncate with an ellipsis when they don't fit.
 .trk-sub {
   display: grid;
-  grid-template-columns: 108px minmax(44px, 1fr) max-content 52px 48px;
+  grid-template-columns: minmax(44px, 1fr) max-content 56px 48px;
   align-items: center;
   gap: 12px;
   padding: 3px 8px 3px 26px;
@@ -468,12 +469,23 @@
   font-variant-numeric: tabular-nums;
   animation: sub-in 0.16s ease;
 
-  .s-repo {
+  // repo + branch — the session-card identity pairing, scaled down and
+  // quieter: bold-ish repo, dim branch right behind it.
+  .s-id {
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .s-repo {
+    flex-shrink: 0;
+    max-width: 60%;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    color: #8b90ab;
+    font-weight: 600;
+    color: #a6adc8;
   }
 
   .s-branch {
@@ -490,9 +502,11 @@
   }
 
   .s-reason {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
     text-align: right;
     font-size: 10px;
-    font-style: italic;
   }
 
   .s-dur {
