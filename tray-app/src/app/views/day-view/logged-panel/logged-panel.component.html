@@ -5,7 +5,7 @@
             *ngIf="isViewingToday"
             (click)="onMiniClick($event)"
             [disabled]="actionPending"
-            aria-label="Log time"><span class="mini-glyph" aria-hidden="true"></span><span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
+            aria-label="Log time"><svg class="mini-glyph" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4" /></svg><span class="mb" *ngIf="suggestedCount > 0">{{ suggestedCount }}</span></button>
     <span class="sum" [class.flash]="sumFlash">{{ formatDurationHm(sumMs) }}</span>
   </div>
 

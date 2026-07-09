@@ -90,23 +90,21 @@
   &:disabled { opacity: 0.4; cursor: default; }
   &:hover:not(:disabled) { background: #b894ee; box-shadow: 0 0 6px 0 rgba(148, 226, 213, 0.22); }
 
-  // Plus drawn from two CSS bars, not a text glyph — geometric centring that
-  // doesn't depend on font metrics or the WebView engine (a ＋ glyph rendered
-  // off-centre in WebView2).
+  // Plus as an inline SVG — vector stroke stays sharp and symmetric on any
+  // fractional Windows DPI in WebView2, where CSS bars positioned by
+  // translate(-50%) rounded unevenly (one arm thicker). No font metrics either.
   .mini-glyph {
     position: relative;
     z-index: 3;
-    width: 9px;
-    height: 9px;
+    width: 12px;
+    height: 12px;
 
-    &::before, &::after {
-      content: '';
-      position: absolute;
-      background: #1e1e2e;
-      border-radius: 1px;
+    path {
+      fill: none;
+      stroke: #1e1e2e;
+      stroke-width: 1.6;
+      stroke-linecap: round;
     }
-    &::before { top: 50%; left: 0; right: 0; height: 2px; transform: translateY(-50%); }   // horizontal bar
-    &::after  { left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); }   // vertical bar
   }
 
   // Plasma core — neon blobs clipped to the disc by the pseudo's own radius (no
