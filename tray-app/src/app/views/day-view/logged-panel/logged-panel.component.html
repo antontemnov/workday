@@ -93,6 +93,36 @@
             </ng-template>
           </div>
 
+          <!-- Tracked rows — closed sessions folded per ticket. Read-only:
+               grey key is the origin marker, repo sits in the desc slot;
+               dblclick / right-click toggles the per-session breakdown. -->
+          <ng-container *ngFor="let g of trackedGroups; trackBy: trackByGroup">
+            <div class="log-row trk"
+                 title="Tracked time — dblclick for sessions"
+                 (dblclick)="toggleTracked(g)"
+                 (contextmenu)="onTrackedContextMenu(g, $event)">
+              <span class="c-key">{{ g.task }}</span>
+              <span class="c-nm">
+                <span class="txt">{{ summaryOfTask(g.task) }}</span>
+              </span>
+              <span class="c-type">
+                <span class="pill tone-dev">{{ activityLabel(developmentActivity) }}</span>
+              </span>
+              <span class="c-ds"></span>
+              <span class="c-dur">{{ formatDurationHm(g.totalMs) }}</span>
+              <span class="c-full" *ngIf="summaryOfTask(g.task)" aria-hidden="true">{{ summaryOfTask(g.task) }}</span>
+            </div>
+            <ng-container *ngIf="isExpanded(g)">
+              <div class="trk-sub" *ngFor="let s of g.sessions">
+                <span class="s-repo" [title]="repoName(s.repo)">{{ repoName(s.repo) }}</span>
+                <span class="s-branch" [title]="s.branch">{{ s.branch }}</span>
+                <span class="s-int">{{ sessionInterval(s) }}</span>
+                <span class="s-reason" [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
+                <span class="s-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
+              </div>
+            </ng-container>
+          </ng-container>
+
           <!-- Invisible resize grips (cursor-only), positioned from --w-name/--w-type -->
           <div class="col-grip grip-name" (pointerdown)="onGripDown('name', $event)"></div>
           <div class="col-grip grip-type" (pointerdown)="onGripDown('type', $event)"></div>

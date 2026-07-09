@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
-  normalizeFavName,
+  SessionDetail, normalizeFavName,
 } from '../../../models/workday.models';
 import { activityLabel, activityTone } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
@@ -34,6 +34,15 @@ const COL_STORAGE_KEY = 'workday.logged.cols';
 // live outside the instance or it resets to expanded on each return.
 const COLLAPSE_STORAGE_KEY = 'workday.logged.collapsed';
 
+// One ticket's closed tracked time — a read-only Logged row. The only rest-
+// state marker of its origin is the grey key chip; the per-session breakdown
+// (repo + interval · branch · reason) expands on demand.
+interface TrackedGroup {
+  readonly task: string;                      // ticket key, or '—' for taskless
+  readonly totalMs: number;
+  readonly sessions: readonly SessionDetail[];
+}
+
 /**
  * Pinned Logged panel — the manual-entries band docked to the bottom of the
  * day view. Collapses by header click (grid-rows animation); the collapsed
@@ -54,6 +63,8 @@ const COLLAPSE_STORAGE_KEY = 'workday.logged.collapsed';
 })
 export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input({ required: true }) entries: readonly ManualEntry[] = [];
+  // Closed tracked sessions — rendered as read-only rows below the manual ones.
+  @Input() closedSessions: readonly SessionDetail[] = [];
   // Task key → ticket summary, for the name column. Absent key → placeholder.
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
   @Input() actionPending = false;
@@ -234,9 +245,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return [...this.entries].filter(e => !this.hiddenIds.has(e.id)).reverse();
   }
 
-  // Σ shown in the header — server data plus every local override.
+  // Σ shown in the header — manual entries (with local overrides) plus the
+  // closed tracked time: everything below is fixed, so the Σ covers it all.
   get sumMs(): number {
-    return this.displayedSumMinutes * 60_000;
+    return this.displayedSumMinutes * 60_000 + this.closedTotalMs;
+  }
+
+  get closedTotalMs(): number {
+    return this.closedSessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
   }
 
   // A deleted row leaves the Σ the moment the undo window opens.
@@ -597,6 +613,97 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private descWidth(): number {
     const el = this.host.nativeElement.querySelector<HTMLElement>('.log-row:not(.editing) .c-ds');
     return el ? el.getBoundingClientRect().width : 160;
+  }
+
+  // ─── Tracked rows (closed sessions) ─────────────────────────────────────
+  // One row per ticket, summed — mirrors how the daemon folds sessions into a
+  // single Tempo worklog. Read-only: no edit, no delete; dblclick / context
+  // menu toggles the per-session breakdown instead.
+
+  // Task keys whose breakdown is open. Survives refreshes within the instance;
+  // resets on tab switch (panel re-creation) — that matches a "peek" gesture.
+  expandedTasks = new Set<string>();
+
+  get trackedGroups(): readonly TrackedGroup[] {
+    const byTask = new Map<string, SessionDetail[]>();
+    for (const s of this.closedSessions) {
+      const key = s.task ?? '—';
+      const list = byTask.get(key);
+      if (list) list.push(s);
+      else byTask.set(key, [s]);
+    }
+    const groups: TrackedGroup[] = [];
+    for (const [task, sessions] of byTask) {
+      sessions.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+      groups.push({
+        task,
+        totalMs: sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0),
+        sessions,
+      });
+    }
+    // Day chronology: by the first session's start.
+    return groups.sort((a, b) => a.sessions[0].startedAt.localeCompare(b.sessions[0].startedAt));
+  }
+
+  isExpanded(g: TrackedGroup): boolean {
+    return this.expandedTasks.has(g.task);
+  }
+
+  toggleTracked(g: TrackedGroup): void {
+    if (this.expandedTasks.has(g.task)) this.expandedTasks.delete(g.task);
+    else this.expandedTasks.add(g.task);
+  }
+
+  onTrackedContextMenu(g: TrackedGroup, ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    openCtxMenu(ev.clientX, ev.clientY, [{
+      icon: '⤢',
+      label: this.isExpanded(g) ? 'Hide sessions' : 'Show sessions',
+      action: () => this.toggleTracked(g),
+    }]);
+  }
+
+  repoName(repoPath: string): string {
+    return repoPath.split('/').pop() ?? repoPath;
+  }
+
+  sessionInterval(s: SessionDetail): string {
+    return `${this.formatHm(s.startedAt)} → ${this.formatHm(s.lastSeenAt)}`;
+  }
+
+  private formatHm(iso: string): string {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  // Close-reason text for the breakdown rows — quiet italic, short labels.
+  closedReasonLabel(closedBy: string | null): string {
+    switch ((closedBy ?? '').toLowerCase()) {
+      case 'checkout_other_task': return 'switched';
+      case 'day_boundary':        return 'day end';
+      case 'daemon_stop':
+      case 'stopped':             return 'stopped';
+      case 'daemon_crash':        return 'crashed';
+      case 'manual_stop':
+      case 'manual':
+      case 'user':                return 'manual';
+      case 'budget_exhausted':    return 'budget';
+      case 'idle_timeout':        return 'idle';
+      case 'superseded':          return 'switched';
+      default:                    return (closedBy ?? '—').toLowerCase();
+    }
+  }
+
+  summaryOfTask(task: string): string {
+    return this.issueSummaries[task] ?? '';
+  }
+
+  // Tracked time is always Development — that's how it pushes to Tempo.
+  readonly developmentActivity = DEVELOPMENT_ACTIVITY;
+
+  trackByGroup(_i: number, g: TrackedGroup): string {
+    return g.task;
   }
 
   // ─── Formatters ────────────────────────────────────────────────────────

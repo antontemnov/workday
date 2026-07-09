@@ -184,6 +184,29 @@ export class MockWorkdayApiService extends WorkdayApiService {
           totalPauseDurationMs: 0,
         },
         {
+          // Second closed session on the same ticket, different repo — the
+          // Logged tracked row folds them: Σ time, "2 repos", 2 breakdown rows.
+          id: 'c4',
+          repo: 'D:/work/api-backend',
+          task: 'ATL-6712',
+          branch: 'ATL-6712-fix-leak-backend-endpoints',
+          state: 'active',
+          startedAt: this.iso(13, 5),
+          activatedAt: this.iso(13, 8),
+          lastSeenAt: this.iso(13, 50),
+          paused: false,
+          pauseSource: null,
+          effectiveDurationMs: 45 * 60_000,
+          score: 0.5,
+          normalizedScore: 0.5,
+          isLeader: false,
+          sensitivity: SensitivityLevel.Normal,
+          closedBy: 'checkout_other_task',
+          evidence: { commits: 1, reflogEvents: 2, linesAdded: 40, linesRemoved: 9, filesChanged: 3 },
+          pauseCount: 0,
+          totalPauseDurationMs: 0,
+        },
+        {
           id: 'c2',
           repo: 'D:/work/api-backend',
           task: 'APP-1019',
@@ -243,6 +266,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       issueSummaries: {
         'ATL-6781': 'Daily standup and team sync',
         'ATL-6712': 'Existing Transaction: add missing reactive behaviour for Policy Dictionaries',
+        'APP-1019': 'Pricing engine: clean up dead code branches',
         // APP-1024 left unmapped → its Logged row shows the "name not cached" placeholder
       },
     };

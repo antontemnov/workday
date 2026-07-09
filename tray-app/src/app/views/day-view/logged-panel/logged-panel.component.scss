@@ -441,6 +441,71 @@
   opacity: 1;
 }
 
+// ─── Tracked rows — closed sessions, read-only ────────────────────────────
+// Same grid and brightness as the manual rows; the only rest-state origin
+// marker is the grey key chip. The desc slot stays empty — repo and interval
+// live in the breakdown.
+.log-row.trk {
+  cursor: default;
+
+  .c-key {
+    color: #9399b2;
+    background: rgba(147, 153, 178, 0.10);
+  }
+}
+
+// Per-session breakdown — one line per session on a fixed grid, so the
+// columns align across rows: repo | branch (elastic) | interval | reason |
+// duration. Repo and branch truncate with an ellipsis when they don't fit.
+.trk-sub {
+  display: grid;
+  grid-template-columns: 108px minmax(44px, 1fr) max-content 52px 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 8px 3px 26px;
+  font-size: 10.5px;
+  color: #565973;
+  font-variant-numeric: tabular-nums;
+  animation: sub-in 0.16s ease;
+
+  .s-repo {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #8b90ab;
+  }
+
+  .s-branch {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #6d7291;
+  }
+
+  .s-int {
+    color: #6d7291;
+    white-space: nowrap;
+  }
+
+  .s-reason {
+    text-align: right;
+    font-size: 10px;
+    font-style: italic;
+  }
+
+  .s-dur {
+    text-align: right;
+    color: #8b90ab;
+    white-space: nowrap;
+  }
+}
+
+@keyframes sub-in {
+  0% { opacity: 0; transform: translateY(-2px); }
+}
+
 // Invisible resize grips — cursor-only bands at the column boundaries,
 // positioned purely from the width vars. Hidden entirely while editing.
 .col-grip {

@@ -90,14 +90,11 @@ export class DayViewComponent implements OnChanges {
 
   // ─── Sessions ─────────────────────────────────────────────────────────
 
-  // Tracked never collapses; only history folds. Earlier (closed) starts
-  // collapsed.
-  earlierOpen = false;
-
   get openSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => !s.closedBy) ?? [];
   }
 
+  // Closed sessions render as read-only rows inside the Logged panel.
   get closedSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => s.closedBy) ?? [];
   }
@@ -107,26 +104,21 @@ export class DayViewComponent implements OnChanges {
     return this.openSessions.some(s => !s.paused && s.state === 'active');
   }
 
-  // Σ on the earlier fold — sum of closed effective durations.
   get closedTotalMs(): number {
     return this.closedSessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
   }
 
-  get hasSessions(): boolean {
-    return (this.data?.sessions.length ?? 0) > 0;
-  }
-
   // ─── Stats ────────────────────────────────────────────────────────────
 
-  // Σ on the Tracked header — live + closed effective durations.
+  // Σ on the Tracked header — live sessions only; closed time counts as Logged.
   get trackedTotalMs(): number {
-    return this.data?.sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0) ?? 0;
+    return this.openSessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
   }
 
   // Day total = Tracked Σ + Logged Σ — "what goes to Tempo today". Includes
   // the panel's live diff so a spinning draft stepper moves it immediately.
   get dayTotalMs(): number {
-    return this.trackedTotalMs + this.displayedLoggedMs;
+    return this.trackedTotalMs + this.displayedLoggedMs + this.closedTotalMs;
   }
 
   private get displayedLoggedMs(): number {
@@ -141,38 +133,6 @@ export class DayViewComponent implements OnChanges {
     const minutes = totalMinutes % 60;
     if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
     return `${minutes}m`;
-  }
-
-  private formatHm(iso: string): string {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-
-  repoName(repoPath: string): string {
-    return repoPath.split('/').pop() ?? repoPath;
-  }
-
-  sessionInterval(s: SessionDetail): string {
-    return `${this.formatHm(s.startedAt)} → ${this.formatHm(s.lastSeenAt)}`;
-  }
-
-  // Reason text for the earlier (closed) rows — quiet italic, no badge.
-  // Labels stay short so the row layout doesn't break at tray width.
-  closedReasonLabel(closedBy: string | null): string {
-    switch ((closedBy ?? '').toLowerCase()) {
-      case 'checkout_other_task': return 'Switched';
-      case 'day_boundary':        return 'Day end';
-      case 'daemon_stop':
-      case 'stopped':             return 'Stopped';
-      case 'daemon_crash':        return 'Crashed';
-      case 'manual_stop':
-      case 'manual':
-      case 'user':                return 'Manual';
-      case 'budget_exhausted':    return 'Budget';
-      case 'idle_timeout':        return 'Idle';
-      case 'superseded':          return 'Switched';
-      default:                    return closedBy ?? '—';
-    }
   }
 
   // ─── Manual entries (LOGGED band) ──────────────────────────────────────

@@ -25,8 +25,8 @@
     </div>
   </section>
 
-  <!-- Tracked: live cards + earlier (closed) fold. Never collapses itself. -->
-  <section class="tracked" *ngIf="hasSessions">
+  <!-- Tracked: live cards only — closed sessions live in the Logged panel. -->
+  <section class="tracked" *ngIf="openSessions.length > 0">
     <h2 class="tracked-head">
       Tracked
       <span class="sum">{{ formatDurationHm(trackedTotalMs) }}</span>
@@ -39,24 +39,6 @@
       [speedPills]="sensitivityPills"
       (pillSelected)="pillSelected.emit($event)"
       (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
-
-    <div class="earlier-toggle"
-         [class.open]="earlierOpen"
-         *ngIf="closedSessions.length > 0"
-         (click)="earlierOpen = !earlierOpen">
-      <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
-      <span>{{ closedSessions.length }} earlier {{ closedSessions.length === 1 ? 'session' : 'sessions' }}</span>
-      <span class="e-sum">{{ formatDurationHm(closedTotalMs) }}</span>
-    </div>
-    <div class="earlier-body" *ngIf="earlierOpen">
-      <div class="e-row" *ngFor="let s of closedSessions">
-        <span class="e-task" [class.none]="!s.task">{{ s.task ?? '—' }}</span>
-        <span class="e-repo">{{ repoName(s.repo) }}</span>
-        <span class="e-int">{{ sessionInterval(s) }}</span>
-        <span class="e-reason" [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
-        <span class="e-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
-      </div>
-    </div>
   </section>
 
   <!-- No sessions -->
@@ -69,6 +51,7 @@
 <app-logged-panel
   *ngIf="data && !error"
   [entries]="manualEntries"
+  [closedSessions]="closedSessions"
   [issueSummaries]="issueSummaries"
   [actionPending]="actionPending"
   [activityTypes]="activityTypes"
