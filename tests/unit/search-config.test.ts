@@ -40,6 +40,7 @@ function makeConfig(): AppConfig {
       projectKeys: ['ATL'],
       knownProjects: [{ key: 'ATL', name: 'Core Platform', id: '10001' }, { key: 'WEB', name: 'Web Portal', id: '10002' }],
     },
+    activities: { values: ['Development', 'CodeReview'] },
   };
 }
 
@@ -63,6 +64,17 @@ test('a patch without search leaves it intact', () => {
   const merged = buildPatchedConfig(makeConfig(), { boundaryHour: 6 });
   assert.deepEqual(merged.search.projectKeys, ['ATL']);
   assert.equal(merged.search.knownProjects.length, 2);
+});
+
+test('patching activities.values replaces the allow-list', () => {
+  const merged = buildPatchedConfig(makeConfig(), { activities: { values: ['Other'] } });
+  assert.deepEqual(merged.activities.values, ['Other']);
+  assert.deepEqual(merged.search.projectKeys, ['ATL']); // search untouched
+});
+
+test('a patch without activities leaves the allow-list intact', () => {
+  const merged = buildPatchedConfig(makeConfig(), { boundaryHour: 6 });
+  assert.deepEqual(merged.activities.values, ['Development', 'CodeReview']);
 });
 
 console.log('');

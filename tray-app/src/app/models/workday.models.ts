@@ -130,8 +130,10 @@ export interface ActivityType {
 
 export interface ActivityTypesResponse {
   readonly key: string;                          // '_Activity_'
-  readonly activities: readonly ActivityType[];
+  readonly activities: readonly ActivityType[];  // full catalog — labels resolve from here
   readonly fromCache: boolean;                   // false when served from fallback
+  // Configured picker allow-list; absent (older daemon) or empty = all.
+  readonly allowed?: readonly string[];
 }
 
 // Mirrors the daemon's DEFAULT_ACTIVITY — the only activity that may carry
@@ -239,6 +241,12 @@ export interface JiraProjectsResponse {
 export interface SearchConfig {
   readonly projectKeys: readonly string[];
   readonly knownProjects: readonly ProjectRef[];
+}
+
+// Allow-list of Tempo _Activity_ values the UI pickers offer. Empty = all.
+// The catalog itself comes from /api/activity-types (work-attributes cache).
+export interface ActivityScopeConfig {
+  readonly values: readonly string[];
 }
 
 // ─── Timesheets (month view) ─────────────────────────────────────────────
@@ -427,6 +435,8 @@ export interface SettingsConfigSubset {
   // Optional so an older daemon (no search config) doesn't break the type;
   // the UI reads it defensively (projectKeys ?? []).
   readonly search?: SearchConfig;
+  // Optional for the same reason — absent on older daemons.
+  readonly activities?: ActivityScopeConfig;
 }
 
 // GET /api/settings returns config + metadata about which secrets are set

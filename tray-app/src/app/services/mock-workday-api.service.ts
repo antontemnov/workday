@@ -64,6 +64,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     { key: 'OPS', name: 'Infra & Ops', id: '10003' },
     { key: 'WEB', name: 'Web Portal', id: '10004' },
   ];
+  private mockActivityValues: string[] = ['Development', 'CodeReview', 'Other'];
 
   // Mutable so add/edit manual entries feel real in mock mode.
   private mockManualEntries: ManualEntry[] = [
@@ -352,7 +353,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
   }
 
   async getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
-    return { ok: true, data: { key: '_Activity_', fromCache: true, activities: MOCK_ACTIVITIES } };
+    return { ok: true, data: { key: '_Activity_', fromCache: true, activities: MOCK_ACTIVITIES, allowed: [...this.mockActivityValues] } };
+  }
+
+  async refreshActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
+    await delay(500); // simulates the Tempo work-attributes round-trip
+    return this.getActivityTypes();
   }
 
   async addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>> {
@@ -558,6 +564,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           taskPattern: this.mockTaskPattern,
           sensitivity: { default: this.mockSensitivity },
           search: { projectKeys: [...this.mockProjectKeys], knownProjects: this.mockKnownProjects.map(p => ({ ...p })) },
+          activities: { values: [...this.mockActivityValues] },
         },
         secretsMeta: { jiraConfigured: this.mockJiraConfigured, tempoConfigured: this.mockTempoConfigured },
       },
@@ -573,6 +580,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       if (patch.config.taskPattern !== undefined) this.mockTaskPattern = patch.config.taskPattern;
       if (patch.config.sensitivity?.default) this.mockSensitivity = patch.config.sensitivity.default;
       if (patch.config.search?.projectKeys) this.mockProjectKeys = [...patch.config.search.projectKeys];
+      if (patch.config.activities?.values) this.mockActivityValues = [...patch.config.activities.values];
     }
     if (patch.secrets) {
       if (patch.secrets.jiraToken !== undefined) {

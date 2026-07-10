@@ -276,6 +276,9 @@ export class HttpServer {
       if (method === 'GET' && path === '/api/activity-types') {
         return this.sendJson(res, 200, await this.handleActivityTypes());
       }
+      if (method === 'POST' && path === '/api/activity-types/refresh') {
+        return this.sendJson(res, 200, await this.handleRefreshActivityTypes());
+      }
       if (method === 'GET' && path === '/api/day') {
         const date = url.searchParams.get('date');
         return this.sendJson(res, 200, this.handleDay(date));
@@ -814,10 +817,33 @@ export class HttpServer {
     try {
       const secrets = loadSecrets();
       const data = await resolveActivityTypes(secrets);
-      return { ok: true, data };
+      return { ok: true, data: this.withActivityScope(data) };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  // Force-refetch the _Activity_ catalog from Tempo (mirror of the Jira
+  // projects refresh). A silent fallback would masquerade as a refresh, so a
+  // missing token / failed fetch is an explicit error here.
+  private async handleRefreshActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
+    const secrets = tryLoadSecrets();
+    if (!secrets || !secrets.Tempo_Token || secrets.Tempo_Token.trim().length === 0) {
+      return { ok: false, error: 'Tempo API is not configured — set the token in Settings' };
+    }
+    try {
+      const data = await resolveActivityTypes(secrets, true);
+      if (!data.fromCache) {
+        return { ok: false, error: 'Could not fetch activity types from Tempo — check the token' };
+      }
+      return { ok: true, data: this.withActivityScope(data) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private withActivityScope(data: ActivityTypesResponse): ActivityTypesResponse {
+    return { ...data, allowed: [...this.deps.config.activities.values] };
   }
 
   // ─── Settings ────────────────────────────────────────────────────
@@ -848,6 +874,7 @@ export class HttpServer {
             projectKeys: [...c.search.projectKeys],
             knownProjects: c.search.knownProjects.map(p => ({ ...p })),
           },
+          activities: { values: [...c.activities.values] },
         },
         secretsMeta: { jiraConfigured, tempoConfigured },
         daemonVersion: this.deps.getVersion(),

@@ -221,6 +221,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.get<ActivityTypesResponse>('/api/activity-types');
   }
 
+  override async refreshActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
+    return this.post<ActivityTypesResponse>('/api/activity-types/refresh');
+  }
+
   override async addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>> {
     return this.post<ManualEntryResponse>('/api/manual-entry', { ...input });
   }

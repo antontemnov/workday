@@ -17,7 +17,7 @@ import {
   TempoScheduleResponse,
   normalizeFavName,
 } from '../../models/workday.models';
-import { activityLabel, activityTone } from '../day-view/activity.util';
+import { activityLabel, activityOptions, activityTone } from '../day-view/activity.util';
 import { loadLoggedCols } from '../day-view/logged-cols.util';
 import { DurationInputDirective } from '../day-view/duration-field/duration-input.directive';
 import { openCtxMenu } from '../day-view/ctx-menu.util';
@@ -124,11 +124,15 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
 
   // ─── Logged-row editing state (keys are 'date|entryId') ────────────────
   activityTypes: readonly ActivityType[] = [];
+  activityAllowed: readonly string[] = [];
   favorites: readonly Favorite[] = [];
   editingKey: string | null = null;
   editMinutes = 30;
   editActivity = '';
   editDescription = '';
+  // The row's activity at morph-open — stays in the options even when the
+  // allow-list has since scoped it out.
+  private editPinnedActivity = '';
   savingEdit = false;
   editError: string | null = null;
 
@@ -444,7 +448,10 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
 
   private async loadEditMeta(): Promise<void> {
     const [types, favs] = await Promise.all([this.api.getActivityTypes(), this.api.getFavorites()]);
-    if (types.ok && types.data) this.activityTypes = types.data.activities;
+    if (types.ok && types.data) {
+      this.activityTypes = types.data.activities;
+      this.activityAllowed = types.data.allowed ?? [];
+    }
     if (favs.ok && favs.data) this.favorites = favs.data.favorites;
   }
 
@@ -479,6 +486,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.editingKey = key;
     this.editMinutes = t.minutes ?? 30;
     this.editActivity = t.activity;
+    this.editPinnedActivity = t.activity;
     this.editDescription = t.description;
     // Focus once the form morph renders.
     setTimeout(() => {
@@ -676,7 +684,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   readonly developmentActivity = DEVELOPMENT_ACTIVITY;
 
   get activityOptions(): readonly ActivityType[] {
-    return this.activityTypes.length ? this.activityTypes : [{ value: 'Other', name: 'Other' }];
+    return activityOptions(this.activityTypes, this.activityAllowed, this.editPinnedActivity);
   }
 
   trackByLogged(_i: number, t: DrawerRow): string {

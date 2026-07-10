@@ -9,6 +9,7 @@ import {
   ManualEntryInput, normalizeFavName,
 } from '../../../models/workday.models';
 import { WorkdayApiService } from '../../../services/workday-api.service';
+import { activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 import { openCtxMenu } from '../ctx-menu.util';
 
@@ -77,6 +78,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @Input() favorites: readonly Favorite[] = [];
   @Input() suggestions: readonly SuggestedLog[] = [];
   @Input() activityTypes: readonly ActivityType[] = [];
+  @Input() activityAllowed: readonly string[] = [];
   @Input() actionPending = false;
 
   @Output() chipPicked = new EventEmitter<ChipPick>();
@@ -592,7 +594,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   // ─── Misc ──────────────────────────────────────────────────────────────
 
   get activityOptions(): readonly ActivityType[] {
-    return this.activityTypes.length ? this.activityTypes : [{ value: 'Other', name: 'Other' }];
+    return activityOptions(this.activityTypes, this.activityAllowed);
   }
 
   chipDelay(i: number): string {

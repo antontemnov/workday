@@ -365,19 +365,98 @@
 }
 
 // ─── Search-scope project picker ─────────────────────────────────────────
-.repo-pill .proj-key {
-  font-weight: 600;
-  letter-spacing: 0.3px;
+// ─── Scope dropdowns (Projects · Activities) — twin collapsible pickers ───
+
+.scope-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: start;   // one open box must not stretch the closed twin
 }
 
-.proj-picker {
-  margin-top: 8px;
+.scope-box {
+  border: 1px solid #313244;
+  border-radius: 6px;
+  background: rgba(17, 17, 27, 0.4);
+  overflow: hidden;
+}
+
+.scope-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover { background: rgba(137, 180, 250, 0.05); }
+
+  .scope-title {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: #cdd6f4;
+  }
+
+  .scope-sum {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 10px;
+    color: #89b4fa;
+
+    &.all { color: #6c7086; font-style: italic; }
+  }
+
+  // Chevron as inline SVG — text glyphs round unevenly on fractional DPI.
+  .chev {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    transition: transform 0.18s ease;
+
+    path {
+      fill: none;
+      stroke: #6c7086;
+      stroke-width: 1.3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  }
+}
+
+.scope-box.open .scope-head .chev { transform: rotate(90deg); }
+
+.scope-body {
+  padding: 0 8px 8px;
+}
+
+.scope-tools {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+
+  .btn.small { flex-shrink: 0; white-space: nowrap; }
+}
+
+.scope-hint {
+  margin-top: 6px;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: #565973;
 }
 
 .input-mini.proj-search {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  width: auto;
   text-align: left;
-  margin-bottom: 6px;
 }
 
 .proj-list {
@@ -421,6 +500,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  // Activities have no key column — the name is the primary label.
+  .proj-name.act-name { color: #bac2de; }
 }
 
 .proj-empty {

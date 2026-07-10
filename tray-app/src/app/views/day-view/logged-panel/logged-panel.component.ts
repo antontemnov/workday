@@ -5,7 +5,7 @@ import {
   ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
   SessionDetail, normalizeFavName,
 } from '../../../models/workday.models';
-import { activityLabel, activityTone } from '../activity.util';
+import { activityLabel, activityOptions, activityTone } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 import { openCtxMenu } from '../ctx-menu.util';
 import { LOGGED_COL_MIN, loadLoggedCols, persistLoggedCols } from '../logged-cols.util';
@@ -65,6 +65,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
   @Input() actionPending = false;
   @Input() activityTypes: readonly ActivityType[] = [];
+  @Input() activityAllowed: readonly string[] = [];
   @Input() favorites: readonly Favorite[] = [];
   @Input() suggestedCount = 0;
   // Id of the entry created by the latest cloud pick — opens the draft window.
@@ -104,6 +105,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   editMinutes = 30;
   editActivity = '';
   editDescription = '';
+  // The entry's activity at morph-open — kept in the options even when the
+  // allow-list has since scoped it out, so the select can show it.
+  private editPinnedActivity = '';
 
   // Optimistic overrides: patch sent, refresh not yet confirming it.
   private pending = new Map<string, ManualEntryPatch>();
@@ -491,6 +495,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.editingId = e.id;
     this.editMinutes = this.displayMinutes(e);
     this.editActivity = this.displayActivity(e);
+    this.editPinnedActivity = this.editActivity;
     this.editDescription = this.displayDescription(e);
     // Focus once the form morph renders.
     setTimeout(() => {
@@ -715,7 +720,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   get activityOptions(): readonly ActivityType[] {
-    return this.activityTypes.length ? this.activityTypes : [{ value: 'Other', name: 'Other' }];
+    return activityOptions(this.activityTypes, this.activityAllowed, this.editPinnedActivity);
   }
 
   trackByEntry(_i: number, e: ManualEntry): string {

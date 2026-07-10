@@ -24,6 +24,7 @@ export interface AppConfig {
   readonly defaultBranch?: string;
   readonly defaultBranches?: Readonly<Record<string, string>>;
   readonly search: SearchConfig;
+  readonly activities: ActivityScopeConfig;
 }
 
 // ─── Jira search ─────────────────────────────────────────────────────────
@@ -42,6 +43,16 @@ export interface SearchConfig {
   // Cached Jira project catalog for the settings picker — refreshed on demand,
   // never consulted by the search itself.
   readonly knownProjects: readonly ProjectRef[];
+}
+
+// ─── Activity scope ──────────────────────────────────────────────────────
+
+export interface ActivityScopeConfig {
+  // Allow-list of Tempo _Activity_ values the UI pickers (log / edit forms)
+  // offer. Empty → all known activities. Display of existing entries and the
+  // push are never filtered — this scopes what can be picked, not what exists.
+  // The catalog itself lives in the work-attributes cache, not here.
+  readonly values: readonly string[];
 }
 
 // ─── Sensitivity ────────────────────────────────────────────────────────
@@ -650,8 +661,11 @@ export interface ActivityType {
 
 export interface ActivityTypesResponse {
   readonly key: string;                          // '_Activity_'
-  readonly activities: readonly ActivityType[];
+  readonly activities: readonly ActivityType[];  // full catalog — labels resolve from here
   readonly fromCache: boolean;                   // false when served from fallback
+  // Configured allow-list (activities.values) for the UI pickers. Absent or
+  // empty = no scope, everything is offered.
+  readonly allowed?: readonly string[];
 }
 
 export interface DaysResponse {
@@ -775,6 +789,7 @@ export interface SettingsConfigSubset {
     readonly perRepo: Readonly<Record<string, SensitivityLevel>>;
   };
   readonly search: SearchConfig;
+  readonly activities: ActivityScopeConfig;
 }
 
 export interface SettingsResponse {

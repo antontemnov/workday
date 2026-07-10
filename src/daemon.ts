@@ -14,7 +14,7 @@ import { UpdateManager } from './core/update-manager.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { AppConfig, Secrets, SearchConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
+import type { ActivityScopeConfig, AppConfig, Secrets, SearchConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
@@ -195,6 +195,13 @@ export class Daemon {
       (this.config as { search: SearchConfig }).search = {
         projectKeys: patch.search.projectKeys ?? cur.projectKeys,
         knownProjects: patch.search.knownProjects ?? cur.knownProjects,
+      };
+    }
+
+    // activities — allow-list only; the catalog lives in the work-attributes cache.
+    if (patch.activities?.values) {
+      (this.config as { activities: ActivityScopeConfig }).activities = {
+        values: [...patch.activities.values],
       };
     }
   }

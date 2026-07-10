@@ -80,7 +80,9 @@ export class AppComponent implements OnInit, OnDestroy {
   endDayModalOpen = false;
 
   // Tempo _Activity_ options for the manual-entry composer; prefetched once.
+  // activityTypes = full catalog (labels), activityAllowed = picker allow-list.
   activityTypes: readonly ActivityType[] = [];
+  activityAllowed: readonly string[] = [];
 
   // Log-cloud chip templates. loaded distinguishes "fetch never landed" from
   // a legitimately empty list — the poll retries only the former; the cache
@@ -227,6 +229,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const res = await this.api.getActivityTypes();
     if (res.ok && res.data) {
       this.activityTypes = res.data.activities;
+      this.activityAllowed = res.data.allowed ?? [];
     }
   }
 
@@ -275,6 +278,9 @@ export class AppComponent implements OnInit, OnDestroy {
     // the fresh id, and returning would replay the draft stepper on the last
     // row. Drop it so the one-shot never outlives the view it targets.
     if (v !== 'day') this.freshEntryId = null;
+    // Returning to the Day view re-pulls the activity scope — the user may
+    // have just changed it in Settings (cheap: served from the daemon cache).
+    if (v === 'day' && this.activeView !== 'day') void this.refreshActivityTypes();
     this.activeView = v;
   }
 

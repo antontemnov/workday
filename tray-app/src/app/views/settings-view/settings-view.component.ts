@@ -2,7 +2,9 @@ import { Component, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, S
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
-import { ProjectRef, SensitivityLevel, SettingsConfigSubset, SettingsResponse } from '../../models/workday.models';
+import {
+  ActivityType, ProjectRef, SensitivityLevel, SettingsConfigSubset, SettingsResponse,
+} from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
 type UpdateState = 'idle' | 'checking' | 'available' | 'applying' | 'restarting' | 'done' | 'error';
@@ -83,6 +85,14 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     this.appVersion = await this.api.getAppVersion();
     await this.refresh();
     this.loading = false;
+    // Activity catalog for the scope picker — cheap, served from the daemon's
+    // work-attributes cache.
+    void this.loadActivityCatalog();
+  }
+
+  private async loadActivityCatalog(): Promise<void> {
+    const res = await this.api.getActivityTypes();
+    if (res.ok && res.data) this.activityCatalog = res.data.activities;
   }
 
   // Self-heal: settings failed to load while the daemon was down — re-pull
@@ -244,10 +254,18 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     this.queue({ taskPattern: value }, 'debounced', 800);
   }
 
-  // ─── Search scope (Jira projects) ──────────────────────────────────────
+  // ─── Scope pickers (Jira projects · Tempo activity types) ──────────────
+  // Twin dropdowns, both closed by default — the summary line is the whole
+  // rest-state footprint.
 
+  projectsOpen = false;
   projectFilter = '';
   projectsRefreshing = false;
+
+  activitiesOpen = false;
+  activityFilter = '';
+  activitiesRefreshing = false;
+  activityCatalog: readonly ActivityType[] = [];
 
   get knownProjects(): readonly ProjectRef[] {
     return this.settings?.config.search?.knownProjects ?? [];
@@ -257,11 +275,8 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     return this.settings?.config.search?.projectKeys ?? [];
   }
 
-  // Selected projects in priority order; a selected key missing from the
-  // catalog still shows (bare ref) so it can be removed.
-  get selectedProjects(): ProjectRef[] {
-    const byKey = new Map(this.knownProjects.map(p => [p.key, p]));
-    return this.selectedProjectKeys.map(k => byKey.get(k) ?? { key: k, name: k, id: '' });
+  get projectsSummary(): string {
+    return this.selectedProjectKeys.join(' · ') || 'all projects';
   }
 
   get filteredProjects(): readonly ProjectRef[] {
@@ -278,10 +293,6 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   toggleProject(key: string): void {
     const cur = this.selectedProjectKeys;
     this.setProjectKeys(cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key]);
-  }
-
-  removeProject(key: string): void {
-    this.setProjectKeys(this.selectedProjectKeys.filter(k => k !== key));
   }
 
   // Persist the selection. Carries the current catalog so the daemon's
@@ -306,6 +317,56 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
       this.scheduleSavedFlash();
     } else {
       this.setIndicator('error', res.error ?? 'Failed to fetch projects');
+    }
+  }
+
+  // ── Activity types — the projects picker's twin ──
+
+  get selectedActivityValues(): readonly string[] {
+    return this.settings?.config.activities?.values ?? [];
+  }
+
+  get activitiesSummary(): string {
+    const values = this.selectedActivityValues;
+    if (values.length === 0) return 'all types';
+    const byValue = new Map(this.activityCatalog.map(a => [a.value, a.name]));
+    return values.map(v => byValue.get(v) ?? v).join(' · ');
+  }
+
+  get filteredActivities(): readonly ActivityType[] {
+    const q = this.activityFilter.trim().toLowerCase();
+    if (!q) return this.activityCatalog;
+    return this.activityCatalog.filter(a =>
+      a.value.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
+  }
+
+  isActivitySelected(value: string): boolean {
+    return this.selectedActivityValues.includes(value);
+  }
+
+  toggleActivity(value: string): void {
+    const cur = this.selectedActivityValues;
+    this.setActivityValues(cur.includes(value) ? cur.filter(v => v !== value) : [...cur, value]);
+  }
+
+  private setActivityValues(values: readonly string[]): void {
+    const activities = { values: [...values] };
+    this.applyLocal(c => ({ ...c, activities }));
+    this.queue({ activities }, 'debounced', 400);
+  }
+
+  async refreshActivities(): Promise<void> {
+    if (this.activitiesRefreshing) return;
+    this.activitiesRefreshing = true;
+    this.setIndicator('saving', 'Fetching activity types…');
+    const res = await this.api.refreshActivityTypes();
+    this.activitiesRefreshing = false;
+    if (res.ok && res.data) {
+      this.activityCatalog = res.data.activities;
+      this.setIndicator('saved', `Fetched ${res.data.activities.length} activity types`);
+      this.scheduleSavedFlash();
+    } else {
+      this.setIndicator('error', res.error ?? 'Failed to fetch activity types');
     }
   }
 
@@ -486,5 +547,6 @@ function mergeConfigPatch(
     ...b,
     sensitivity: b.sensitivity ?? a?.sensitivity,
     search: b.search ?? a?.search,
+    activities: b.activities ?? a?.activities,
   };
 }

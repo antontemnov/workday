@@ -95,53 +95,81 @@
       </div>
     </div>
 
-    <!-- Search scope -->
+    <!-- Scopes: Jira projects the issue search offers · Tempo activity types
+         the log/edit pickers offer. Twin dropdowns — closed = one summary
+         line, open = find + checkbox catalog + its own refresh. -->
     <div class="settings-section">
-      <h3>Search <span class="sub">Jira projects the issue search is limited to</span></h3>
-      <div class="opt-row">
-        <div class="left">
-          <span class="name">Search scope</span>
-          <span class="hint">Only these projects appear in issue search; order = priority. Empty = all projects.</span>
-        </div>
-        <div class="right">
-          <button class="btn small"
-                  [disabled]="projectsRefreshing || !settings.secretsMeta.jiraConfigured"
-                  [title]="settings.secretsMeta.jiraConfigured ? 'Fetch the project list from Jira' : 'Set the Jira token first'"
-                  (click)="refreshProjects()">
-            {{ projectsRefreshing ? 'Fetching…' : 'Refresh from Jira' }}
+      <h3>Scopes <span class="sub">issue search projects · activity types in log forms</span></h3>
+      <div class="scope-grid">
+
+        <div class="scope-box" [class.open]="projectsOpen">
+          <button type="button" class="scope-head" (click)="projectsOpen = !projectsOpen">
+            <span class="scope-title">Projects</span>
+            <span class="scope-sum" [class.all]="!selectedProjectKeys.length">{{ projectsSummary }}</span>
+            <svg class="chev" viewBox="0 0 8 8" aria-hidden="true"><path d="M2.2 1.4 5 4 2.2 6.6" /></svg>
           </button>
+          <div class="scope-body" *ngIf="projectsOpen">
+            <div class="scope-tools">
+              <input class="input-mini proj-search"
+                     type="text"
+                     placeholder="Find spaces…"
+                     [(ngModel)]="projectFilter" />
+              <button class="btn small"
+                      [disabled]="projectsRefreshing || !settings.secretsMeta.jiraConfigured"
+                      [title]="settings.secretsMeta.jiraConfigured ? 'Fetch the project list from Jira' : 'Set the Jira token first'"
+                      (click)="refreshProjects()">
+                {{ projectsRefreshing ? '…' : '⟳ Jira' }}
+              </button>
+            </div>
+            <div class="proj-list" *ngIf="knownProjects.length; else noProjects">
+              <label class="proj-item" *ngFor="let p of filteredProjects" [class.on]="isProjectSelected(p.key)">
+                <input type="checkbox" [checked]="isProjectSelected(p.key)" (change)="toggleProject(p.key)" />
+                <span class="proj-key">{{ p.key }}</span>
+                <span class="proj-name">{{ p.name }}</span>
+              </label>
+              <div class="proj-empty" *ngIf="!filteredProjects.length">No spaces match “{{ projectFilter }}”.</div>
+            </div>
+            <ng-template #noProjects>
+              <div class="proj-empty">No catalog yet — hit “⟳ Jira”.</div>
+            </ng-template>
+            <div class="scope-hint">Issue search is limited to these; order = priority. None = all projects.</div>
+          </div>
         </div>
-      </div>
 
-      <div class="opt-row" *ngIf="selectedProjects.length">
-        <div class="left"><span class="name">Selected</span></div>
-        <div class="right repo-cluster">
-          <span class="repo-pill" *ngFor="let p of selectedProjects" [title]="p.name">
-            <span class="proj-key">{{ p.key }}</span>
-            <span class="x" (click)="removeProject(p.key)" title="Remove">×</span>
-          </span>
+        <div class="scope-box" [class.open]="activitiesOpen">
+          <button type="button" class="scope-head" (click)="activitiesOpen = !activitiesOpen">
+            <span class="scope-title">Activities</span>
+            <span class="scope-sum" [class.all]="!selectedActivityValues.length">{{ activitiesSummary }}</span>
+            <svg class="chev" viewBox="0 0 8 8" aria-hidden="true"><path d="M2.2 1.4 5 4 2.2 6.6" /></svg>
+          </button>
+          <div class="scope-body" *ngIf="activitiesOpen">
+            <div class="scope-tools">
+              <input class="input-mini proj-search"
+                     type="text"
+                     placeholder="Find types…"
+                     [(ngModel)]="activityFilter" />
+              <button class="btn small"
+                      [disabled]="activitiesRefreshing || !settings.secretsMeta.tempoConfigured"
+                      [title]="settings.secretsMeta.tempoConfigured ? 'Fetch the activity types from Tempo' : 'Set the Tempo token first'"
+                      (click)="refreshActivities()">
+                {{ activitiesRefreshing ? '…' : '⟳ Tempo' }}
+              </button>
+            </div>
+            <div class="proj-list" *ngIf="activityCatalog.length; else noActivities">
+              <label class="proj-item" *ngFor="let a of filteredActivities" [class.on]="isActivitySelected(a.value)">
+                <input type="checkbox" [checked]="isActivitySelected(a.value)" (change)="toggleActivity(a.value)" />
+                <span class="proj-name act-name">{{ a.name }}</span>
+              </label>
+              <div class="proj-empty" *ngIf="!filteredActivities.length">No types match “{{ activityFilter }}”.</div>
+            </div>
+            <ng-template #noActivities>
+              <div class="proj-empty">No catalog yet — hit “⟳ Tempo”.</div>
+            </ng-template>
+            <div class="scope-hint">Log & edit forms offer only these. None = all types.</div>
+          </div>
         </div>
-      </div>
 
-      <div class="proj-picker" *ngIf="knownProjects.length; else noProjects">
-        <input class="input-mini wide proj-search"
-               type="text"
-               placeholder="Find spaces…"
-               [(ngModel)]="projectFilter" />
-        <div class="proj-list">
-          <label class="proj-item" *ngFor="let p of filteredProjects" [class.on]="isProjectSelected(p.key)">
-            <input type="checkbox" [checked]="isProjectSelected(p.key)" (change)="toggleProject(p.key)" />
-            <span class="proj-key">{{ p.key }}</span>
-            <span class="proj-name">{{ p.name }}</span>
-          </label>
-          <div class="proj-empty" *ngIf="!filteredProjects.length">No spaces match “{{ projectFilter }}”.</div>
-        </div>
       </div>
-      <ng-template #noProjects>
-        <div class="opt-row">
-          <div class="left"><span class="hint">No catalog yet — click “Refresh from Jira”.</span></div>
-        </div>
-      </ng-template>
     </div>
   </ng-container>
 

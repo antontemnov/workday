@@ -42,6 +42,7 @@ export class DayViewComponent implements OnChanges {
   @Input() daemonUserStopped = false;
   @Input() sensitivityPills: readonly SensitivityPillOption[] = [];
   @Input() activityTypes: readonly ActivityType[] = [];
+  @Input() activityAllowed: readonly string[] = [];
   @Input() favorites: readonly Favorite[] = [];
   // Entry created by the latest log action — the panel opens its draft window.
   @Input() freshEntryId: string | null = null;

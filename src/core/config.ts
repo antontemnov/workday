@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { AppConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef } from './types.js';
+import type { ActivityScopeConfig, AppConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef } from './types.js';
 import { SensitivityLevel } from './types.js';
 import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
@@ -91,6 +91,7 @@ export function validateConfig(config: AppConfig): void {
   }
 
   validateSearchConfig(config.search);
+  validateActivityScopeConfig(config.activities);
 
   if (config.defaultBranch !== undefined && typeof config.defaultBranch !== 'string') {
     throw new Error('config.json: defaultBranch must be a string');
@@ -121,6 +122,15 @@ function validateSearchConfig(search: SearchConfig): void {
     if (typeof p?.key !== 'string' || typeof p?.name !== 'string' || typeof p?.id !== 'string') {
       throw new Error('config.json: search.knownProjects entries must be { key, name, id } strings');
     }
+  }
+}
+
+function validateActivityScopeConfig(activities: ActivityScopeConfig): void {
+  if (!activities || typeof activities !== 'object') {
+    throw new Error('config.json: activities must be an object');
+  }
+  if (!Array.isArray(activities.values) || activities.values.some(v => typeof v !== 'string')) {
+    throw new Error('config.json: activities.values must be an array of strings');
   }
 }
 
@@ -186,6 +196,10 @@ export function loadConfig(): AppConfig {
     knownProjects: rawSearch.knownProjects ?? [],
   };
 
+  // activity scope: empty allow-list = all known activities (legacy behaviour).
+  const rawActivities = (raw.activities ?? {}) as Partial<ActivityScopeConfig>;
+  const activities: ActivityScopeConfig = { values: rawActivities.values ?? [] };
+
   const config = {
     ...raw,
     boundaryHour: raw.boundaryHour ?? 4,
@@ -193,6 +207,7 @@ export function loadConfig(): AppConfig {
     timezone: raw.timezone ?? systemTimezone,
     sensitivity,
     search,
+    activities,
     session: {
       ...rawSession,
       idleCloseHours: rawSession.idleCloseHours ?? DEFAULT_IDLE_CLOSE_HOURS,
@@ -235,6 +250,9 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
     search: {
       projectKeys: patch.search?.projectKeys ?? current.search.projectKeys,
       knownProjects: patch.search?.knownProjects ?? current.search.knownProjects,
+    },
+    activities: {
+      values: patch.activities?.values ?? current.activities.values,
     },
   };
   validateConfig(merged);

@@ -65,6 +65,9 @@ export abstract class WorkdayApiService {
   // tracked day; update/delete take an optional date (YYYY-MM-DD) for past
   // days (timesheets drawer) — omitted = the currently-tracked day.
   abstract getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;
+  // Force-refetch the _Activity_ catalog from Tempo (Settings) — the Jira
+  // projects refresh's twin.
+  abstract refreshActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;
   abstract addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>>;
   abstract updateManualEntry(target: string, patch: ManualEntryPatch, date?: string): Promise<ApiResponse<ManualEntryResponse>>;
   // Session-born entries are deletable too (unlike edit). target = #index or id.

@@ -742,7 +742,28 @@ function handleFavList(): void {
   }
 }
 
-async function handleActivities(): Promise<void> {
+// workday activities [refresh | set <VALUE...>]
+// Lists the Tempo _Activity_ catalog and manages the UI picker allow-list —
+// the projects command's twin (catalog refresh + scope selection).
+async function handleActivities(args: string[]): Promise<void> {
+  const sub = args[0];
+
+  if (sub === 'refresh') {
+    const res = await apiPost<ActivityTypesResponse>('/api/activity-types/refresh');
+    if (!res.ok || !res.data) { console.log(res.error ?? 'Refresh failed.'); return; }
+    console.log(`Fetched ${res.data.activities.length} activity types from Tempo.`);
+    printActivities(res.data);
+    return;
+  }
+
+  if (sub === 'set') {
+    const values = args.slice(1);
+    const res = await apiPost<SettingsResponse>('/api/settings', { config: { activities: { values } } });
+    if (!res.ok || !res.data) { console.log(res.error ?? 'Update failed.'); return; }
+    console.log(`Activity scope set to: ${res.data.config.activities.values.join(', ') || '(none — all types)'}`);
+    return;
+  }
+
   const result = await apiGet<ActivityTypesResponse>('/api/activity-types');
   let data: ActivityTypesResponse;
   if (result.ok && result.data) {
@@ -757,9 +778,15 @@ async function handleActivities(): Promise<void> {
       return;
     }
   }
+  printActivities(data);
+}
+
+function printActivities(data: ActivityTypesResponse): void {
+  const allowed = new Set(data.allowed ?? []);
   console.log(`Activity types (${data.key})${data.fromCache ? '' : '  [fallback — configure Tempo token for the live list]'}:`);
+  if (allowed.size > 0) console.log(`UI picker scope: ${[...allowed].join(', ')}`);
   for (const a of data.activities) {
-    console.log(`  ${a.value.padEnd(30)} ${a.name}`);
+    console.log(`  ${allowed.size > 0 && allowed.has(a.value) ? '✓' : ' '} ${a.value.padEnd(30)} ${a.name}`);
   }
 }
 
@@ -1352,7 +1379,7 @@ async function main(): Promise<void> {
       await handleProjects(args.slice(1));
       break;
     case 'activities':
-      await handleActivities();
+      await handleActivities(args.slice(1));
       break;
     case 'tempo':
       await handleTempo(args.slice(1));
@@ -1409,7 +1436,7 @@ Usage:
   workday fav-list                                     List favorites
   workday jira-search "<query>"                        Live Jira issue search (key + summary)
   workday projects [refresh | set <KEY...>]            Show / refresh / set the search-scope projects
-  workday activities                                   Show Tempo activity types
+  workday activities [refresh | set <VALUE...>]        Show / refresh / scope Tempo activity types
   workday tempo                                        Show report (1st of month → today)
   workday tempo --from DATE --to DATE                  Report for a custom range
   workday tempo --file report.json                     Save report to JSON file
