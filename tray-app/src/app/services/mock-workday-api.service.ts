@@ -374,7 +374,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: this.toEntryResponse(entry) };
   }
 
-  async updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>> {
+  async updateManualEntry(target: string, patch: ManualEntryPatch, _date?: string): Promise<ApiResponse<ManualEntryResponse>> {
     await delay(150);
     const idx = this.mockManualEntries.findIndex(e => e.id === target);
     if (idx < 0) return { ok: false, error: `Manual entry not found: ${target}` };
@@ -391,7 +391,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: this.toEntryResponse(updated) };
   }
 
-  async deleteManualEntry(target: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
+  async deleteManualEntry(target: string, _date?: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
     await delay(150);
     const removed = this.mockManualEntries.find(e => e.id === target);
     if (!removed) return { ok: false, error: `Manual entry not found: ${target}` };
@@ -687,12 +687,12 @@ function buildMockMonth(year: number, month: number, today: string): MonthRespon
           { task: 'ATL-6781', seconds: 4.5 * 3600, kind: 'session', sessionCount: 2 },
           { task: 'ATL-6442', seconds: 2.25 * 3600, kind: 'session', sessionCount: 1 },
           { task: 'ATL-10', seconds: 900, kind: 'manual', sessionCount: 0,
-            description: 'standup', activity: 'Other' },
+            entryId: `mock-${date}-standup`, description: 'standup', activity: 'Other' },
         ]
       : [
           { task: 'ATL-6781', seconds: 7.5 * 3600, kind: 'session', sessionCount: 3 },
           { task: 'ATL-6892', seconds: 1800, kind: 'manual', sessionCount: 0,
-            description: 'review: saga retries', activity: 'CodeReview' },
+            entryId: `mock-${date}-review`, description: 'review: saga retries', activity: 'CodeReview' },
         ];
     const reportedSeconds = tasks.reduce((s, t) => s + t.seconds, 0);
     const pushedAt = status === MonthDayStatus.Pending ? null : `${date}T18:40:00.000Z`;

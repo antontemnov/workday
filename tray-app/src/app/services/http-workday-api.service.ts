@@ -213,8 +213,9 @@ export class HttpWorkdayApiService extends WorkdayApiService {
   }
 
   // ─── Manual entries ──────────────────────────────────────────────────
-  // The daemon targets the currently-tracked day; no date param. The UI
-  // gates add/edit on "today" so a past day is never mutated.
+  // add targets the currently-tracked day. update/delete accept an optional
+  // date for past-day edits (timesheets drawer) — the daemon routes today
+  // through the live tracker and past days disk-to-disk.
 
   override async getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>> {
     return this.get<ActivityTypesResponse>('/api/activity-types');
@@ -224,12 +225,12 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post<ManualEntryResponse>('/api/manual-entry', { ...input });
   }
 
-  override async updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>> {
-    return this.post<ManualEntryResponse>('/api/manual-entry/update', { target, ...patch });
+  override async updateManualEntry(target: string, patch: ManualEntryPatch, date?: string): Promise<ApiResponse<ManualEntryResponse>> {
+    return this.post<ManualEntryResponse>('/api/manual-entry/update', { target, ...patch, ...(date ? { date } : {}) });
   }
 
-  override async deleteManualEntry(target: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
-    return this.post<ManualEntryDeleteResponse>('/api/manual-entry/delete', { target });
+  override async deleteManualEntry(target: string, date?: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
+    return this.post<ManualEntryDeleteResponse>('/api/manual-entry/delete', { target, ...(date ? { date } : {}) });
   }
 
   // ─── Favorites ───────────────────────────────────────────────────────

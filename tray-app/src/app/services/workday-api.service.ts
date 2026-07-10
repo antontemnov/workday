@@ -61,13 +61,14 @@ export abstract class WorkdayApiService {
   abstract getAutostartEnabled(): Promise<boolean>;
   abstract setAutostartEnabled(enabled: boolean): Promise<void>;
 
-  // Manual entries — standalone time on a task (HTTP add/edit target the
-  // currently-tracked day only; past days are read-only from the UI).
+  // Manual entries — standalone time on a task. add targets the currently-
+  // tracked day; update/delete take an optional date (YYYY-MM-DD) for past
+  // days (timesheets drawer) — omitted = the currently-tracked day.
   abstract getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;
   abstract addManualEntry(input: ManualEntryInput): Promise<ApiResponse<ManualEntryResponse>>;
-  abstract updateManualEntry(target: string, patch: ManualEntryPatch): Promise<ApiResponse<ManualEntryResponse>>;
+  abstract updateManualEntry(target: string, patch: ManualEntryPatch, date?: string): Promise<ApiResponse<ManualEntryResponse>>;
   // Session-born entries are deletable too (unlike edit). target = #index or id.
-  abstract deleteManualEntry(target: string): Promise<ApiResponse<ManualEntryDeleteResponse>>;
+  abstract deleteManualEntry(target: string, date?: string): Promise<ApiResponse<ManualEntryDeleteResponse>>;
 
   // Favorites — reusable log templates for the log cloud (day-independent,
   // stored in the daemon's favorites.json). target = favorite id.

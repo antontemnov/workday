@@ -1,7 +1,12 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
 import {
+  ActivityType,
+  DEVELOPMENT_ACTIVITY,
+  Favorite,
+  ManualEntryPatch,
   MonthDaySummary,
   MonthDayStatus,
   MonthResponse,
@@ -10,16 +15,29 @@ import {
   TempoApprovalResponse,
   TempoImportRequest,
   TempoScheduleResponse,
+  normalizeFavName,
 } from '../../models/workday.models';
+import { activityLabel } from '../day-view/activity.util';
+import { DurationInputDirective } from '../day-view/duration-field/duration-input.directive';
+import { openCtxMenu } from '../day-view/ctx-menu.util';
+
+// Delete mirrors the Logged panel: instant with a client-side undo — the row
+// stays struck-through with a burning ↩ for this long, then collapses and the
+// DELETE goes out.
+const UNDO_WINDOW_MS = 3000;
+const REMOVE_ANIM_MS = 240;
+const FAV_FEEDBACK_MS = 1200;
 
 // One line inside a day drawer — a would-be Tempo worklog.
 interface DrawerRow {
   readonly task: string;
   readonly src: string;          // session kind: '2 sessions'
-  readonly activity: string;     // manual kind
+  readonly activity: string;     // manual/foreign kind — raw Tempo value
   readonly description: string;  // manual kind
   readonly durLabel: string;
   readonly worklogId?: number;   // foreign kind — the import handle
+  readonly entryId?: string;     // manual kind — the edit/delete handle
+  readonly minutes?: number;     // manual kind — exact minutes for the edit form
 }
 
 interface DayRow {
@@ -58,10 +76,21 @@ interface TotalsDelta {
   readonly label: string;        // '2h behind'
 }
 
+/**
+ * Timesheets tab. Logged rows in the day drawers carry the same editing
+ * mechanics as the day view's Logged panel: double-click morphs the row into
+ * an inline edit form, right-click opens Edit / Add to favorites / Delete,
+ * delete is instant with a ~3s undo. Mutations go to the daemon with the
+ * row's date (past days disk-to-disk, today via the live tracker) and the
+ * month reloads — a pushed day flips to outdated, sums recount, and the next
+ * push updates Tempo with the new values. Tracked (closed sessions) and
+ * foreign Tempo rows stay read-only; an APPROVED Tempo period locks the
+ * whole month back to view-only, consistent with the hidden push button.
+ */
 @Component({
   selector: 'app-timesheets-view',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule, DurationInputDirective],
   templateUrl: './timesheets-view.component.html',
   styleUrl: './timesheets-view.component.scss',
 })
@@ -92,13 +121,34 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   importingKey: string | null = null;
   importError: string | null = null;
 
+  // ─── Logged-row editing state (keys are 'date|entryId') ────────────────
+  activityTypes: readonly ActivityType[] = [];
+  favorites: readonly Favorite[] = [];
+  editingKey: string | null = null;
+  editMinutes = 30;
+  editActivity = '';
+  editDescription = '';
+  savingEdit = false;
+  editError: string | null = null;
+
+  // Delete pipeline: undo window (timer) → collapse animation → DELETE sent,
+  // row hidden until the reloaded month no longer carries the entry.
+  private readonly deleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  readonly removingKeys = new Set<string>();
+  private readonly hiddenKeys = new Set<string>();
+  private readonly removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // "★ added to favorites" feedback riding the description for ~1.2s.
+  favDoneKey: string | null = null;
+  private favDoneTimer: ReturnType<typeof setTimeout> | null = null;
+
   private readonly openDates = new Set<string>();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private pushNoteTimer: ReturnType<typeof setTimeout> | null = null;
   // Guards against stale responses landing after a month switch.
   private loadSeq = 0;
 
-  constructor(private api: WorkdayApiService) {
+  constructor(private api: WorkdayApiService, private host: ElementRef<HTMLElement>) {
     const today = localToday();
     this.year = Number(today.slice(0, 4));
     this.month = Number(today.slice(5, 7));
@@ -107,6 +157,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.load(true);
     void this.autoSync();
+    void this.loadEditMeta();
     // Quiet upkeep: failed loads retry until they land (one-shot fetches must
     // self-heal), and today's row stays fresh while the current month is on
     // screen. Meta calls are cached daemon-side.
@@ -123,6 +174,11 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     if (this.pushNoteTimer) clearTimeout(this.pushNoteTimer);
+    if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
+    // Deletes past their undo click are the user's intent — commit them now
+    // instead of silently resurrecting the rows on the next visit.
+    this.flushPendingDeletes();
+    this.removeTimers.forEach(t => clearTimeout(t));
   }
 
   // ─── Loading ───────────────────────────────────────────────────────────
@@ -137,6 +193,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     if (res.ok && res.data) {
       this.monthData = res.data;
       this.error = null;
+      this.reconcileLocalEditState();
     } else {
       this.error = res.error ?? 'Unknown error';
       // A stale other-month payload must not render under this header;
@@ -154,6 +211,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     if (seq !== this.loadSeq || !res.ok || !res.data) return;
     this.monthData = res.data;
     this.error = null;
+    this.reconcileLocalEditState();
   }
 
   private async loadSchedule(seq: number): Promise<void> {
@@ -222,6 +280,10 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.pushNote = null;
     this.conflicts = [];
     this.importError = null;
+    this.editError = null;
+    this.editingKey = null;
+    // Leaving the month is like leaving the tab: undo windows are over.
+    this.flushPendingDeletes();
     void this.load(true);
     void this.autoSync();
   }
@@ -369,6 +431,238 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.pushNoteTimer = setTimeout(() => this.pushNote = null, 6000);
   }
 
+  // ─── Logged-row editing (mirrors the day view's Logged panel) ──────────
+
+  private async loadEditMeta(): Promise<void> {
+    const [types, favs] = await Promise.all([this.api.getActivityTypes(), this.api.getFavorites()]);
+    if (types.ok && types.data) this.activityTypes = types.data.activities;
+    if (favs.ok && favs.data) this.favorites = favs.data.favorites;
+  }
+
+  private rowKey(row: DayRow, t: DrawerRow): string {
+    return `${row.date}|${t.entryId}`;
+  }
+
+  // An APPROVED Tempo period is sealed — the push button is hidden, so local
+  // edits could never land; the whole month stays view-only.
+  get editLocked(): boolean {
+    return this.pushHidden;
+  }
+
+  // Rows without an entryId (older daemon) degrade to read-only.
+  canEdit(t: DrawerRow): boolean {
+    return t.entryId !== undefined && !this.editLocked;
+  }
+
+  isEditing(row: DayRow, t: DrawerRow): boolean {
+    return this.editingKey === this.rowKey(row, t);
+  }
+
+  isRowHidden(row: DayRow, t: DrawerRow): boolean {
+    return this.hiddenKeys.has(this.rowKey(row, t));
+  }
+
+  // ── Inline edit form (double-click) ──
+
+  onRowDblClick(row: DayRow, t: DrawerRow): void {
+    const key = this.rowKey(row, t);
+    if (!this.canEdit(t) || this.savingEdit || this.editingKey === key || this.isDeleted(row, t)) return;
+    this.editingKey = key;
+    this.editMinutes = t.minutes ?? 30;
+    this.editActivity = t.activity;
+    this.editDescription = t.description;
+    // Focus once the form morph renders.
+    setTimeout(() => {
+      const el = this.host.nativeElement.querySelector<HTMLInputElement>('.tse-min');
+      el?.focus();
+      el?.select();
+    }, 80);
+  }
+
+  cancelEdit(): void {
+    if (this.savingEdit) return;
+    this.editingKey = null;
+  }
+
+  // Description is required for everything but Development (daemon rule);
+  // clearing it on a Development row is a legal explicit edit.
+  get editDescNeeded(): boolean {
+    return this.editingKey !== null
+      && this.editDescription.trim() === ''
+      && this.editActivity !== DEVELOPMENT_ACTIVITY;
+  }
+
+  async saveEdit(row: DayRow, t: DrawerRow): Promise<void> {
+    if (this.savingEdit || !this.isEditing(row, t) || t.entryId === undefined) return;
+    if (this.editDescNeeded) {
+      this.host.nativeElement.querySelector<HTMLInputElement>('.tse-desc')?.focus();
+      return;
+    }
+    const description = this.editDescription.trim();
+    const patch: ManualEntryPatch = {};
+    if (this.editMinutes !== t.minutes) (patch as { minutes?: number }).minutes = this.editMinutes;
+    if (this.editActivity !== t.activity) (patch as { activity?: string }).activity = this.editActivity;
+    if (description !== t.description) (patch as { description?: string }).description = description;
+    if (Object.keys(patch).length === 0) { this.editingKey = null; return; }
+
+    this.savingEdit = true;
+    this.editError = null;
+    const res = await this.api.updateManualEntry(t.entryId, patch, row.date);
+    if (res.ok) {
+      // Statuses/sums changed daemon-side (pushed day → outdated) — the form
+      // stays up until the fresh month renders, so the row never flickers back.
+      await this.reloadMonthQuiet();
+      this.editingKey = null;
+    } else {
+      this.editError = res.error ?? 'Update failed';
+    }
+    this.savingEdit = false;
+  }
+
+  // ── Context menu (right-click) ──
+
+  onRowContextMenu(row: DayRow, t: DrawerRow, ev: MouseEvent): void {
+    if (!this.canEdit(t) || this.isEditing(row, t) || this.isDeleted(row, t)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const items = [
+      { icon: '✎', label: 'Edit', action: () => this.onRowDblClick(row, t) },
+      // Hidden only when structurally impossible (no description to name the
+      // template); an exact duplicate shows as a disabled fact instead.
+      ...(t.description.trim() !== ''
+        ? [this.isInFavorites(t)
+          ? { icon: '★', label: 'In favorites', disabled: true,
+              title: 'This exact task + description + duration is already saved', action: (): void => {} }
+          : { icon: '★', label: 'Add to favorites', action: () => void this.addToFavorites(row, t) }]
+        : []),
+      { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteRow(row, t) },
+    ];
+    openCtxMenu(ev.clientX, ev.clientY, items);
+  }
+
+  // Template identity mirrors the daemon: task + name (case/whitespace-
+  // insensitive) + minutes. A changed duration is a new template again.
+  private isInFavorites(t: DrawerRow): boolean {
+    const name = normalizeFavName(t.description);
+    return this.favorites.some(f =>
+      f.task.toLowerCase() === t.task.toLowerCase()
+      && normalizeFavName(f.name) === name
+      && f.minutes === t.minutes);
+  }
+
+  private async addToFavorites(row: DayRow, t: DrawerRow): Promise<void> {
+    const res = await this.api.addFavorite({
+      name: t.description.trim(),
+      task: t.task,
+      minutes: t.minutes ?? 0,
+      activity: t.activity,
+    });
+    if (!res.ok || !res.data) {
+      this.editError = res.error ?? 'Could not add to favorites';
+      return;
+    }
+    this.favorites = res.data.favorites;
+    this.favDoneKey = this.rowKey(row, t);
+    if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
+    this.favDoneTimer = setTimeout(() => this.favDoneKey = null, FAV_FEEDBACK_MS);
+  }
+
+  // ── Delete with undo ──
+
+  isDeleted(row: DayRow, t: DrawerRow): boolean {
+    const key = this.rowKey(row, t);
+    return this.deleteTimers.has(key) || this.removingKeys.has(key);
+  }
+
+  private deleteRow(row: DayRow, t: DrawerRow): void {
+    const key = this.rowKey(row, t);
+    if (this.editingKey === key) this.editingKey = null;
+    this.deleteTimers.set(key, setTimeout(() => this.startRemove(key), UNDO_WINDOW_MS));
+  }
+
+  undoDelete(row: DayRow, t: DrawerRow, ev: MouseEvent): void {
+    ev.stopPropagation();
+    const key = this.rowKey(row, t);
+    const timer = this.deleteTimers.get(key);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.deleteTimers.delete(key);
+  }
+
+  // Undo window over: collapse the row, then send the DELETE (with the row's
+  // date). A pushed entry leaves a tombstone daemon-side — the next push
+  // removes its worklog from Tempo.
+  private startRemove(key: string): void {
+    this.deleteTimers.delete(key);
+    this.removingKeys.add(key);
+    this.removeTimers.set(key, setTimeout(() => {
+      this.removingKeys.delete(key);
+      this.removeTimers.delete(key);
+      this.hiddenKeys.add(key);
+      void this.commitDelete(key);
+    }, REMOVE_ANIM_MS));
+  }
+
+  private async commitDelete(key: string): Promise<void> {
+    const [date, entryId] = splitKey(key);
+    const res = await this.api.deleteManualEntry(entryId, date);
+    if (!res.ok) {
+      // Resurrect the row — the entry still exists daemon-side.
+      this.hiddenKeys.delete(key);
+      this.editError = res.error ?? 'Delete failed';
+      return;
+    }
+    await this.reloadMonthQuiet();
+  }
+
+  // Commit deletes past their undo window right away (tab switch / month
+  // switch) — mirrors the Logged panel's teardown contract.
+  private flushPendingDeletes(): void {
+    for (const [key, timer] of this.deleteTimers) {
+      clearTimeout(timer);
+      const [date, entryId] = splitKey(key);
+      void this.api.deleteManualEntry(entryId, date);
+    }
+    this.deleteTimers.clear();
+  }
+
+  // Fresh month landed: drop local state for entries the data no longer
+  // carries (confirmed deletes, external edits).
+  private reconcileLocalEditState(): void {
+    const alive = new Set<string>();
+    for (const d of this.monthData?.days ?? []) {
+      for (const t of d.tasks) {
+        if (t.kind === 'manual' && t.entryId !== undefined) alive.add(`${d.date}|${t.entryId}`);
+      }
+    }
+    for (const key of [...this.hiddenKeys]) {
+      if (!alive.has(key)) this.hiddenKeys.delete(key);
+    }
+    for (const [key, timer] of [...this.deleteTimers]) {
+      if (!alive.has(key)) {
+        clearTimeout(timer);
+        this.deleteTimers.delete(key);
+      }
+    }
+    if (this.editingKey !== null && !alive.has(this.editingKey) && !this.savingEdit) {
+      this.editingKey = null; // the edited entry is gone (external change)
+    }
+  }
+
+  // ── Row display helpers ──
+
+  activityLabel(value: string): string {
+    return activityLabel(this.activityTypes, value);
+  }
+
+  get activityOptions(): readonly ActivityType[] {
+    return this.activityTypes.length ? this.activityTypes : [{ value: 'Other', name: 'Other' }];
+  }
+
+  trackByLogged(_i: number, t: DrawerRow): string {
+    return t.entryId ?? `${t.task}|${t.description}|${t.durLabel}`;
+  }
+
   // ─── Day list ──────────────────────────────────────────────────────────
 
   /** Weeks newest-first, days newest-first inside; future days are dropped. */
@@ -441,6 +735,9 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
         activity: t.activity ?? '',
         description: t.description ?? '',
         durLabel: fmtDur(t.seconds),
+        entryId: t.entryId,
+        // Standalone manual entries ship exact minutes — seconds are ×60.
+        minutes: Math.round(t.seconds / 60),
       })),
       tempoRows: foreign.map(t => ({
         task: t.task,
@@ -506,6 +803,13 @@ function fmtCompact(seconds: number): string {
 }
 
 // ─── Local date helpers ──────────────────────────────────────────────────
+
+// 'date|entryId' → [date, entryId]; the id may itself contain '|'-free hex,
+// but split on the first separator only to stay safe.
+function splitKey(key: string): [string, string] {
+  const i = key.indexOf('|');
+  return [key.slice(0, i), key.slice(i + 1)];
+}
 
 function localToday(): string {
   return toIso(new Date());

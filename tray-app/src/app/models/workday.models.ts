@@ -267,6 +267,9 @@ export interface MonthDayTask {
   readonly seconds: number;
   readonly kind: MonthTaskKind;
   readonly sessionCount: number;   // 0 for manual/foreign kind
+  // manual kind only — the edit/delete handle. Optional (additive field):
+  // absent on older daemons → the row stays read-only.
+  readonly entryId?: string;
   readonly description?: string;   // manual/foreign kind only
   readonly activity?: string;      // manual/foreign kind only
   readonly tempoWorklogId?: number; // foreign kind only — the import handle

@@ -48,6 +48,7 @@
   </div>
   <div class="push-error" *ngIf="pushError">{{ pushError }}</div>
   <div class="push-error" *ngIf="importError">{{ importError }}</div>
+  <div class="push-error" *ngIf="editError">{{ editError }}</div>
 
   <!-- Conflict gate: push stopped, nothing executed — user picks a side -->
   <div class="conflict-panel" *ngIf="conflicts.length > 0">
@@ -109,12 +110,54 @@
                 <div class="dr-sec logged">
                   <span class="mk">✎</span> logged <span class="sum">{{ row.loggedSumLabel }}</span>
                 </div>
-                <div class="dr-row manual" *ngFor="let t of row.loggedRows">
-                  <span class="task">{{ t.task }}</span>
-                  <span class="act">{{ t.activity }}</span>
-                  <span class="desc">{{ t.description }}</span>
-                  <span class="dur">{{ t.durLabel }}</span>
-                </div>
+                <ng-container *ngFor="let t of row.loggedRows; trackBy: trackByLogged">
+                  <div class="dr-row manual"
+                       *ngIf="!isRowHidden(row, t)"
+                       [class.editable]="canEdit(t)"
+                       [class.editing]="isEditing(row, t)"
+                       [class.deleted]="isDeleted(row, t)"
+                       [class.removing]="removingKeys.has(row.date + '|' + t.entryId)"
+                       [class.fav-done]="favDoneKey === row.date + '|' + t.entryId"
+                       [title]="canEdit(t) && !isEditing(row, t) && !isDeleted(row, t) ? 'Double-click to edit' : ''"
+                       (dblclick)="onRowDblClick(row, t)"
+                       (contextmenu)="onRowContextMenu(row, t, $event)">
+
+                    <!-- Edit morph — the Logged panel's one-line form: task is a
+                         read-only caption (change = delete + recreate). -->
+                    <ng-container *ngIf="isEditing(row, t); else staticManual">
+                      <div class="tse-form" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
+                        <button type="button" class="tse-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
+                        <span class="tse-task">{{ t.task }}</span>
+                        <select class="tse-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(row, t)">
+                          <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+                        </select>
+                        <input class="tse-min"
+                               [(wdDuration)]="editMinutes"
+                               (durEnter)="saveEdit(row, t)"
+                               title="1h 15m · 90 · 45m — wheel: ±15m" />
+                        <input class="tse-desc"
+                               [class.need]="editDescNeeded"
+                               [(ngModel)]="editDescription"
+                               (keydown.enter)="saveEdit(row, t)"
+                               placeholder="description" />
+                        <button type="button" class="tse-save" [disabled]="savingEdit" (click)="saveEdit(row, t)">
+                          {{ savingEdit ? '…' : 'Save' }}
+                        </button>
+                      </div>
+                    </ng-container>
+
+                    <ng-template #staticManual>
+                      <span class="task">{{ t.task }}</span>
+                      <span class="act" *ngIf="t.activity">{{ activityLabel(t.activity) }}</span>
+                      <span class="desc" *ngIf="favDoneKey !== row.date + '|' + t.entryId; else tsFavDone">{{ t.description }}</span>
+                      <ng-template #tsFavDone><span class="desc fav-note">★ added to favorites</span></ng-template>
+                      <button type="button" class="t-undo"
+                              *ngIf="isDeleted(row, t)"
+                              (click)="undoDelete(row, t, $event)">↩ undo</button>
+                      <span class="dur">{{ t.durLabel }}</span>
+                    </ng-template>
+                  </div>
+                </ng-container>
               </ng-container>
               <!-- Foreign worklogs: live in Tempo only — ⤓ adopts them locally -->
               <ng-container *ngIf="row.tempoRows.length > 0">
