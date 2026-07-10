@@ -714,7 +714,15 @@ function buildMockMonth(year: number, month: number, today: string): MonthRespon
     if (pushedAt && (!lastPushAt || pushedAt > lastPushAt)) lastPushAt = pushedAt;
   }
 
-  return { year, month, from, to, days, totals, lastPushAt };
+  return {
+    year, month, from, to, days, totals, lastPushAt,
+    issueSummaries: {
+      'ATL-6781': 'Daily standup and team sync',
+      'ATL-6442': 'Existing Transaction: reactive save for Policy Dictionaries',
+      'ATL-6892': 'Saga retries: harden the outbox dispatcher',
+      // ATL-10 left unmapped → its drawer row shows an empty name column
+    },
+  };
 }
 
 function buildMockSchedule(year: number, month: number): ScheduleDay[] {

@@ -426,10 +426,14 @@ export class HttpServer {
   // synchronous, never blocks the response; a background fill pulls any missing
   // ones into the cache so they surface on the next poll.
   private buildIssueSummaries(log: DailyLog): Record<string, string> {
-    const keys = [...new Set([
+    return this.cachedSummariesFor([
       ...(log.manualEntries ?? []).map(e => e.task),
       ...log.sessions.map(s => s.task).filter((t): t is string => !!t),
-    ])];
+    ]);
+  }
+
+  private cachedSummariesFor(taskKeys: readonly string[]): Record<string, string> {
+    const keys = [...new Set(taskKeys)];
     if (keys.length === 0) return {};
     const secrets = tryLoadSecrets();
     if (secrets && isJiraConfigured(secrets)) {
@@ -1012,7 +1016,13 @@ export class HttpServer {
     if (this.deps.getCurrentDate().startsWith(monthPrefix)) {
       this.deps.sessionTracker.flush();
     }
-    return { ok: true, data: buildMonthResponse(year, month, this.deps.config) };
+    const data = buildMonthResponse(year, month, this.deps.config);
+    // Ticket names for the drawer rows — real issue keys only (foreign lines
+    // can carry an "issue #123" placeholder when the key isn't cached yet).
+    const keys = data.days
+      .flatMap(d => d.tasks.map(t => t.task))
+      .filter(t => /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t));
+    return { ok: true, data: { ...data, issueSummaries: this.cachedSummariesFor(keys) } };
   }
 
   // ─── Push to Tempo ────────────────────────────────────────────────

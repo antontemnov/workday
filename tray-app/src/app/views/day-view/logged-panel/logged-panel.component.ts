@@ -8,6 +8,7 @@ import {
 import { activityLabel, activityTone } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 import { openCtxMenu } from '../ctx-menu.util';
+import { LOGGED_COL_MIN, loadLoggedCols, persistLoggedCols } from '../logged-cols.util';
 
 const FRESH_WINDOW_MS = 4000;
 const STEP_MINUTES = 15;
@@ -25,11 +26,6 @@ const FAV_FEEDBACK_MS = 1200;
 const POP_ANIM_MS = 500;
 const POP_STAGGER_MS = 80;
 
-// Resizable columns: name and type are user-draggable px widths (desc is the
-// elastic remainder). Persisted so the user's layout survives reloads.
-const COL_DEFAULT = { name: 140, type: 92 };
-const COL_MIN = { name: 64, type: 56, desc: 44 };
-const COL_STORAGE_KEY = 'workday.logged.cols';
 // The panel is re-created on every tab switch, so the collapsed state must
 // live outside the instance or it resets to expanded on each return.
 const COLLAPSE_STORAGE_KEY = 'workday.logged.collapsed';
@@ -93,8 +89,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   sumFlash = false;
 
   // Resizable column widths (px), bound to --w-name / --w-type on the table.
-  colName = COL_DEFAULT.name;
-  colType = COL_DEFAULT.type;
+  colName = 0;
+  colType = 0;
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
@@ -540,19 +536,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   private loadCols(): void {
-    try {
-      const raw = localStorage.getItem(COL_STORAGE_KEY);
-      if (!raw) return;
-      const v = JSON.parse(raw) as { name?: number; type?: number };
-      if (typeof v.name === 'number') this.colName = Math.max(COL_MIN.name, v.name);
-      if (typeof v.type === 'number') this.colType = Math.max(COL_MIN.type, v.type);
-    } catch { /* no persisted layout */ }
+    const cols = loadLoggedCols();
+    this.colName = cols.name;
+    this.colType = cols.type;
   }
 
   private persistCols(): void {
-    try {
-      localStorage.setItem(COL_STORAGE_KEY, JSON.stringify({ name: this.colName, type: this.colType }));
-    } catch { /* storage unavailable — keep the in-memory widths */ }
+    persistLoggedCols({ name: this.colName, type: this.colType });
   }
 
   // Collapsed state survives the panel's re-creation on tab switches (and app
@@ -579,12 +569,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const sName = this.colName, sType = this.colType;
     let minDx: number, maxDx: number;
     if (which === 'name') {
-      minDx = COL_MIN.name - sName;   // name shrinks to its min
-      maxDx = sType - COL_MIN.type;   // type shrinks to its min
+      minDx = LOGGED_COL_MIN.name - sName;   // name shrinks to its min
+      maxDx = sType - LOGGED_COL_MIN.type;   // type shrinks to its min
     } else {
       const desc = this.descWidth();
-      minDx = COL_MIN.type - sType;
-      maxDx = Math.max(0, desc - COL_MIN.desc);
+      minDx = LOGGED_COL_MIN.type - sType;
+      maxDx = Math.max(0, desc - LOGGED_COL_MIN.desc);
     }
     const body = this.host.nativeElement.ownerDocument.body;
     const prevCursor = body.style.cursor, prevSelect = body.style.userSelect;

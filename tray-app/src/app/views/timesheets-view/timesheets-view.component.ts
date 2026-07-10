@@ -17,7 +17,8 @@ import {
   TempoScheduleResponse,
   normalizeFavName,
 } from '../../models/workday.models';
-import { activityLabel } from '../day-view/activity.util';
+import { activityLabel, activityTone } from '../day-view/activity.util';
+import { loadLoggedCols } from '../day-view/logged-cols.util';
 import { DurationInputDirective } from '../day-view/duration-field/duration-input.directive';
 import { openCtxMenu } from '../day-view/ctx-menu.util';
 
@@ -142,6 +143,11 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   favDoneKey: string | null = null;
   private favDoneTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Column widths shared with the day view's Logged panel (read-only here —
+  // resizing lives in the panel; the drawers just mirror the layout).
+  readonly colName: number;
+  readonly colType: number;
+
   private readonly openDates = new Set<string>();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private pushNoteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -152,6 +158,9 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     const today = localToday();
     this.year = Number(today.slice(0, 4));
     this.month = Number(today.slice(5, 7));
+    const cols = loadLoggedCols();
+    this.colName = cols.name;
+    this.colType = cols.type;
   }
 
   ngOnInit(): void {
@@ -654,6 +663,17 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   activityLabel(value: string): string {
     return activityLabel(this.activityTypes, value);
   }
+
+  activityTone(value: string): string {
+    return activityTone(value);
+  }
+
+  summaryOf(task: string): string {
+    return this.monthData?.issueSummaries?.[task] ?? '';
+  }
+
+  // Tracked time is always Development — that's how it pushes to Tempo.
+  readonly developmentActivity = DEVELOPMENT_ACTIVITY;
 
   get activityOptions(): readonly ActivityType[] {
     return this.activityTypes.length ? this.activityTypes : [{ value: 'Other', name: 'Other' }];

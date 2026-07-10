@@ -723,6 +723,9 @@ export interface MonthResponse {
   // fetchedAt of the Tempo snapshot the statuses were derived from,
   // null = no snapshot → statuses fall back to local pushed-flags.
   readonly syncedAt?: string | null;
+  // Ticket summaries (task key → Jira summary) across the month's task lines,
+  // cached lookups only — same contract as DayResponse.issueSummaries.
+  readonly issueSummaries?: Readonly<Record<string, string>>;
 }
 
 // ─── Tempo month meta (schedule / approvals proxies) ────────────────────

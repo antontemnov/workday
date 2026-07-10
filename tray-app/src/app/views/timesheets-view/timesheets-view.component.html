@@ -64,8 +64,12 @@
     </div>
   </div>
 
-  <!-- Day list: newest first, week separators -->
-  <div class="scroll-zone">
+  <!-- Day list: newest first, week separators. Drawer rows share the Logged
+       panel's column layout (name/type widths persisted by the day view). -->
+  <div class="scroll-zone"
+       [class.edit-lock]="editingKey !== null"
+       [style.--w-name]="colName + 'px'"
+       [style.--w-type]="colType + 'px'">
     <div class="status-msg" *ngIf="loading">Loading…</div>
     <div class="status-msg" *ngIf="!loading && error && !monthData">{{ error }}</div>
     <div class="status-msg" *ngIf="isEmpty">No days yet — this month hasn't started</div>
@@ -101,10 +105,14 @@
                 <span class="mk">⊙</span> tracked <span class="sum">{{ row.trackedSumLabel }}</span>
               </div>
               <div class="dr-row tracked" *ngFor="let t of row.trackedRows">
-                <span class="task">{{ t.task }}</span>
-                <span class="src">{{ t.src }}</span>
-                <span class="desc"></span>
-                <span class="dur">{{ t.durLabel }}</span>
+                <span class="c-key">{{ t.task }}</span>
+                <span class="c-nm"><span class="txt">{{ summaryOf(t.task) }}</span></span>
+                <span class="c-type">
+                  <span class="pill tone-dev">{{ activityLabel(developmentActivity) }}</span>
+                </span>
+                <span class="c-ds">{{ t.src }}</span>
+                <span class="c-dur">{{ t.durLabel }}</span>
+                <span class="c-full" *ngIf="summaryOf(t.task)" aria-hidden="true">{{ summaryOf(t.task) }}</span>
               </div>
               <ng-container *ngIf="row.loggedRows.length > 0">
                 <div class="dr-sec logged">
@@ -122,39 +130,48 @@
                        (dblclick)="onRowDblClick(row, t)"
                        (contextmenu)="onRowContextMenu(row, t, $event)">
 
-                    <!-- Edit morph — the Logged panel's one-line form: task is a
+                    <!-- Edit morph — the Logged panel's two-level block: caption
+                         (key + ticket name) over the one-line form. Task is a
                          read-only caption (change = delete + recreate). -->
                     <ng-container *ngIf="isEditing(row, t); else staticManual">
-                      <div class="tse-form" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
-                        <button type="button" class="tse-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
-                        <span class="tse-task">{{ t.task }}</span>
-                        <select class="tse-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(row, t)">
-                          <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
-                        </select>
-                        <input class="tse-min"
-                               [(wdDuration)]="editMinutes"
-                               (durEnter)="saveEdit(row, t)"
-                               title="1h 15m · 90 · 45m — wheel: ±15m" />
-                        <input class="tse-desc"
-                               [class.need]="editDescNeeded"
-                               [(ngModel)]="editDescription"
-                               (keydown.enter)="saveEdit(row, t)"
-                               placeholder="description" />
-                        <button type="button" class="tse-save" [disabled]="savingEdit" (click)="saveEdit(row, t)">
-                          {{ savingEdit ? '…' : 'Save' }}
-                        </button>
+                      <div class="tse-wrap" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
+                        <div class="tse-cap"><span class="tse-k">{{ t.task }}</span><span class="tse-n" *ngIf="summaryOf(t.task)">{{ summaryOf(t.task) }}</span></div>
+                        <div class="tse-form">
+                          <button type="button" class="tse-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
+                          <select class="tse-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(row, t)">
+                            <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+                          </select>
+                          <input class="tse-min"
+                                 [(wdDuration)]="editMinutes"
+                                 (durEnter)="saveEdit(row, t)"
+                                 title="1h 15m · 90 · 45m — wheel: ±15m" />
+                          <input class="tse-desc"
+                                 [class.need]="editDescNeeded"
+                                 [(ngModel)]="editDescription"
+                                 (keydown.enter)="saveEdit(row, t)"
+                                 placeholder="description" />
+                          <button type="button" class="tse-save" [disabled]="savingEdit" (click)="saveEdit(row, t)">
+                            {{ savingEdit ? '…' : 'Save' }}
+                          </button>
+                        </div>
                       </div>
                     </ng-container>
 
                     <ng-template #staticManual>
-                      <span class="task">{{ t.task }}</span>
-                      <span class="act" *ngIf="t.activity">{{ activityLabel(t.activity) }}</span>
-                      <span class="desc" *ngIf="favDoneKey !== row.date + '|' + t.entryId; else tsFavDone">{{ t.description }}</span>
-                      <ng-template #tsFavDone><span class="desc fav-note">★ added to favorites</span></ng-template>
-                      <button type="button" class="t-undo"
-                              *ngIf="isDeleted(row, t)"
-                              (click)="undoDelete(row, t, $event)">↩ undo</button>
-                      <span class="dur">{{ t.durLabel }}</span>
+                      <span class="c-key">{{ t.task }}</span>
+                      <span class="c-nm"><span class="txt">{{ summaryOf(t.task) }}</span></span>
+                      <span class="c-type">
+                        <span class="pill" *ngIf="t.activity" [class]="'pill tone-' + activityTone(t.activity)">{{ activityLabel(t.activity) }}</span>
+                      </span>
+                      <span class="c-ds" *ngIf="favDoneKey !== row.date + '|' + t.entryId; else tsFavDone">{{ t.description }}</span>
+                      <ng-template #tsFavDone><span class="c-ds fav-note">★ added to favorites</span></ng-template>
+                      <ng-container *ngIf="isDeleted(row, t); else tsAliveDur">
+                        <button type="button" class="t-undo" (click)="undoDelete(row, t, $event)">↩ undo</button>
+                      </ng-container>
+                      <ng-template #tsAliveDur>
+                        <span class="c-dur">{{ t.durLabel }}</span>
+                      </ng-template>
+                      <span class="c-full" *ngIf="summaryOf(t.task)" aria-hidden="true">{{ summaryOf(t.task) }}</span>
                     </ng-template>
                   </div>
                 </ng-container>
@@ -173,9 +190,12 @@
                 </div>
                 <div class="dr-row foreign" *ngFor="let t of row.tempoRows"
                      title="Created directly in Tempo — ⤓ adopts it into the local log">
-                  <span class="task">{{ t.task }}</span>
-                  <span class="act" *ngIf="t.activity">{{ t.activity }}</span>
-                  <span class="desc">{{ t.description }}</span>
+                  <span class="c-key">{{ t.task }}</span>
+                  <span class="c-nm"><span class="txt">{{ summaryOf(t.task) }}</span></span>
+                  <span class="c-type">
+                    <span class="pill" *ngIf="t.activity" [class]="'pill tone-' + activityTone(t.activity)">{{ t.activity }}</span>
+                  </span>
+                  <span class="c-ds">{{ t.description }}</span>
                   <button class="imp" *ngIf="t.worklogId !== undefined"
                           (click)="onImportRow(row, t)"
                           [disabled]="importingKey !== null"
@@ -183,7 +203,8 @@
                           title="Adopt into the local log — becomes editable & deletable">
                     {{ isImporting(row.date + '|' + t.worklogId) ? '…' : '⤓' }}
                   </button>
-                  <span class="dur">{{ t.durLabel }}</span>
+                  <span class="c-dur">{{ t.durLabel }}</span>
+                  <span class="c-full" *ngIf="summaryOf(t.task)" aria-hidden="true">{{ summaryOf(t.task) }}</span>
                 </div>
               </ng-container>
               <div class="dr-hint" *ngIf="row.status === 'outdated'">

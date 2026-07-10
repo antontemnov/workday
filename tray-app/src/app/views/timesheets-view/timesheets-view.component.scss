@@ -428,44 +428,135 @@
   }
 }
 
+// Drawer rows — the Logged panel's grid verbatim (key | name | type | desc |
+// pinned time), sharing its --w-name/--w-type widths. The one deliberate
+// divergence: the key is plain colored text, not the panel's tinted chip —
+// the drawers keep their section colour coding (blue/mauve/peach).
 .dr-row {
-  position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 70px var(--w-name, 140px) var(--w-type, 92px) minmax(44px, 1fr);
   align-items: center;
-  gap: 9px;
-  padding: 3.5px 6px;
+  gap: 8px;
+  padding: 4px 8px;
   border-radius: 4px;
+  overflow: hidden;   // clip the time's fill to the rounded corner
+  position: relative;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 
-  &:hover { background: rgba(17, 17, 27, 0.5); }
+  // Solid hover colour so the name overlay reads as the field growing.
+  &:hover { background: #211f30; }
+  & + & { border-top: 1px solid rgba(205, 214, 244, 0.05); }
 
-  .task { min-width: 70px; color: #bac2de; font-weight: 600; }
-  .act { font-size: 9.5px; color: #6c7086; background: #26263a; border-radius: 4px; padding: 1px 6px; }
-  .desc {
-    flex: 1;
+  .c-key {
+    font-weight: 600;
+    white-space: nowrap;
+    justify-self: start;
+  }
+
+  &.tracked .c-key { color: #89b4fa; }
+  &.manual  .c-key { color: #cba6f7; }
+  &.foreign .c-key { color: #fab387; }
+
+  // Name cell fills the whole track height so entering the cell (not the
+  // glyphs) triggers the hover-grow; plain arrow cursor, never a caret.
+  .c-nm {
+    position: relative;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    cursor: default;
+
+    .txt {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: #bac2de;
+    }
+  }
+
+  .c-type {
+    min-width: 0;
+    overflow: hidden;
+
+    .pill {
+      display: inline-block;
+      max-width: 100%;
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: bottom;
+
+      &.tone-other { color: #9399b2; background: rgba(147, 153, 178, 0.1); }
+      &.tone-rev   { color: #89b4fa; background: rgba(137, 180, 250, 0.1); }
+      &.tone-dev   { color: #a6e3a1; background: rgba(166, 227, 161, 0.1); }
+    }
+  }
+
+  .c-ds {
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    color: #6c7086;
-    font-size: 10.5px;
-  }
-  .dur { min-width: 52px; text-align: right; font-weight: 700; color: #bac2de; }
-
-  &.tracked {
-    .task { color: #89b4fa; }
-    .dur { color: #a6adc8; }
-    .src { font-size: 9px; color: #565973; }
+    color: #7f849c;
+    font-style: italic;
   }
 
-  &.manual .task { color: #cba6f7; }
+  // Time is pinned to the right and floats over the description's tail with a
+  // short fade, so the description reclaims the space instead of a fixed empty
+  // gutter. Sits above the name overlay — both fade under the digits.
+  .c-dur {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 8px 0 30px;
+    background: linear-gradient(to right, transparent, #181825 24px);
+    color: #cdd6f4;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 8;
+  }
 
-  &.foreign .task { color: #fab387; }
+  // Full-name overlay: same row-hover bg, exactly row height, grows from the
+  // name column up to (not over) the time column. The fixed left / right
+  // encode the key (70) and time column geometry — same as the Logged panel.
+  .c-full {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 86px;                      // 8 pad + 70 key + 8 gap
+    width: max-content;
+    max-width: calc(100% - 94px);    // up to the row edge; the time floats over the tail
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    overflow: hidden;
+    background: #211f30;
+    color: #bac2de;
+    z-index: 6;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;  // opacity-only — a translate would jitter against .txt
+  }
 
-  // Row-level adopt — revealed on hover so the mirror stays quiet.
+  // Row-level adopt — revealed on hover so the mirror stays quiet; floats
+  // over the description tail, left of the pinned time.
   .imp {
-    flex-shrink: 0;
+    position: absolute;
+    right: 64px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 9;
     width: 18px;
     height: 18px;
     display: inline-flex;
@@ -474,7 +565,7 @@
     font-family: inherit;
     font-size: 11px;
     color: #fab387;
-    background: transparent;
+    background: #211f30;             // matches the row hover bg it appears on
     border: 1px solid rgba(250, 179, 135, 0.3);
     border-radius: 5px;
     padding: 0;
@@ -486,6 +577,12 @@
     &.busy { opacity: 1; }
   }
   &:hover .imp { opacity: 1; }
+}
+
+// Reveal the full-name overlay only when hovering the name cell, and never
+// while some row is being edited.
+.scroll-zone:not(.edit-lock) .dr-row:not(.editing) .c-nm:hover ~ .c-full {
+  opacity: 1;
 }
 
 .dr-hint {
@@ -502,7 +599,11 @@
 .dr-row.manual {
   &.editable { user-select: none; }
 
+  // Editing row becomes a two-level block: caption (key + ticket name) over
+  // the one-line form. Overrides the grid so .tse-wrap fills the width.
   &.editing {
+    display: block;
+    padding: 6px 8px 7px;
     background: rgba(203, 166, 247, 0.07);
   }
 
@@ -511,7 +612,7 @@
   &.deleted {
     background: rgba(243, 139, 168, 0.04);
 
-    .task, .act, .desc, .dur {
+    .c-key, .c-type, .c-ds, .c-nm .txt {
       opacity: 0.38;
       text-decoration: line-through;
     }
@@ -526,11 +627,11 @@
     overflow: hidden;
     transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease;
   }
-  &:not(.removing) { max-height: 34px; }  // fits the one-line edit form too
+  &:not(.removing):not(.editing) { max-height: 30px; }  // two-level edit needs room
 
   .t-undo {
     position: absolute;
-    right: 6px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 8;
@@ -549,10 +650,35 @@
   }
 
   // "★ added to favorites" feedback on the description slot.
-  &.fav-done .desc.fav-note { color: #cba6f7; font-style: normal; }
+  &.fav-done .c-ds.fav-note { color: #cba6f7; font-style: normal; }
 }
 
-// One-line edit form — the Logged panel's morph scaled to the drawer row.
+// ─── Edit morph (double-click) — two-level: caption over the one-line form ─
+.tse-wrap { min-width: 0; }
+
+// Caption: mauve key + dimmed ticket name, one line, no separator glyph —
+// the tail fades out (not a hard cut) when the name is long.
+.tse-cap {
+  padding: 1px 2px 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: #767e9d;
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+  opacity: 0;
+  transform: translateY(3px);
+  animation: tse-cap-in 0.18s ease 0.04s forwards;
+
+  .tse-k { color: rgba(203, 166, 247, 0.9); font-weight: 700; margin-right: 7px; }
+  .tse-n { color: #767e9d; }
+}
+
+@keyframes tse-cap-in {
+  to { opacity: 1; transform: none; }
+}
+
 .tse-form {
   display: flex;
   align-items: center;
@@ -569,18 +695,10 @@
     color: #cdd6f4;
     font-family: inherit;
     font-size: 10.5px;
-    padding: 2px 7px;
+    padding: 3px 7px;
     outline: none;
 
     &:focus { border-color: #cba6f7; }
-  }
-
-  .tse-task {
-    flex-shrink: 0;
-    min-width: 70px;
-    color: rgba(203, 166, 247, 0.9);
-    font-weight: 700;
-    font-size: 10.5px;
   }
 
   select {
@@ -588,7 +706,7 @@
     flex-shrink: 0;
     font-size: 10px;
     color: #bac2de;
-    padding: 2px 3px;
+    padding: 3px 3px;
     cursor: pointer;
   }
 
@@ -634,7 +752,7 @@
     font-family: inherit;
     font-size: 10px;
     font-weight: 700;
-    padding: 2px 10px;
+    padding: 3px 10px;
     cursor: pointer;
 
     &:hover:not(:disabled) { background: #b894ee; }
