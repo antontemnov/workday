@@ -7,7 +7,7 @@
  */
 import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before config.ts loads
 import assert from 'node:assert/strict';
-import { createEmptyLog, writeDailyLog } from '../../src/core/daily-log.js';
+import { createEmptyLog, writeDailyLog, readDailyLog } from '../../src/core/daily-log.js';
 import { buildMonthResponse, getMonthRange, parseYearMonth } from '../../src/push/month-report.js';
 import { savePushLog, saveTombstones } from '../../src/push/push-log.js';
 import { saveMonthSnapshot } from '../../src/push/tempo-snapshot.js';
@@ -129,6 +129,12 @@ test('draft with pushedAt → outdated', () => {
   assert.equal(byDate.get('2026-06-04')!.status, MonthDayStatus.Outdated);
 });
 
+test('manual task line carries its entryId — the timesheets edit handle', () => {
+  const manual = byDate.get('2026-06-03')!.tasks.find(t => t.kind === 'manual');
+  const entry = readDailyLog('2026-06-03')!.manualEntries[0];
+  assert.equal(manual?.entryId, entry.id);
+});
+
 test('session-born entry folds into a rounded session line', () => {
   const day = byDate.get('2026-06-02')!;
   // 50m session-born → rounded to 45m (15m blocks); standalone 30m exact.
@@ -136,6 +142,7 @@ test('session-born entry folds into a rounded session line', () => {
   const manual = day.tasks.find(t => t.kind === 'manual');
   assert.equal(session?.task, 'ATL-2');
   assert.equal(session?.seconds, 45 * 60);
+  assert.equal(session?.entryId, undefined);
   assert.equal(manual?.task, 'ATL-1');
   assert.equal(manual?.seconds, 30 * 60);
   assert.equal(day.taskCount, 2);
@@ -254,15 +261,23 @@ test('never-pushed day → pending with "not pushed" drift', () => {
 console.log('');
 console.log('Month report — foreign worklogs (Tempo-only rows)');
 
-test('foreign worklog on an empty day → row + hours, status stays none', () => {
+test('foreign worklog on an empty day → row + hours, no local lines', () => {
   const day = julyByDate.get('2026-07-05')!;
-  assert.equal(day.status, MonthDayStatus.None);
   assert.equal(day.tasks.length, 1);
   assert.equal(day.tasks[0].kind, 'foreign');
   assert.equal(day.tasks[0].task, 'IN-2');
   assert.equal(day.tasks[0].description, 'code review');
   assert.equal(day.tasks[0].activity, 'CodeReview');
   assert.equal(day.reportedSeconds, 7200);
+});
+
+test('fully-cleared pushed day (alive tombstone, no file) → outdated with drift', () => {
+  // 07-05 has no day file, but tombstone 905 still lives in Tempo — the
+  // pending remote delete must surface (and count into the push badge).
+  const day = julyByDate.get('2026-07-05')!;
+  assert.equal(day.status, MonthDayStatus.Outdated);
+  assert.equal(day.drift?.length, 1);
+  assert.match(day.drift![0], /pending delete in Tempo/);
 });
 
 test('foreign worklog joins a day with local data, status unaffected', () => {

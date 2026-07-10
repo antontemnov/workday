@@ -58,6 +58,7 @@ function toMonthDayTask(entry: TaskDayReport): MonthDayTask {
     seconds: entry.totalSeconds,
     kind: entry.kind,
     sessionCount: entry.sessionCount,
+    ...(entry.entryId !== undefined ? { entryId: entry.entryId } : {}),
     ...(entry.description !== undefined ? { description: entry.description } : {}),
     ...(entry.activity !== undefined ? { activity: entry.activity } : {}),
   };
@@ -133,11 +134,18 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
     const claimedMs = log ? computeTotalClaimedMs(log) : 0;
     const reportedSeconds = tasks.reduce((sum, t) => sum + t.seconds, 0);
 
-    const drift = snapById && log
+    // Drift also covers a fully-cleared pushed day (file deleted, tombstones
+    // alive in Tempo): without this the pending remote delete would hide
+    // behind status 'none' and never count into the push badge.
+    const tombstonesAlive = snapById !== null
+      && tombstones.some(t => t.date === date && snapById.has(t.tempoWorklogId));
+    const drift = snapById && (log || tombstonesAlive)
       ? computeDayDrift(date, entriesByDate.get(date) ?? [], pushLog, snapById, tombstones)
       : null;
     const status = drift !== null
-      ? deriveDayStatusFromDrift(log!, drift)
+      ? (log
+        ? deriveDayStatusFromDrift(log, drift)
+        : (drift.length > 0 ? MonthDayStatus.Outdated : MonthDayStatus.None))
       : deriveDayStatus(log);
 
     days.push({

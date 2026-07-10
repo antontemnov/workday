@@ -682,6 +682,7 @@ export interface MonthDayTask {
   readonly seconds: number;
   readonly kind: MonthTaskKind;
   readonly sessionCount: number;   // 0 for manual/foreign kind
+  readonly entryId?: string;       // manual kind only — the edit/delete handle
   readonly description?: string;   // manual/foreign kind only
   readonly activity?: string;      // manual/foreign kind only
   readonly tempoWorklogId?: number; // foreign kind only — the import handle
