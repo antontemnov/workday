@@ -176,14 +176,15 @@ export class NotificationCenter {
       this.persist();
     }
 
+    // Copy matches the approved toast design (compact card, single line each).
     const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
     const days = unpushed === 1 ? '1 day' : `${unpushed} days`;
     out.push({
       id,
       kind: TIMESHEET_KIND,
       createdAt: this.state[id].createdAt,
-      title: today === lastWorking ? `Last working day of ${monthName}` : `${monthName} is ending`,
-      body: `${days} not pushed yet — push before the month ends.`,
+      title: `Push ${monthName} timesheets`,
+      body: today === lastWorking ? `Last working day · ${days} unpushed` : `${monthName} is ending · ${days} unpushed`,
       sticky: true,
       actions: [{ id: 'open', label: 'Open Timesheets', view: 'sheet' }],
     });

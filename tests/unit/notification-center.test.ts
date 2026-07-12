@@ -129,7 +129,8 @@ test('window opens at notifyHour on the last working day', () => {
   assert.equal(items[0].kind, 'timesheet-push');
   assert.equal(items[0].sticky, true);
   assert.equal(items[0].actions[0].view, 'sheet');
-  assert.match(items[0].title, /Last working day of July/);
+  assert.equal(items[0].title, 'Push July timesheets');
+  assert.match(items[0].body, /Last working day/);
 });
 
 test('custom notifyHour is respected', () => {
@@ -144,7 +145,7 @@ test('weekend tail after the last working day stays active (May 31 = Sunday)', (
   const items = center.getActive();
   assert.equal(items.length, 1);
   assert.equal(items[0].id, 'timesheet-push:2026-05');
-  assert.match(items[0].title, /May is ending/);
+  assert.match(items[0].body, /May is ending/);
 });
 
 test('first day of the next month: nothing fires, old state pruned', () => {
@@ -179,7 +180,7 @@ test('unpushed days present: item served + pending persisted', () => {
   const { center } = makeCenter(now);
   const items = center.getActive();
   assert.equal(items.length, 1);
-  assert.match(items[0].body, /3 days not pushed/);
+  assert.match(items[0].body, /3 days unpushed/);
   const state = JSON.parse(readFileSync(join(getDataDir(), NOTIFICATIONS_STATE_FILE), 'utf-8'));
   assert.equal(state['timesheet-push:2026-07'].status, NotificationStatus.Pending);
 });
