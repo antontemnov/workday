@@ -41,6 +41,7 @@ function makeConfig(): AppConfig {
       knownProjects: [{ key: 'ATL', name: 'Core Platform', id: '10001' }, { key: 'WEB', name: 'Web Portal', id: '10002' }],
     },
     activities: { values: ['Development', 'CodeReview'] },
+    notifications: { timesheetReminder: { enabled: true, notifyHour: 14 } },
   };
 }
 

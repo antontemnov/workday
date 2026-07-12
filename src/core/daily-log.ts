@@ -27,6 +27,11 @@ function ensureDataDir(date: string): void {
   }
 }
 
+/** Working day per config: ISO weekday in workDays and not a holiday. */
+export function isWorkingDay(date: string, config: AppConfig): boolean {
+  return determineDayType(date, config) === DayType.Workday;
+}
+
 /** Determine day type based on config */
 function determineDayType(date: string, config: AppConfig): DailyLog['dayType'] {
   if (config.holidays.includes(date)) {

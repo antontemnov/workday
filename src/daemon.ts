@@ -11,6 +11,7 @@ import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
 import { checkGap } from './core/gap-detector.js';
 import { UpdateManager } from './core/update-manager.js';
+import { NotificationCenter } from './core/notification-center.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
@@ -34,6 +35,7 @@ export class Daemon {
   private dayBoundaryTimer: ReturnType<typeof setInterval> | null = null;
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
   private updateManager: UpdateManager = new UpdateManager();
+  private notificationCenter!: NotificationCenter;
   // Version installed on disk and waiting for a quiet window to restart into.
   private pendingRestartVersion: string | null = null;
   private updateInFlight: boolean = false;
@@ -87,6 +89,11 @@ export class Daemon {
 
     // HTTP API server
     this.startedAt = Date.now();
+    this.notificationCenter = new NotificationCenter({
+      getConfig: () => this.config,
+      // The month aggregate reads from disk — same flush contract as handleMonth.
+      flushToday: () => this.sessionTracker.flush(),
+    });
     const deps: HttpServerDeps = {
       sessionTracker: this.sessionTracker,
       config: this.config,
@@ -101,6 +108,7 @@ export class Daemon {
       checkUpdate: () => this.updateManager.checkForUpdate(),
       applyUpdate: () => this.applyUpdateNow(),
       getWatchingRepos: () => this.gitTracker.getWatchingRepos(),
+      notificationCenter: this.notificationCenter,
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();

@@ -25,6 +25,7 @@ export interface AppConfig {
   readonly defaultBranches?: Readonly<Record<string, string>>;
   readonly search: SearchConfig;
   readonly activities: ActivityScopeConfig;
+  readonly notifications: NotificationsConfig;
 }
 
 // ─── Jira search ─────────────────────────────────────────────────────────
@@ -53,6 +54,19 @@ export interface ActivityScopeConfig {
   // push are never filtered — this scopes what can be picked, not what exists.
   // The catalog itself lives in the work-attributes cache, not here.
   readonly values: readonly string[];
+}
+
+// ─── Notifications config ────────────────────────────────────────────────
+
+export interface NotificationsConfig {
+  readonly timesheetReminder: TimesheetReminderConfig;
+}
+
+export interface TimesheetReminderConfig {
+  readonly enabled: boolean;
+  // 0-23, delivery window opens at this wall-clock hour on the last working
+  // day of the month and stays open until the month ends.
+  readonly notifyHour: number;
 }
 
 // ─── Sensitivity ────────────────────────────────────────────────────────
@@ -774,6 +788,61 @@ export interface TempoApprovalResponse {
   readonly timeSpentSeconds: number | null; // Tempo-side logged total
   readonly canSubmit: boolean;              // actions.submit present (v2 groundwork)
   readonly fromCache: boolean;
+}
+
+// ─── Notifications (desktop toasts) ─────────────────────────────────────
+//
+// The daemon is the source of truth: rules produce NotificationItems, the
+// tray polls GET /api/notifications and toasts them when the user is present.
+// Lifecycle per id: pending → delivered (tray acked 'shown', at-most-once
+// guarantee) → consumed ('opened'/'hidden'). Only pending items are served.
+
+export enum NotificationStatus {
+  Pending = 'pending',
+  Delivered = 'delivered',
+  Consumed = 'consumed',
+}
+
+export type NotificationAckAction = 'shown' | 'opened' | 'hidden';
+
+export interface NotificationAction {
+  readonly id: string;
+  readonly label: string;
+  // Tray view the action navigates to ('day' | 'sheet' | 'set').
+  readonly view?: string;
+}
+
+export interface NotificationItem {
+  readonly id: string;             // rule-scoped, e.g. "timesheet-push:2026-07"
+  readonly kind: string;
+  readonly createdAt: string;
+  readonly title: string;
+  readonly body: string;
+  // Sticky toasts stay on screen until acted on (no auto-hide).
+  readonly sticky: boolean;
+  readonly actions: readonly NotificationAction[];
+}
+
+/** Persisted delivery state (data/notifications-state.json), keyed by id. */
+export interface NotificationStateEntry {
+  readonly status: NotificationStatus;
+  readonly createdAt: string;
+  readonly deliveredAt?: string;
+  readonly consumedAt?: string;
+  readonly consumedBy?: NotificationAckAction;
+}
+
+export interface NotificationsResponse {
+  readonly notifications: readonly NotificationItem[];
+}
+
+export interface NotificationAckResponse {
+  readonly id: string;
+  readonly status: NotificationStatus;
+}
+
+export interface NotificationTestResponse {
+  readonly notification: NotificationItem;
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────

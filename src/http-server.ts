@@ -50,7 +50,10 @@ import {
   MS_PER_MINUTE,
   DEFAULT_MANUAL_ACTIVITY,
   JIRA_SEARCH_MIN_QUERY_LENGTH,
+  TEST_NOTIFICATION_DEFAULT_MINUTES,
+  TEST_NOTIFICATION_MAX_MINUTES,
 } from './core/constants.js';
+import type { NotificationCenter } from './core/notification-center.js';
 import type {
   AppConfig,
   ApiResponse,
@@ -87,10 +90,18 @@ import type {
   TempoApprovalResponse,
   TempoSyncResponse,
   TempoImportResponse,
+  NotificationsResponse,
+  NotificationAckResponse,
+  NotificationTestResponse,
+  NotificationAckAction,
 } from './core/types.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isAckAction(value: string): value is NotificationAckAction {
+  return value === 'shown' || value === 'opened' || value === 'hidden';
+}
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
@@ -118,6 +129,8 @@ export interface HttpServerDeps {
   readonly applyUpdate: () => Promise<UpdateApplyResponse>;
   /** Repos on a task branch as of the last poll — watching-card synthesis. */
   readonly getWatchingRepos: () => readonly WatchingRepo[];
+  /** Desktop-notification rules + delivery state (lazy-evaluated on GET). */
+  readonly notificationCenter: NotificationCenter;
 }
 
 // ─── Watching-card synthesis (A-6) ─────────────────────────────────────
@@ -327,6 +340,17 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/repo/remove') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleRemoveRepo(body));
+      }
+      if (method === 'GET' && path === '/api/notifications') {
+        return this.sendJson(res, 200, this.handleNotifications());
+      }
+      if (method === 'POST' && path === '/api/notifications/ack') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleNotificationAck(body));
+      }
+      if (method === 'POST' && path === '/api/notifications/test') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleNotificationTest(body));
       }
       if (method === 'GET' && path === '/api/update/check') {
         try {
@@ -1050,6 +1074,31 @@ export class HttpServer {
       .flatMap(d => d.tasks.map(t => t.task))
       .filter(t => /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t));
     return { ok: true, data: { ...data, issueSummaries: this.cachedSummariesFor(keys) } };
+  }
+
+  // ─── Notifications ────────────────────────────────────────────────
+
+  private handleNotifications(): ApiResponse<NotificationsResponse> {
+    return { ok: true, data: { notifications: this.deps.notificationCenter.getActive() } };
+  }
+
+  private handleNotificationAck(body: Record<string, unknown>): ApiResponse<NotificationAckResponse> {
+    const id = typeof body.id === 'string' ? body.id : '';
+    const action = typeof body.action === 'string' ? body.action : '';
+    if (!id || !isAckAction(action)) {
+      return { ok: false, error: 'Expected { id, action: "shown" | "opened" | "hidden" }' };
+    }
+    const result = this.deps.notificationCenter.ack(id, action);
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, data: { id, status: result.status! } };
+  }
+
+  private handleNotificationTest(body: Record<string, unknown>): ApiResponse<NotificationTestResponse> {
+    const raw = typeof body.minutes === 'number' ? body.minutes : TEST_NOTIFICATION_DEFAULT_MINUTES;
+    if (!Number.isInteger(raw) || raw < 1 || raw > TEST_NOTIFICATION_MAX_MINUTES) {
+      return { ok: false, error: `minutes must be an integer 1-${TEST_NOTIFICATION_MAX_MINUTES}` };
+    }
+    return { ok: true, data: { notification: this.deps.notificationCenter.injectTest(raw) } };
   }
 
   // ─── Push to Tempo ────────────────────────────────────────────────

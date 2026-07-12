@@ -1,0 +1,19 @@
+<div class="wrap" *ngIf="item">
+  <div class="card" [class.on]="revealed" (click)="onOpen()" [title]="openTitle">
+    <div class="x" title="Hide" (click)="onHide($event)">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/>
+      </svg>
+    </div>
+    <div class="ic">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 12.6V3.4M6.4 6.9L10 3.3l3.6 3.6"/>
+        <path d="M3.5 13.5v2a1.8 1.8 0 001.8 1.8h9.4a1.8 1.8 0 001.8-1.8v-2"/>
+      </svg>
+    </div>
+    <div class="stack">
+      <div class="t-title">{{ item.title }}</div>
+      <div class="t-body">{{ item.body }}</div>
+    </div>
+  </div>
+</div>

@@ -2,9 +2,9 @@ import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { ActivityScopeConfig, AppConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef } from './types.js';
+import type { ActivityScopeConfig, AppConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimesheetReminderConfig } from './types.js';
 import { SensitivityLevel } from './types.js';
-import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
+import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_NOTIFY_HOUR, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
 /** Find the directory containing this package's package.json */
 function findPackageRoot(): string {
@@ -92,6 +92,7 @@ export function validateConfig(config: AppConfig): void {
 
   validateSearchConfig(config.search);
   validateActivityScopeConfig(config.activities);
+  validateNotificationsConfig(config.notifications);
 
   if (config.defaultBranch !== undefined && typeof config.defaultBranch !== 'string') {
     throw new Error('config.json: defaultBranch must be a string');
@@ -131,6 +132,22 @@ function validateActivityScopeConfig(activities: ActivityScopeConfig): void {
   }
   if (!Array.isArray(activities.values) || activities.values.some(v => typeof v !== 'string')) {
     throw new Error('config.json: activities.values must be an array of strings');
+  }
+}
+
+function validateNotificationsConfig(notifications: NotificationsConfig): void {
+  if (!notifications || typeof notifications !== 'object') {
+    throw new Error('config.json: notifications must be an object');
+  }
+  const reminder = notifications.timesheetReminder;
+  if (!reminder || typeof reminder !== 'object') {
+    throw new Error('config.json: notifications.timesheetReminder must be an object');
+  }
+  if (typeof reminder.enabled !== 'boolean') {
+    throw new Error('config.json: notifications.timesheetReminder.enabled must be a boolean');
+  }
+  if (!Number.isInteger(reminder.notifyHour) || reminder.notifyHour < 0 || reminder.notifyHour > 23) {
+    throw new Error('config.json: notifications.timesheetReminder.notifyHour must be an integer 0-23');
   }
 }
 
@@ -200,6 +217,15 @@ export function loadConfig(): AppConfig {
   const rawActivities = (raw.activities ?? {}) as Partial<ActivityScopeConfig>;
   const activities: ActivityScopeConfig = { values: rawActivities.values ?? [] };
 
+  const rawNotifications = (raw.notifications ?? {}) as Partial<NotificationsConfig>;
+  const rawReminder = (rawNotifications.timesheetReminder ?? {}) as Partial<TimesheetReminderConfig>;
+  const notifications: NotificationsConfig = {
+    timesheetReminder: {
+      enabled: rawReminder.enabled ?? true,
+      notifyHour: rawReminder.notifyHour ?? DEFAULT_NOTIFY_HOUR,
+    },
+  };
+
   const config = {
     ...raw,
     boundaryHour: raw.boundaryHour ?? 4,
@@ -208,6 +234,7 @@ export function loadConfig(): AppConfig {
     sensitivity,
     search,
     activities,
+    notifications,
     session: {
       ...rawSession,
       idleCloseHours: rawSession.idleCloseHours ?? DEFAULT_IDLE_CLOSE_HOURS,
@@ -253,6 +280,12 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
     },
     activities: {
       values: patch.activities?.values ?? current.activities.values,
+    },
+    notifications: {
+      timesheetReminder: {
+        enabled: patch.notifications?.timesheetReminder?.enabled ?? current.notifications.timesheetReminder.enabled,
+        notifyHour: patch.notifications?.timesheetReminder?.notifyHour ?? current.notifications.timesheetReminder.notifyHour,
+      },
     },
   };
   validateConfig(merged);
@@ -326,7 +359,7 @@ export function getDataDir(): string {
 }
 
 /** Get hour (0-23) in specified IANA timezone */
-function getHourInTimezone(timestamp: number, timezone: string): number {
+export function getHourInTimezone(timestamp: number, timezone: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     hour: 'numeric',

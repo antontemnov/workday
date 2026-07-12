@@ -10,6 +10,12 @@ html, body {
   overflow: hidden;
 }
 
+// Toast window: the OS window is transparent (rounded card + CSS shadow) —
+// the opaque page background must not paint over it.
+html:has(body.toast-window), body.toast-window {
+  background: transparent;
+}
+
 ::-webkit-scrollbar {
   width: 4px;
 }

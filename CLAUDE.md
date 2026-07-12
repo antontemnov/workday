@@ -19,7 +19,7 @@
 
 ## Структура
 
-- `src/core/` — types, constants, config, daily-log (atomic writes), activity-evaluator (stamina), session-tracker, commit-ledger, update-manager
+- `src/core/` — types, constants, config, daily-log (atomic writes), activity-evaluator (stamina), session-tracker, commit-ledger, update-manager, notification-center (desktop-тосты: правила + state machine; tray доставляет при presence)
 - `src/collectors/` — git-client, git-tracker, reflog-parser, snapshot-parser, churn-scanner, ledger-collector
 - `src/push/` — tempo-client, jira-client, tempo-pusher, report-builder, activity-types
 - `src/daemon.ts` / `src/cli.ts` / `src/http-server.ts` — HTTP API только на `127.0.0.1:9213`

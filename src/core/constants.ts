@@ -115,6 +115,16 @@ export const SCHEDULE_CACHE_TTL_MS = 24 * 3_600_000;
 export const APPROVAL_CACHE_FILE = 'approval-cache.json';
 export const APPROVAL_CACHE_TTL_MS = 15 * 60_000;
 
+// ─── Notifications (desktop toasts) ──────────────────────────────────────
+export const NOTIFICATIONS_STATE_FILE = 'notifications-state.json';
+/** Delivery window opens at this hour on the last working day of the month */
+export const DEFAULT_NOTIFY_HOUR = 14;
+// Rule evaluation is lazy (on GET) — the memo keeps the month aggregate from
+// being rebuilt more than once a minute under tray polling.
+export const NOTIFICATION_MEMO_TTL_MS = 60_000;
+export const TEST_NOTIFICATION_DEFAULT_MINUTES = 5;
+export const TEST_NOTIFICATION_MAX_MINUTES = 60;
+
 // ─── Idle auto-close ─────────────────────────────────────────────────────
 // Default for config session.idleCloseHours (0 = disabled).
 export const DEFAULT_IDLE_CLOSE_HOURS = 3;

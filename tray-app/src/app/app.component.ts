@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { WorkdayApiService } from './services/workday-api.service';
+import { NotificationDeliveryService } from './services/notification-delivery.service';
 import {
   TodayResponse,
   SessionDetail,
@@ -103,6 +104,9 @@ export class AppComponent implements OnInit, OnDestroy {
   appUpdateInstalling = false;
   private unlistenAppUpdate: UnlistenFn | null = null;
 
+  // Toast actions land here: the toast window asks Rust to show main on a view.
+  private unlistenNavigate: UnlistenFn | null = null;
+
   // Worked-day dots on the week strip (display-only, no navigation).
   private todayDate: string | null = null;
   private availableDates: string[] = [];
@@ -116,7 +120,10 @@ export class AppComponent implements OnInit, OnDestroy {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private api: WorkdayApiService) {}
+  constructor(
+    private api: WorkdayApiService,
+    private notifications: NotificationDeliveryService,
+  ) {}
 
   // Kill the WebView2 default context menu app-wide (Back/Refresh/Print…).
   // Right-click is a first-class action here (design iter.12); text inputs
@@ -130,6 +137,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.watchAppUpdates();
+    void this.watchNavigateEvents();
+    this.notifications.start();
     void this.refreshAvailableDates();
     void this.refreshActivityTypes();
     void this.refreshFavorites();
@@ -151,6 +160,20 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     if (this.unlistenAppUpdate) this.unlistenAppUpdate();
+    if (this.unlistenNavigate) this.unlistenNavigate();
+    this.notifications.stop();
+  }
+
+  // Toast "open" action → Rust shows this window and emits the target view.
+  private async watchNavigateEvents(): Promise<void> {
+    try {
+      this.unlistenNavigate = await listen<string>('navigate-view', e => {
+        const v = e.payload;
+        if (v === 'day' || v === 'sheet' || v === 'set') this.setView(v);
+      });
+    } catch {
+      // Outside Tauri webview (browser dev mode) — no window events.
+    }
   }
 
   // ─── Daemon watchdog ─────────────────────────────────────────────────────

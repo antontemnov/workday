@@ -420,6 +420,42 @@ export interface PushResponse {
   readonly blockedByConflicts?: boolean;
 }
 
+// ─── Notifications (desktop toasts) ──────────────────────────────────────
+// Mirror of the daemon's notification types. Lifecycle per id:
+// pending → delivered (tray acked 'shown') → consumed ('opened'/'hidden');
+// GET /api/notifications serves only pending items.
+
+export type NotificationStatus = 'pending' | 'delivered' | 'consumed';
+
+export type NotificationAckAction = 'shown' | 'opened' | 'hidden';
+
+export interface NotificationAction {
+  readonly id: string;
+  readonly label: string;
+  // Tray view the action navigates to ('day' | 'sheet' | 'set').
+  readonly view?: string;
+}
+
+export interface NotificationItem {
+  readonly id: string;
+  readonly kind: string;
+  readonly createdAt: string;
+  readonly title: string;
+  readonly body: string;
+  // Sticky toasts stay on screen until acted on (no auto-hide).
+  readonly sticky: boolean;
+  readonly actions: readonly NotificationAction[];
+}
+
+export interface NotificationsResponse {
+  readonly notifications: readonly NotificationItem[];
+}
+
+export interface NotificationAckResponse {
+  readonly id: string;
+  readonly status: NotificationStatus;
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────
 
 // Subset of AppConfig the UI exposes — keeps the surface small for MVP.

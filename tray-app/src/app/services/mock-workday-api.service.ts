@@ -41,6 +41,9 @@ import {
   JiraSearchResponse,
   JiraProjectsResponse,
   ProjectRef,
+  NotificationsResponse,
+  NotificationAckAction,
+  NotificationAckResponse,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -551,6 +554,15 @@ export class MockWorkdayApiService extends WorkdayApiService {
         fromCache: true,
       },
     };
+  }
+
+  // Notifications: mock mode never toasts — empty list, echo ack.
+  async getNotifications(): Promise<ApiResponse<NotificationsResponse>> {
+    return { ok: true, data: { notifications: [] } };
+  }
+
+  async ackNotification(id: string, action: NotificationAckAction): Promise<ApiResponse<NotificationAckResponse>> {
+    return { ok: true, data: { id, status: action === 'shown' ? 'delivered' : 'consumed' } };
   }
 
   async getSettings(): Promise<ApiResponse<SettingsResponse>> {

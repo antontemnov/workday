@@ -16,6 +16,7 @@ use tauri::{
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
 
+mod toast;
 mod tray_icon;
 use tray_icon::TrayStatus;
 
@@ -297,7 +298,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart-launch"]),
         ))
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

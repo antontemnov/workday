@@ -36,6 +36,9 @@ import {
   TempoSyncResponse,
   TempoImportRequest,
   TempoImportResponse,
+  NotificationsResponse,
+  NotificationAckAction,
+  NotificationAckResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -287,6 +290,16 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async importTempo(request: TempoImportRequest): Promise<ApiResponse<TempoImportResponse>> {
     return this.post<TempoImportResponse>('/api/tempo-import', request as Record<string, unknown>);
+  }
+
+  // ─── Notifications ───────────────────────────────────────────────────
+
+  override async getNotifications(): Promise<ApiResponse<NotificationsResponse>> {
+    return this.get<NotificationsResponse>('/api/notifications');
+  }
+
+  override async ackNotification(id: string, action: NotificationAckAction): Promise<ApiResponse<NotificationAckResponse>> {
+    return this.post<NotificationAckResponse>('/api/notifications/ack', { id, action });
   }
 
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {

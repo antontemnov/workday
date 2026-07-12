@@ -48,6 +48,9 @@ workday tempo-sync [YYYY-MM]           Refresh the month's Tempo snapshot (mirro
 workday tempo-import [YYYY-MM]         Adopt Tempo-only worklogs as local entries
 workday schedule [YYYY-MM]             Tempo work schedule (required hours, holidays)
 workday approval [YYYY-MM]             Tempo timesheet approval status
+workday notifications                  Active desktop notifications (tray toasts)
+workday notifications test [minutes]   Inject a test notification (pipeline check)
+workday notifications ack <id> <act>   Acknowledge (shown|opened|hidden)
 workday daemon                         Run in foreground (live dashboard)
 ```
 
@@ -68,9 +71,17 @@ workday daemon                         Run in foreground (live dashboard)
     "idleCloseHours": 3
   },
   "report": { "roundingMinutes": 15 },
-  "workDays": [1, 2, 3, 4, 5]
+  "workDays": [1, 2, 3, 4, 5],
+  "notifications": {
+    "timesheetReminder": { "enabled": true, "notifyHour": 14 }
+  }
 }
 ```
+
+`notifications.timesheetReminder` drives the tray's desktop toast: on the last
+working day of the month (per `workDays` + `holidays`), from `notifyHour`
+until the month ends, while unpushed days remain — delivered once per month,
+at the first moment the user is actually at the keyboard.
 
 **~/.workday/secrets.json**
 

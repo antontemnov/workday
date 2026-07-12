@@ -30,6 +30,9 @@ import {
   TempoSyncResponse,
   TempoImportRequest,
   TempoImportResponse,
+  NotificationsResponse,
+  NotificationAckAction,
+  NotificationAckResponse,
 } from '../models/workday.models';
 
 /**
@@ -104,6 +107,12 @@ export abstract class WorkdayApiService {
   // Adopt foreign (Tempo-only) worklogs as local manual entries with
   // ownership — they become editable/deletable mirror citizens.
   abstract importTempo(request: TempoImportRequest): Promise<ApiResponse<TempoImportResponse>>;
+
+  // Desktop notifications — the daemon owns rules + state, the tray delivers.
+  // getNotifications returns pending items; ack 'shown' BEFORE toasting
+  // (at-most-once), 'opened'/'hidden' after the user acts.
+  abstract getNotifications(): Promise<ApiResponse<NotificationsResponse>>;
+  abstract ackNotification(id: string, action: NotificationAckAction): Promise<ApiResponse<NotificationAckResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;

@@ -56,6 +56,9 @@ import type {
   TempoImportResponse,
   JiraProjectsResponse,
   SettingsResponse,
+  NotificationsResponse,
+  NotificationAckResponse,
+  NotificationTestResponse,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus, MonthDayStatus } from './core/types.js';
 
@@ -1312,6 +1315,52 @@ async function handleApproval(args: string[]): Promise<void> {
   if (data.canSubmit) console.log('Submit action is available for this period.');
 }
 
+// ─── Notifications ───────────────────────────────────────────────────────
+
+async function handleNotifications(args: string[]): Promise<void> {
+  const sub = args[0];
+
+  if (sub === 'test') {
+    const body: Record<string, unknown> = {};
+    if (args[1]) {
+      const minutes = parseInt(args[1], 10);
+      if (isNaN(minutes)) { console.log('Usage: workday notifications test [minutes]'); return; }
+      body.minutes = minutes;
+    }
+    const result = await apiPost<NotificationTestResponse>('/api/notifications/test', body);
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    const n = result.data.notification;
+    console.log(`Injected ${n.id} — the tray toasts it within ~1 min while you are at the keyboard.`);
+    return;
+  }
+
+  if (sub === 'ack') {
+    const [, id, action] = args;
+    if (!id || !['shown', 'opened', 'hidden'].includes(action ?? '')) {
+      console.log('Usage: workday notifications ack <id> <shown|opened|hidden>');
+      return;
+    }
+    const result = await apiPost<NotificationAckResponse>('/api/notifications/ack', { id, action });
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    console.log(`${result.data.id} → ${result.data.status}`);
+    return;
+  }
+
+  if (sub !== undefined) {
+    console.log('Usage: workday notifications [test [minutes] | ack <id> <action>]');
+    return;
+  }
+
+  const result = await apiGet<NotificationsResponse>('/api/notifications');
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+  const items = result.data.notifications;
+  if (items.length === 0) { console.log('No active notifications.'); return; }
+  for (const n of items) {
+    console.log(`  [${n.kind}] ${n.id}`);
+    console.log(`      ${n.title} — ${n.body}`);
+  }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1399,6 +1448,9 @@ async function main(): Promise<void> {
     case 'approval':
       await handleApproval(args.slice(1));
       break;
+    case 'notifications':
+      await handleNotifications(args.slice(1));
+      break;
     case 'init':
       handleInit();
       break;
@@ -1448,6 +1500,9 @@ Usage:
   workday tempo-import [YYYY-MM]                       Adopt Tempo-only worklogs as local entries (--date / --ids to narrow)
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
   workday approval [YYYY-MM]                           Tempo timesheet approval status for the period
+  workday notifications                                Active notifications (what the tray would toast)
+  workday notifications test [minutes]                 Inject a test notification (delivery pipeline check)
+  workday notifications ack <id> <shown|opened|hidden> Acknowledge a notification
 
 Target: session index (#1, #2) or session id (hex)`);
 }
