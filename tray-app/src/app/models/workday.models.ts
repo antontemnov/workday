@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 12;
+export const EXPECTED_API_VERSION = 13;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -243,6 +243,14 @@ export interface SearchConfig {
   readonly knownProjects: readonly ProjectRef[];
 }
 
+// Git-tracking scope: which projects' branches the daemon follows and which
+// branch-owner names mark a branch as "mine" (strict delimiter-token match,
+// case-insensitive; empty = every branch).
+export interface TrackingConfig {
+  readonly projectKeys: readonly string[];
+  readonly branchOwners: readonly string[];
+}
+
 // Allow-list of Tempo _Activity_ values the UI pickers offer. Empty = all.
 // The catalog itself comes from /api/activity-types (work-attributes cache).
 export interface ActivityScopeConfig {
@@ -463,7 +471,7 @@ export interface SettingsConfigSubset {
   readonly repos: readonly string[];
   readonly boundaryHour: number;
   readonly timezone: string;
-  readonly taskPattern: string;
+  readonly tracking: TrackingConfig;
   readonly sensitivity: {
     readonly default: SensitivityLevel;
     readonly perRepo?: Readonly<Record<string, SensitivityLevel>>;

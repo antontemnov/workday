@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { ActivityScopeConfig, AppConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimesheetReminderConfig } from './types.js';
+import type { ActivityScopeConfig, AppConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimesheetReminderConfig, TrackingConfig } from './types.js';
 import { SensitivityLevel } from './types.js';
 import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_NOTIFY_HOUR, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
@@ -60,9 +60,7 @@ export function validateConfig(config: AppConfig): void {
     }
   }
 
-  if (!config.taskPattern) {
-    throw new Error('config.json: taskPattern is required');
-  }
+  validateTrackingConfig(config.tracking);
 
   if (!Number.isInteger(config.boundaryHour) || config.boundaryHour < 0 || config.boundaryHour > 23) {
     throw new Error('config.json: boundaryHour must be an integer 0-23');
@@ -109,6 +107,23 @@ export function validateConfig(config: AppConfig): void {
   }
 }
 
+function validateTrackingConfig(tracking: TrackingConfig): void {
+  if (!tracking || typeof tracking !== 'object') {
+    throw new Error('config.json: tracking must be an object');
+  }
+  if (!Array.isArray(tracking.projectKeys) || tracking.projectKeys.length === 0) {
+    throw new Error('config.json: tracking.projectKeys must be a non-empty array (Jira project keys to track)');
+  }
+  for (const key of tracking.projectKeys) {
+    if (typeof key !== 'string' || !/^[A-Z][A-Z0-9]*$/.test(key)) {
+      throw new Error(`config.json: tracking.projectKeys entry "${key}" must be an uppercase Jira project key`);
+    }
+  }
+  if (!Array.isArray(tracking.branchOwners) || tracking.branchOwners.some(o => typeof o !== 'string' || o.trim() === '')) {
+    throw new Error('config.json: tracking.branchOwners must be an array of non-empty strings');
+  }
+}
+
 function validateSearchConfig(search: SearchConfig): void {
   if (!search || typeof search !== 'object') {
     throw new Error('config.json: search must be an object');
@@ -152,13 +167,49 @@ function validateNotificationsConfig(notifications: NotificationsConfig): void {
 }
 
 /**
- * Uppercase project keys embedded in the branch taskPattern regex — e.g.
- * "ATL-\\d+" → ["ATL"], "(?:ATL|CNF)-\\d+" → ["ATL", "CNF"]. Used only to seed
- * search.projectKeys on first run; the two decouple afterwards.
+ * Uppercase project keys embedded in a legacy taskPattern regex — e.g.
+ * "ATL-\\d+" → ["ATL"], "(?:ATL|CNF)-\\d+" → ["ATL", "CNF"]. Migration only:
+ * seeds tracking.projectKeys (and, historically, search.projectKeys) from a
+ * pre-tracking config.json that still carries the raw regex.
  */
 export function deriveProjectKeysFromTaskPattern(pattern: string): string[] {
   const matches = pattern.match(/[A-Z][A-Z0-9]+/g) ?? [];
   return [...new Set(matches)];
+}
+
+/**
+ * Branch task regex derived from the tracked project keys:
+ * ["ATL", "CNF"] → "(?:ATL|CNF)-\d+". The single source of the pattern —
+ * config no longer stores a user-written regex.
+ */
+export function buildTaskPattern(projectKeys: readonly string[]): string {
+  return `(?:${projectKeys.join('|')})-\\d+`;
+}
+
+/** Delimiter-separated lowercase tokens of a branch/owner string. */
+function tokenize(value: string): string[] {
+  return value.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+/**
+ * Whether a branch belongs to one of the configured owners. Match is strict:
+ * the owner must appear as an exact token (sequence) between delimiters,
+ * case-insensitively — "at" matches "ATL-1-at-fix" but not
+ * "ATL-1-atribute-fix"; "atemn" never matches "atemnov". A multi-token owner
+ * ("anton-temnov") matches the same tokens appearing consecutively.
+ * Empty owner list = every branch matches.
+ */
+export function branchMatchesOwner(branch: string, owners: readonly string[]): boolean {
+  if (owners.length === 0) return true;
+  const tokens = tokenize(branch);
+  return owners.some(owner => {
+    const seq = tokenize(owner);
+    if (seq.length === 0) return false;
+    for (let i = 0; i + seq.length <= tokens.length; i++) {
+      if (seq.every((t, j) => tokens[i + j] === t)) return true;
+    }
+    return false;
+  });
 }
 
 function isValidSensitivity(level: string): level is SensitivityLevel {
@@ -169,8 +220,8 @@ function isValidSensitivity(level: string): level is SensitivityLevel {
 }
 
 function validateSecrets(secrets: Secrets): void {
-  if (!secrets.Developer) {
-    throw new Error('secrets.json: Developer is required');
+  if (!secrets || typeof secrets !== 'object') {
+    throw new Error('secrets.json: must be a JSON object');
   }
 }
 
@@ -205,11 +256,23 @@ export function loadConfig(): AppConfig {
 
   const rawSession = (raw.session ?? {}) as Record<string, unknown>;
 
-  // search config: default on first run, seeding projectKeys from taskPattern.
+  // tracking config: migrate a legacy config in place — projectKeys from the
+  // old taskPattern regex, branchOwners from the old secrets.Developer field.
+  const rawTracking = (raw.tracking ?? {}) as Partial<TrackingConfig>;
+  const legacyTaskPattern = (raw.taskPattern as string) ?? '';
+  const legacyDeveloper = tryLoadSecrets()?.Developer?.trim();
+  const tracking: TrackingConfig = {
+    projectKeys: rawTracking.projectKeys ?? deriveProjectKeysFromTaskPattern(legacyTaskPattern),
+    branchOwners: rawTracking.branchOwners ?? (legacyDeveloper ? [legacyDeveloper] : []),
+  };
+  delete raw.taskPattern;
+
+  // search config: default on first run — legacy configs seed from the old
+  // taskPattern, fresh ones from the tracking scope.
   const rawSearch = (raw.search ?? {}) as Partial<SearchConfig>;
-  const taskPattern = (raw.taskPattern as string) ?? '';
   const search: SearchConfig = {
-    projectKeys: rawSearch.projectKeys ?? deriveProjectKeysFromTaskPattern(taskPattern),
+    projectKeys: rawSearch.projectKeys
+      ?? (legacyTaskPattern ? deriveProjectKeysFromTaskPattern(legacyTaskPattern) : [...tracking.projectKeys]),
     knownProjects: rawSearch.knownProjects ?? [],
   };
 
@@ -232,6 +295,7 @@ export function loadConfig(): AppConfig {
     apiPort: raw.apiPort ?? DEFAULT_API_PORT,
     timezone: raw.timezone ?? systemTimezone,
     sensitivity,
+    tracking,
     search,
     activities,
     notifications,
@@ -271,6 +335,12 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
     sensitivity: {
       default: patch.sensitivity?.default ?? current.sensitivity.default,
       perRepo: patch.sensitivity?.perRepo ?? current.sensitivity.perRepo,
+    },
+    // Deep-merge: a patch that only reselects projects must not wipe the
+    // owner list, and vice versa.
+    tracking: {
+      projectKeys: patch.tracking?.projectKeys ?? current.tracking.projectKeys,
+      branchOwners: patch.tracking?.branchOwners ?? current.tracking.branchOwners,
     },
     // Deep-merge: a patch that only sets projectKeys must not wipe the cached
     // catalog, and a catalog refresh must not wipe the selection.
@@ -403,10 +473,10 @@ export function computeWorkingDate(timestamp: number, boundaryHour: number, time
 }
 
 /** Extract task key from branch name. Returns null for generic/foreign branches. */
-export function extractTask(branch: string, taskPattern: string, developer: string, genericBranches: readonly string[]): string | null {
+export function extractTask(branch: string, tracking: TrackingConfig, genericBranches: readonly string[]): string | null {
   if (/^[0-9a-f]{7,40}$/.test(branch)) return null;
   if (genericBranches.includes(branch)) return null;
-  if (!branch.includes(developer)) return null;
-  const match = branch.match(new RegExp(taskPattern));
+  if (!branchMatchesOwner(branch, tracking.branchOwners)) return null;
+  const match = branch.match(new RegExp(buildTaskPattern(tracking.projectKeys)));
   return match ? match[0] : null;
 }

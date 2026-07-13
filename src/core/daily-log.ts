@@ -495,7 +495,7 @@ export function resolveManualEntryTarget(log: DailyLog, target: string): ManualE
 /**
  * Validate a task looks like a Jira issue key (PROJECT-NUMBER). Shape guard
  * only — any project is allowed; the caller confirms existence against Jira.
- * config.taskPattern is git-tracking scope, NOT a logging gate.
+ * config.tracking is git-tracking scope, NOT a logging gate.
  */
 export function assertValidTask(task: string): void {
   if (!JIRA_KEY_PATTERN.test(task)) {

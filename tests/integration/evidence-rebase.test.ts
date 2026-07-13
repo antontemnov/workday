@@ -19,7 +19,7 @@ import { randomBytes } from 'node:crypto';
 import { GitTracker } from '../../src/collectors/git-tracker.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
 import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
-import type { AppConfig, PollResult, Secrets } from '../../src/core/types.js';
+import type { AppConfig, PollResult } from '../../src/core/types.js';
 
 const TEST_DIR = join(tmpdir(), `workday-evidence-test-${randomBytes(4).toString('hex')}`);
 const REPO = join(TEST_DIR, 'repo');
@@ -38,7 +38,7 @@ const config = {
   repos: [REPO],
   boundaryHour: 4,
   timezone: 'UTC',
-  taskPattern: 'ATL-\\d+',
+  tracking: { projectKeys: ['ATL'], branchOwners: ['atemnov'] },
   genericBranches: ['master'],
   session: {
     diffPollSeconds: 30,
@@ -52,7 +52,6 @@ const config = {
   sensitivity: { default: 'normal', perRepo: {} },
 } as unknown as AppConfig;
 
-const secrets = { Developer: 'atemnov' } as Secrets;
 
 let passed = 0;
 let failed = 0;
@@ -80,7 +79,7 @@ async function main(): Promise<void> {
   git('commit -m "init"');
   git('checkout -b atemnov/ATL-1-feature');
 
-  const gitTracker = new GitTracker(config, secrets);
+  const gitTracker = new GitTracker(config);
   const sessions = new SessionTracker(config);
   const evaluator = new ActivityEvaluator(config.session.diffPollSeconds);
   sessions.onSessionClosed = (id) => evaluator.removeSession(id);

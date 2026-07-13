@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
 import {
-  ActivityType, ProjectRef, SensitivityLevel, SettingsConfigSubset, SettingsResponse,
+  ActivityType, ProjectRef, SensitivityLevel, SettingsConfigSubset, SettingsResponse, TrackingConfig,
 } from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
@@ -249,9 +249,67 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     this.queue({ boundaryHour: hour }, 'debounced', 300);
   }
 
-  onTaskPatternChange(value: string): void {
-    this.applyLocal(c => ({ ...c, taskPattern: value }));
-    this.queue({ taskPattern: value }, 'debounced', 800);
+  // ─── Tracking scope (projects to follow · branch owners) ───────────────
+
+  trackingOpen = false;
+  trackingFilter = '';
+
+  get tracking(): TrackingConfig {
+    return this.settings?.config.tracking ?? { projectKeys: [], branchOwners: [] };
+  }
+
+  get trackedProjectKeys(): readonly string[] {
+    return this.tracking.projectKeys;
+  }
+
+  get trackingSummary(): string {
+    return this.trackedProjectKeys.join(' · ') || 'none';
+  }
+
+  get branchOwnersText(): string {
+    return this.tracking.branchOwners.join(', ');
+  }
+
+  get filteredTrackingProjects(): readonly ProjectRef[] {
+    const q = this.trackingFilter.trim().toLowerCase();
+    if (!q) return this.knownProjects;
+    return this.knownProjects.filter(p =>
+      p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+  }
+
+  isTrackingProjectSelected(key: string): boolean {
+    return this.trackedProjectKeys.includes(key);
+  }
+
+  toggleTrackingProject(key: string): void {
+    const cur = this.trackedProjectKeys;
+    if (cur.includes(key)) {
+      if (cur.length === 1) {
+        this.setIndicator('error', 'At least one tracked project is required');
+        return;
+      }
+      this.setTracking({ projectKeys: cur.filter(k => k !== key) });
+    } else {
+      this.setTracking({ projectKeys: [...cur, key] });
+    }
+  }
+
+  // Comma/space separated names → owner list. Strict token match happens
+  // daemon-side; here we only parse the field.
+  onBranchOwnersChange(value: string): void {
+    const branchOwners = value.split(/[,\s]+/).map(o => o.trim()).filter(Boolean);
+    this.setTracking({ branchOwners });
+  }
+
+  // Persist tracking. Carries both fields so the daemon's deep-merge always
+  // sees a full TrackingConfig regardless of which side was edited.
+  private setTracking(patch: Partial<TrackingConfig>): void {
+    const tracking: TrackingConfig = {
+      projectKeys: [...(patch.projectKeys ?? this.tracking.projectKeys)],
+      branchOwners: [...(patch.branchOwners ?? this.tracking.branchOwners)],
+    };
+    this.applyLocal(c => ({ ...c, tracking }));
+    this.queue({ tracking }, 'debounced', 400);
   }
 
   // ─── Scope pickers (Jira projects · Tempo activity types) ──────────────
@@ -546,6 +604,7 @@ function mergeConfigPatch(
     ...(a ?? {}),
     ...b,
     sensitivity: b.sensitivity ?? a?.sensitivity,
+    tracking: b.tracking ?? a?.tracking,
     search: b.search ?? a?.search,
     activities: b.activities ?? a?.activities,
   };

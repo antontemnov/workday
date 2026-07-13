@@ -41,7 +41,7 @@ const config = {
   repos: ['/tmp/repoA', '/tmp/repoB'],
   boundaryHour: 4,
   timezone: 'UTC',
-  taskPattern: 'ATL-\\d+',
+  tracking: { projectKeys: ['ATL'], branchOwners: [] },
   genericBranches: [],
   session: {
     diffPollSeconds: POLL_SECONDS,

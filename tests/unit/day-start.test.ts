@@ -33,7 +33,7 @@ function makeConfig(): AppConfig {
     repos: [],
     boundaryHour: 4,
     timezone: 'UTC',
-    taskPattern: 'ATL-\\d+',
+    tracking: { projectKeys: ['ATL'], branchOwners: [] },
     genericBranches: [],
     session: { diffPollSeconds: 30, signalDeduplicationSeconds: 300, dayBoundaryCheckSeconds: 60, reflogCount: 20 },
     report: { roundingMinutes: 15 },

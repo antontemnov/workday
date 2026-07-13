@@ -16,8 +16,8 @@ Requires Node.js 20+.
 
 ```bash
 workday init                  # creates ~/.workday/ with config templates
-# edit ~/.workday/config.json — add repo paths
-# edit ~/.workday/secrets.json — set Developer name
+# edit ~/.workday/config.json — add repo paths, tracked Jira project keys,
+#                               and (optionally) your branch-owner name(s)
 workday start                 # start background daemon
 workday status                # check running sessions
 workday today                 # full day summary
@@ -62,7 +62,10 @@ workday daemon                         Run in foreground (live dashboard)
 {
   "repos": ["/path/to/repo-a", "/path/to/repo-b"],
   "boundaryHour": 4,
-  "taskPattern": "PROJ-\\d+",
+  "tracking": {
+    "projectKeys": ["PROJ", "OTHER"],
+    "branchOwners": ["your-username"]
+  },
   "genericBranches": ["develop", "main", "master"],
   "session": {
     "diffPollSeconds": 30,
@@ -78,6 +81,17 @@ workday daemon                         Run in foreground (live dashboard)
 }
 ```
 
+`tracking.projectKeys` are the Jira projects whose branches/commits the daemon
+follows (the branch task regex is derived from them — no hand-written regex).
+`tracking.branchOwners` marks branches as yours: a branch is tracked only when
+one of the names appears as an exact delimiter-separated word in the branch
+name, case-insensitive — `"jdoe"` matches `PROJ-1-jdoe-fix` but not
+`PROJ-1-jdoes-fix`, and `"jdo"` never matches `jdoe`. Empty list = every
+branch is tracked. In the tray app both live under Settings → Tracking, with
+projects picked from the Jira catalog. Legacy configs migrate automatically:
+`taskPattern` seeds `projectKeys`, and the old `secrets.json` `Developer`
+field seeds `branchOwners`.
+
 `notifications.timesheetReminder` drives the tray's desktop toast: on the last
 working day of the month (per `workDays` + `holidays`), from `notifyHour`
 until the month ends, while unpushed days remain — delivered once per month,
@@ -87,10 +101,10 @@ at the first moment the user is actually at the keyboard.
 
 ```json
 {
-  "Developer": "your-git-username",
-  "TempoToken": "",
-  "JiraToken": "",
-  "JiraBaseUrl": ""
+  "Jira_Email": "your-email@company.com",
+  "Jira_BaseUrl": "https://your-company.atlassian.net",
+  "Jira_Token": "",
+  "Tempo_Token": ""
 }
 ```
 
@@ -99,7 +113,7 @@ Config can also live next to `package.json` for local development — the daemon
 ## How It Works
 
 1. Polls `git diff --numstat`, `git status`, and `git reflog` for each repo
-2. Filters branches by developer name
+2. Filters branches by tracked project keys and branch-owner names
 3. Computes diff deltas between snapshots (dynamics = actual keystrokes)
 4. Manages session lifecycle: IDLE → PENDING → ACTIVE
 5. Scores activity via EMA with adaptive idle timeout (15–45 min)

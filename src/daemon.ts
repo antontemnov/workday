@@ -15,7 +15,7 @@ import { NotificationCenter } from './core/notification-center.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { ActivityScopeConfig, AppConfig, Secrets, SearchConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
+import type { ActivityScopeConfig, AppConfig, Secrets, SearchConfig, TrackingConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
@@ -58,7 +58,7 @@ export class Daemon {
     await this.ensureSingleInstance();
 
     this.currentDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
-    this.gitTracker = new GitTracker(this.config, this.secrets);
+    this.gitTracker = new GitTracker(this.config);
 
     // Janitor: close orphaned sessions in past files (crash recovery),
     // prune never-activated noise, delete factless day files.
@@ -170,10 +170,16 @@ export class Daemon {
       (this.config as { repos: readonly string[] }).repos = [...patch.repos];
     }
 
-    // taskPattern
-    if (patch.taskPattern !== undefined && patch.taskPattern !== this.config.taskPattern) {
-      this.gitTracker.setTaskPattern(patch.taskPattern);
-      (this.config as { taskPattern: string }).taskPattern = patch.taskPattern;
+    // tracking — deep-merge so a project reselect keeps the owner list and
+    // an owner edit keeps the project selection.
+    if (patch.tracking) {
+      const cur = this.config.tracking;
+      const next: TrackingConfig = {
+        projectKeys: patch.tracking.projectKeys ?? cur.projectKeys,
+        branchOwners: patch.tracking.branchOwners ?? cur.branchOwners,
+      };
+      (this.config as { tracking: TrackingConfig }).tracking = next;
+      this.gitTracker.setTracking(next);
     }
 
     // boundaryHour

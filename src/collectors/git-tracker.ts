@@ -1,7 +1,7 @@
 import { basename } from 'node:path';
 import type {
   AppConfig,
-  Secrets,
+  TrackingConfig,
   PollResult,
   ReflogEntry,
   RepoTracker,
@@ -11,7 +11,7 @@ import type {
   LedgerQuery,
   LedgerUpdate,
 } from '../core/types.js';
-import { extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
+import { buildTaskPattern, extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
 import { SnapshotParser } from './snapshot-parser.js';  // static methods only
@@ -30,12 +30,11 @@ const DEFAULT_BRANCH_FALLBACK_NAMES: readonly string[] = ['main', 'master', 'dev
  * Stores per-repo state (previous snapshot, last reflog timestamp).
  *
  * Usage:
- *   const tracker = new GitTracker(config, secrets);
+ *   const tracker = new GitTracker(config);
  *   const results = await tracker.pollAll(); // one poll tick for all repos
  */
 export class GitTracker {
   private readonly config: AppConfig;
-  private readonly developer: string;
   private readonly gitClient: GitClient;
   private reflogParser: ReflogParser;
   private readonly repoStates: Map<string, RepoTracker> = new Map();
@@ -44,11 +43,10 @@ export class GitTracker {
   // falls back to per-session baseSha. `undefined` = not yet resolved.
   private readonly defaultBranchRefCache: Map<string, string | null> = new Map();
 
-  public constructor(config: AppConfig, secrets: Secrets) {
+  public constructor(config: AppConfig) {
     this.config = config;
-    this.developer = secrets.Developer;
     this.gitClient = new GitClient(config.session.reflogCount);
-    this.reflogParser = new ReflogParser(config.taskPattern);
+    this.reflogParser = new ReflogParser(buildTaskPattern(config.tracking.projectKeys));
   }
 
   /**
@@ -102,9 +100,9 @@ export class GitTracker {
     this.defaultBranchRefCache.delete(repoPath);
   }
 
-  /** Rebuild reflog parser when taskPattern changes. */
-  public setTaskPattern(pattern: string): void {
-    this.reflogParser = new ReflogParser(pattern);
+  /** Rebuild reflog parser when the tracking scope changes. */
+  public setTracking(tracking: TrackingConfig): void {
+    this.reflogParser = new ReflogParser(buildTaskPattern(tracking.projectKeys));
   }
 
   /**
@@ -137,8 +135,7 @@ export class GitTracker {
     // Branch filter: only track developer's branches
     const task = extractTask(
       raw.branch,
-      this.config.taskPattern,
-      this.developer,
+      this.config.tracking,
       this.config.genericBranches,
     );
 
@@ -329,7 +326,7 @@ export class GitTracker {
       if (entry.type === 'checkout') {
         const targetBranch = this.reflogParser.extractCheckoutTarget(entry.message);
         const task = targetBranch
-          ? extractTask(targetBranch, this.config.taskPattern, this.developer, this.config.genericBranches)
+          ? extractTask(targetBranch, this.config.tracking, this.config.genericBranches)
           : null;
         return { entry, task, targetBranch };
       }

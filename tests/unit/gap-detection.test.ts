@@ -37,7 +37,7 @@ function makeConfig(repos: string[], idleCloseHours = 3): AppConfig {
     repos,
     boundaryHour: 4,
     timezone: 'UTC',
-    taskPattern: 'ATL-\\d+',
+    tracking: { projectKeys: ['ATL'], branchOwners: [] },
     genericBranches: [],
     session: {
       diffPollSeconds: POLL_SECONDS,

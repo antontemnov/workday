@@ -6,7 +6,7 @@ export interface AppConfig {
   // 04:00 belongs to the previous day). Date attribution + budget window.
   readonly boundaryHour: number;
   readonly timezone: string;        // IANA timezone, e.g. "Europe/Moscow"
-  readonly taskPattern: string;
+  readonly tracking: TrackingConfig;
   readonly genericBranches: readonly string[];
   readonly session: SessionConfig;
   readonly report: ReportConfig;
@@ -26,6 +26,21 @@ export interface AppConfig {
   readonly search: SearchConfig;
   readonly activities: ActivityScopeConfig;
   readonly notifications: NotificationsConfig;
+}
+
+// ─── Git tracking scope ──────────────────────────────────────────────────
+
+export interface TrackingConfig {
+  // Jira project keys whose branches/commits the daemon follows — the branch
+  // task regex is derived from this list (`(?:ATL|CNF)-\d+`). Non-empty.
+  // Independent from search.projectKeys (what the issue search offers).
+  readonly projectKeys: readonly string[];
+  // Branch-owner names that mark a branch as "mine". A branch matches when
+  // one of these appears as an exact delimiter-separated token sequence in
+  // the branch name (case-insensitive): "atemnov" matches
+  // "ATL-1-atemnov-fix" but NOT "ATL-1-atemnova-fix". Empty = every branch
+  // is tracked.
+  readonly branchOwners: readonly string[];
 }
 
 // ─── Jira search ─────────────────────────────────────────────────────────
@@ -98,7 +113,9 @@ export interface ReportConfig {
 }
 
 export interface Secrets {
-  readonly Developer: string;
+  // Legacy — branch ownership now lives in config.tracking.branchOwners;
+  // kept only so old secrets.json files still parse (seed for migration).
+  readonly Developer?: string;
   readonly Jira_Email: string;
   readonly Jira_BaseUrl: string;
   readonly Jira_Token: string;
@@ -852,7 +869,7 @@ export interface SettingsConfigSubset {
   readonly repos: readonly string[];
   readonly boundaryHour: number;
   readonly timezone: string;
-  readonly taskPattern: string;
+  readonly tracking: TrackingConfig;
   readonly sensitivity: {
     readonly default: SensitivityLevel;
     readonly perRepo: Readonly<Record<string, SensitivityLevel>>;

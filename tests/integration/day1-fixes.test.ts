@@ -145,7 +145,7 @@ function swapConfig(): void {
   const testConfig = {
     repos: [REPO_ALPHA, REPO_BETA],
     boundaryHour: 4,
-    taskPattern: 'ATL-\\d+',
+    tracking: { projectKeys: ['ATL'], branchOwners: ['atemnov'] },
     genericBranches: ['develop', 'main', 'master', 'HEAD'],
     session: {
       diffPollSeconds: POLL_SECONDS,
