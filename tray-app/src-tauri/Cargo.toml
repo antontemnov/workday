@@ -21,7 +21,9 @@ tauri-build = { version = "2.5.6", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11", features = ["tray-icon", "image-png"] }
+# macos-private-api: WebviewWindowBuilder::transparent() does not exist on
+# macOS without it — the toast window broke the aarch64-apple-darwin build.
+tauri = { version = "2.11", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
