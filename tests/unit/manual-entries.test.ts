@@ -38,7 +38,7 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     repos: [],
     boundaryHour: 0,
     timezone: 'UTC',
-    taskPattern: 'ATL-\\d+',
+    tracking: { projectKeys: ['ATL'], branchOwners: [] },
     genericBranches: [],
     session: { diffPollSeconds: 30, signalDeduplicationSeconds: 300, dayBoundaryCheckSeconds: 60, reflogCount: 20 },
     report: { roundingMinutes: 15 },
@@ -117,8 +117,8 @@ test('rejects non-key garbage (shape guard)', () => {
   assert.equal(log.manualEntries.length, 0);
 });
 
-test('accepts any project prefix — logging is not scoped to taskPattern', () => {
-  const config = makeConfig(); // taskPattern ATL-\d+ governs git tracking, not logging
+test('accepts any project prefix — logging is not scoped to tracking.projectKeys', () => {
+  const config = makeConfig(); // tracking ATL governs git tracking, not logging
   const log = makeLog(config);
   assert.equal(addStd(log, config, { task: 'WEB-10' }).task, 'WEB-10');
   assert.equal(addStd(log, config, { task: 'IN-66' }).task, 'IN-66');
@@ -136,8 +136,8 @@ test('rejects case mismatch and malformed keys', () => {
   assert.equal(log.manualEntries.length, 0);
 });
 
-test('taskPattern does not gate logging (git-tracking scope only)', () => {
-  const config = makeConfig({ taskPattern: 'WEB-\\d+' }); // git tracks WEB; logging unaffected
+test('tracking scope does not gate logging (git-tracking scope only)', () => {
+  const config = makeConfig({ tracking: { projectKeys: ['WEB'], branchOwners: [] } }); // git tracks WEB; logging unaffected
   const log = makeLog(config);
   assert.equal(addStd(log, config, { task: 'ATL-10' }).task, 'ATL-10'); // still loggable
   assert.equal(addStd(log, config, { task: 'IN-66' }).task, 'IN-66');

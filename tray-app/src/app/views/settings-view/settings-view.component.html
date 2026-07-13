@@ -52,16 +52,58 @@
           <span class="readonly">{{ settings.config.timezone }}</span>
         </div>
       </div>
+    </div>
+
+    <!-- Tracking: which projects' branches the daemon follows + whose
+         branches count as mine. Same catalog as the search scope picker. -->
+    <div class="settings-section">
+      <h3>Tracking <span class="sub">projects & branch owners the daemon follows</span></h3>
+
+      <div class="scope-box" [class.open]="trackingOpen">
+        <button type="button" class="scope-head" (click)="trackingOpen = !trackingOpen">
+          <span class="scope-title">Tracked projects</span>
+          <span class="scope-sum" [class.all]="!trackedProjectKeys.length">{{ trackingSummary }}</span>
+          <svg class="chev" viewBox="0 0 8 8" aria-hidden="true"><path d="M2.2 1.4 5 4 2.2 6.6" /></svg>
+        </button>
+        <div class="scope-body" *ngIf="trackingOpen">
+          <div class="scope-tools">
+            <input class="input-mini proj-search"
+                   type="text"
+                   placeholder="Find spaces…"
+                   [(ngModel)]="trackingFilter" />
+            <button class="btn small"
+                    [disabled]="projectsRefreshing || !settings.secretsMeta.jiraConfigured"
+                    [title]="settings.secretsMeta.jiraConfigured ? 'Fetch the project list from Jira' : 'Set the Jira token first'"
+                    (click)="refreshProjects()">
+              {{ projectsRefreshing ? '…' : '⟳ Jira' }}
+            </button>
+          </div>
+          <div class="proj-list" *ngIf="knownProjects.length; else noTrackingProjects">
+            <label class="proj-item" *ngFor="let p of filteredTrackingProjects" [class.on]="isTrackingProjectSelected(p.key)">
+              <input type="checkbox" [checked]="isTrackingProjectSelected(p.key)" (change)="toggleTrackingProject(p.key)" />
+              <span class="proj-key">{{ p.key }}</span>
+              <span class="proj-name">{{ p.name }}</span>
+            </label>
+            <div class="proj-empty" *ngIf="!filteredTrackingProjects.length">No spaces match “{{ trackingFilter }}”.</div>
+          </div>
+          <ng-template #noTrackingProjects>
+            <div class="proj-empty">No catalog yet — hit “⟳ Jira”.</div>
+          </ng-template>
+          <div class="scope-hint">Branches & commits of these projects open sessions. At least one is required.</div>
+        </div>
+      </div>
+
       <div class="opt-row">
         <div class="left">
-          <span class="name">Task pattern</span>
-          <span class="hint">Regex used to extract task IDs from branches.</span>
+          <span class="name">Branch owners</span>
+          <span class="hint">Names marking a branch as yours — exact word between separators, any case ("jdoe" matches ATL-1-jdoe-fix, not ATL-1-jdoes-fix). Comma-separated; empty = track every branch.</span>
         </div>
         <div class="right">
           <input class="input-mini wide"
                  type="text"
-                 [value]="settings.config.taskPattern"
-                 (input)="onTaskPatternChange($any($event.target).value)" />
+                 placeholder="e.g. jdoe, john.doe"
+                 [value]="branchOwnersText"
+                 (change)="onBranchOwnersChange($any($event.target).value)" />
         </div>
       </div>
     </div>

@@ -889,7 +889,10 @@ export class HttpServer {
           repos: [...c.repos],
           boundaryHour: c.boundaryHour,
           timezone: c.timezone,
-          taskPattern: c.taskPattern,
+          tracking: {
+            projectKeys: [...c.tracking.projectKeys],
+            branchOwners: [...c.tracking.branchOwners],
+          },
           sensitivity: {
             default: c.sensitivity.default,
             perRepo: { ...c.sensitivity.perRepo },
@@ -933,7 +936,7 @@ export class HttpServer {
         let current: Secrets;
         try { current = loadSecrets(); }
         catch {
-          current = { Developer: '', Jira_Email: '', Jira_BaseUrl: '', Jira_Token: '', Tempo_Token: '' };
+          current = { Jira_Email: '', Jira_BaseUrl: '', Jira_Token: '', Tempo_Token: '' };
         }
         const next: Secrets = {
           ...current,

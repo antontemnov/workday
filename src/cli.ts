@@ -870,7 +870,7 @@ function handleInit(): void {
     const template = {
       repos: [],
       boundaryHour: 4,
-      taskPattern: 'PROJ-\\d+',
+      tracking: { projectKeys: ['PROJ'], branchOwners: [] },
       genericBranches: ['develop', 'main', 'master'],
       session: {
         diffPollSeconds: 30,
@@ -891,7 +891,6 @@ function handleInit(): void {
   const secretsPath = join(home, SECRETS_FILE_NAME);
   if (!existsSync(secretsPath)) {
     const template = {
-      Developer: 'your-git-username',
       Jira_Email: 'your-email@company.com',
       Jira_BaseUrl: 'https://your-company.atlassian.net',
       Jira_Token: '',
@@ -910,11 +909,12 @@ function handleInit(): void {
   console.log('     - "repos": add absolute paths to your git repositories');
   console.log('       e.g. ["C:/projects/my-app", "C:/projects/my-api"]');
   console.log('       or   ["/home/user/projects/my-app"]');
-  console.log('     - "taskPattern": change PROJ to your Jira prefix');
-  console.log('       e.g. "CORE-\\\\d+" for CORE-567, "WEB-\\\\d+" for WEB-123');
+  console.log('     - "tracking.projectKeys": change PROJ to your Jira project key(s)');
+  console.log('       e.g. ["CORE"] for CORE-567, ["CORE", "WEB"] for both projects');
+  console.log('     - "tracking.branchOwners": your username(s) as written in branch names');
+  console.log('       e.g. ["jdoe"] tracks "CORE-1-jdoe-fix"; empty = track every branch');
   console.log('');
   console.log(`  2. ${secretsPath}`);
-  console.log('     - "Developer": your git username (used to filter branches)');
   console.log('     - Jira/Tempo tokens: optional, needed only for "workday tempo --push"');
   console.log('');
   console.log('  3. Run: workday start');

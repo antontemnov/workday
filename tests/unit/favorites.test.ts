@@ -41,7 +41,7 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     repos: [],
     boundaryHour: 0,
     timezone: 'UTC',
-    taskPattern: 'ATL-\\d+',
+    tracking: { projectKeys: ['ATL'], branchOwners: [] },
     genericBranches: [],
     session: { diffPollSeconds: 30, signalDeduplicationSeconds: 300, dayBoundaryCheckSeconds: 60, reflogCount: 20 },
     report: { roundingMinutes: 15 },

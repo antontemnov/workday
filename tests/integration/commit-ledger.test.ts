@@ -21,7 +21,7 @@ import { GitTracker } from '../../src/collectors/git-tracker.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
 import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import { ClosedBy } from '../../src/core/types.js';
-import type { AppConfig, PollResult, Secrets } from '../../src/core/types.js';
+import type { AppConfig, PollResult } from '../../src/core/types.js';
 
 const TEST_DIR = join(tmpdir(), `workday-ledger-test-${randomBytes(4).toString('hex')}`);
 const REPO = join(TEST_DIR, 'repo');
@@ -42,7 +42,7 @@ const config = {
   repos: [REPO],
   boundaryHour: 4,
   timezone: 'UTC',
-  taskPattern: 'ATL-\\d+',
+  tracking: { projectKeys: ['ATL'], branchOwners: ['atemnov'] },
   genericBranches: ['master'],
   session: {
     diffPollSeconds: 30,
@@ -56,7 +56,6 @@ const config = {
   sensitivity: { default: 'normal', perRepo: {} },
 } as unknown as AppConfig;
 
-const secrets = { Developer: 'atemnov' } as Secrets;
 
 let passed = 0;
 let failed = 0;
@@ -99,7 +98,7 @@ async function main(): Promise<void> {
   git('add .');
   git('commit -m "ATL-2 before daemon"', tenMinAgo);
 
-  let gitTracker = new GitTracker(config, secrets);
+  let gitTracker = new GitTracker(config);
   let sessions = new SessionTracker(config);
   let evaluator = new ActivityEvaluator(config.session.diffPollSeconds);
   sessions.onSessionClosed = (id) => evaluator.removeSession(id);
@@ -203,7 +202,7 @@ async function main(): Promise<void> {
 
   // A real restart loses ALL in-memory git state — recreate GitTracker too
   // (its prev-snapshot/reflog pointers must not survive the "crash").
-  gitTracker = new GitTracker(config, secrets);
+  gitTracker = new GitTracker(config);
   evaluator = new ActivityEvaluator(config.session.diffPollSeconds);
   sessions = new SessionTracker(config, persistedLog);
   sessions.onSessionClosed = (id) => evaluator.removeSession(id);

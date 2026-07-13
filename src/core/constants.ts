@@ -21,7 +21,7 @@ export const DEFAULT_API_PORT = 9213;
 // pick it up (they re-check every 6h), THEN npm-publish the daemon —
 // a tray with the old exact-match check meeting a newer apiVersion would
 // reinstall-loop the daemon.
-export const API_VERSION = 12;
+export const API_VERSION = 13;
 
 // ─── Auto-update ────────────────────────────────────────────────────────
 export const NPM_PACKAGE_NAME = 'workday-daemon';
@@ -92,7 +92,7 @@ export const SEARCH_MIN_WORD_LENGTH = 2;
 
 // Generic Jira issue-key shape (PROJECT-NUMBER). Logging accepts any real Jira
 // key — existence is confirmed against Jira — so this is only a garbage guard,
-// NOT project-scoped. config.taskPattern stays reserved for git-activity
+// NOT project-scoped. config.tracking stays reserved for git-activity
 // tracking (whose branches/commits to follow), never for what you may log.
 export const JIRA_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
 

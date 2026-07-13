@@ -32,7 +32,7 @@ const config = {
   repos: [],
   boundaryHour: 4,
   timezone: 'UTC',
-  taskPattern: 'ATL-\\d+',
+  tracking: { projectKeys: ['ATL'], branchOwners: [] },
   genericBranches: [],
   session: {
     diffPollSeconds: 30,

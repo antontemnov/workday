@@ -59,7 +59,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockTempoConfigured = true;
   private mockBoundaryHour = 4;
   private mockTimezone = 'Europe/Moscow';
-  private mockTaskPattern = 'ATL-\\d+';
+  private mockTracking = { projectKeys: ['ATL'], branchOwners: ['jdoe'] };
   private mockProjectKeys: string[] = ['ATL'];
   private mockKnownProjects: ProjectRef[] = [
     { key: 'ATL', name: 'Core Platform', id: '10001' },
@@ -573,7 +573,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           repos: [...this.mockRepos],
           boundaryHour: this.mockBoundaryHour,
           timezone: this.mockTimezone,
-          taskPattern: this.mockTaskPattern,
+          tracking: { projectKeys: [...this.mockTracking.projectKeys], branchOwners: [...this.mockTracking.branchOwners] },
           sensitivity: { default: this.mockSensitivity },
           search: { projectKeys: [...this.mockProjectKeys], knownProjects: this.mockKnownProjects.map(p => ({ ...p })) },
           activities: { values: [...this.mockActivityValues] },
@@ -589,7 +589,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
       if (patch.config.repos) this.mockRepos = [...patch.config.repos];
       if (patch.config.boundaryHour !== undefined) this.mockBoundaryHour = patch.config.boundaryHour;
       if (patch.config.timezone) this.mockTimezone = patch.config.timezone;
-      if (patch.config.taskPattern !== undefined) this.mockTaskPattern = patch.config.taskPattern;
+      if (patch.config.tracking) {
+        this.mockTracking = {
+          projectKeys: [...(patch.config.tracking.projectKeys ?? this.mockTracking.projectKeys)],
+          branchOwners: [...(patch.config.tracking.branchOwners ?? this.mockTracking.branchOwners)],
+        };
+      }
       if (patch.config.sensitivity?.default) this.mockSensitivity = patch.config.sensitivity.default;
       if (patch.config.search?.projectKeys) this.mockProjectKeys = [...patch.config.search.projectKeys];
       if (patch.config.activities?.values) this.mockActivityValues = [...patch.config.activities.values];

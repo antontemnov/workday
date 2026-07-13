@@ -28,7 +28,7 @@ function makeConfig(): AppConfig {
     repos: ['/repo'],
     boundaryHour: 4,
     timezone: 'UTC',
-    taskPattern: 'ATL-\\d+',
+    tracking: { projectKeys: ['ATL'], branchOwners: [] },
     genericBranches: [],
     session: { diffPollSeconds: 30, signalDeduplicationSeconds: 300, dayBoundaryCheckSeconds: 60, reflogCount: 20, idleCloseHours: 0 },
     report: { roundingMinutes: 15 },
