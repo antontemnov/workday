@@ -50,7 +50,6 @@ interface DayRow {
   readonly hasData: boolean;             // clickable → drawer
   readonly holidayName: string | null;   // from Tempo schedule
   readonly hoursLabel: string;
-  readonly under: boolean;               // closed day short of its required hours
   readonly status: MonthDayStatus;
   readonly driftLines: readonly string[];  // what diverges from Tempo (snapshot-verified)
   readonly driftTitle: string;             // driftLines joined for the status tooltip
@@ -277,15 +276,36 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return `${day}, ${time}`;
   }
 
-  // ─── Month pager ───────────────────────────────────────────────────────
+  // ─── Month pager (the current month is the ceiling — no future) ────────
 
   prevMonth(): void { this.shiftMonth(-1); }
-  nextMonth(): void { this.shiftMonth(1); }
+
+  nextMonth(): void {
+    if (this.isCurrentMonth) return;
+    this.shiftMonth(1);
+  }
+
+  /** The away-month label is the way back — one click returns to today. */
+  backToCurrent(): void {
+    if (this.isCurrentMonth) return;
+    const today = localToday();
+    this.year = Number(today.slice(0, 4));
+    this.month = Number(today.slice(5, 7));
+    this.resetMonthState();
+  }
+
+  get isCurrentMonth(): boolean {
+    return this.monthContainsToday;
+  }
 
   private shiftMonth(delta: number): void {
     this.month += delta;
     if (this.month < 1) { this.month = 12; this.year--; }
     if (this.month > 12) { this.month = 1; this.year++; }
+    this.resetMonthState();
+  }
+
+  private resetMonthState(): void {
     this.openDates.clear();
     this.schedule = null;
     this.approval = null;
@@ -316,11 +336,6 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return fmtCompact(this.monthData?.totals.reportedSeconds ?? 0);
   }
 
-  get requiredLabel(): string | null {
-    if (!this.schedule?.available) return null;
-    return fmtCompact(this.schedule.requiredSecondsTotal);
-  }
-
   // Behind/ahead over strictly closed days: required(≤yesterday) vs
   // logged(≤yesterday). Today is still being written and never counts.
   get delta(): TotalsDelta | null {
@@ -337,6 +352,13 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return diff > 0
       ? { ahead: false, label: `${fmtCompact(diff)} behind` }
       : { ahead: true, label: `${fmtCompact(-diff)} ahead` };
+  }
+
+  /** '11h 55m behind schedule' / '3h 25m ahead of schedule' — the arrow's tooltip. */
+  get deltaTip(): string | null {
+    const d = this.delta;
+    if (!d) return null;
+    return d.ahead ? `${d.label} of schedule` : `${d.label} schedule`;
   }
 
   // ─── Tempo strip: period status · last push · push button ─────────────
@@ -360,6 +382,16 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   get pushCount(): number {
     const t = this.monthData?.totals;
     return t ? t.pendingDays + t.outdatedDays : 0;
+  }
+
+  // The button's badge: hours about to land in Tempo — a volume preview,
+  // unlike a day count. Null (no badge) when the pending days sum to zero.
+  get pushHoursLabel(): string | null {
+    const days = this.monthData?.days ?? [];
+    const seconds = days
+      .filter(d => d.status === MonthDayStatus.Pending || d.status === MonthDayStatus.Outdated)
+      .reduce((sum, d) => sum + d.reportedSeconds, 0);
+    return seconds > 0 ? fmtCompact(seconds) : null;
   }
 
   // Approved period is sealed Tempo-side — nothing to push into it.
@@ -745,9 +777,6 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
       hasData,
       holidayName: isHoliday ? (s?.holidayName ?? 'Holiday') : null,
       hoursLabel: fmtSum(d.reportedSeconds),
-      under: hasData && !isToday
-        && s !== undefined && s.requiredSeconds > 0
-        && d.reportedSeconds < s.requiredSeconds,
       status: d.status,
       driftLines,
       driftTitle: driftLines.join('\n'),

@@ -1,4 +1,7 @@
 // Timesheets tab — design canon: tray-app/design-preview/timesheets-redesign-5.html
+// + polish pass: tray-app/design-preview/timesheets-polish-2.html (status in the
+// chevron slot, hours as the rightmost column, delta arrow with a custom tooltip,
+// no future months in the pager).
 
 :host {
   display: block;
@@ -50,49 +53,75 @@
     font-size: 12px;
 
     &:hover { color: #cdd6f4; background: #26263a; }
+    // The current month is the ceiling — › keeps its slot but disappears.
+    &.hide { visibility: hidden; }
   }
 
   // Fixed width so the header doesn't dance while paging months.
   .plabel {
-    width: 118px;
+    width: 122px;
     text-align: center;
     font-size: 13.5px;
     font-weight: 700;
     color: #cdd6f4;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.2px;
+    border-radius: 6px;
+    padding: 2px 0;
+
+    .bk { font-size: 11px; color: #89b4fa; margin-right: 4px; opacity: 0.85; }
+
+    // Away from the current month the label is the way back.
+    &.away {
+      color: #89b4fa;
+      cursor: pointer;
+
+      &:hover { background: rgba(137, 180, 250, 0.08); }
+    }
   }
 }
 
-// Totals: sum + required on the first line, behind/ahead under the sum.
+// Totals: delta arrow + sum on one line. Arrow color carries behind/ahead;
+// details live in a custom tooltip lit by hovering the arrow.
 .totals {
   margin-left: auto;
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  align-items: baseline;
+  gap: 6px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 
-  .t1 {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-  }
+  .dmk { font-size: 12px; align-self: center; margin-right: 1px; cursor: default; }
+  &.behind .dmk { color: #f38ba8; }
+  &.ahead  .dmk { color: #a6e3a1; }
+
   .tmain { font-size: 17px; font-weight: 700; letter-spacing: 0.2px; color: #cdd6f4; }
-  .tof { font-size: 10px; color: #6c7086; }
 
-  .tdelta {
-    font-size: 10px;
-    color: #a6adc8;
-
-    .mk { color: #f9e2af; opacity: 0.85; }
-
-    &.ahead {
-      color: #a6e3a1;
-      .mk { color: #a6e3a1; opacity: 1; }
-    }
+  // One line strictly left of the total so it never covers anything.
+  .tip {
+    position: absolute;
+    right: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 40;
+    background: #11111b;
+    border: 1px solid #313244;
+    border-radius: 7px;
+    padding: 5px 11px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-weight: 700;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s;  // opacity-only fade
+    pointer-events: none;
   }
+  &.behind .tip { color: #f38ba8; }
+  &.ahead  .tip { color: #a6e3a1; }
+
+  .dmk:hover ~ .tip { opacity: 1; visibility: visible; }
 }
 
 // ─── Tempo strip: period status · last push · push button ──────────────
@@ -101,7 +130,7 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 0 14px 11px;
   border-bottom: 1px solid #26263a;
   min-height: 34px;
@@ -135,23 +164,24 @@
 
 .actions.no-status .push-note::before { content: none; }
 
-.sync-btn {
-  margin-left: auto;
+// Borderless ⟳ in the meta cluster (status · last push · ⟳) — the push
+// button keeps the right edge to itself.
+.sync-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   color: #6c7086;
   background: transparent;
-  border: 1px solid #26263a;
-  border-radius: 6px;
+  border: none;
+  border-radius: 5px;
   padding: 0;
   cursor: pointer;
 
-  &:hover:not(:disabled) { color: #cdd6f4; border-color: #45475a; }
+  &:hover:not(:disabled) { color: #cdd6f4; background: #26263a; }
   &:disabled { cursor: default; }
   &.spin { animation: sync-rotate 1s linear infinite; color: #89b4fa; }
 }
@@ -160,8 +190,6 @@
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
-
-.sync-btn + .push-btn { margin-left: 0; }
 
 .push-btn {
   margin-left: auto;
@@ -175,19 +203,19 @@
   background: transparent;
   border: 1px solid rgba(137, 180, 250, 0.30);
   border-radius: 6px;
-  padding: 4px 10px;
+  padding: 4px 11px;
   cursor: pointer;
   letter-spacing: 0.2px;
+  white-space: nowrap;
 
   &:hover:not(:disabled) { background: rgba(137, 180, 250, 0.08); border-color: rgba(137, 180, 250, 0.5); }
 
-  .cnt {
+  // Pending hours — the volume about to land in Tempo (day counts say less).
+  .hrs {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    min-width: 15px;
     height: 15px;
-    padding: 0 4px;
+    padding: 0 6px;
     border-radius: 999px;
     background: rgba(137, 180, 250, 0.15);
     font-size: 9.5px;
@@ -276,18 +304,20 @@
 .scroll-zone::-webkit-scrollbar { width: 4px; }
 .scroll-zone::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
 
+// Week separators are landmarks — keep them clearly visible.
 .week-sep {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 6px 4px;
+  gap: 10px;
+  padding: 13px 6px 5px;
 
-  .l { flex: 1; height: 1px; background: #26263a; }
+  .l { flex: 1; height: 1px; background: #3a3a56; }
   .t {
-    font-size: 8.5px;
-    letter-spacing: 1px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
     text-transform: uppercase;
-    color: #565973;
+    color: #8288a8;
     font-variant-numeric: tabular-nums;
   }
 }
@@ -320,13 +350,24 @@
   padding-top: 2px;
 }
 
-.d-chev {
-  font-size: 7px;
-  color: #565973;
-  width: 10px;
-  transition: transform 0.18s ease;
+// Status sits in the former chevron slot, right after the weekday; the day
+// opens by clicking the whole row (open state = the row's background).
+.d-status {
+  width: 76px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+
+  .sdot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  &.pushed   { color: #a6e3a1; }
+  &.pending  { color: #f9e2af; }
+  &.outdated { color: #fab387; }
 }
-.day.open .d-chev { transform: rotate(90deg); color: #a6adc8; }
 
 .d-note {
   font-size: 10px;
@@ -341,34 +382,17 @@
   &.holiday { color: #94e2d5; opacity: 0.75; }
 }
 
+// Hours are the rightmost column — always neutral so they never fight the
+// status colors.
 .d-hours {
-  margin-left: auto;
+  width: 54px;
+  text-align: right;
   font-size: 12px;
   font-weight: 700;
   color: #cdd6f4;
   white-space: nowrap;
 
-  &.under { color: #fab387; }
   &.zero { color: #565973; font-weight: 400; }
-}
-
-.d-status {
-  width: 66px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  justify-content: flex-end;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-
-  .sdot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-
-  &.pushed   { color: #a6e3a1; }
-  &.pending  { color: #f9e2af; }
-  &.outdated { color: #fab387; }
-  &.none     { color: #3d3d52; }
 }
 
 .day.dim {

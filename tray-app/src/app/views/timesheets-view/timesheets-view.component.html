@@ -1,23 +1,29 @@
 <div class="ts-root">
-  <!-- Header, one line: month pager left · totals right (sum+required, delta under) -->
+  <!-- Header, one line: month pager left · delta arrow + total right.
+       No future months: › is hidden on the current month; on any other month
+       the label turns into a ↩ link back to it. -->
   <div class="ts-head">
     <div class="pager">
       <button class="pbtn" (click)="prevMonth()" title="Previous month">‹</button>
-      <span class="plabel">{{ monthLabel }}</span>
-      <button class="pbtn" (click)="nextMonth()" title="Next month">›</button>
+      <span class="plabel"
+            [class.away]="!isCurrentMonth"
+            [title]="isCurrentMonth ? '' : 'Back to the current month'"
+            (click)="backToCurrent()">
+        <span class="bk" *ngIf="!isCurrentMonth">↩</span>{{ monthLabel }}
+      </span>
+      <button class="pbtn" [class.hide]="isCurrentMonth" (click)="nextMonth()" title="Next month">›</button>
     </div>
-    <div class="totals" *ngIf="monthData && !loading">
-      <div class="t1">
-        <span class="tmain">{{ totalLabel }}</span>
-        <span class="tof" *ngIf="requiredLabel">of {{ requiredLabel }}</span>
-      </div>
-      <div class="tdelta" *ngIf="delta" [class.ahead]="delta.ahead">
-        <span class="mk">{{ delta.ahead ? '▴' : '▾' }}</span> {{ delta.label }}
-      </div>
+    <div class="totals" *ngIf="monthData && !loading"
+         [class.behind]="delta !== null && !delta.ahead"
+         [class.ahead]="delta !== null && delta.ahead">
+      <span class="dmk" *ngIf="delta">{{ delta.ahead ? '▴' : '▾' }}</span>
+      <span class="tmain">{{ totalLabel }}</span>
+      <!-- one-liner strictly left of the total, lit by hovering the arrow -->
+      <div class="tip" *ngIf="deltaTip">{{ deltaTip }}</div>
     </div>
   </div>
 
-  <!-- Tempo strip: period status · last push · push button -->
+  <!-- Tempo strip: period status · last push · sync (meta cluster) · push button -->
   <div class="actions" [class.no-status]="!periodStatus">
     <span class="period-status" *ngIf="periodStatus" [ngClass]="periodStatus.cls">
       <span class="sdot"></span>{{ periodStatus.label }}
@@ -26,7 +32,7 @@
     <ng-template #lastPush>
       <span class="push-note" *ngIf="lastPushLabel">last push {{ lastPushLabel }}</span>
     </ng-template>
-    <button class="sync-btn"
+    <button class="sync-ghost"
             *ngIf="monthData"
             [class.spin]="syncing"
             [disabled]="syncing"
@@ -42,7 +48,7 @@
       <ng-container *ngIf="pushing">⚡ pushing…</ng-container>
       <ng-container *ngIf="!pushing && pushCount === 0">⚡ nothing to push</ng-container>
       <ng-container *ngIf="!pushing && pushCount > 0">
-        ⚡ Push the Tempo <span class="cnt">{{ pushCount }}</span>
+        ⚡ Push the Tempo <span class="hrs" *ngIf="pushHoursLabel">{{ pushHoursLabel }}</span>
       </ng-container>
     </button>
   </div>
@@ -86,15 +92,16 @@
           <div class="day-row" [class.static]="!row.hasData" (click)="toggleDay(row)">
             <span class="d-num">{{ row.dayNum }}</span>
             <span class="d-wd">{{ row.weekday }}</span>
-            <span class="d-chev">{{ row.hasData ? '▶' : '' }}</span>
+            <span class="d-status" [ngClass]="row.status" [title]="row.driftTitle">
+              <ng-container *ngIf="row.status !== 'none'">
+                <span class="sdot"></span>{{ row.status }}
+              </ng-container>
+            </span>
             <span class="d-note" [class.holiday]="row.holidayName">
               {{ row.holidayName ? '☀ ' + row.holidayName : '' }}
             </span>
-            <span class="d-hours" [class.under]="row.under" [class.zero]="!row.hasData">
+            <span class="d-hours" [class.zero]="!row.hasData">
               {{ row.hasData ? row.hoursLabel : '—' }}
-            </span>
-            <span class="d-status" [ngClass]="row.status" [title]="row.driftTitle">
-              <span class="sdot"></span>{{ row.status !== 'none' ? row.status : '' }}
             </span>
           </div>
 

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Workday · timesheets — polish 1 (время справа · under-8h · шапка · push-бейдж)</title>
+<style>
+  :root {
+    --crust:#11111b; --mantle:#181825; --base:#1e1e2e; --struct:#26263a;
+    --surface0:#313244; --surface1:#45475a; --overlay0:#6c7086;
+    --subtext0:#a6adc8; --subtext1:#bac2de; --text:#cdd6f4;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --blue:#89b4fa; --peach:#fab387; --teal:#94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0c0c14; color:var(--text);
+    font-family:'Cascadia Code','Consolas',monospace;
+    padding:26px 20px 60px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .page-title { font-size:13px; color:var(--subtext0); letter-spacing:.4px; margin-bottom:6px; }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--overlay0); margin-bottom:22px; text-align:center; line-height:1.6; }
+  .page-sub .k { color:var(--subtext1); background:var(--struct); border-radius:4px; padding:1px 6px; }
+
+  .cols { display:flex; flex-wrap:wrap; gap:26px; justify-content:center; }
+  .col { width:500px; }
+  .cap { font-size:10.5px; color:var(--overlay0); line-height:1.55; margin:0 2px 8px; min-height:50px; }
+  .cap b { color:var(--subtext0); }
+  .cap .g { color:var(--green); }
+
+  .frame {
+    width:500px; height:600px; background:var(--base);
+    border:1px solid #2c2c40; border-radius:10px; overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .banner { flex-shrink:0; display:flex; align-items:center; padding:8px 12px 10px; background:var(--mantle); border-bottom:1px solid var(--struct); font-size:10px; color:var(--overlay0); letter-spacing:2px; }
+  .banner .wd { display:flex; gap:8px; }
+  .banner .wd .on { color:var(--text); position:relative; }
+  .banner .wd .on::after { content:''; position:absolute; left:50%; transform:translateX(-50%); bottom:-6px; width:3px; height:3px; border-radius:50%; background:var(--yellow); }
+  .banner .nav { margin-left:auto; letter-spacing:4px; font-size:11px; }
+  .banner .nav .cur { color:var(--yellow); }
+
+  /* ══ Пейджер: ‹ на текущем месяце без ›, в прошлом — кликабельный ↩ заголовок ══ */
+  .pager { display:flex; align-items:center; user-select:none; }
+  .pager .pbtn {
+    width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+    border-radius:6px; color:var(--overlay0); cursor:pointer; font-size:12px;
+  }
+  .pager .pbtn:hover { color:var(--text); background:var(--struct); }
+  .pager .pbtn.hide { visibility:hidden; }
+  .pager .plabel {
+    width:122px; text-align:center; font-size:13.5px; font-weight:700;
+    color:var(--text); font-variant-numeric:tabular-nums; letter-spacing:.2px;
+    border-radius:6px; padding:2px 0;
+  }
+  .pager .plabel .bk { font-size:11px; color:var(--blue); margin-right:4px; opacity:.85; }
+  .pager .plabel.away { color:var(--blue); cursor:pointer; }
+  .pager .plabel.away:hover { background:rgba(137,180,250,.08); }
+
+  /* ══ Общая шапка (V1/V3): месяц слева · сумма+дельта справа двумя строками ══ */
+  .ts-head { flex-shrink:0; display:flex; align-items:center; gap:8px; padding:14px 16px 10px; }
+  .totals { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .totals .t1 { display:flex; align-items:baseline; gap:6px; }
+  .totals .tmain { font-size:17px; font-weight:700; letter-spacing:.2px; }
+  .totals .tof { font-size:10px; color:var(--overlay0); }
+  .totals .tdelta { font-size:10px; color:var(--subtext0); }
+  .totals .tdelta .mk { color:var(--yellow); opacity:.85; }
+
+  /* V2: шапка в одну строку — статус у месяца, сумма и дельта одной строкой */
+  .ts-head.oneline { padding:15px 16px 12px; }
+  .period-status.inhead { margin-left:10px; }
+  .tline { margin-left:auto; display:flex; align-items:baseline; gap:7px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .tline .tmain { font-size:15px; font-weight:700; }
+  .tline .tof { font-size:10px; color:var(--overlay0); }
+  .tline .tsep { font-size:10px; color:var(--surface1); }
+  .tline .tdelta { font-size:10px; color:var(--subtext0); }
+  .tline .tdelta .mk { color:var(--yellow); opacity:.85; }
+
+  /* ══ Tempo-полоса ══ */
+  .actions { flex-shrink:0; display:flex; align-items:center; gap:10px; padding:0 16px 12px; border-bottom:1px solid var(--struct); min-height:36px; }
+  .period-status { display:inline-flex; align-items:center; gap:5px; font-size:9px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; }
+  .period-status .sdot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .period-status.open     { color:var(--blue); }
+  .period-status.approved { color:var(--green); }
+  .push-note { font-size:10px; color:var(--overlay0); font-variant-numeric:tabular-nums; }
+  .period-status + .push-note::before { content:'·'; margin-right:8px; color:var(--surface1); }
+
+  /* ⟳ без рамки — живёт в мета-кластере слева, не спорит с кнопкой */
+  .sync-ghost {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; border:none; background:transparent; border-radius:5px;
+    font-family:inherit; font-size:12px; color:var(--overlay0); cursor:pointer; padding:0;
+  }
+  .sync-ghost:hover { color:var(--text); background:var(--struct); }
+
+  /* ⟳ с рамкой (как сейчас) — для V2, где он остаётся у кнопки */
+  .sync-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:24px; height:24px; border:1px solid var(--struct); background:transparent; border-radius:6px;
+    font-family:inherit; font-size:13px; color:var(--overlay0); cursor:pointer; padding:0;
+  }
+  .sync-btn:hover { color:var(--text); border-color:var(--surface1); }
+
+  .push-btn {
+    margin-left:auto; display:inline-flex; align-items:center; gap:7px;
+    font-family:inherit; font-size:10.5px; font-weight:700; color:var(--blue);
+    background:transparent; border:1px solid rgba(137,180,250,.30); border-radius:6px;
+    padding:4px 11px; cursor:pointer; letter-spacing:.2px; white-space:nowrap;
+  }
+  .push-btn:hover { background:rgba(137,180,250,.08); border-color:rgba(137,180,250,.5); }
+  .push-btn .hrs {
+    display:inline-flex; align-items:center; height:15px; padding:0 6px; border-radius:999px;
+    background:rgba(137,180,250,.15); font-size:9.5px; font-weight:700;
+  }
+  .push-btn.gone { display:none; }
+  .pend { margin-left:auto; font-size:10px; color:var(--subtext0); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pend .dt { color:var(--yellow); margin-right:5px; }
+  .pend.gone { display:none; }
+  .pend + .sync-btn { margin-left:0; }
+  .sync-btn + .push-btn { margin-left:0; }
+  .sync-ghost.endright { margin-left:auto; }
+
+  /* V3: футер-бар пуша */
+  .push-bar { flex-shrink:0; border-top:1px solid var(--struct); background:var(--mantle); padding:9px 14px; }
+  .push-bar.gone { display:none; }
+  .bar-btn {
+    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    font-family:inherit; font-size:10.5px; font-weight:700; color:var(--blue);
+    background:transparent; border:1px solid rgba(137,180,250,.30); border-radius:6px;
+    padding:6px 0; cursor:pointer; letter-spacing:.2px;
+  }
+  .bar-btn:hover { background:rgba(137,180,250,.08); border-color:rgba(137,180,250,.5); }
+  .bar-btn .dim { color:rgba(137,180,250,.55); font-weight:400; }
+
+  /* ══ Day list ══ */
+  .scroll-zone { flex:1; min-height:0; overflow-y:auto; padding:0 8px 14px; }
+  .scroll-zone::-webkit-scrollbar { width:4px; }
+  .scroll-zone::-webkit-scrollbar-thumb { background:var(--surface0); border-radius:2px; }
+
+  .week-sep { display:flex; align-items:center; gap:8px; padding:10px 6px 4px; }
+  .week-sep .l { flex:1; height:1px; background:var(--struct); }
+  .week-sep .t { font-size:8.5px; letter-spacing:1px; text-transform:uppercase; color:#565973; }
+
+  .day { border-radius:7px; }
+  .day-row {
+    display:flex; align-items:center; gap:10px;
+    padding:7px 8px; border-radius:7px; cursor:pointer; user-select:none;
+    font-variant-numeric:tabular-nums;
+  }
+  .day-row:hover { background:rgba(24,24,37,.7); }
+  .day-row.static { cursor:default; }
+  .day-row.static:hover { background:transparent; }
+  .d-num { width:20px; font-size:13.5px; font-weight:700; text-align:right; }
+  .d-wd { width:26px; font-size:8.5px; letter-spacing:.8px; color:var(--overlay0); text-transform:uppercase; padding-top:2px; }
+  .d-chev { font-size:7px; color:#565973; width:10px; }
+  .d-note { flex:1; min-width:0; font-size:10px; color:#565973; font-style:italic; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+
+  /* статус словом — слева от времени (V1/V3) */
+  .d-status { width:70px; display:flex; align-items:center; gap:5px; justify-content:flex-end; font-size:9px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; }
+  .d-status .sdot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .d-status.pushed   { color:var(--green); }
+  .d-status.pending  { color:var(--yellow); }
+  .d-status.outdated { color:var(--peach); }
+
+  /* статус точкой (V2) */
+  .d-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .d-dot.pushed   { background:var(--green); }
+  .d-dot.pending  { background:var(--yellow); }
+  .d-dot.outdated { background:var(--peach); }
+  .d-dot.none     { background:#2c2c42; }
+
+  /* время — самая правая колонка, нейтральное всегда */
+  .d-hours { width:54px; text-align:right; font-size:12px; font-weight:700; color:var(--text); white-space:nowrap; }
+  .d-hours.zero { color:#565973; font-weight:400; }
+  .d-hours.under { color:var(--peach); }                      /* V1/V3: peach-время */
+  .d-hours.hl {                                               /* V2: нейтральное + peach-подчёрк */
+    text-decoration:underline; text-decoration-color:rgba(250,179,135,.6);
+    text-underline-offset:3px; text-decoration-thickness:1px;
+  }
+
+  .day.dim .d-num, .day.dim .d-hours { color:#565973; }
+  .day.dim .d-wd { color:#464660; }
+  .day.today .d-num { color:var(--yellow); }
+
+  .variant-note { width:1020px; max-width:96vw; font-size:10.5px; line-height:1.7; color:var(--overlay0); margin:26px 2px 0; }
+  .variant-note b { color:var(--subtext0); font-weight:600; }
+  .variant-note .y { color:var(--yellow); }
+  .variant-note .g { color:var(--green); }
+  .variant-note .p { color:var(--peach); }
+  .variant-note .bl { color:var(--blue); }
+</style>
+</head>
+<body>
+
+<div class="page-title">Workday · <b>Timesheets — polish, итерация 1</b></div>
+<div class="page-sub">
+  общее для всех: время в самой правой колонке · нейтральный цвет времени, подсветка только &lt;8h ·
+  пейджер без будущего (<span class="k">›</span> скрыт на текущем месяце, в прошлом заголовок = <span class="k">↩ назад к текущему</span>)<br>
+  различия: шапка · статус в строке дня (слово / точка) · бейдж на кнопке пуша · листайте ‹ › в каждом макете
+</div>
+
+<div class="cols">
+
+  <!-- ═══════════ V1 ═══════════ -->
+  <div class="col">
+    <div class="cap"><b>V1 — рекомендуемый.</b> Статус словом слева от времени · &lt;8h = peach-время ·
+      ⟳ переехал к «last push» (мета к мете), кнопка одна справа с чипом pending-часов.</div>
+    <div class="frame" id="f1">
+      <div class="banner">
+        <div class="wd"><span class="on">M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+        <div class="nav">◔ <span class="cur">▦</span> ⚙</div>
+      </div>
+      <div class="ts-head">
+        <div class="pager">
+          <div class="pbtn prev">‹</div>
+          <div class="plabel">July 2026</div>
+          <div class="pbtn next hide">›</div>
+        </div>
+        <div class="totals">
+          <div class="t1"><span class="tmain">54h 05m</span><span class="tof">of 184h</span></div>
+          <div class="tdelta"><span class="mk">▾</span> 11h 55m behind</div>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="period-status open st"><span class="sdot"></span><span class="txt">open</span></span>
+        <span class="push-note">last push 7 Jul, 20:15</span>
+        <button class="sync-ghost" title="verify statuses against Tempo">⟳</button>
+        <button class="push-btn pb">⚡ Push the Tempo <span class="hrs">32h 30m</span></button>
+      </div>
+      <div class="scroll-zone"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ V2 ═══════════ -->
+  <div class="col">
+    <div class="cap"><b>V2 — компактный.</b> Шапка в одну строку: статус у месяца, сумма и дельта рядом ·
+      статус дня — точка (слово в tooltip) · &lt;8h = подчёркивание · кнопка чистая, pending-часы текстом слева.</div>
+    <div class="frame" id="f2">
+      <div class="banner">
+        <div class="wd"><span class="on">M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+        <div class="nav">◔ <span class="cur">▦</span> ⚙</div>
+      </div>
+      <div class="ts-head oneline">
+        <div class="pager">
+          <div class="pbtn prev">‹</div>
+          <div class="plabel">July 2026</div>
+          <div class="pbtn next hide">›</div>
+        </div>
+        <span class="period-status open inhead st"><span class="sdot"></span><span class="txt">open</span></span>
+        <div class="tline">
+          <span class="tmain">54h 05m</span><span class="tof">of 184h</span>
+          <span class="tsep">·</span>
+          <span class="tdelta"><span class="mk">▾</span> 11h 55m</span>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="push-note">last push 7 Jul, 20:15</span>
+        <span class="pend pd"><span class="dt">●</span>32h 30m pending</span>
+        <button class="sync-btn" title="verify statuses against Tempo">⟳</button>
+        <button class="push-btn pb">⚡ Push the Tempo</button>
+      </div>
+      <div class="scroll-zone"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ V3 ═══════════ -->
+  <div class="col">
+    <div class="cap"><b>V3 — кнопка вниз.</b> Шапка полностью разгружена (только мета) ·
+      пуш живёт в футер-баре с часами и днями · когда пушить нечего — бар исчезает целиком.</div>
+    <div class="frame" id="f3">
+      <div class="banner">
+        <div class="wd"><span class="on">M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+        <div class="nav">◔ <span class="cur">▦</span> ⚙</div>
+      </div>
+      <div class="ts-head">
+        <div class="pager">
+          <div class="pbtn prev">‹</div>
+          <div class="plabel">July 2026</div>
+          <div class="pbtn next hide">›</div>
+        </div>
+        <div class="totals">
+          <div class="t1"><span class="tmain">54h 05m</span><span class="tof">of 184h</span></div>
+          <div class="tdelta"><span class="mk">▾</span> 11h 55m behind</div>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="period-status open st"><span class="sdot"></span><span class="txt">open</span></span>
+        <span class="push-note">last push 7 Jul, 20:15</span>
+        <button class="sync-ghost endright" title="verify statuses against Tempo">⟳</button>
+      </div>
+      <div class="scroll-zone"></div>
+      <div class="push-bar pb">
+        <button class="bar-btn">⚡ Push the Tempo <span class="dim">—</span> 32h 30m <span class="dim">· 5 days</span></button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="variant-note">
+  <b>Что зафиксировано во всех трёх</b> (пп. 1–3):<br>
+  · <b>Время всегда в самой правой колонке</b>, нейтрального цвета. Статус отправки ушёл влево от времени.<br>
+  · Подсветка <span class="p">&lt;8h</span> — только у <b>рабочих дней с данными</b>: сегодня не подсвечивается
+  (день ещё идёт), выходные с логами (Sun 5) — тоже нет (норма 0).<br>
+  · <b>Пейджер</b>: на текущем месяце <b>›</b> скрыт; ушёл назад — заголовок становится
+  <span class="bl">↩ синим кликабельным</span>, клик возвращает на текущий (демо: в прошлых месяцах период
+  <span class="g">approved</span>, пушить нечего — кнопка/бар прячутся; список дней в демо статичен).<br><br>
+  <b>По бейджу кнопки (п. 5), мой совет:</b> часы полезнее счётчика дней — перед пушем это превью объёма
+  («сейчас в Tempo уйдёт 32h 30m»), а заодно индикатор рассинхрона с Tempo, который виден без скролла списка.
+  Счётчик дней дублирует список и ничего не добавляет. Вариант «совсем без бейджа» тоже рабочий
+  (disabled-кнопка уже говорит «нечего пушить») — но тогда объём перед отправкой нигде не виден; это V2,
+  где часы вынесены текстом рядом. Если и это кажется шумом — V3: кнопка исчезает вместе с баром, когда всё запушено.<br><br>
+  <b>Шапка (п. 4):</b> в V1/V3 выравнивание прежней структуры — больше воздуха, ⟳ ушёл из правого угла в мета-кластер,
+  минуты нулём («54h 05m») для ровного табличного набора; V2 — радикальнее, минус одна строка высоты.
+</div>
+
+<script>
+  // ── данные июля (сегодня = 13) ──
+  const DAYS = [
+    { d:13, wd:'mon', h:'2h 00m', st:'pending', today:true },
+    { d:12, wd:'sun' },
+    { d:11, wd:'sat' },
+    { d:10, wd:'fri', h:'7h 00m', st:'pending', under:true },
+    { d:9,  wd:'thu', h:'7h 45m', st:'pending', under:true },
+    { d:8,  wd:'wed', h:'8h 45m', st:'pending' },
+    { d:7,  wd:'tue', h:'7h 00m', st:'outdated', under:true },
+    { d:6,  wd:'mon', h:'5h 15m', st:'pushed', under:true },
+    { d:5,  wd:'sun', h:'5h 00m', st:'pushed' },
+    { d:4,  wd:'sat' },
+    { d:3,  wd:'fri' },
+    { d:2,  wd:'thu', h:'6h 50m', st:'pushed', under:true },
+    { d:1,  wd:'wed', h:'4h 30m', st:'pushed', under:true },
+  ];
+  const SEPS = { 13:'13 – 19', 12:'6 – 12', 5:'1 – 5' };
+
+  function renderDays(zone, { statusMode, underMode }) {
+    let html = '';
+    for (const day of DAYS) {
+      if (SEPS[day.d]) html += `<div class="week-sep"><span class="t">${SEPS[day.d]}</span><span class="l"></span></div>`;
+      const has = !!day.h;
+      const underCls = day.under ? (underMode === 'peach' ? ' under' : ' hl') : '';
+      const hours = has
+        ? `<span class="d-hours${underCls}">${day.h}</span>`
+        : `<span class="d-hours zero">—</span>`;
+      let status;
+      if (statusMode === 'word') {
+        status = has
+          ? `<span class="d-status ${day.st}"><span class="sdot"></span>${day.st}</span>`
+          : `<span class="d-status"></span>`;
+      } else {
+        status = `<span class="d-dot ${has ? day.st : 'none'}"${has ? ` title="${day.st}"` : ''}></span>`;
+      }
+      html += `<div class="day${day.today ? ' today' : ''}${has ? '' : ' dim'}">
+        <div class="day-row${has ? '' : ' static'}">
+          <span class="d-num">${day.d}</span><span class="d-wd">${day.wd}</span><span class="d-chev">${has ? '▶' : ''}</span>
+          <span class="d-note"></span>${status}${hours}
+        </div></div>`;
+    }
+    zone.innerHTML = html;
+  }
+
+  // ── пейджер: текущий месяц = потолок; в прошлом заголовок кликабелен → возврат ──
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function setupPager(frame) {
+    const CUR = { y:2026, m:6 };            // July 2026
+    const MIN = { y:2026, m:2 };            // демо-ограничение вглубь
+    let v = { ...CUR };
+    const prev = frame.querySelector('.pbtn.prev');
+    const next = frame.querySelector('.pbtn.next');
+    const lbl  = frame.querySelector('.plabel');
+    const st   = frame.querySelector('.st');
+    const pb   = frame.querySelector('.pb');
+    const pd   = frame.querySelector('.pd');
+    const isCur = () => v.y === CUR.y && v.m === CUR.m;
+
+    function render() {
+      const away = !isCur();
+      lbl.innerHTML = (away ? '<span class="bk">↩</span>' : '') + MONTHS[v.m] + ' ' + v.y;
+      lbl.classList.toggle('away', away);
+      lbl.title = away ? 'back to the current month' : '';
+      next.classList.toggle('hide', !away);
+      // демо: прошлые месяцы уже запушены и approved
+      if (st) {
+        st.className = st.className.replace(/ (open|approved)/, '') + (away ? ' approved' : ' open');
+        st.querySelector('.txt').textContent = away ? 'approved' : 'open';
+      }
+      if (pb) pb.classList.toggle('gone', away);
+      if (pd) pd.classList.toggle('gone', away);
+    }
+    prev.addEventListener('click', () => {
+      if (v.y === MIN.y && v.m === MIN.m) return;
+      v.m--; if (v.m < 0) { v.m = 11; v.y--; } render();
+    });
+    next.addEventListener('click', () => {
+      if (isCur()) return;
+      v.m++; if (v.m > 11) { v.m = 0; v.y++; } render();
+    });
+    lbl.addEventListener('click', () => { if (!isCur()) { v = { ...CUR }; render(); } });
+    render();
+  }
+
+  const f1 = document.getElementById('f1');
+  const f2 = document.getElementById('f2');
+  const f3 = document.getElementById('f3');
+  renderDays(f1.querySelector('.scroll-zone'), { statusMode:'word', underMode:'peach' });
+  renderDays(f2.querySelector('.scroll-zone'), { statusMode:'dot',  underMode:'hl' });
+  renderDays(f3.querySelector('.scroll-zone'), { statusMode:'word', underMode:'peach' });
+  setupPager(f1); setupPager(f2); setupPager(f3);
+</script>
+
+</body>
+</html>
