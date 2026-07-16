@@ -13,16 +13,6 @@ import { activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 import { openCtxMenu } from '../ctx-menu.util';
 
-// Tracker-noticed log suggestion (e.g. a review of someone else's branch).
-// UI-side only for now — the daemon has no suggestions surface yet, so the
-// parent always passes []; the teal row and badges light up once it does.
-export interface SuggestedLog {
-  readonly task: string;
-  readonly name: string;
-  readonly minutes: number;
-  readonly activity: string;
-}
-
 // What a picked chip turns into, plus where it flew from (for the FLIP clone).
 export interface ChipPick {
   readonly entry: ManualEntryInput;
@@ -36,7 +26,7 @@ interface BasketItem {
   readonly id: string;
   readonly task: string;
   readonly label: string;
-  readonly src: 'fav' | 'sugg' | 'jira';
+  readonly src: 'fav' | 'jira';
   description: string;
   minutes: number;
   activity: string;             // '' → must be picked before Log all
@@ -60,11 +50,11 @@ const SHRINK_STAGGER_MS = 40;
 const SHRINK_ANIM_MS = 180;
 
 /**
- * Log cloud — the chip overlay that opens from the Logged panel's ghost row /
- * mini button. Three-stage search (local favorites filter → debounced live
- * Jira search → chip results), instant log on chip click, form morph for Jira
- * results (ticket is a label — it must exist in Jira), batch mode with a
- * review screen, suggested (teal) row.
+ * Log cloud — the chip overlay that opens from the day header's Log capsule.
+ * Three-stage search (local favorites filter → debounced live Jira search →
+ * chip results), instant log on chip click, form morph for Jira results
+ * (ticket is a label — it must exist in Jira), batch mode with a review
+ * screen.
  */
 @Component({
   selector: 'app-log-cloud',
@@ -76,7 +66,6 @@ const SHRINK_ANIM_MS = 180;
 export class LogCloudComponent implements OnChanges, OnDestroy {
   @Input() open = false;
   @Input() favorites: readonly Favorite[] = [];
-  @Input() suggestions: readonly SuggestedLog[] = [];
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() activityAllowed: readonly string[] = [];
   @Input() actionPending = false;
@@ -186,12 +175,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
       f.name.toLowerCase().includes(q) || f.task.toLowerCase().includes(q));
   }
 
-  // Suggested row shows only on the unfiltered cloud — typing means the user
-  // is hunting a favorite, not browsing offers. Edit mode is favorites-only.
-  get showSuggestions(): boolean {
-    return this.suggestions.length > 0 && this.query === '' && !this.editMode;
-  }
-
   onFilterInput(value: string): void {
     this.filter = value;
     const q = this.query;
@@ -244,16 +227,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
       (ev.currentTarget as HTMLElement).getBoundingClientRect());
   }
 
-  pickSuggestion(s: SuggestedLog, ev: MouseEvent): void {
-    if (this.collectOnPick(ev)) {
-      this.toggleBasket(this.suggBasketItem(s));
-      return;
-    }
-    if (this.actionPending) return;
-    this.emitPick({ task: s.task, minutes: s.minutes, description: s.name, activity: s.activity }, s.name,
-      (ev.currentTarget as HTMLElement).getBoundingClientRect());
-  }
-
   pickJira(h: JiraSearchHit, ev: MouseEvent): void {
     if (this.collectOnPick(ev)) {
       this.toggleBasket(this.jiraBasketItem(h));
@@ -295,11 +268,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
       return;
     }
     if (this.actionPending) return;
-    const sugg = !q ? this.suggestions[0] : undefined;
-    if (sugg) {
-      this.emitPickFromKeyboard({ task: sugg.task, minutes: sugg.minutes, description: sugg.name, activity: sugg.activity }, sugg.name);
-      return;
-    }
     const fav = this.filteredFavorites[0];
     if (fav) {
       this.emitPickFromKeyboard({ task: fav.task, minutes: fav.minutes, description: fav.name, activity: fav.activity }, fav.name);
@@ -311,7 +279,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   }
 
   private firstEnterBasketItem(): BasketItem | null {
-    if (this.showSuggestions && this.suggestions.length > 0) return this.suggBasketItem(this.suggestions[0]);
     const fav = this.filteredFavorites[0];
     if (fav) return this.favBasketItem(fav);
     if (this.jiraZone === 'results' && this.jiraHits.length > 0) return this.jiraBasketItem(this.jiraHits[0]);
@@ -350,7 +317,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     this.editMode = v;
     if (v) {
       this.setBatch(false);
-      this.cancelJira(); // favorites-only surface: suggested & Jira go dark
+      this.cancelJira(); // favorites-only surface: Jira goes dark
     } else {
       this.marked.clear();
     }
@@ -437,11 +404,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
              description: f.name, minutes: f.minutes, activity: f.activity };
   }
 
-  private suggBasketItem(s: SuggestedLog): BasketItem {
-    return { id: `sugg:${s.task}:${s.name}`, task: s.task, label: s.name, src: 'sugg',
-             description: s.name, minutes: s.minutes, activity: s.activity };
-  }
-
   private jiraBasketItem(h: JiraSearchHit): BasketItem {
     return { id: `jira:${h.key}`, task: h.key, label: h.summary, src: 'jira',
              description: '', minutes: DEFAULT_FORM_MINUTES, activity: '' };
@@ -455,10 +417,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   isFavPicked(f: Favorite): boolean {
     return this.inBasket(`fav:${f.id}`);
-  }
-
-  isSuggPicked(s: SuggestedLog): boolean {
-    return this.inBasket(`sugg:${s.task}:${s.name}`);
   }
 
   isJiraPicked(h: JiraSearchHit): boolean {

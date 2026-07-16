@@ -26,9 +26,9 @@ const POP_ANIM_MS = 500;
 const POP_STAGGER_MS = 80;
 
 // One ticket's closed tracked time — a read-only history row. Its origin
-// marker is the commit glyph + session range in the description slot; the
-// per-session breakdown (glyph · commits · range · churn · duration)
-// expands inside the row on demand.
+// marker is the interval glyph + session range in the description slot; the
+// per-session breakdown (range | commit stats | duration) expands inside
+// the row on demand.
 interface TrackedGroup {
   readonly task: string;                      // ticket key, or '—' for taskless
   readonly totalMs: number;

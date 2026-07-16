@@ -74,7 +74,7 @@
     </div>
 
     <!-- Session-born group — closed sessions folded per ticket. Read-only;
-         the origin marker is the commit glyph + session range in green
+         the origin marker is the interval glyph + session range in green
          half-tone. Dblclick / right-click toggles the per-session breakdown,
          which lives inside the row's border. -->
     <div class="log-row2 ses"
@@ -92,19 +92,18 @@
       </div>
       <div class="r-l2"><div class="rv">
         <span class="c-type">{{ activityLabel(developmentActivity) }}</span>
-        <span class="c-ds ses-info"><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>{{ sessionsLabel(it.group) }} · {{ trackedRange(it.group) }}</span>
+        <span class="c-ds ses-info"><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="1" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.2"/><line x1="1" y1="4" x2="12" y2="4" stroke="currentColor" stroke-width="1.2"/><line x1="12" y1="1" x2="12" y2="7" stroke="currentColor" stroke-width="1.2"/></svg>{{ sessionsLabel(it.group) }} · {{ trackedRange(it.group) }}</span>
         <span class="r-act"></span>
       </div></div>
       <div class="trk-detail" [class.open]="isExpanded(it.group)">
         <div class="trk-clip">
-          <!-- One line per session: glyph · commits · range · churn · duration.
-               Repo · branch ride the tooltip. -->
+          <!-- One line per session on the shared grid: range | commit stats
+               (the session card's c-stats shape) | duration. Repo · branch
+               ride the tooltip. -->
           <div class="ses-row" *ngFor="let s of it.group.sessions"
                [title]="repoName(s.repo) + ' · ' + s.branch">
-            <svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>
-            <span class="s-com">{{ s.evidence.commits }}</span>
             <span class="rng">{{ sessionInterval(s) }}</span>
-            <span class="churn"><b class="plus">+{{ s.evidence.linesAdded }}</b> <b class="minus">−{{ s.evidence.linesRemoved }}</b></span>
+            <span class="s-stats"><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ s.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ s.evidence.linesAdded }}</b><b class="minus">−{{ s.evidence.linesRemoved }}</b></span>
             <span class="sdur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
           </div>
         </div>

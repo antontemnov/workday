@@ -4,7 +4,8 @@ import {
 import { CommonModule } from '@angular/common';
 import { SessionCardComponent } from './session-card/session-card.component';
 import { LoggedPanelComponent } from './logged-panel/logged-panel.component';
-import { ChipPick, LogCloudComponent, SuggestedLog } from './log-cloud/log-cloud.component';
+import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
+import { SuggestedEntry, SuggestionRowComponent } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
 import {
   SessionDetail,
@@ -29,7 +30,7 @@ interface SensitivityPillOption {
 @Component({
   selector: 'app-day-view',
   standalone: true,
-  imports: [CommonModule, SessionCardComponent, LoggedPanelComponent, LogCloudComponent],
+  imports: [CommonModule, SessionCardComponent, LoggedPanelComponent, LogCloudComponent, SuggestionRowComponent],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
@@ -102,12 +103,13 @@ export class DayViewComponent implements OnChanges {
     return this.data?.sessions.filter(s => s.closedBy) ?? [];
   }
 
-  // Radar only when the day is a blank page — any session, entry or closed
-  // group means the feed has something better to say.
+  // Radar only when the day is a blank page — any session, suggestion, entry
+  // or closed group means the feed has something better to say.
   get dayEmpty(): boolean {
     return this.openSessions.length === 0
       && this.closedSessions.length === 0
-      && this.manualEntries.length === 0;
+      && this.manualEntries.length === 0
+      && this.suggestions.length === 0;
   }
 
   get closedTotalMs(): number {
@@ -161,11 +163,22 @@ export class DayViewComponent implements OnChanges {
     this.entryEditSubmitted.emit({ target: e.id, patch: e.patch });
   }
 
-  // ─── Log cloud ─────────────────────────────────────────────────────────
+  // ─── Suggestions (teal rows between the live cards and the history) ─────
 
-  // Tracker-noticed suggestions — no daemon surface yet, so always empty;
-  // the cloud's teal row and the panel badges light up once it exists.
-  readonly suggestions: readonly SuggestedLog[] = [];
+  // No daemon surface yet (meeting-suggestions plan) — always empty in
+  // production; the rows light up once the engine feeds them.
+  suggestions: readonly SuggestedEntry[] = [];
+
+  // Local-only until the daemon owns dismiss state (epoch 4).
+  dismissSuggestion(s: SuggestedEntry): void {
+    this.suggestions = this.suggestions.filter(x => x !== s);
+  }
+
+  trackBySuggestion(_i: number, s: SuggestedEntry): string {
+    return s.id;
+  }
+
+  // ─── Log cloud ─────────────────────────────────────────────────────────
 
   cloudOpen = false;
   // The cloud hangs just below the sticky day header; measured at open time.

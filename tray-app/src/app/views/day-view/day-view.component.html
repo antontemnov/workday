@@ -36,6 +36,12 @@
     (pillSelected)="pillSelected.emit($event)"
     (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
 
+  <!-- Suggested — teal offers under the live cards; never counted anywhere -->
+  <app-suggestion-row
+    *ngFor="let g of suggestions; trackBy: trackBySuggestion"
+    [suggestion]="g"
+    (dismissed)="dismissSuggestion(g)" />
+
   <!-- Radar only when the whole day is empty — otherwise the history speaks -->
   <div class="waiting" *ngIf="dayEmpty">
     <div class="radar">
@@ -72,7 +78,6 @@
   *ngIf="data && !error"
   [open]="cloudOpen"
   [favorites]="favorites"
-  [suggestions]="suggestions"
   [activityTypes]="activityTypes"
   [activityAllowed]="activityAllowed"
   [actionPending]="actionPending"

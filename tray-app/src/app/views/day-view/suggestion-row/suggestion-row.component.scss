@@ -1,0 +1,146 @@
+:host {
+  display: block;
+}
+
+// Deliberately unsure colours — this is NOT logged time yet, and the dashed
+// border is the feed's "not materialized" material. The offer speaks at full
+// voice only on hover.
+.sug2 {
+  padding: 3px 8px 4px;
+  border: 1px dashed rgba(148, 226, 213, 0.16);
+  border-radius: 7px;
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background: rgba(148, 226, 213, 0.04);
+    border-style: solid;
+
+    .s-title { color: #a6adc8; }
+    .s-src .spark { color: #94e2d5; }
+    .btn.no { opacity: 1; }
+  }
+}
+
+// The same two bands on the shared grid as every feed record.
+.r-l1 {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+  height: 17px;
+}
+
+.r-l2 {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+  height: 20px;
+  margin-top: 1px;
+}
+
+// Ticket chip in the suggestion species' own colour — it turns mauve only
+// after acceptance, when the entry materializes in the history.
+.chip {
+  justify-self: start;
+  color: rgba(148, 226, 213, 0.6);
+  background: rgba(148, 226, 213, 0.07);
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+
+  // No ticket resolved yet — a dashed neutral placeholder.
+  &.ask {
+    color: #6c7086;
+    background: transparent;
+    border: 1px dashed #45475a;
+    padding: 0 8px;
+    font-weight: 400;
+  }
+}
+
+// Title — a long tail fades out, same mask as the history rows' name.
+.s-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #8b90ab;
+  font-weight: 600;
+  transition: color 0.15s ease;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+}
+
+.s-dur {
+  justify-self: end;
+  color: rgba(148, 226, 213, 0.55);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.s-when {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #565973;
+  font-size: 10.5px;
+}
+
+// Origin marker rhymes with the session-born rows: their commit glyph says
+// "tracking made this", the teal spark says "the tracker offers this".
+.s-src {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #565973;
+  font-size: 10px;
+
+  .spark {
+    flex-shrink: 0;
+    color: rgba(148, 226, 213, 0.5);
+    transition: color 0.15s ease;
+  }
+}
+
+.s-act {
+  justify-self: end;
+  display: flex;
+  gap: 5px;
+}
+
+.btn {
+  width: 24px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: 1px solid #313244;
+  background: #11111b;
+  padding: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+
+  svg { display: block; }
+
+  // Decorative until the daemon's engine wires it up.
+  &.ok {
+    border-color: rgba(148, 226, 213, 0.25);
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  &.no {
+    opacity: 0.75;
+    cursor: pointer;
+
+    &:hover { background: rgba(243, 139, 168, 0.1); }
+  }
+}

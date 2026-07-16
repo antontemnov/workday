@@ -20,30 +20,12 @@
 
 <div class="cloud-body">
   <div class="cloud-chips">
-    <!-- Suggested — tracker noticed activity worth logging (teal species).
-         Hidden while the array is empty; the mechanics land daemon-side later. -->
-    <ng-container *ngIf="showSuggestions">
-      <span class="row-label sugg">✦ suggested — tracker noticed</span>
-      <span class="fav sugg"
-            *ngFor="let s of suggestions; let i = index"
-            [class.sel]="isSuggPicked(s)"
-            [style.animation-delay]="chipDelay(i)"
-            [title]="s.activity"
-            (click)="pickSuggestion(s, $event)">
-        <span class="f-spark">✦</span>
-        <span class="f-task">{{ s.task }}</span>
-        <span class="f-name">{{ s.name }}</span>
-        <span class="f-min">{{ formatMinutes(s.minutes) }}</span>
-      </span>
-      <span class="row-label">favorites</span>
-    </ng-container>
-
     <span class="fav"
           *ngFor="let f of filteredFavorites; let i = index; trackBy: trackByFavorite"
           [class.sel]="!isEditMode && isFavPicked(f)"
           [class.marked]="isEditMode && isMarked(f)"
           [class.shrink]="shrinkingIds.has(f.id)"
-          [style.animation-delay]="chipDelay(i + 1)"
+          [style.animation-delay]="chipDelay(i)"
           [title]="isEditMode ? 'click — mark for removal' : f.activity + ' · Ctrl+click: collect'"
           (click)="pickFavorite(f, $event)">
       <span class="f-task">{{ f.task }}</span>

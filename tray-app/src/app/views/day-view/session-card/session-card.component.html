@@ -60,10 +60,12 @@
 
   <!-- Stamina = bottom edge: length + colour encode the level; hover shows a tip -->
   <div class="edge">
-    <span class="fill"
-          [class.shimmer]="isAlwaysOn"
-          [style.width.%]="isNonstopPaused ? 0 : (isAlwaysOn ? 100 : staminaPercent)"
-          [style.background]="isAlwaysOn ? null : staminaColor"></span>
+    <span class="edge-clip">
+      <span class="fill"
+            [class.shimmer]="isAlwaysOn"
+            [style.width.%]="isNonstopPaused ? 0 : (isAlwaysOn ? 100 : staminaPercent)"
+            [style.background]="isAlwaysOn ? null : staminaColor"></span>
+    </span>
     <span class="edge-tip" *ngIf="!isNonstopPaused">{{ staminaTooltip }}</span>
   </div>
 </div>

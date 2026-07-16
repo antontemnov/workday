@@ -256,23 +256,47 @@ app-mode-dropdown {
 }
 
 // ─── Stamina edge ───────────────────────────────────────────────────────────
+// The card no longer clips (overflow visible for the dropdown), so the strip
+// rounds its own bottom corners — but a 3px-tall element can't render a 6px
+// radius (CSS scales overlapping radii down to ~3px, and the fill pokes past
+// the border curve). Hence .edge-clip: a taller invisible layer whose honest
+// 6px corners (concentric: card's 7px minus the 1px border) clip the track and
+// fill exactly along the border curve. .edge itself stays the 3px hover strip
+// and tooltip anchor — no overflow:hidden on it, the tip sits above.
 .edge {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   height: 3px;
-  background: #26263a;
-  // Card no longer clips (overflow visible for the dropdown), so the edge + fill
-  // round their own bottom corners: 6px — nested inside the card's 7px outer
-  // radius (concentric = outer minus the 1px border). No overflow:hidden —
-  // it would clip the tooltip that sits above the edge.
-  border-radius: 0 0 6px 6px;
+
+  .edge-clip {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 14px;
+    border-radius: 0 0 6px 6px;
+    overflow: hidden;
+    pointer-events: none;
+
+    // Track under the fill.
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: #26263a;
+    }
+  }
 
   .fill {
-    display: block;
-    height: 100%;
-    border-radius: 0 0 6px 6px;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
     transition: width 0.5s ease, background-color 0.5s ease;
   }
 
