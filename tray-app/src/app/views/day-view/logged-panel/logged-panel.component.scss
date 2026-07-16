@@ -187,9 +187,6 @@
   max-height: 100%;
   overflow-y: auto;
   transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
-  // Resizable column widths — overridden inline by the component's bindings.
-  --w-name: 140px;
-  --w-type: 92px;
 
   &::-webkit-scrollbar { width: 4px; }
   &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
@@ -241,218 +238,326 @@
   }
 }
 
-// ─── Entry rows — resizable grid: key | name | type | desc | time ─────────
-// name/type are draggable px widths (--w-name / --w-type), desc is the elastic
-// 1fr remainder, time is fixed so the fresh-row stepper never misaligns the
-// columns across rows. Boundaries are dragged via the .col-grip bands below.
-.lp-rows { position: relative; }
-
-.log-row {
-  display: grid;
-  grid-template-columns: 70px var(--w-name) var(--w-type) minmax(44px, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  overflow: hidden;   // clip the time's black fill to the rounded corner
+// ─── Entry rows — two fixed bands on one shared grid ──────────────────────
+// Band 1: key | name | time. Band 2: type | desc | actions — desc sits exactly
+// under the name, type under the key chip. Edit swaps only band 2's cells for
+// controls and frames the time in place: display geometry == edit geometry,
+// the row height never changes and neighbours never shift.
+.log-row2 {
+  padding: 3px 8px 4px;
+  border-radius: 5px;
   position: relative;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   transition: background 0.4s ease;
 
-  // Solid hover colour (mantle + 5% mauve) so the name overlay reads as the
-  // field growing, not a floating card.
   &:hover { background: #211f30; }
-  & + & { border-top: 1px solid rgba(205, 214, 244, 0.05); }
+  & + &, .trk-detail + & { border-top: 1px solid rgba(205, 214, 244, 0.05); }
+  &:not(.removing) { max-height: 48px; }
+}
 
-  .c-key {
+.r-l1 {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+  height: 17px;
+}
+
+.r-l2 {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.rv {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+}
+
+.c-key {
+  color: #cba6f7;
+  font-weight: 600;
+  background: rgba(203, 166, 247, 0.12);
+  padding: 1px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  justify-self: start;
+
+  &.no-title { color: #9a8ec4; background: rgba(203, 166, 247, 0.07); }
+}
+
+// Name — a long tail fades out instead of a hard ellipsis cut; the mask only
+// bites when the text actually reaches the column edge.
+.c-nm {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #bac2de;
+  cursor: default;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+
+  &.none { color: #585b70; font-style: italic; }
+}
+
+// Time — the stable right column of band 1; it never leaves its slot. The
+// fresh draft keeps its always-on wheel; edit swaps the span for a frameless
+// input (mauve digits only — no box), same geometry.
+.c-dur {
+  color: #cdd6f4;
+  font-weight: 700;
+  white-space: nowrap;
+  text-align: right;
+  justify-self: end;
+  padding: 0 5px;
+  margin: 0 -5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+
+  &.wheel {
     color: #cba6f7;
-    font-weight: 600;
-    background: rgba(203, 166, 247, 0.12);
-    padding: 1px 7px;
-    border-radius: 4px;
-    white-space: nowrap;
-    justify-self: start;
+    cursor: ns-resize;
+
+    &:hover { border-color: rgba(203, 166, 247, 0.55); background: rgba(17, 17, 27, 0.5); }
   }
 
-  // Name cell fills the whole track height so entering the cell (not the
-  // glyphs) triggers the hover-grow; plain arrow cursor, never a caret.
-  .c-nm {
-    position: relative;
-    align-self: stretch;
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    cursor: default;
-
-    .txt {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      color: #bac2de;
-    }
+  &.edit {
+    width: 64px;
+    height: 17px;
+    background: transparent;
+    color: #cba6f7;
+    font-family: inherit;
+    font-size: 11px;
+    outline: none;
   }
+}
 
-  .c-type {
-    min-width: 0;
-    overflow: hidden;
+// Type — a quiet bold label in the column under the ticket chip: same case as
+// the select, no badge, no per-type colour. Weight and grid keep it apart
+// from the description.
+.c-type {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #939ab6;
+  font-size: 10px;
+  font-weight: 700;
+}
 
-    .pill {
-      display: inline-block;
-      max-width: 100%;
-      font-size: 10px;
-      padding: 1px 7px;
-      border-radius: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      vertical-align: bottom;
+.c-ds {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #7f849c;
+  font-style: italic;
+  font-size: 10.5px;
+}
 
-      &.tone-other { color: #9399b2; background: rgba(147, 153, 178, 0.1); }
-      &.tone-rev   { color: #89b4fa; background: rgba(137, 180, 250, 0.1); }
-      &.tone-dev   { color: #a6e3a1; background: rgba(166, 227, 161, 0.1); }
-    }
+// Session-born origin marker: commit glyph + "N sessions · HH:MM–HH:MM" in
+// green half-tone — tracking gave birth to this row.
+.c-ds.ses-info {
+  font-style: normal;
+  color: rgba(166, 227, 161, 0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  svg { flex-shrink: 0; opacity: 0.8; }
+}
+
+// Hover actions in the empty right corner of band 2 — opacity only, nothing moves.
+.r-act {
+  display: flex;
+  gap: 5px;
+  justify-self: end;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.log-row2:hover .r-act { opacity: 1; }
+
+.abtn {
+  width: 22px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: 1px solid #313244;
+  background: #11111b;
+  color: #6c7086;
+  padding: 0;
+  cursor: pointer;
+
+  &:hover { color: #a6adc8; border-color: #45475a; }
+
+  &.lock { cursor: default; }
+  &.lock:hover { color: #6c7086; border-color: #313244; }
+
+  svg { display: block; }
+}
+
+.log-row2.fresh {
+  animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1);
+  background: rgba(203, 166, 247, 0.08);
+}
+
+// Batch / instant static rows fly in with a brief mauve accent. `backwards`
+// holds the pre-animation state through the staggered animation-delay.
+.log-row2.pop {
+  animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1) backwards;
+  background: rgba(203, 166, 247, 0.08);
+}
+
+// Edit: the active row is marked by fill only (no rails anywhere in the
+// system); band 1 stays put with the name dimmed, time edits in its slot.
+.log-row2.editing {
+  background: rgba(203, 166, 247, 0.08);
+
+  .c-nm { color: #8f96b3; }
+}
+
+// Delete: instant with undo — Σ already rolled back, the row stays in place
+// struck-through with a burning ↩ in the time slot for ~3s.
+.log-row2.deleted {
+  background: rgba(243, 139, 168, 0.04);
+
+  .c-key, .c-nm, .c-type, .c-ds {
+    opacity: 0.38;
+    text-decoration: line-through;
   }
+}
 
-  .c-ds {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    color: #7f849c;
-    font-style: italic;
-  }
+// Undo window over — collapse and leave (max-height covers the two bands).
+.log-row2.removing {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease;
+}
 
-  // Time is pinned to the right and floats over the description's tail with a
-  // short fade, so the description reclaims the space instead of a fixed empty
-  // gutter. Sits above the name overlay (z 6) — both fade under the digits.
-  .c-dur {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 0;                            // fill to the row edge (row clips the corner)
-    display: flex;
-    align-items: center;
-    padding: 0 8px 0 30px;               // 8 right keeps digits off the edge; 30 left = fade + gap
-    background: linear-gradient(to right, transparent, #181825 24px);
+.l-undo {
+  justify-self: end;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(203, 166, 247, 0.5);
+  border-radius: 4px;
+  background: rgba(203, 166, 247, 0.08);
+  color: #cba6f7;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 8px;
+  cursor: pointer;
+  animation: need-pulse 1.6s ease-in-out infinite;
+
+  &:hover { background: rgba(203, 166, 247, 0.22); }
+}
+
+// "★ added to favorites" feedback on the description slot.
+.log-row2.fav-done .c-ds.fav-note { color: #cba6f7; font-style: normal; }
+
+// ─── Edit form — band 2's cells replaced by controls in place ─────────────
+.rf {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform-origin: 0 50%;
+  animation: le-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1);
+
+  select, input {
+    background: rgba(17, 17, 27, 0.85);
+    border: 1px solid #313244;
+    border-radius: 5px;
     color: #cdd6f4;
-    font-weight: 700;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 8;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 2px 7px;
+    height: 20px;
+    outline: none;
+
+    &:focus { border-color: #cba6f7; }
   }
 
-  // Full-name overlay: same row-hover bg, exactly row height, grows from the
-  // name column up to (not over) the time column. Pure CSS — the fixed left /
-  // right below encode the key (70) and time (88) column geometry.
-  .c-full {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 86px;                      // 8 pad + 70 key + 8 gap
-    width: max-content;
-    max-width: calc(100% - 94px);    // up to the row edge; the time floats over the tail
-    display: flex;
-    align-items: center;
-    white-space: nowrap;
-    overflow: hidden;
-    background: #211f30;
+  .le-act {
+    width: 104px;
+    flex-shrink: 0;
+    font-size: 10px;
     color: #bac2de;
-    z-index: 6;
-    opacity: 0;
-    pointer-events: none;
-    // Opacity-only: the overlay sits pixel-exact over .txt (same 86px origin),
-    // so any translate would make the moving copy double against the static
-    // .txt on fade-out — the jitter. Pure fade stays put.
-    transition: opacity 0.12s ease;
+    padding: 2px 3px;
+    cursor: pointer;
   }
 
-  &.fresh {
-    animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1);
-    background: rgba(203, 166, 247, 0.1);
-  }
+  .le-desc {
+    flex: 1;
+    min-width: 0;
 
-  // Batch / instant static rows fly in with a brief mauve accent. `backwards`
-  // holds the pre-animation state through the staggered animation-delay.
-  &.pop {
-    animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1) backwards;
-    background: rgba(203, 166, 247, 0.08);
-  }
+    &::placeholder { color: #4b4d63; }
 
-  // Editing row becomes a two-level block: caption (key + ticket name) over
-  // the one-line form. Overrides the grid so .le-wrap fills the width.
-  &.editing {
-    display: block;
-    padding: 6px 8px 7px;
-    background: rgba(203, 166, 247, 0.07);
-  }
+    &.need {
+      border-color: rgba(203, 166, 247, 0.65);
+      animation: need-pulse 1.6s ease-in-out infinite;
 
-  // Delete: instant with undo — Σ already rolled back, the row stays in
-  // place struck-through with a burning ↩ for ~3s.
-  &.deleted {
-    background: rgba(243, 139, 168, 0.04);
-
-    .c-key, .c-type, .c-ds, .c-nm .txt {
-      opacity: 0.38;
-      text-decoration: line-through;
+      &::placeholder { color: rgba(203, 166, 247, 0.55); }
     }
   }
 
-  // Undo window over — collapse and leave (max-height matches row height).
-  &.removing {
-    max-height: 0;
-    opacity: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    overflow: hidden;
-    transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease;
-  }
-  &:not(.removing):not(.editing) { max-height: 30px; }  // two-level edit needs room
+  .le-back {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0 2px;
+    height: 20px;
 
-  .l-undo {
-    position: absolute;
-    right: 8px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 8;
-    border: 1px solid rgba(203, 166, 247, 0.5);
-    border-radius: 4px;
-    background: rgba(203, 166, 247, 0.08);
-    color: #cba6f7;
+    &:hover { color: #a6adc8; }
+  }
+
+  .le-save {
+    flex-shrink: 0;
+    background: #cba6f7;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 5px;
     font-family: inherit;
     font-size: 10px;
     font-weight: 700;
-    padding: 1px 8px;
+    padding: 0 10px;
+    height: 20px;
     cursor: pointer;
-    animation: need-pulse 1.6s ease-in-out infinite;
 
-    &:hover { background: rgba(203, 166, 247, 0.22); }
+    &:hover:not(:disabled) { background: #b894ee; }
+    &:disabled { opacity: 0.35; cursor: default; }
   }
-
-  // "★ added to favorites" feedback on the description slot.
-  &.fav-done .c-ds.fav-note { color: #cba6f7; font-style: normal; }
 }
 
-// Reveal the overlay only when hovering the name cell, and never during edit
-// (both hover-grow and resize are off while a row is being edited).
-.lp-table:not(.edit-lock) .log-row:not(.editing) .c-nm:hover ~ .c-full {
-  opacity: 1;
+@keyframes le-in {
+  0% { transform: scaleX(0.5); opacity: 0; }
+}
+
+@keyframes need-pulse {
+  0%, 100% { border-color: rgba(203, 166, 247, 0.65); }
+  50%      { border-color: rgba(203, 166, 247, 0.25); }
 }
 
 // ─── Tracked rows — closed sessions, read-only ────────────────────────────
-// Same grid and brightness as the manual rows; the only rest-state origin
-// marker is the grey key chip. The desc slot stays empty — repo and interval
-// live in the breakdown.
-.log-row.trk {
-  cursor: default;
-
-  .c-key {
-    color: #9399b2;
-    background: rgba(147, 153, 178, 0.10);
-  }
-}
+.log-row2.ses { cursor: default; }
 
 // Breakdown expand/collapse — the panel's own grid-rows mechanic: rows stay
 // in the DOM, the wrapper animates 0fr→1fr both ways; the rows fade and
@@ -472,11 +577,11 @@
 
 // Per-session breakdown — one line per session on a fixed grid, so the
 // columns align across rows: repo│branch (one identity pairing, like the
-// session-card head) | interval | reason | duration. Repo and branch
+// session-card head) | interval | duration. Repo and branch
 // truncate with an ellipsis when they don't fit.
 .trk-sub {
   display: grid;
-  grid-template-columns: minmax(44px, 1fr) max-content 56px 48px;
+  grid-template-columns: minmax(44px, 1fr) max-content 48px;
   align-items: center;
   gap: 12px;
   padding: 3px 8px 3px 26px;
@@ -524,190 +629,10 @@
     white-space: nowrap;
   }
 
-  .s-reason {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-align: left;
-    font-size: 10px;
-  }
-
   .s-dur {
     text-align: right;
     color: #8b90ab;
     white-space: nowrap;
-  }
-}
-
-// Invisible resize grips — cursor-only bands at the column boundaries,
-// positioned purely from the width vars. Hidden entirely while editing.
-.col-grip {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 11px;
-  margin-left: -5.5px;
-  z-index: 15;
-  cursor: col-resize;
-  touch-action: none;
-}
-.grip-name { left: calc(90px + var(--w-name)); }                 // 86 + w-name + 4 (½ gap)
-.grip-type { left: calc(98px + var(--w-name) + var(--w-type)); } // + 8 gap + w-type + 4
-.lp-table.edit-lock .col-grip { display: none; }
-
-// ─── Edit morph (double-click) — two-level: caption over the one-line form ─
-.le-wrap { min-width: 0; }
-
-// Caption: mauve key + dimmed ticket name, one line, no separator glyph —
-// the tail fades out (not a hard cut) when the name is long.
-.le-cap {
-  padding: 1px 2px 6px;
-  font-size: 10px;
-  line-height: 1;
-  color: #767e9d;
-  white-space: nowrap;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
-          mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
-  opacity: 0;
-  transform: translateY(3px);
-  animation: cap-in 0.18s ease 0.04s forwards;
-
-  .le-k { color: rgba(203, 166, 247, 0.9); font-weight: 700; margin-right: 7px; }
-  .le-n { color: #767e9d; }
-}
-
-@keyframes cap-in {
-  to { opacity: 1; transform: none; }
-}
-
-.le-form {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  transform-origin: 0 50%;
-  animation: le-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1);
-
-  input, select {
-    background: rgba(17, 17, 27, 0.85);
-    border: 1px solid #313244;
-    border-radius: 5px;
-    color: #cdd6f4;
-    font-family: inherit;
-    font-size: 10.5px;
-    padding: 3px 7px;
-    outline: none;
-
-    &:focus { border-color: #cba6f7; }
-  }
-
-  select {
-    width: 104px;
-    flex-shrink: 0;
-    font-size: 10px;
-    color: #bac2de;
-    padding: 3px 3px;
-    cursor: pointer;
-  }
-
-  .le-min {
-    width: 54px;
-    flex-shrink: 0;
-    text-align: center;
-    color: #cba6f7;
-    font-weight: 700;
-  }
-
-  .le-desc {
-    flex: 1;
-    min-width: 0;
-    &::placeholder { color: #4b4d63; }
-    &.need {
-      border-color: rgba(203, 166, 247, 0.65);
-      animation: need-pulse 1.6s ease-in-out infinite;
-
-      &::placeholder { color: rgba(203, 166, 247, 0.55); }
-    }
-  }
-
-  .le-back {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    color: #6c7086;
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    padding: 0 2px;
-
-    &:hover { color: #a6adc8; }
-  }
-
-  .le-save {
-    flex-shrink: 0;
-    background: #cba6f7;
-    color: #1e1e2e;
-    border: none;
-    border-radius: 5px;
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 3px 10px;
-    cursor: pointer;
-
-    &:hover:not(:disabled) { background: #b894ee; }
-    &:disabled { opacity: 0.35; cursor: default; }
-  }
-}
-
-@keyframes le-in {
-  0% { transform: scaleX(0.5); opacity: 0; }
-}
-
-@keyframes need-pulse {
-  0%, 100% { border-color: rgba(203, 166, 247, 0.65); }
-  50%      { border-color: rgba(203, 166, 247, 0.25); }
-}
-
-// ─── Stepper (fresh row draft) ───────────────────────────────────────────
-.stepper {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  padding: 0 8px 0 30px;
-  background: linear-gradient(to right, transparent, #181825 24px);
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-
-  button {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    border: 1px solid rgba(203, 166, 247, 0.4);
-    background: rgba(203, 166, 247, 0.1);
-    color: #cba6f7;
-    font-family: inherit;
-    font-size: 10px;
-    line-height: 1;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    &:hover { background: rgba(203, 166, 247, 0.25); }
-  }
-
-  .s-val {
-    min-width: 44px;
-    text-align: center;
-    color: #cba6f7;
-    font-weight: 700;
-    cursor: ns-resize;
   }
 }
 

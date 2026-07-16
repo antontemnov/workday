@@ -5,10 +5,9 @@ import {
   ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
   SessionDetail, normalizeFavName,
 } from '../../../models/workday.models';
-import { activityLabel, activityOptions, activityTone } from '../activity.util';
+import { activityLabel, activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 import { openCtxMenu } from '../ctx-menu.util';
-import { LOGGED_COL_MIN, loadLoggedCols, persistLoggedCols } from '../logged-cols.util';
 
 const FRESH_WINDOW_MS = 4000;
 const STEP_MINUTES = 15;
@@ -30,9 +29,9 @@ const POP_STAGGER_MS = 80;
 // live outside the instance or it resets to expanded on each return.
 const COLLAPSE_STORAGE_KEY = 'workday.logged.collapsed';
 
-// One ticket's closed tracked time — a read-only Logged row. The only rest-
-// state marker of its origin is the grey key chip; the per-session breakdown
-// (repo + interval · branch · reason) expands on demand.
+// One ticket's closed tracked time — a read-only Logged row. Its origin
+// marker is the commit glyph + session range in the description slot; the
+// per-session breakdown (repo + interval · branch · reason) expands on demand.
 interface TrackedGroup {
   readonly task: string;                      // ticket key, or '—' for taskless
   readonly totalMs: number;
@@ -41,11 +40,12 @@ interface TrackedGroup {
 
 /**
  * Pinned Logged panel — the manual-entries band docked to the bottom of the
- * day view. Collapses by header click (grid-rows animation); the collapsed
- * header keeps the Σ and grows a mini ＋ button (with a teal suggestions
- * badge). A just-logged entry gets a ~4s draft window with a ±15m stepper;
- * double-click morphs a row into an inline edit form. Every local change
- * (stepper ticks included) reflects in the Σ immediately and is reported to
+ * day view, two-band rows on one shared grid. Collapses by header click
+ * (grid-rows animation); the collapsed header keeps the Σ and grows a mini ＋
+ * button (with a teal suggestions badge). A just-logged entry gets a ~4s
+ * draft window with a ±15m wheel on its time; double-click swaps a row's
+ * second band for the inline edit controls. Every local change
+ * (wheel ticks included) reflects in the Σ immediately and is reported to
  * the parent as a live diff so the Day total moves in the same instant;
  * committed patches stay as optimistic overrides until the daemon's data
  * confirms them — no flicker between PATCH and refresh.
@@ -82,16 +82,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Output() liveDiffChanged = new EventEmitter<number>();
 
   public constructor(private host: ElementRef<HTMLElement>) {
-    this.loadCols();
     this.collapsed = this.readCollapsed();
   }
 
   collapsed = false;
   sumFlash = false;
-
-  // Resizable column widths (px), bound to --w-name / --w-type on the table.
-  colName = 0;
-  colType = 0;
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
@@ -461,13 +456,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.armFreeze();
   }
 
-  onStepWheel(ev: WheelEvent): void {
+  // Wheel on the fresh row's time — the only rows whose time spins outside
+  // edit. Non-fresh rows keep the wheel for the table's scroll.
+  onFreshWheel(e: ManualEntry, ev: WheelEvent): void {
+    if (!this.isFresh(e)) return;
     ev.preventDefault();
     this.step(ev.deltaY < 0 ? STEP_MINUTES : -STEP_MINUTES);
   }
-
-  stepUp(ev: MouseEvent): void { ev.stopPropagation(); this.step(STEP_MINUTES); }
-  stepDown(ev: MouseEvent): void { ev.stopPropagation(); this.step(-STEP_MINUTES); }
 
   private armFreeze(): void {
     if (this.freezeTimer) clearTimeout(this.freezeTimer);
@@ -497,11 +492,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.editActivity = this.displayActivity(e);
     this.editPinnedActivity = this.editActivity;
     this.editDescription = this.displayDescription(e);
-    // Focus once the form morph renders.
+    // Focus the description once the form morph renders — no select() on the
+    // frameless time (the highlight box reads as a glitch there); the time
+    // edits by wheel or an explicit click into it.
     setTimeout(() => {
-      const el = this.host.nativeElement.querySelector<HTMLInputElement>('.le-min');
-      el?.focus();
-      el?.select();
+      this.host.nativeElement.querySelector<HTMLInputElement>('.le-desc')?.focus();
     }, 80);
   }
 
@@ -534,20 +529,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
-  // ─── Resizable columns + ticket name ───────────────────────────────────
+  // ─── Ticket name ────────────────────────────────────────────────────────
 
   summaryOf(e: ManualEntry): string {
     return this.issueSummaries[e.task] ?? '';
-  }
-
-  private loadCols(): void {
-    const cols = loadLoggedCols();
-    this.colName = cols.name;
-    this.colType = cols.type;
-  }
-
-  private persistCols(): void {
-    persistLoggedCols({ name: this.colName, type: this.colType });
   }
 
   // Collapsed state survives the panel's re-creation on tab switches (and app
@@ -562,52 +547,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     try {
       localStorage.setItem(COLLAPSE_STORAGE_KEY, this.collapsed ? '1' : '0');
     } catch { /* storage unavailable — keep the in-memory state */ }
-  }
-
-  // Drag a column boundary: the adjacent column absorbs the delta so downstream
-  // boundaries stay put, and nothing shrinks below its min. Off while editing.
-  onGripDown(which: 'name' | 'type', ev: PointerEvent): void {
-    if (this.editingId !== null) return;
-    ev.preventDefault();
-    const grip = ev.currentTarget as HTMLElement;
-    const startX = ev.clientX;
-    const sName = this.colName, sType = this.colType;
-    let minDx: number, maxDx: number;
-    if (which === 'name') {
-      minDx = LOGGED_COL_MIN.name - sName;   // name shrinks to its min
-      maxDx = sType - LOGGED_COL_MIN.type;   // type shrinks to its min
-    } else {
-      const desc = this.descWidth();
-      minDx = LOGGED_COL_MIN.type - sType;
-      maxDx = Math.max(0, desc - LOGGED_COL_MIN.desc);
-    }
-    const body = this.host.nativeElement.ownerDocument.body;
-    const prevCursor = body.style.cursor, prevSelect = body.style.userSelect;
-    body.style.cursor = 'col-resize';
-    body.style.userSelect = 'none';
-    grip.setPointerCapture(ev.pointerId);
-    const move = (e: PointerEvent): void => {
-      const dx = Math.round(Math.min(maxDx, Math.max(minDx, e.clientX - startX)));
-      if (which === 'name') { this.colName = sName + dx; this.colType = sType - dx; }
-      else { this.colType = sType + dx; }
-    };
-    const up = (): void => {
-      grip.releasePointerCapture(ev.pointerId);
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', up);
-      body.style.cursor = prevCursor;
-      body.style.userSelect = prevSelect;
-      this.persistCols();
-    };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-  }
-
-  // Live desc-column px (elastic 1fr), read once at drag start to bound how far
-  // the type column may grow before desc hits its min.
-  private descWidth(): number {
-    const el = this.host.nativeElement.querySelector<HTMLElement>('.log-row:not(.editing) .c-ds');
-    return el ? el.getBoundingClientRect().width : 160;
   }
 
   // ─── Tracked rows (closed sessions) ─────────────────────────────────────
@@ -672,26 +611,21 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
-  // Close-reason text for the breakdown rows — quiet italic, short labels.
-  closedReasonLabel(closedBy: string | null): string {
-    switch ((closedBy ?? '').toLowerCase()) {
-      case 'checkout_other_task': return 'switched';
-      case 'day_boundary':        return 'day end';
-      case 'daemon_stop':
-      case 'stopped':             return 'stopped';
-      case 'daemon_crash':        return 'crashed';
-      case 'manual_stop':
-      case 'manual':
-      case 'user':                return 'manual';
-      case 'budget_exhausted':    return 'budget';
-      case 'idle_timeout':        return 'idle';
-      case 'superseded':          return 'switched';
-      default:                    return (closedBy ?? '—').toLowerCase();
-    }
-  }
-
   summaryOfTask(task: string): string {
     return this.issueSummaries[task] ?? '';
+  }
+
+  sessionsLabel(g: TrackedGroup): string {
+    const n = g.sessions.length;
+    return `${n} session${n === 1 ? '' : 's'}`;
+  }
+
+  // Day span of the group's tracking: first session start – last activity seen.
+  trackedRange(g: TrackedGroup): string {
+    const first = g.sessions[0];
+    const lastSeen = g.sessions.reduce(
+      (max, s) => s.lastSeenAt > max ? s.lastSeenAt : max, first.lastSeenAt);
+    return `${this.formatHm(first.startedAt)}–${this.formatHm(lastSeen)}`;
   }
 
   // Tracked time is always Development — that's how it pushes to Tempo.
@@ -713,10 +647,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   activityLabel(value: string): string {
     return activityLabel(this.activityTypes, value);
-  }
-
-  activityTone(value: string): string {
-    return activityTone(value);
   }
 
   get activityOptions(): readonly ActivityType[] {

@@ -10,10 +10,7 @@
 
   <div class="lp-body">
     <div class="lp-clip">
-      <div class="lp-table"
-           [class.edit-lock]="editingId !== null"
-           [style.--w-name]="colName + 'px'"
-           [style.--w-type]="colType + 'px'">
+      <div class="lp-table">
         <div class="ghost-row" (click)="logRequested.emit()">
           <span class="g-plus">＋</span><span>Log time…</span>
           <span class="g-sugg" *ngIf="suggestedCount > 0">
@@ -21,116 +18,111 @@
           </span>
         </div>
 
-        <div class="lp-rows">
-          <div class="log-row"
-               *ngFor="let e of displayEntries; trackBy: trackByEntry"
-               [class.fresh]="isFresh(e)"
-               [class.pop]="poppingIds.has(e.id)"
-               [style.animation-delay.ms]="popDelayMs.get(e.id)"
-               [class.editing]="editingId === e.id"
-               [class.deleted]="isDeleted(e)"
-               [class.removing]="removingIds.has(e.id)"
-               [class.fav-done]="favDoneId === e.id"
-               (dblclick)="onRowDblClick(e)"
-               (contextmenu)="onRowContextMenu(e, $event)">
+        <!-- Two-band rows on one shared grid (key | name | time over
+             type | desc | actions). Edit swaps only the second band's cells
+             for controls — same geometry, the row height never changes. -->
+        <div class="log-row2"
+             *ngFor="let e of displayEntries; trackBy: trackByEntry"
+             [class.fresh]="isFresh(e)"
+             [class.pop]="poppingIds.has(e.id)"
+             [style.animation-delay.ms]="popDelayMs.get(e.id)"
+             [class.editing]="editingId === e.id"
+             [class.deleted]="isDeleted(e)"
+             [class.removing]="removingIds.has(e.id)"
+             [class.fav-done]="favDoneId === e.id"
+             (dblclick)="onRowDblClick(e)"
+             (contextmenu)="onRowContextMenu(e, $event)">
 
-            <!-- Edit morph: two-level — caption (key + ticket name) over the
-                 one-line form. Task is a read-only caption (change = delete +
-                 recreate). No separator glyph between key and name. -->
-            <ng-container *ngIf="editingId === e.id; else staticRow">
-              <div class="le-wrap" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
-                <div class="le-cap"><span class="le-k">{{ e.task }}</span><span class="le-n" *ngIf="summaryOf(e)">{{ summaryOf(e) }}</span></div>
-                <div class="le-form">
-                  <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
-                  <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
-                    <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
-                  </select>
-                  <input class="le-min"
-                         [(wdDuration)]="editMinutes"
-                         (durEnter)="saveEdit(e)"
-                         title="1h 15m · 90 · 45m — wheel: ±15m" />
-                  <input class="le-desc"
-                         [class.need]="editDescNeeded"
-                         [(ngModel)]="editDescription"
-                         (keydown.enter)="saveEdit(e)"
-                         placeholder="description" />
-                  <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
-                </div>
-              </div>
+          <div class="r-l1">
+            <span class="c-key" [class.no-title]="!summaryOf(e)">{{ e.task }}</span>
+            <span class="c-nm"
+                  [class.none]="!summaryOf(e)"
+                  [title]="summaryOf(e) || 'name not cached'">{{ summaryOf(e) || '— name not cached' }}</span>
+
+            <ng-container *ngIf="isDeleted(e); else aliveMin">
+              <button type="button" class="l-undo" (click)="undoDelete(e, $event)">↩ undo</button>
             </ng-container>
-
-            <!-- Static row — grid: key | name | type | desc | time.
-                 .c-full is the row-level hover overlay (full ticket name). -->
-            <ng-template #staticRow>
-              <span class="c-key">{{ e.task }}</span>
-              <span class="c-nm">
-                <span class="txt">{{ summaryOf(e) }}</span>
-              </span>
-              <span class="c-type">
-                <span class="pill" [class]="'pill tone-' + activityTone(displayActivity(e))">{{ activityLabel(displayActivity(e)) }}</span>
-              </span>
-              <span class="c-ds" *ngIf="favDoneId !== e.id; else favDone">{{ displayDescription(e) }}</span>
-              <ng-template #favDone><span class="c-ds fav-note">★ added to favorites</span></ng-template>
-
-              <ng-container *ngIf="isDeleted(e); else aliveMin">
-                <button type="button" class="l-undo" (click)="undoDelete(e, $event)">↩ undo</button>
-              </ng-container>
-              <ng-template #aliveMin>
-                <ng-container *ngIf="isFresh(e); else staticMin">
-                  <span class="stepper">
-                    <button class="s-dec" (click)="stepDown($event)">−</button>
-                    <span class="s-val" (wheel)="onStepWheel($event)">
-                      {{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
-                    <button class="s-inc" (click)="stepUp($event)">+</button>
-                  </span>
-                </ng-container>
-                <ng-template #staticMin>
-                  <span class="c-dur">{{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
-                </ng-template>
+            <ng-template #aliveMin>
+              <!-- Time never leaves its slot: edit swaps the span for a
+                   frameless wdDuration input (wheel ±15m / typed). -->
+              <input *ngIf="editingId === e.id; else viewMin"
+                     class="c-dur edit"
+                     [(wdDuration)]="editMinutes"
+                     (durEnter)="saveEdit(e)"
+                     (keydown.escape)="cancelEdit(); $event.stopPropagation()"
+                     title="1h 15m · 90 · 45m — wheel: ±15m" />
+              <ng-template #viewMin>
+                <span class="c-dur"
+                      [class.wheel]="isFresh(e)"
+                      (wheel)="onFreshWheel(e, $event)">{{ formatDurationHm(displayMinutes(e) * 60000) }}</span>
               </ng-template>
-
-              <span class="c-full" *ngIf="summaryOf(e)" aria-hidden="true">{{ summaryOf(e) }}</span>
             </ng-template>
           </div>
 
-          <!-- Tracked rows — closed sessions folded per ticket. Read-only:
-               grey key is the origin marker, repo sits in the desc slot;
-               dblclick / right-click toggles the per-session breakdown. -->
-          <ng-container *ngFor="let g of trackedGroups; trackBy: trackByGroup">
-            <div class="log-row trk"
-                 title="Tracked time — dblclick for sessions"
-                 (dblclick)="toggleTracked(g)"
-                 (contextmenu)="onTrackedContextMenu(g, $event)">
-              <span class="c-key">{{ g.task }}</span>
-              <span class="c-nm">
-                <span class="txt">{{ summaryOfTask(g.task) }}</span>
-              </span>
-              <span class="c-type">
-                <span class="pill tone-dev">{{ activityLabel(developmentActivity) }}</span>
-              </span>
-              <span class="c-ds"></span>
+          <div class="r-l2">
+            <ng-container *ngIf="editingId === e.id; else viewBand">
+              <div class="rf" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
+                <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
+                <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
+                  <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+                </select>
+                <input class="le-desc"
+                       [class.need]="editDescNeeded"
+                       [(ngModel)]="editDescription"
+                       (keydown.enter)="saveEdit(e)"
+                       placeholder="description" />
+                <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
+              </div>
+            </ng-container>
+            <ng-template #viewBand>
+              <div class="rv">
+                <span class="c-type" [title]="activityLabel(displayActivity(e))">{{ activityLabel(displayActivity(e)) }}</span>
+                <span class="c-ds" *ngIf="favDoneId !== e.id; else favDone"
+                      [title]="displayDescription(e)">{{ displayDescription(e) }}</span>
+                <ng-template #favDone><span class="c-ds fav-note">★ added to favorites</span></ng-template>
+                <span class="r-act">
+                  <span *ngIf="e.sourceSessionId"
+                        class="abtn lock" title="session-born — managed by tracking"><svg width="10" height="11" viewBox="0 0 10 11" aria-hidden="true"><rect x="1.6" y="4.6" width="6.8" height="4.8" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M3.2 4.6V3.2a1.8 1.8 0 013.6 0v1.4" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></span>
+                </span>
+              </div>
+            </ng-template>
+          </div>
+        </div>
+
+        <!-- Tracked rows — closed sessions folded per ticket. Read-only; the
+             origin marker is the commit glyph + session range in green
+             half-tone. Dblclick / right-click toggles the breakdown. -->
+        <ng-container *ngFor="let g of trackedGroups; trackBy: trackByGroup">
+          <div class="log-row2 ses"
+               title="Tracked time — dblclick for sessions"
+               (dblclick)="toggleTracked(g)"
+               (contextmenu)="onTrackedContextMenu(g, $event)">
+            <div class="r-l1">
+              <span class="c-key" [class.no-title]="!summaryOfTask(g.task)">{{ g.task }}</span>
+              <span class="c-nm"
+                    [class.none]="!summaryOfTask(g.task)"
+                    [title]="summaryOfTask(g.task) || 'name not cached'">{{ summaryOfTask(g.task) || '— name not cached' }}</span>
               <span class="c-dur">{{ formatDurationHm(g.totalMs) }}</span>
-              <span class="c-full" *ngIf="summaryOfTask(g.task)" aria-hidden="true">{{ summaryOfTask(g.task) }}</span>
             </div>
-            <div class="trk-detail" [class.open]="isExpanded(g)">
-              <div class="trk-clip">
-                <div class="trk-sub" *ngFor="let s of g.sessions">
-                  <span class="s-id">
-                    <span class="s-repo" [title]="repoName(s.repo)">{{ repoName(s.repo) }}</span>
-                    <span class="s-branch" [title]="s.branch">{{ s.branch }}</span>
-                  </span>
-                  <span class="s-int">{{ sessionInterval(s) }}</span>
-                  <span class="s-reason" [title]="s.closedBy ?? ''">{{ closedReasonLabel(s.closedBy) }}</span>
-                  <span class="s-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
-                </div>
+            <div class="r-l2"><div class="rv">
+              <span class="c-type">{{ activityLabel(developmentActivity) }}</span>
+              <span class="c-ds ses-info"><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>{{ sessionsLabel(g) }} · {{ trackedRange(g) }}</span>
+              <span class="r-act"></span>
+            </div></div>
+          </div>
+          <div class="trk-detail" [class.open]="isExpanded(g)">
+            <div class="trk-clip">
+              <div class="trk-sub" *ngFor="let s of g.sessions">
+                <span class="s-id">
+                  <span class="s-repo" [title]="repoName(s.repo)">{{ repoName(s.repo) }}</span>
+                  <span class="s-branch" [title]="s.branch">{{ s.branch }}</span>
+                </span>
+                <span class="s-int">{{ sessionInterval(s) }}</span>
+                <span class="s-dur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
               </div>
             </div>
-          </ng-container>
-
-          <!-- Invisible resize grips (cursor-only), positioned from --w-name/--w-type -->
-          <div class="col-grip grip-name" (pointerdown)="onGripDown('name', $event)"></div>
-          <div class="col-grip grip-type" (pointerdown)="onGripDown('type', $event)"></div>
-        </div>
+          </div>
+        </ng-container>
       </div>
     </div>
   </div>
