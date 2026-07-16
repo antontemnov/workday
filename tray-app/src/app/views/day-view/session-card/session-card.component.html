@@ -6,9 +6,8 @@
      [style.--st-glint-soft]="stateGlintSoft">
   <!-- Band 1: identity — ticket chip · repo · branch · time -->
   <div class="r-l1">
-    <span class="c-key" [class.none]="!session.task"
-          [title]="session.task || 'No ticket in branch'">{{ session.task || '—' }}</span>
-    <span class="c-nm" [title]="identityTitle"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>
+    <span class="c-key" [class.none]="!session.task">{{ session.task || '—' }}</span>
+    <span class="c-nm"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>
 
     <span class="time-anchor">
       <button class="c-dur"
@@ -46,7 +45,7 @@
       [pending]="actionPending"
       (act)="onTrackingClick()" />
 
-    <span class="c-stats" [title]="statsTitle">
+    <span class="c-stats">
       <svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
     </span>
 

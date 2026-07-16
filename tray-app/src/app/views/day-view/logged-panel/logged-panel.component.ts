@@ -552,10 +552,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }]);
   }
 
-  repoName(repoPath: string): string {
-    return repoPath.split('/').pop() ?? repoPath;
-  }
-
   sessionInterval(s: SessionDetail): string {
     return `${this.formatHm(s.startedAt)}–${this.formatHm(s.lastSeenAt)}`;
   }

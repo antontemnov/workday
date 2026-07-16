@@ -137,6 +137,10 @@
 
 // Day total — Tracked Σ + logged Σ, the only day-level aggregate.
 .day-total {
+  // Width comes from the template (label length in ch) — constant for a given
+  // character count, so the gap to the Log capsule stays static and digit
+  // swaps can't tremble it.
+  text-align: right;
   margin-left: 4px;
   font-size: 18px;
   font-weight: 700;

@@ -2,13 +2,16 @@
   display: block;
 }
 
+// Card material — shared with the feed rows: a whisper of fill over the page
+// plus a firmer border and an 8px gap, so neighbouring records read as
+// separate bodies instead of one merged sheet.
 .card {
   position: relative;
-  background: transparent;
-  border: 1px solid rgba(205, 214, 244, 0.08);
+  background: rgba(205, 214, 244, 0.025);
+  border: 1px solid rgba(205, 214, 244, 0.12);
   border-radius: 7px;
   padding: 9px 11px 11px;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   font-variant-numeric: tabular-nums;
   // Visible so the mode dropdown's menu can overflow the card; the stamina edge
   // rounds its own bottom corners (below) instead of relying on card clipping.

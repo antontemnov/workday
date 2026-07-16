@@ -19,12 +19,14 @@
     <h1 class="day-date">{{ dateLabel }}</h1>
     <button class="g-btn"
             (click)="openCloud()"
-            [disabled]="actionPending"
-            title="Log time"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+            [disabled]="actionPending"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+    <!-- Width is pinned to the label's character count: a fixed box per
+         length, so glyph/DPI rounding can't tremble the Log capsule when
+         digits swap; it shifts only when the format itself changes
+         (59m → 1h 00m, 9h → 10h). -->
     <span class="day-total"
-          *ngIf="dayTotalMs > 0"
-          [class.flash]="dayFlash"
-          title="Everything that goes to Tempo today">{{ formatDurationHm(dayTotalMs) }}</span>
+          [style.width.ch]="dayTotalLabel.length"
+          [class.flash]="dayFlash">{{ dayTotalLabel }}</span>
   </div>
 
   <!-- Live sessions — "now" sits on top of the feed -->

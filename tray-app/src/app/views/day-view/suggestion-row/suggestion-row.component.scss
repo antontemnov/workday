@@ -7,9 +7,11 @@
 // voice only on hover.
 .sug2 {
   padding: 3px 8px 4px;
-  border: 1px dashed rgba(148, 226, 213, 0.16);
+  // Stays hollow (no fill) on purpose — an offer isn't material yet; only the
+  // border firms up to match the feed's separation rhythm.
+  border: 1px dashed rgba(148, 226, 213, 0.22);
   border-radius: 7px;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   transition: background 0.15s ease, border-color 0.15s ease;

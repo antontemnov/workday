@@ -61,10 +61,6 @@ export class SessionCardComponent {
     return this.session.repo.split('/').pop() ?? this.session.repo;
   }
 
-  get identityTitle(): string {
-    return `${this.repoName} · ${this.session.branch}`;
-  }
-
   // ─── Status badge ──────────────────────────────────────────────────────
 
   get statusClass(): string {
@@ -171,13 +167,6 @@ export class SessionCardComponent {
 
   get stateGlintSoft(): string {
     return this.glintPair[1];
-  }
-
-  // ─── Git stats ─────────────────────────────────────────────────────────
-
-  get statsTitle(): string {
-    const e = this.session.evidence;
-    return `${e.commits} commits · ${e.filesChanged} files changed`;
   }
 
   // ─── Time ──────────────────────────────────────────────────────────────

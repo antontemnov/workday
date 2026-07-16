@@ -61,6 +61,11 @@ export class DayViewComponent implements OnChanges {
   @ViewChild('dayHead')
   private dayHeadRef?: ElementRef<HTMLElement>;
 
+  // The history feed — the fly-chip's landing pad: a fresh entry materializes
+  // as the feed's newest row, so the chip flies there, not to the Day total.
+  @ViewChild(LoggedPanelComponent, { read: ElementRef })
+  private historyRef?: ElementRef<HTMLElement>;
+
   // Mauve flash on the Day total when the logged share changes — server data
   // and local live diffs (draft stepper ticks) both count.
   dayFlash = false;
@@ -131,6 +136,11 @@ export class DayViewComponent implements OnChanges {
 
   private get displayedLoggedMs(): number {
     return this.loggedMs + this.liveDiffMinutes * 60_000;
+  }
+
+  // Empty until the day's first minutes — the header shows no zero.
+  get dayTotalLabel(): string {
+    return this.dayTotalMs > 0 ? this.formatDurationHm(this.dayTotalMs) : '';
   }
 
   // ─── Formatters ───────────────────────────────────────────────────────
@@ -223,13 +233,13 @@ export class DayViewComponent implements OnChanges {
     this.settingsRequested.emit();
   }
 
-  // FLIP clone of the picked chip → flies to the Day total corner of the
-  // sticky header. Styled inline: the element lives on document.body, outside
-  // the component's scoped styles.
+  // FLIP clone of the picked chip → flies into the history feed, where the
+  // entry is about to land as the newest row. Styled inline: the element
+  // lives on document.body, outside the component's scoped styles.
   private flyChip(from: DOMRect, label: string, minutes: number): void {
-    const head = this.dayHeadRef?.nativeElement;
-    if (!head || from.width === 0) return;
-    const to = (head.querySelector('.day-total') ?? head).getBoundingClientRect();
+    const target = this.historyRef?.nativeElement ?? this.dayHeadRef?.nativeElement;
+    if (!target || from.width === 0) return;
+    const to = target.getBoundingClientRect();
 
     const g = document.createElement('span');
     Object.assign(g.style, {
@@ -251,9 +261,11 @@ export class DayViewComponent implements OnChanges {
     g.append(name, min);
 
     document.body.appendChild(g);
+    // Settles at the feed's top-left — the spot the new row's ticket chip
+    // takes; scale stays near 1 so it reads as "becoming the row".
     requestAnimationFrame(() => {
       g.style.transform =
-        `translate(${to.left - from.left}px, ${to.top + 2 - from.top}px) scale(0.5)`;
+        `translate(${to.left + 9 - from.left}px, ${to.top + 4 - from.top}px) scale(0.85)`;
       g.style.opacity = '0';
     });
     setTimeout(() => g.remove(), 460);

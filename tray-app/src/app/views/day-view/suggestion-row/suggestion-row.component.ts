@@ -38,10 +38,4 @@ export class SuggestionRowComponent {
     if (m >= 60) return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
     return `${m}m`;
   }
-
-  get acceptTitle(): string {
-    return this.suggestion.task
-      ? 'accept — arrives with the suggestions engine'
-      : 'needs a ticket first';
-  }
 }

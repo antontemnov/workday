@@ -15,15 +15,19 @@
 // geometry, the row height never changes and neighbours never shift.
 .log-row2 {
   padding: 3px 8px 4px;
-  border: 1px solid rgba(205, 214, 244, 0.08);
+  // Same material as the session cards: faint fill + firmer border + 8px gap
+  // keep the records from merging into one sheet.
+  background: rgba(205, 214, 244, 0.025);
+  border: 1px solid rgba(205, 214, 244, 0.12);
   border-radius: 7px;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   position: relative;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   transition: background 0.4s ease;
 
-  &:hover { background: #211f30; }
+  // No hover fill: records are data, not buttons — only the corner actions
+  // wake up on hover (opacity below).
   &:last-child { margin-bottom: 0; }
   &:not(.removing):not(.ses) { max-height: 48px; }
 }
@@ -134,8 +138,9 @@
 }
 
 // Session-born origin marker: interval glyph + "N sessions · HH:MM–HH:MM" in
-// green half-tone — tracking gave birth to this row. The glyph is a time span
-// (tick–line–tick), distinct from the commit node glyph on the stat lines.
+// green half-tone — tracking gave birth to this row. The glyph is a segment
+// with a node at each end — same node the commit glyph carries in its centre:
+// one dot = a commit, two end dots = a span of tracked time.
 .c-ds.ses-info {
   font-style: normal;
   color: rgba(166, 227, 161, 0.7);
@@ -347,21 +352,27 @@
   &.open { grid-template-rows: 1fr; }
 }
 
+// The clip doubles as the breakdown's column master: max-content columns
+// resolve across ALL session lines (via subgrid rows), so every portion —
+// glyph, commit count, ·, +adds, −dels — sits exactly one under another.
+// Range keeps the shared 74px first column; duration right-aligns in the
+// last, 1fr soaking the middle slack.
 .trk-clip {
   overflow: hidden;
   min-height: 0;
+  display: grid;
+  grid-template-columns: 74px 13px max-content max-content max-content max-content 1fr;
+  column-gap: 8px;
 }
 
-// One line per session on the shared grid: range under the type label, commit
-// stats in the description slot (the session card's c-stats shape: glyph ·
-// count · churn), duration right. Repo · branch live in the row's tooltip.
 .ses-row {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
-  gap: 8px;
+  grid-template-columns: subgrid;
   align-items: center;
   height: 19px;
   font-size: 10px;
+  color: #7f849c;
   font-variant-numeric: tabular-nums;
   opacity: 0;
   transform: translateY(-3px);
@@ -374,21 +385,11 @@
 
   .rng { color: #8b90ab; }
 
-  .s-stats {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: #7f849c;
+  .s-glyph { opacity: 0.7; }
 
-    svg { flex-shrink: 0; opacity: 0.7; }
-
-    .csep  { color: #45475a; }
-    .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
-    .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
-  }
+  .csep  { color: #45475a; }
+  .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
+  .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
 
   .sdur {
     justify-self: end;
