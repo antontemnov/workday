@@ -77,8 +77,16 @@ export class MockWorkdayApiService extends WorkdayApiService {
       activity: 'CodeReview', createdAt: this.iso(13, 30) },
     { id: 'm3', task: 'APP-1024', minutes: 45, description: 'sprint planning',
       activity: 'Other', createdAt: this.iso(15, 0) },
+    // Session-born add on a ticket with closed sessions — merges into the
+    // ATL-6712 group card between its two sessions.
+    { id: 'm4', task: 'ATL-6712', minutes: 55, description: '',
+      activity: 'Development', createdAt: this.iso(12, 15), sourceSessionId: 'c1' },
+    // Session-born add on a ticket with no closed sessions (s1 is live) —
+    // births its own group card with a manual-only breakdown.
+    { id: 'm5', task: 'ATL-6781', minutes: 45, description: '',
+      activity: 'Development', createdAt: this.iso(14, 40), sourceSessionId: 's1' },
   ];
-  private mockEntrySeq = 4;
+  private mockEntrySeq = 6;
 
   private readonly today = (() => {
     const d = new Date();

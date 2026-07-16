@@ -149,6 +149,18 @@
   gap: 6px;
 
   svg { flex-shrink: 0; opacity: 0.8; }
+
+  // Manual share of a merged card — logged material: mauve half-tone with
+  // the same ⊕ node its breakdown line carries.
+  .add-note {
+    color: rgba(203, 166, 247, 0.65);
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    svg { opacity: 1; }
+  }
 }
 
 // Hover actions in the empty right corner of band 2 — opacity only, nothing moves.
@@ -396,6 +408,85 @@
     font-weight: 700;
     color: #a6adc8;
   }
+}
+
+// Manual add inside the breakdown: time right-aligned under the ranges'
+// tails, grey ⊕ node, "manual added time" from the commits column, duration
+// in the shared right column. The delete lives in the node itself — hover
+// morphs ⊕ into ✕; while the undo window burns, ↩ takes the phrase's place,
+// then the line collapses.
+.ses-row.man {
+  overflow: hidden;
+  transition: opacity 0.16s ease, transform 0.2s ease,
+              height 0.22s ease, margin 0.22s ease, padding 0.22s ease;
+
+  // Everything explicitly placed: the phrase's span covers cols 3–7, which
+  // would otherwise push auto-flowed neighbours into a phantom second row.
+  .rng {
+    grid-column: 1;
+    grid-row: 1;
+    padding-left: 6ch; // 11ch range − 5ch time: tails in one column
+  }
+
+  // Spans into the 1fr track so the phrase never widens the sessions'
+  // evidence columns.
+  .m-phrase {
+    grid-column: 3 / -1;
+    grid-row: 1;
+    justify-self: start;
+    color: #6c7086;
+    white-space: nowrap;
+  }
+
+  .sdur { grid-column: 7; grid-row: 1; }
+
+  &.deleted {
+    .rng, .sdur { opacity: 0.38; text-decoration: line-through; }
+    .m-act svg { opacity: 0.28; }
+  }
+}
+
+.m-act {
+  grid-column: 2;
+  grid-row: 1;
+  width: 13px;
+  height: 19px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #7f849c;
+  cursor: pointer;
+
+  svg { display: block; opacity: 0.7; }
+  .g-x { display: none; color: rgba(243, 139, 168, 0.9); opacity: 1; }
+
+  &:hover:not(:disabled) {
+    .g-plus { display: none; }
+    .g-x { display: block; }
+  }
+
+  &:disabled { pointer-events: none; }
+}
+
+.m-undo {
+  grid-column: 3 / -1;
+  grid-row: 1;
+  justify-self: start;
+  height: 14px;
+  padding: 0 6px;
+  font-size: 9px;
+}
+
+// Undo window over — the line collapses and leaves (entry-row precedent).
+.trk-detail.open .ses-row.man.removing {
+  opacity: 0;
+  height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  border-top-width: 0;
 }
 
 .trk-detail .ses-row:first-child {

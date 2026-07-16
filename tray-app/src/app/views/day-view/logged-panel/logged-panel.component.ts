@@ -25,14 +25,22 @@ const FAV_FEEDBACK_MS = 1200;
 const POP_ANIM_MS = 500;
 const POP_STAGGER_MS = 80;
 
-// One ticket's closed tracked time — a read-only history row. Its origin
-// marker is the interval glyph + session range in the description slot; the
-// per-session breakdown (range | commit stats | duration) expands inside
-// the row on demand.
+// One breakdown line of a merged card: a closed session at its close point,
+// or a session-born manual add at its createdAt.
+type GroupItem =
+  | { readonly kind: 'session'; readonly session: SessionDetail; readonly at: string }
+  | { readonly kind: 'manual'; readonly entry: ManualEntry; readonly at: string };
+
+// One ticket's session history — closed sessions plus session-born manual
+// adds folded into a single card, mirroring how the daemon folds both into
+// one Tempo worklog at push time. Read-only header; the chronological
+// breakdown (sessions and adds interleaved) expands inside the row.
 interface TrackedGroup {
   readonly task: string;                      // ticket key, or '—' for taskless
-  readonly totalMs: number;
+  readonly totalMs: number;                   // sessions + manual adds
+  readonly manualMs: number;                  // manual adds alone (band-2 note)
   readonly sessions: readonly SessionDetail[];
+  readonly items: readonly GroupItem[];       // breakdown, oldest first
 }
 
 // The feed interleaves manual entries and session-born groups newest-first;
@@ -185,8 +193,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (swap) { this.clearPops(); return; }
 
     let stagger = 0;
-    for (const id of ids) {
-      if (prev.has(id) || id === this.freshId) continue; // existing or draft
+    for (const e of this.entries) {
+      const id = e.id;
+      // Existing, draft, or session-born (renders inside a group, not as a row).
+      if (prev.has(id) || id === this.freshId || e.sourceSessionId) continue;
       this.poppingIds.add(id);
       this.popDelayMs.set(id, stagger);
       const total = stagger + POP_ANIM_MS;
@@ -209,14 +219,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // ─── Feed ──────────────────────────────────────────────────────────────
 
-  // Manual entries and session-born groups in one chronology, newest first:
-  // entries sit at their createdAt, a group at its branch's last activity.
+  // Standalone manual entries and per-ticket session groups in one
+  // chronology, newest first: entries sit at their createdAt, a group at its
+  // newest breakdown item. Session-born adds live inside their ticket's
+  // group, not as rows of their own.
   get feedItems(): readonly FeedItem[] {
     const items: FeedItem[] = this.entries
-      .filter(e => !this.hiddenIds.has(e.id))
+      .filter(e => !this.hiddenIds.has(e.id) && !e.sourceSessionId)
       .map(e => ({ kind: 'entry' as const, entry: e, at: e.createdAt }));
     for (const group of this.trackedGroups) {
-      items.push({ kind: 'group', group, at: this.groupLastSeen(group) });
+      items.push({ kind: 'group', group, at: this.groupAt(group) });
     }
     return items.sort((a, b) => b.at.localeCompare(a.at));
   }
@@ -337,6 +349,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (this.editingId === e.id) this.editingId = null;
     this.deleteTimers.set(e.id, setTimeout(() => this.startRemove(e.id), UNDO_WINDOW_MS));
     this.recomputeLive();
+  }
+
+  // Delete of a session-born add lives in its breakdown line's ⊕ node —
+  // same undo pipeline as the standalone rows.
+  deleteManualEntry(e: ManualEntry, ev: MouseEvent): void {
+    ev.stopPropagation();
+    if (this.isDeleted(e)) return;
+    this.deleteEntry(e);
   }
 
   undoDelete(e: ManualEntry, ev: MouseEvent): void {
@@ -498,39 +518,58 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.issueSummaries[e.task] ?? '';
   }
 
-  // ─── Session-born groups (closed sessions) ──────────────────────────────
-  // One row per ticket, summed — mirrors how the daemon folds sessions into a
-  // single Tempo worklog. Read-only: no edit, no delete; dblclick / chevron /
-  // context menu toggles the per-session breakdown instead.
+  // ─── Session groups (closed sessions + session-born adds) ───────────────
+  // One card per ticket, summed — mirrors how the daemon folds sessions and
+  // their "+ Add time" entries into a single Tempo worklog. A ticket with
+  // only a manual add still gets its card; closed sessions join it later.
+  // Header is read-only; dblclick / context menu toggles the breakdown, where
+  // a manual add's ⊕ node morphs into its delete on hover.
 
   // Task keys whose breakdown is open. Survives refreshes within the instance;
   // resets on tab switch (feed re-creation) — that matches a "peek" gesture.
   expandedTasks = new Set<string>();
 
   get trackedGroups(): readonly TrackedGroup[] {
-    const byTask = new Map<string, SessionDetail[]>();
-    for (const s of this.closedSessions) {
-      const key = s.task ?? '—';
-      const list = byTask.get(key);
-      if (list) list.push(s);
-      else byTask.set(key, [s]);
+    const byTask = new Map<string, { sessions: SessionDetail[]; manual: ManualEntry[] }>();
+    const bucketOf = (task: string): { sessions: SessionDetail[]; manual: ManualEntry[] } => {
+      let b = byTask.get(task);
+      if (!b) { b = { sessions: [], manual: [] }; byTask.set(task, b); }
+      return b;
+    };
+    for (const s of this.closedSessions) bucketOf(s.task ?? '—').sessions.push(s);
+    for (const e of this.entries) {
+      if (!e.sourceSessionId || this.hiddenIds.has(e.id)) continue;
+      bucketOf(e.task).manual.push(e);
     }
     const groups: TrackedGroup[] = [];
-    for (const [task, sessions] of byTask) {
-      sessions.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    for (const [task, b] of byTask) {
+      // Breakdown chronology: a session sits at its close point (last
+      // activity), a manual add at the moment it was added.
+      const items: GroupItem[] = [
+        ...b.sessions.map(s => ({ kind: 'session' as const, session: s, at: s.lastSeenAt })),
+        ...b.manual.map(e => ({ kind: 'manual' as const, entry: e, at: e.createdAt })),
+      ].sort((x, y) => x.at.localeCompare(y.at));
+      const manualMs = b.manual.reduce(
+        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : e.minutes), 0) * 60_000;
+      b.sessions.sort((x, y) => x.startedAt.localeCompare(y.startedAt));
       groups.push({
         task,
-        totalMs: sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0),
-        sessions,
+        totalMs: b.sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0) + manualMs,
+        manualMs,
+        sessions: b.sessions,
+        items,
       });
     }
     return groups;
   }
 
-  // The group's place in the feed chronology: the branch's last activity.
-  private groupLastSeen(g: TrackedGroup): string {
-    return g.sessions.reduce(
-      (max, s) => s.lastSeenAt > max ? s.lastSeenAt : max, g.sessions[0].lastSeenAt);
+  // The group's place in the feed chronology: its newest breakdown item.
+  private groupAt(g: TrackedGroup): string {
+    return g.items[g.items.length - 1].at;
+  }
+
+  trackByGroupItem(_i: number, bi: GroupItem): string {
+    return bi.kind === 'session' ? `s:${bi.session.id}` : `m:${bi.entry.id}`;
   }
 
   isExpanded(g: TrackedGroup): boolean {
@@ -547,7 +586,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     ev.stopPropagation();
     openCtxMenu(ev.clientX, ev.clientY, [{
       icon: '⤢',
-      label: this.isExpanded(g) ? 'Hide sessions' : 'Show sessions',
+      label: this.isExpanded(g) ? 'Hide details' : 'Show details',
       action: () => this.toggleTracked(g),
     }]);
   }
@@ -556,7 +595,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return `${this.formatHm(s.startedAt)}–${this.formatHm(s.lastSeenAt)}`;
   }
 
-  private formatHm(iso: string): string {
+  formatHm(iso: string): string {
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }

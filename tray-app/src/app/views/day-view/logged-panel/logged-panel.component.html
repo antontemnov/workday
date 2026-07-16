@@ -71,10 +71,11 @@
       </div>
     </div>
 
-    <!-- Session-born group — closed sessions folded per ticket. Read-only;
-         the origin marker is the interval glyph + session range in green
-         half-tone. Dblclick / right-click toggles the per-session breakdown,
-         which lives inside the row's border. -->
+    <!-- Session group — closed sessions and session-born "+ Add time"
+         entries folded per ticket, the way push folds them into one worklog.
+         Origin markers: interval glyph + session range in green half-tone,
+         manual share as a mauve "+NNm added" note. Dblclick / right-click
+         toggles the chronological breakdown inside the row's border. -->
     <div class="log-row2 ses"
          *ngIf="it.kind === 'group'"
          [class.open]="isExpanded(it.group)"
@@ -88,23 +89,51 @@
       </div>
       <div class="r-l2"><div class="rv">
         <span class="c-type">{{ activityLabel(developmentActivity) }}</span>
-        <span class="c-ds ses-info"><svg width="15" height="8" viewBox="0 0 15 8" aria-hidden="true"><circle cx="2.9" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="5.2" y1="4" x2="9.8" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="12.1" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>{{ sessionsLabel(it.group) }} · {{ trackedRange(it.group) }}</span>
+        <span class="c-ds ses-info">
+          <ng-container *ngIf="it.group.sessions.length > 0">
+            <svg width="15" height="8" viewBox="0 0 15 8" aria-hidden="true"><circle cx="2.9" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="5.2" y1="4" x2="9.8" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="12.1" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>{{ sessionsLabel(it.group) }} · {{ trackedRange(it.group) }}</span>
+          </ng-container>
+          <span class="add-note" *ngIf="it.group.manualMs > 0"><ng-container *ngIf="it.group.sessions.length > 0">·</ng-container><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><circle cx="6.5" cy="4" r="3.5" fill="none" stroke="currentColor" stroke-width="0.8"/><line x1="6.5" y1="2" x2="6.5" y2="6" stroke="currentColor" stroke-width="1.25"/><line x1="4.5" y1="4" x2="8.5" y2="4" stroke="currentColor" stroke-width="1.25"/></svg>{{ formatDurationHm(it.group.manualMs) }} added</span>
+        </span>
         <span class="r-act"></span>
       </div></div>
       <div class="trk-detail" [class.open]="isExpanded(it.group)">
         <div class="trk-clip">
-          <!-- One subgrid line per session — every portion in its own column,
-               aligned across rows: range | glyph | commits | · | +adds |
-               −dels | duration. -->
-          <div class="ses-row" *ngFor="let s of it.group.sessions">
-            <span class="rng">{{ sessionInterval(s) }}</span>
-            <svg class="s-glyph" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>
-            <span class="s-com">{{ s.evidence.commits }}</span>
-            <span class="csep">·</span>
-            <b class="plus">+{{ s.evidence.linesAdded }}</b>
-            <b class="minus">−{{ s.evidence.linesRemoved }}</b>
-            <span class="sdur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
-          </div>
+          <!-- One subgrid line per breakdown item, oldest first — sessions at
+               their close point (range | glyph | commits | · | +adds | −dels |
+               duration), manual adds at their createdAt (time | ⊕ | phrase |
+               duration). The ⊕ node doubles as the delete: hover morphs it
+               into ✕, click starts the same undo pipeline the entry rows use. -->
+
+          <ng-container *ngFor="let bi of it.group.items; trackBy: trackByGroupItem">
+            <div class="ses-row" *ngIf="bi.kind === 'session'">
+              <span class="rng">{{ sessionInterval(bi.session) }}</span>
+              <svg class="s-glyph" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>
+              <span class="s-com">{{ bi.session.evidence.commits }}</span>
+              <span class="csep">·</span>
+              <b class="plus">+{{ bi.session.evidence.linesAdded }}</b>
+              <b class="minus">−{{ bi.session.evidence.linesRemoved }}</b>
+              <span class="sdur">{{ formatDurationHm(bi.session.effectiveDurationMs) }}</span>
+            </div>
+            <div class="ses-row man"
+                 *ngIf="bi.kind === 'manual'"
+                 [class.deleted]="isDeleted(bi.entry)"
+                 [class.removing]="removingIds.has(bi.entry.id)">
+              <span class="rng">{{ formatHm(bi.entry.createdAt) }}</span>
+              <button type="button" class="m-act"
+                      [disabled]="isDeleted(bi.entry)"
+                      (click)="deleteManualEntry(bi.entry, $event)"
+                      (dblclick)="$event.stopPropagation()">
+                <svg class="g-plus" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><circle cx="6.5" cy="4" r="3.5" fill="none" stroke="currentColor" stroke-width="0.8"/><line x1="6.5" y1="2" x2="6.5" y2="6" stroke="currentColor" stroke-width="1.25"/><line x1="4.5" y1="4" x2="8.5" y2="4" stroke="currentColor" stroke-width="1.25"/></svg>
+                <svg class="g-x" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="3.7" y1="1.2" x2="9.3" y2="6.8" stroke="currentColor" stroke-width="1.25"/><line x1="9.3" y1="1.2" x2="3.7" y2="6.8" stroke="currentColor" stroke-width="1.25"/></svg>
+              </button>
+              <span class="m-phrase" *ngIf="!isDeleted(bi.entry); else manUndo">manual added</span>
+              <ng-template #manUndo>
+                <button type="button" class="l-undo m-undo" (click)="undoDelete(bi.entry, $event)">↩ undo</button>
+              </ng-template>
+              <span class="sdur">{{ formatDurationHm(bi.entry.minutes * 60000) }}</span>
+            </div>
+          </ng-container>
         </div>
       </div>
     </div>
