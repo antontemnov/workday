@@ -4,21 +4,36 @@
 
 .card {
   position: relative;
-  background: #181825;
-  border: 1px solid #313244;
-  border-radius: 6px;
+  background: transparent;
+  border: 1px solid rgba(205, 214, 244, 0.08);
+  border-radius: 7px;
   padding: 9px 11px 11px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
   font-variant-numeric: tabular-nums;
   // Visible so the mode dropdown's menu can overflow the card; the stamina edge
   // rounds its own bottom corners (below) instead of relying on card clipping.
   overflow: visible;
-  // Tracked highlight — a 45° shadow to the top-right corner only, tinted by
-  // the same state the stamina edge shows. Background and border stay neutral;
-  // straight up would sink under the day header, straight down would double
-  // the stamina strip.
-  box-shadow: 5px -5px 12px -4px var(--st-shadow, transparent);
-  transition: border-color 0.18s ease, box-shadow 0.5s ease;
+
+  // Tracked highlight — a glass rim: a 1px catch-light ring hugging the
+  // border, brightest at the top and gone by mid-height, tinted by the same
+  // state the stamina edge shows (plain glass when the edge is empty).
+  // Barely-there by design. The mask carves the painted ring out of the
+  // pseudo so the card fill stays untouched.
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -1px; // abspos offsets run from the padding box — -1px lands exactly on the border
+    border-radius: inherit;
+    padding: 1px;
+    background:
+      linear-gradient(178deg, var(--st-glint, transparent), transparent 46%),
+      linear-gradient(358deg, var(--st-glint-soft, transparent), transparent 22%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            mask-composite: exclude;
+    pointer-events: none;
+  }
 
   // Paused: fade only the data (time/stats). The status badge must stay
   // prominent and the mode picker manages its own disabled state.
@@ -249,8 +264,9 @@ app-mode-dropdown {
   height: 3px;
   background: #26263a;
   // Card no longer clips (overflow visible for the dropdown), so the edge + fill
-  // round their own bottom corners. No overflow:hidden — it would clip the
-  // tooltip that sits above the edge.
+  // round their own bottom corners: 6px — nested inside the card's 7px outer
+  // radius (concentric = outer minus the 1px border). No overflow:hidden —
+  // it would clip the tooltip that sits above the edge.
   border-radius: 0 0 6px 6px;
 
   .fill {

@@ -1,259 +1,31 @@
-// Pinned Logged panel — mauve species. Collapse: grid-rows 1fr→0fr while the
-// table slides down behind the clip (translateY + fade), 260ms; the header
-// stays with Σ and grows the mini ＋ button.
+// History feed — no panel chrome: the day view's scroll carries the rows,
+// material is coded by the border (logged = thin solid frame + 5px gap).
 :host {
   display: block;
-  flex-shrink: 0;
-  max-height: 55%;
-  min-height: 0;
-}
-
-.logged-pane {
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #181825;
-  border-top: 1px solid #313244;
-  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.28);
-  padding: 9px 12px 10px;
-  position: relative;
-  z-index: 10;
-  transition: padding 0.24s ease;
-
-  &.collapsed { padding-bottom: 9px; }
-}
-
-.lp-head {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;                             // room between LOGGED and the ＋ so a miss doesn't toggle the panel
-  padding: 2px 0 9px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  user-select: none;
-
-  .label { order: 0; color: #cba6f7; }
-
-  .sum {
-    order: 3;
-    margin-left: auto;
-    font-weight: 700;
-    text-transform: none;
-    letter-spacing: 0;
-    color: #cdd6f4;
-    transition: color 0.3s ease;
-
-    &.flash { color: #cba6f7; }
-  }
-}
-
-.logged-pane.collapsed .lp-head { padding-bottom: 2px; }
-
-// Mini LOG button: collapsed-only. Solid mauve disc (mockup V3) with a plasma
-// hover — neon teal/blue/pink blobs drifting inside the core plus a faint teal
-// glow. At rest it's a quiet solid disc; nothing animates until hover. Expanded
-// state shrinks it to zero width so the header doesn't jump.
-.lp-mini {
-  order: 1;
-  position: relative;                    // line-box centre — the sweet spot (1px down from 0.22.5)
-  width: 0;
-  height: 20px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #cba6f7;
-  color: #1e1e2e;
-  border: none;                          // kill the native <button> outset ring
-  isolation: isolate;                    // contain the plasma's screen-blend to the disc
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 0;
-  margin-right: -7px;
-  cursor: pointer;
-  overflow: visible;
-  opacity: 0;
-  transform: scale(0.6);
-  pointer-events: none;
-  transition: opacity 0.2s ease 0.1s, transform 0.2s cubic-bezier(0.2, 1.3, 0.4, 1) 0.1s,
-              width 0.2s ease 0.1s, margin-right 0.2s ease 0.1s,
-              background 0.15s ease, box-shadow 0.28s ease;
-
-  &:disabled { opacity: 0.4; cursor: default; }
-  &:hover:not(:disabled) { background: #b894ee; box-shadow: 0 0 6px 0 rgba(148, 226, 213, 0.22); }
-
-  // Plus as an inline SVG — vector stroke stays sharp and symmetric on any
-  // fractional Windows DPI in WebView2, where CSS bars positioned by
-  // translate(-50%) rounded unevenly (one arm thicker). No font metrics either.
-  .mini-glyph {
-    position: relative;
-    z-index: 3;
-    width: 12px;
-    height: 12px;
-
-    path {
-      fill: none;
-      stroke: #1e1e2e;
-      stroke-width: 1.6;
-      stroke-linecap: round;
-    }
-  }
-
-  // Plasma core — neon blobs clipped to the disc by the pseudo's own radius (no
-  // overflow:hidden, which would cut the badge). Reveals on hover only.
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    border-radius: 999px;
-    opacity: 0;
-    background:
-      radial-gradient(closest-side at 30% 32%, #94e2d5, transparent 62%),
-      radial-gradient(closest-side at 72% 58%, #89b4fa, transparent 64%),
-      radial-gradient(closest-side at 50% 84%, #f38ba8, transparent 62%);
-    background-size: 180% 180%;
-    background-position: 0% 20%;
-    mix-blend-mode: screen;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-  }
-  &:hover:not(:disabled)::before { opacity: 0.95; animation: mini-plasma 6s ease-in-out infinite; }
-
-  // Teal suggestions badge on the disc's corner — thinner, centered digit.
-  .mb {
-    position: absolute;
-    z-index: 4;
-    top: -5px;
-    right: -5px;
-    min-width: 13px;
-    height: 13px;
-    padding: 0.07em 2px 0;               // nudge the digit to the optical centre
-    border-radius: 999px;
-    background: #94e2d5;
-    color: #0c0c14;
-    font-size: 8.5px;
-    font-weight: 600;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1.5px solid #181825;
-  }
-  &:hover:not(:disabled) .mb { animation: mini-badge-pulse 1.8s ease-in-out infinite; }
-}
-
-.logged-pane.collapsed .lp-mini {
-  width: 20px;
-  margin-right: 0;
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-@keyframes mini-plasma {
-  0%   { background-position: 0% 20%; }
-  50%  { background-position: 100% 80%; }
-  100% { background-position: 0% 20%; }
-}
-
-@keyframes mini-badge-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(148, 226, 213, 0); }
-  50%      { box-shadow: 0 0 6px 1px rgba(148, 226, 213, 0.55); }
-}
-
-.lp-body {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 0.26s cubic-bezier(0.4, 0, 0.2, 1);
-  min-height: 0;
-}
-
-.logged-pane.collapsed .lp-body { grid-template-rows: 0fr; }
-
-.lp-clip {
-  overflow: hidden;
-  min-height: 0;
 }
 
 .lp-table {
-  max-height: 100%;
-  overflow-y: auto;
-  transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
-
-  &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
-}
-
-.logged-pane.collapsed .lp-table {
-  transform: translateY(60%);
-  opacity: 0;
-}
-
-// ─── Ghost row — the Log entry point ─────────────────────────────────────
-.ghost-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  margin-bottom: 4px;
-  border: 1px dashed rgba(203, 166, 247, 0.3);
-  border-radius: 5px;
-  color: #6c7086;
-  font-size: 11px;
-  cursor: pointer;
-  user-select: none;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
-
-  &:hover {
-    border-color: #cba6f7;
-    background: rgba(203, 166, 247, 0.05);
-    color: #a6adc8;
-  }
-
-  .g-plus { color: #cba6f7; font-weight: 700; }
-
-  .g-sugg {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 10px;
-    color: #94e2d5;
-
-    .sdot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: #94e2d5;
-      animation: sugg-pulse 1.6s ease-in-out infinite;
-    }
-  }
+  padding-bottom: 12px;
 }
 
 // ─── Entry rows — two fixed bands on one shared grid ──────────────────────
 // Band 1: key | name | time. Band 2: type | desc | actions — desc sits exactly
-// under the name, type under the key chip. Edit swaps only band 2's cells for
-// controls and frames the time in place: display geometry == edit geometry,
-// the row height never changes and neighbours never shift.
+// under the name, type under the key chip. Edit swaps only the second band's
+// cells for controls and frames the time in place: display geometry == edit
+// geometry, the row height never changes and neighbours never shift.
 .log-row2 {
   padding: 3px 8px 4px;
-  border-radius: 5px;
+  border: 1px solid rgba(205, 214, 244, 0.08);
+  border-radius: 7px;
+  margin-bottom: 5px;
   position: relative;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   transition: background 0.4s ease;
 
   &:hover { background: #211f30; }
-  & + &, .trk-detail + & { border-top: 1px solid rgba(205, 214, 244, 0.05); }
-  &:not(.removing) { max-height: 48px; }
+  &:last-child { margin-bottom: 0; }
+  &:not(.removing):not(.ses) { max-height: 48px; }
 }
 
 .r-l1 {
@@ -425,8 +197,8 @@
   .c-nm { color: #8f96b3; }
 }
 
-// Delete: instant with undo — Σ already rolled back, the row stays in place
-// struck-through with a burning ↩ in the time slot for ~3s.
+// Delete: instant with undo — the totals already rolled back, the row stays
+// in place struck-through with a burning ↩ in the time slot for ~3s.
 .log-row2.deleted {
   background: rgba(243, 139, 168, 0.04);
 
@@ -442,8 +214,11 @@
   opacity: 0;
   padding-top: 0;
   padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  margin-bottom: 0;
   overflow: hidden;
-  transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease;
+  transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease, margin 0.22s ease;
 }
 
 .l-undo {
@@ -556,12 +331,13 @@
   50%      { border-color: rgba(203, 166, 247, 0.25); }
 }
 
-// ─── Tracked rows — closed sessions, read-only ────────────────────────────
+// ─── Session-born rows — closed sessions, read-only ───────────────────────
+// Breakdown toggles by dblclick / context menu — no extra button.
 .log-row2.ses { cursor: default; }
 
-// Breakdown expand/collapse — the panel's own grid-rows mechanic: rows stay
-// in the DOM, the wrapper animates 0fr→1fr both ways; the rows fade and
-// slide in a touch behind the height.
+// Breakdown expand/collapse inside the row's border — grid-rows mechanic:
+// rows stay in the DOM, the wrapper animates 0fr→1fr both ways; the rows
+// fade and slide in a touch behind the height.
 .trk-detail {
   display: grid;
   grid-template-rows: 0fr;
@@ -575,18 +351,15 @@
   min-height: 0;
 }
 
-// Per-session breakdown — one line per session on a fixed grid, so the
-// columns align across rows: repo│branch (one identity pairing, like the
-// session-card head) | interval | duration. Repo and branch
-// truncate with an ellipsis when they don't fit.
-.trk-sub {
-  display: grid;
-  grid-template-columns: minmax(44px, 1fr) max-content 48px;
+// One line per session: glyph · commits · range · churn · duration right.
+// Repo · branch live in the row's tooltip.
+.ses-row {
+  display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 3px 8px 3px 26px;
-  font-size: 10.5px;
-  color: #565973;
+  gap: 8px;
+  height: 19px;
+  font-size: 10px;
+  color: #7f849c;
   font-variant-numeric: tabular-nums;
   opacity: 0;
   transform: translateY(-3px);
@@ -597,53 +370,30 @@
     transform: none;
   }
 
-  // repo + branch — the session-card identity pairing, scaled down and
-  // quieter: bold-ish repo, dim branch right behind it.
-  .s-id {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
+  svg { flex-shrink: 0; color: rgba(166, 227, 161, 0.55); }
 
-  .s-repo {
-    flex-shrink: 0;
-    max-width: 60%;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-weight: 600;
+  .rng { color: #8b90ab; }
+
+  .churn b { font-weight: 600; }
+  .churn .plus { color: rgba(166, 227, 161, 0.7); }
+  .churn .minus { color: rgba(243, 139, 168, 0.7); }
+
+  .sdur {
+    margin-left: auto;
+    font-weight: 700;
     color: #a6adc8;
   }
+}
 
-  .s-branch {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    color: #6d7291;
-  }
-
-  .s-int {
-    color: #6d7291;
-    white-space: nowrap;
-  }
-
-  .s-dur {
-    text-align: right;
-    color: #8b90ab;
-    white-space: nowrap;
-  }
+.trk-detail .ses-row:first-child {
+  margin-top: 4px;
+  padding-top: 3px;
+  border-top: 1px solid rgba(205, 214, 244, 0.06);
 }
 
 @keyframes row-in {
   0%   { transform: translateY(6px) scale(0.96); opacity: 0; }
   100% { transform: none; opacity: 1; }
-}
-
-@keyframes sugg-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
 }
 
 @media (prefers-reduced-motion: reduce) {

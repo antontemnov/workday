@@ -25,30 +25,31 @@ const FAV_FEEDBACK_MS = 1200;
 const POP_ANIM_MS = 500;
 const POP_STAGGER_MS = 80;
 
-// The panel is re-created on every tab switch, so the collapsed state must
-// live outside the instance or it resets to expanded on each return.
-const COLLAPSE_STORAGE_KEY = 'workday.logged.collapsed';
-
-// One ticket's closed tracked time — a read-only Logged row. Its origin
+// One ticket's closed tracked time — a read-only history row. Its origin
 // marker is the commit glyph + session range in the description slot; the
-// per-session breakdown (repo + interval · branch · reason) expands on demand.
+// per-session breakdown (glyph · commits · range · churn · duration)
+// expands inside the row on demand.
 interface TrackedGroup {
   readonly task: string;                      // ticket key, or '—' for taskless
   readonly totalMs: number;
   readonly sessions: readonly SessionDetail[];
 }
 
+// The feed interleaves manual entries and session-born groups newest-first;
+// `at` is the item's place in the day's chronology.
+type FeedItem =
+  | { readonly kind: 'entry'; readonly entry: ManualEntry; readonly at: string }
+  | { readonly kind: 'group'; readonly group: TrackedGroup; readonly at: string };
+
 /**
- * Pinned Logged panel — the manual-entries band docked to the bottom of the
- * day view, two-band rows on one shared grid. Collapses by header click
- * (grid-rows animation); the collapsed header keeps the Σ and grows a mini ＋
- * button (with a teal suggestions badge). A just-logged entry gets a ~4s
- * draft window with a ±15m wheel on its time; double-click swaps a row's
- * second band for the inline edit controls. Every local change
- * (wheel ticks included) reflects in the Σ immediately and is reported to
- * the parent as a live diff so the Day total moves in the same instant;
- * committed patches stay as optimistic overrides until the daemon's data
- * confirms them — no flicker between PATCH and refresh.
+ * History feed of the day view — manual entries and session-born groups
+ * interleaved newest-first, two-band rows on one shared grid. A just-logged
+ * entry gets a ~4s draft window with a ±15m wheel on its time; double-click
+ * swaps a row's second band for the inline edit controls. Every local change
+ * (wheel ticks included) is reported to the parent as a live diff so the Day
+ * total moves in the same instant; committed patches stay as optimistic
+ * overrides until the daemon's data confirms them — no flicker between PATCH
+ * and refresh.
  */
 @Component({
   selector: 'app-logged-panel',
@@ -59,7 +60,7 @@ interface TrackedGroup {
 })
 export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input({ required: true }) entries: readonly ManualEntry[] = [];
-  // Closed tracked sessions — rendered as read-only rows below the manual ones.
+  // Closed tracked sessions — rendered as read-only rows in the feed.
   @Input() closedSessions: readonly SessionDetail[] = [];
   // Task key → ticket summary, for the name column. Absent key → placeholder.
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
@@ -67,33 +68,25 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() activityAllowed: readonly string[] = [];
   @Input() favorites: readonly Favorite[] = [];
-  @Input() suggestedCount = 0;
   // Id of the entry created by the latest cloud pick — opens the draft window.
   @Input() freshEntryId: string | null = null;
 
-  @Output() logRequested = new EventEmitter<void>();
   @Output() patchCommitted = new EventEmitter<{ id: string; patch: ManualEntryPatch }>();
   // Fired when the undo window closes — the entry is gone for the user; the
   // parent sends the actual DELETE (undo never re-creates server-side).
   @Output() deleteCommitted = new EventEmitter<string>();
   @Output() favoriteAdded = new EventEmitter<FavoriteInput>();
   // Uncommitted + unconfirmed local minutes vs the server data — the parent
-  // adds it to the Day total so it moves together with the panel Σ.
+  // adds it to the Day total so it moves together with the feed.
   @Output() liveDiffChanged = new EventEmitter<number>();
 
-  public constructor(private host: ElementRef<HTMLElement>) {
-    this.collapsed = this.readCollapsed();
-  }
-
-  collapsed = false;
-  sumFlash = false;
+  public constructor(private host: ElementRef<HTMLElement>) {}
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
   freshMinutes: number | null = null;
   private freshBase: number | null = null;
   private freezeTimer: ReturnType<typeof setTimeout> | null = null;
-  private flashTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Inline row edit (double-click).
   editingId: string | null = null;
@@ -109,7 +102,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // Delete pipeline: undo window (timer) → collapse animation → hidden until
-  // the server data drops the row. Σ excludes an entry from the first stage.
+  // the server data drops the row. The live diff excludes an entry from the
+  // first stage.
   private deleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   removingIds = new Set<string>();
   private hiddenIds = new Set<string>();
@@ -127,26 +121,19 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   favDoneId: string | null = null;
   private favDoneTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private prevDisplayedSum: number | null = null;
   private lastEmittedDiff = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
-    // A real pick fires this while the panel is alive (firstChange false). On
+    // A real pick fires this while the feed is alive (firstChange false). On
     // re-creation — switching tabs back to Day — Angular replays the still-set
     // freshEntryId as a firstChange; ignore it, or the last row re-opens its
     // draft stepper every time the user returns to the Day view.
     if (changes['freshEntryId'] && !changes['freshEntryId'].firstChange
         && this.freshEntryId) {
       this.freeze(); // a new pick supersedes any still-open draft
-      // Draft window (mauve stepper) is an expanded-panel affordance only. A
-      // pick into a collapsed panel fixes the time immediately and lands as a
-      // static row — mirrors the mockup's addStaticRow path; the panel stays
-      // collapsed (quiet landing: chip fly + Σ flash).
-      if (!this.collapsed) {
-        this.freshId = this.freshEntryId;
-        this.freshMinutes = null;
-        this.armFreeze();
-      }
+      this.freshId = this.freshEntryId;
+      this.freshMinutes = null;
+      this.armFreeze();
     }
     if (changes['entries']) {
       // The fresh entry lands with the refresh that follows the POST — pick up
@@ -174,7 +161,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.deleteCommitted.emit(id);
     }
     this.deleteTimers.clear();
-    if (this.flashTimer) clearTimeout(this.flashTimer);
     if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
     this.pendingTimers.forEach(t => clearTimeout(t));
     this.removeTimers.forEach(t => clearTimeout(t));
@@ -221,36 +207,29 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.popDelayMs.clear();
   }
 
-  // ─── Header ────────────────────────────────────────────────────────────
+  // ─── Feed ──────────────────────────────────────────────────────────────
 
-  toggleCollapsed(ev: MouseEvent): void {
-    if ((ev.target as HTMLElement).closest('.lp-mini')) return;
-    this.collapsed = !this.collapsed;
-    this.persistCollapsed();
+  // Manual entries and session-born groups in one chronology, newest first:
+  // entries sit at their createdAt, a group at its branch's last activity.
+  get feedItems(): readonly FeedItem[] {
+    const items: FeedItem[] = this.entries
+      .filter(e => !this.hiddenIds.has(e.id))
+      .map(e => ({ kind: 'entry' as const, entry: e, at: e.createdAt }));
+    for (const group of this.trackedGroups) {
+      items.push({ kind: 'group', group, at: this.groupLastSeen(group) });
+    }
+    return items.sort((a, b) => b.at.localeCompare(a.at));
   }
 
-  onMiniClick(ev: MouseEvent): void {
-    ev.stopPropagation();
-    this.logRequested.emit();
+  trackByFeed(_i: number, it: FeedItem): string {
+    return it.kind === 'entry' ? `e:${it.entry.id}` : `g:${it.group.task}`;
   }
 
-  // Newest first — a fresh log lands at the top, right under the ghost row.
-  // Rows whose DELETE is already sent stay hidden until the data confirms.
-  get displayEntries(): readonly ManualEntry[] {
-    return [...this.entries].filter(e => !this.hiddenIds.has(e.id)).reverse();
+  private get rawSumMinutes(): number {
+    return this.entries.reduce((sum, e) => sum + e.minutes, 0);
   }
 
-  // Σ shown in the header — manual entries (with local overrides) plus the
-  // closed tracked time: everything below is fixed, so the Σ covers it all.
-  get sumMs(): number {
-    return this.displayedSumMinutes * 60_000 + this.closedTotalMs;
-  }
-
-  get closedTotalMs(): number {
-    return this.closedSessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
-  }
-
-  // A deleted row leaves the Σ the moment the undo window opens.
+  // A deleted row leaves the totals the moment the undo window opens.
   private get displayedSumMinutes(): number {
     return this.entries.reduce(
       (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
@@ -260,24 +239,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.deleteTimers.has(id) || this.removingIds.has(id) || this.hiddenIds.has(id);
   }
 
-  private get rawSumMinutes(): number {
-    return this.entries.reduce((sum, e) => sum + e.minutes, 0);
-  }
-
-  private flashSum(): void {
-    this.sumFlash = true;
-    if (this.flashTimer) clearTimeout(this.flashTimer);
-    this.flashTimer = setTimeout(() => this.sumFlash = false, 400);
-  }
-
-  // Flash on any visible Σ change and keep the parent's live diff current.
-  // Confirming refreshes swap an override for real data without changing the
-  // displayed value — no flash, diff settles back to 0.
+  // Keep the parent's live diff current: local overrides move the Day total
+  // in the same instant; confirming refreshes settle the diff back to 0.
   private recomputeLive(): void {
-    const displayed = this.displayedSumMinutes;
-    if (this.prevDisplayedSum !== null && displayed !== this.prevDisplayedSum) this.flashSum();
-    this.prevDisplayedSum = displayed;
-    const diff = displayed - this.rawSumMinutes;
+    const diff = this.displayedSumMinutes - this.rawSumMinutes;
     if (diff !== this.lastEmittedDiff) {
       this.lastEmittedDiff = diff;
       this.liveDiffChanged.emit(diff);
@@ -300,9 +265,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   isFresh(e: ManualEntry): boolean {
-    // Draft only in the expanded panel — a pick into the collapsed panel
-    // lands quietly (flash Σ, no draft), per the instant-log design.
-    return !this.collapsed && e.id === this.freshId && this.freshMinutes !== null;
+    return e.id === this.freshId && this.freshMinutes !== null;
   }
 
   canEdit(e: ManualEntry): boolean {
@@ -457,7 +420,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   // Wheel on the fresh row's time — the only rows whose time spins outside
-  // edit. Non-fresh rows keep the wheel for the table's scroll.
+  // edit. Non-fresh rows keep the wheel for the feed's scroll.
   onFreshWheel(e: ManualEntry, ev: WheelEvent): void {
     if (!this.isFresh(e)) return;
     ev.preventDefault();
@@ -535,27 +498,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.issueSummaries[e.task] ?? '';
   }
 
-  // Collapsed state survives the panel's re-creation on tab switches (and app
-  // restarts) — default expanded when nothing is stored.
-  private readCollapsed(): boolean {
-    try {
-      return localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1';
-    } catch { return false; }
-  }
-
-  private persistCollapsed(): void {
-    try {
-      localStorage.setItem(COLLAPSE_STORAGE_KEY, this.collapsed ? '1' : '0');
-    } catch { /* storage unavailable — keep the in-memory state */ }
-  }
-
-  // ─── Tracked rows (closed sessions) ─────────────────────────────────────
+  // ─── Session-born groups (closed sessions) ──────────────────────────────
   // One row per ticket, summed — mirrors how the daemon folds sessions into a
-  // single Tempo worklog. Read-only: no edit, no delete; dblclick / context
-  // menu toggles the per-session breakdown instead.
+  // single Tempo worklog. Read-only: no edit, no delete; dblclick / chevron /
+  // context menu toggles the per-session breakdown instead.
 
   // Task keys whose breakdown is open. Survives refreshes within the instance;
-  // resets on tab switch (panel re-creation) — that matches a "peek" gesture.
+  // resets on tab switch (feed re-creation) — that matches a "peek" gesture.
   expandedTasks = new Set<string>();
 
   get trackedGroups(): readonly TrackedGroup[] {
@@ -575,8 +524,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         sessions,
       });
     }
-    // Day chronology: by the first session's start.
-    return groups.sort((a, b) => a.sessions[0].startedAt.localeCompare(b.sessions[0].startedAt));
+    return groups;
+  }
+
+  // The group's place in the feed chronology: the branch's last activity.
+  private groupLastSeen(g: TrackedGroup): string {
+    return g.sessions.reduce(
+      (max, s) => s.lastSeenAt > max ? s.lastSeenAt : max, g.sessions[0].lastSeenAt);
   }
 
   isExpanded(g: TrackedGroup): boolean {
@@ -603,7 +557,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   sessionInterval(s: SessionDetail): string {
-    return `${this.formatHm(s.startedAt)} → ${this.formatHm(s.lastSeenAt)}`;
+    return `${this.formatHm(s.startedAt)}–${this.formatHm(s.lastSeenAt)}`;
   }
 
   private formatHm(iso: string): string {
@@ -631,10 +585,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Tracked time is always Development — that's how it pushes to Tempo.
   readonly developmentActivity = DEVELOPMENT_ACTIVITY;
 
-  trackByGroup(_i: number, g: TrackedGroup): string {
-    return g.task;
-  }
-
   // ─── Formatters ────────────────────────────────────────────────────────
 
   formatDurationHm(ms: number): string {
@@ -651,9 +601,5 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   get activityOptions(): readonly ActivityType[] {
     return activityOptions(this.activityTypes, this.activityAllowed, this.editPinnedActivity);
-  }
-
-  trackByEntry(_i: number, e: ManualEntry): string {
-    return e.id;
   }
 }

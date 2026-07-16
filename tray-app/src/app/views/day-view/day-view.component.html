@@ -12,69 +12,61 @@
   </div>
 </div>
 
-<!-- Content (scrolls; the dock below stays pinned) -->
+<!-- The feed: sticky day header, then live sessions → (suggestions slot,
+     epoch 4) → history newest-first. One scroll, no sections. -->
 <div class="content" *ngIf="data && !error">
-  <!-- Day block: date · Day total (the only day-level aggregate) -->
-  <section class="day-block">
-    <div class="day-line">
-      <h1 class="day-date">{{ dateLabel }}</h1>
-      <span class="day-total"
-            *ngIf="dayTotalMs > 0"
-            [class.flash]="dayFlash"
-            title="Tracked + Logged — what goes to Tempo">{{ formatDurationHm(dayTotalMs) }}</span>
+  <div class="day-head" #dayHead>
+    <h1 class="day-date">{{ dateLabel }}</h1>
+    <button class="g-btn"
+            (click)="openCloud()"
+            [disabled]="actionPending"
+            title="Log time"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+    <span class="day-total"
+          *ngIf="dayTotalMs > 0"
+          [class.flash]="dayFlash"
+          title="Everything that goes to Tempo today">{{ formatDurationHm(dayTotalMs) }}</span>
+  </div>
+
+  <!-- Live sessions — "now" sits on top of the feed -->
+  <app-session-card
+    *ngFor="let s of openSessions"
+    [session]="s"
+    [actionPending]="actionPending"
+    [speedPills]="sensitivityPills"
+    (pillSelected)="pillSelected.emit($event)"
+    (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
+
+  <!-- Radar only when the whole day is empty — otherwise the history speaks -->
+  <div class="waiting" *ngIf="dayEmpty">
+    <div class="radar">
+      <span class="ring"></span>
+      <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
+        <circle cx="11" cy="11" r="3.2" fill="#94e2d5"/>
+        <path d="M11 3.5 a7.5 7.5 0 0 1 7.5 7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
+        <path d="M11 18.5 a7.5 7.5 0 0 1 -7.5 -7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
+      </svg>
     </div>
-  </section>
+    <div class="waiting-title">Tracking is on</div>
+    <div class="waiting-sub">any activity in your repos starts tracking</div>
+  </div>
 
-  <!-- Tracked: live cards only — closed sessions live in the Logged panel. -->
-  <section class="tracked">
-    <h2 class="tracked-head">
-      Tracked
-      <span class="sum" *ngIf="openSessions.length > 0">{{ formatDurationHm(trackedTotalMs) }}</span>
-    </h2>
-
-    <app-session-card
-      *ngFor="let s of openSessions"
-      [session]="s"
-      [actionPending]="actionPending"
-      [speedPills]="sensitivityPills"
-      (pillSelected)="pillSelected.emit($event)"
-      (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
-
-    <!-- Radar: nothing has activity yet (or everything closed) — calm waiting state -->
-    <div class="waiting" *ngIf="openSessions.length === 0">
-      <div class="radar">
-        <span class="ring"></span>
-        <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
-          <circle cx="11" cy="11" r="3.2" fill="#94e2d5"/>
-          <path d="M11 3.5 a7.5 7.5 0 0 1 7.5 7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
-          <path d="M11 18.5 a7.5 7.5 0 0 1 -7.5 -7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
-        </svg>
-      </div>
-      <div class="waiting-title">Tracking is on</div>
-      <div class="waiting-sub">any activity in your repos starts tracking</div>
-    </div>
-  </section>
+  <!-- History — manual entries and session-born groups, newest first -->
+  <app-logged-panel
+    [entries]="manualEntries"
+    [closedSessions]="closedSessions"
+    [issueSummaries]="issueSummaries"
+    [actionPending]="actionPending"
+    [activityTypes]="activityTypes"
+    [activityAllowed]="activityAllowed"
+    [favorites]="favorites"
+    [freshEntryId]="freshEntryId"
+    (patchCommitted)="onPanelPatch($event)"
+    (deleteCommitted)="entryDeleteSubmitted.emit($event)"
+    (favoriteAdded)="favoriteAddSubmitted.emit($event)"
+    (liveDiffChanged)="onLiveDiff($event)" />
 </div>
 
-<!-- Pinned Logged panel — collapses by header click; ghost-row opens the cloud -->
-<app-logged-panel
-  *ngIf="data && !error"
-  [entries]="manualEntries"
-  [closedSessions]="closedSessions"
-  [issueSummaries]="issueSummaries"
-  [actionPending]="actionPending"
-  [activityTypes]="activityTypes"
-  [activityAllowed]="activityAllowed"
-  [favorites]="favorites"
-  [suggestedCount]="suggestions.length"
-  [freshEntryId]="freshEntryId"
-  (logRequested)="openCloud()"
-  (patchCommitted)="onPanelPatch($event)"
-  (deleteCommitted)="entryDeleteSubmitted.emit($event)"
-  (favoriteAdded)="favoriteAddSubmitted.emit($event)"
-  (liveDiffChanged)="onLiveDiff($event)" />
-
-<!-- Log cloud overlay -->
+<!-- Log cloud overlay — opens below the sticky header -->
 <div class="cloud-backdrop" [class.open]="cloudOpen" (click)="closeCloud()"></div>
 <app-log-cloud
   *ngIf="data && !error"
@@ -84,7 +76,7 @@
   [activityTypes]="activityTypes"
   [activityAllowed]="activityAllowed"
   [actionPending]="actionPending"
-  [style.bottom.px]="overlayBottom"
+  [style.top.px]="overlayTop"
   (chipPicked)="onChipPicked($event)"
   (formSubmitted)="onFormSubmitted($event)"
   (batchSubmitted)="onBatchSubmitted($event)"

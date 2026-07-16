@@ -2,7 +2,8 @@
      [class.paused]="isPaused"
      [class.menu-open]="menuOpen"
      [class.pop-open]="addPopoverOpen"
-     [style.--st-shadow]="stateShadow">
+     [style.--st-glint]="stateGlint"
+     [style.--st-glint-soft]="stateGlintSoft">
   <!-- Band 1: identity — ticket chip · repo · branch · time -->
   <div class="r-l1">
     <span class="c-key" [class.none]="!session.task"

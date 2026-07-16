@@ -54,20 +54,20 @@
   font-size: 11px;
 }
 
-// ─── Day block ────────────────────────────────────────────────────────────
-// One line: date · Day total. The total is the only day-level aggregate —
-// every other number lives in its section header.
-.day-block {
-  margin: 11px 0 0;
-  padding-bottom: 11px;
-  border-bottom: 1px solid #26263a;
-}
-
-.day-line {
+// ─── Sticky day header ───────────────────────────────────────────────────
+// The feed's only chrome: date · ＋Log · Day total. Sticky at the top of the
+// scroll — every other pixel of height belongs to the records.
+.day-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+  padding: 13px 2px 11px;
+  background: #1e1e2e;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
 
 .day-date {
@@ -77,45 +77,74 @@
   letter-spacing: 0.2px;
   line-height: 1.2;
   color: #cdd6f4;
-  font-variant-numeric: tabular-nums;
 }
 
-// Day total — Tracked Σ + Logged Σ, pushed to the right edge.
-.day-total {
+// ＋Log — the entry point (the panel's ghost row died with the panel); opens
+// the log cloud right below the header. A glass capsule: neutral translucent
+// fill, a drop of mauve in the frame, the same rim catch-light as the cards.
+.g-btn {
   margin-left: auto;
+  align-self: center;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: #cba6f7;
+  border: 1px solid rgba(203, 166, 247, 0.24);
+  background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
+  border-radius: 999px;
+  padding: 3px 11px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  svg {
+    width: 9px;
+    height: 9px;
+    flex-shrink: 0;
+
+    path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+    }
+  }
+
+  // Rim catch-light — the cards' mask trick on the capsule.
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(178deg, rgba(205, 214, 244, 0.4), transparent 58%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(205, 214, 244, 0.13), rgba(205, 214, 244, 0.05));
+  }
+
+  &:disabled { opacity: 0.4; cursor: default; }
+}
+
+// Day total — Tracked Σ + logged Σ, the only day-level aggregate.
+.day-total {
+  margin-left: 4px;
   font-size: 18px;
   font-weight: 700;
   line-height: 1.2;
   color: #cdd6f4;
-  font-variant-numeric: tabular-nums;
   transition: color 0.3s ease;
 
   &.flash { color: #cba6f7; }
-}
-
-// ─── Tracked ─────────────────────────────────────────────────────────────────
-// Live cards only — closed sessions render inside the Logged panel. The
-// header carries the live Σ.
-.tracked-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  padding: 10px 0;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #bac2de;
-  font-variant-numeric: tabular-nums;
-
-  .sum {
-    margin-left: auto;
-    font-weight: 700;
-    text-transform: none;
-    letter-spacing: 0;
-    color: #cdd6f4;
-  }
 }
 
 // ─── Waiting radar ──────────────────────────────────────────────────────────

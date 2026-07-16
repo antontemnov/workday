@@ -22,8 +22,8 @@ type TrackingAction = 'pause' | 'resume';
  *            clickable time (+manual)
  *   band 2 — status badge (Pause/Resume built into the badge for
  *            Live/manual-paused) · commits · churn · mode dropdown
- * Stamina stays the card's bottom edge; the tracked highlight is a 45°
- * top-right shadow tinted by the same state.
+ * Stamina stays the card's bottom edge; the tracked highlight is a glass
+ * rim — a faint catch-light on the border tinted by the same state.
  *
  * Mostly a projection of one SessionDetail; the only local state is the
  * anchored Add-time popover (open flag + duration text), like the mode
@@ -150,16 +150,27 @@ export class SessionCardComponent {
     return `Stamina ${this.staminaPercent}%`;
   }
 
-  // Tracked highlight — the 45° top-right shadow follows the edge fill:
-  // stamina colour normally, teal for Nonstop, off when the edge is empty.
-  get stateShadow(): string {
-    if (this.isNonstopPaused) return 'transparent';
-    if (this.isAlwaysOn) return 'rgba(148, 226, 213, 0.3)';
-    if (this.isManualPaused) return 'rgba(69, 71, 90, 0.3)';
+  // Tracked highlight — the glass rim's catch-light follows the edge fill:
+  // stamina colour while stamina is non-zero, teal for Nonstop, plain glass
+  // (neutral) when the edge is frozen or empty. The pair is
+  // [top catch-light, bottom counter-glint] — same hue, a third the voice.
+  private get glintPair(): readonly [string, string] {
+    if (this.isAlwaysOn) return ['rgba(148, 226, 213, 0.35)', 'rgba(148, 226, 213, 0.12)'];
     const n = this.session.normalizedScore;
-    if (n >= 0.6) return 'rgba(166, 227, 161, 0.3)';
-    if (n >= 0.3) return 'rgba(249, 226, 175, 0.28)';
-    return 'rgba(243, 139, 168, 0.28)';
+    if (this.isNonstopPaused || this.isManualPaused || n <= 0) {
+      return ['rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)'];
+    }
+    if (n >= 0.6) return ['rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)'];
+    if (n >= 0.3) return ['rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)'];
+    return ['rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)'];
+  }
+
+  get stateGlint(): string {
+    return this.glintPair[0];
+  }
+
+  get stateGlintSoft(): string {
+    return this.glintPair[1];
   }
 
   // ─── Git stats ─────────────────────────────────────────────────────────

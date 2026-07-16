@@ -57,8 +57,8 @@ export class DayViewComponent implements OnChanges {
   @Output() favoritesRemoveSubmitted = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();
 
-  @ViewChild(LoggedPanelComponent, { read: ElementRef })
-  private panelRef?: ElementRef<HTMLElement>;
+  @ViewChild('dayHead')
+  private dayHeadRef?: ElementRef<HTMLElement>;
 
   // Mauve flash on the Day total when the logged share changes — server data
   // and local live diffs (draft stepper ticks) both count.
@@ -97,14 +97,17 @@ export class DayViewComponent implements OnChanges {
     return this.data?.sessions.filter(s => !s.closedBy && s.activatedAt !== null) ?? [];
   }
 
-  // Closed sessions render as read-only rows inside the Logged panel.
+  // Closed sessions render as read-only rows in the history feed.
   get closedSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => s.closedBy) ?? [];
   }
 
-  // Green dot on the Active header — at least one session is tracking right now.
-  get hasLiveSession(): boolean {
-    return this.openSessions.some(s => !s.paused && s.state === 'active');
+  // Radar only when the day is a blank page — any session, entry or closed
+  // group means the feed has something better to say.
+  get dayEmpty(): boolean {
+    return this.openSessions.length === 0
+      && this.closedSessions.length === 0
+      && this.manualEntries.length === 0;
   }
 
   get closedTotalMs(): number {
@@ -165,12 +168,12 @@ export class DayViewComponent implements OnChanges {
   readonly suggestions: readonly SuggestedLog[] = [];
 
   cloudOpen = false;
-  // The cloud sits just above the Logged panel; measured at open time.
-  overlayBottom = 0;
+  // The cloud hangs just below the sticky day header; measured at open time.
+  overlayTop = 0;
 
   openCloud(): void {
     if (this.actionPending) return;
-    this.overlayBottom = this.panelHeight() + 6;
+    this.overlayTop = this.headHeight() + 6;
     this.cloudOpen = true;
   }
 
@@ -178,8 +181,8 @@ export class DayViewComponent implements OnChanges {
     this.cloudOpen = false;
   }
 
-  private panelHeight(): number {
-    return this.panelRef?.nativeElement.offsetHeight ?? 46;
+  private headHeight(): number {
+    return this.dayHeadRef?.nativeElement.offsetHeight ?? 42;
   }
 
   // Instant log: chip click → cloud closes, the chip flies to the panel
@@ -207,13 +210,13 @@ export class DayViewComponent implements OnChanges {
     this.settingsRequested.emit();
   }
 
-  // FLIP clone of the picked chip → flies to the panel header (Σ corner).
-  // Styled inline: the element lives on document.body, outside the component's
-  // scoped styles.
+  // FLIP clone of the picked chip → flies to the Day total corner of the
+  // sticky header. Styled inline: the element lives on document.body, outside
+  // the component's scoped styles.
   private flyChip(from: DOMRect, label: string, minutes: number): void {
-    const head = this.panelRef?.nativeElement.querySelector('.lp-head');
+    const head = this.dayHeadRef?.nativeElement;
     if (!head || from.width === 0) return;
-    const to = head.getBoundingClientRect();
+    const to = (head.querySelector('.day-total') ?? head).getBoundingClientRect();
 
     const g = document.createElement('span');
     Object.assign(g.style, {
@@ -237,7 +240,7 @@ export class DayViewComponent implements OnChanges {
     document.body.appendChild(g);
     requestAnimationFrame(() => {
       g.style.transform =
-        `translate(${to.left + 14 - from.left}px, ${to.bottom + 6 - from.top}px) scale(0.5)`;
+        `translate(${to.left - from.left}px, ${to.top + 2 - from.top}px) scale(0.5)`;
       g.style.opacity = '0';
     });
     setTimeout(() => g.remove(), 460);
