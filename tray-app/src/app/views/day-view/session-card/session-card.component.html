@@ -1,54 +1,22 @@
-<div class="card" [class.paused]="isPaused" [class.menu-open]="menuOpen" [class.pop-open]="addPopoverOpen">
-  <!-- 1 · Identity -->
-  <div class="head">
-    <span class="repo">{{ repoName }}</span>
-    <span class="sep"></span>
-    <span class="branch" [title]="session.branch">{{ session.branch }}</span>
-    <app-status-badge
-      [statusClass]="statusClass"
-      [label]="statusLabel"
-      [action]="trackingAction"
-      [pending]="actionPending"
-      (act)="onTrackingClick()" />
-  </div>
-
-  <!-- 2 · Metrics: git · mode picker · time (right edge — time is always right) -->
-  <div class="metrics">
-    <span class="chip git" [title]="session.evidence.filesChanged + ' files changed'">
-      <svg class="mi" viewBox="0 0 14 14" aria-hidden="true">
-        <circle cx="7" cy="7" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"></circle>
-        <path d="M0.7 7h2M11.3 7h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
-      </svg>
-      <span class="commits">{{ session.evidence.commits }}</span>
-      <span class="sep"></span>
-      <span class="added">+{{ session.evidence.linesAdded }}</span>
-      <span class="removed">−{{ session.evidence.linesRemoved }}</span>
-    </span>
-
-    <!-- Mode picker — collapses the old scale row onto this line -->
-    <app-mode-dropdown
-      [options]="speedPills"
-      [value]="session.sensitivity"
-      [disabled]="isManualPaused || actionPending"
-      (selected)="onSpeedClick($event)"
-      (openChange)="menuOpen = $event" />
+<div class="card"
+     [class.paused]="isPaused"
+     [class.menu-open]="menuOpen"
+     [class.pop-open]="addPopoverOpen"
+     [style.--st-shadow]="stateShadow">
+  <!-- Band 1: identity — ticket chip · repo · branch · time -->
+  <div class="r-l1">
+    <span class="c-key" [class.none]="!session.task"
+          [title]="session.task || 'No ticket in branch'">{{ session.task || '—' }}</span>
+    <span class="c-nm" [title]="identityTitle"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>
 
     <span class="time-anchor">
-      <button class="chip time"
+      <button class="c-dur"
+              [class.armed]="addPopoverOpen"
               (click)="onTimeClick()"
-              [class.active]="addPopoverOpen"
               [disabled]="!canAddTime || actionPending"
-              [title]="timeChipTitle">
-        <svg class="mi" viewBox="0 0 14 14" aria-hidden="true">
-          <circle cx="7" cy="8.4" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"></circle>
-          <path d="M7 8.4V5.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
-          <path d="M5.5 1.4h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
-          <path d="M7 1.4v2.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
-        </svg>
-        <span class="time-val">{{ effectiveLabel }}</span>
-      </button>
+              [title]="timeChipTitle">{{ effectiveLabel }}</button>
 
-      <!-- Add-time popover — opens down from the chip; outside click / Esc closes -->
+      <!-- Add-time popover — opens down from the time; outside click / Esc closes -->
       <div class="add-pop-backdrop" *ngIf="addPopoverOpen" (click)="closeAddPopover()"></div>
       <div class="add-pop" *ngIf="addPopoverOpen" (keydown.escape)="closeAddPopover()">
         <div class="add-pop-title">Add time</div>
@@ -66,6 +34,27 @@
         </div>
       </div>
     </span>
+  </div>
+
+  <!-- Band 2: status badge (unchanged pill) · commits · churn · mode picker -->
+  <div class="r-l2">
+    <app-status-badge
+      [statusClass]="statusClass"
+      [label]="statusLabel"
+      [action]="trackingAction"
+      [pending]="actionPending"
+      (act)="onTrackingClick()" />
+
+    <span class="c-stats" [title]="statsTitle">
+      <svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
+    </span>
+
+    <app-mode-dropdown
+      [options]="speedPills"
+      [value]="session.sensitivity"
+      [disabled]="isManualPaused || actionPending"
+      (selected)="onSpeedClick($event)"
+      (openChange)="menuOpen = $event" />
   </div>
 
   <!-- Stamina = bottom edge: length + colour encode the level; hover shows a tip -->

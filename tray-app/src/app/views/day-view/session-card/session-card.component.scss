@@ -9,16 +9,21 @@
   border-radius: 6px;
   padding: 9px 11px 11px;
   margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
   // Visible so the mode dropdown's menu can overflow the card; the stamina edge
   // rounds its own bottom corners (below) instead of relying on card clipping.
   overflow: visible;
-  transition: border-color 0.18s ease;
+  // Tracked highlight — a 45° shadow to the top-right corner only, tinted by
+  // the same state the stamina edge shows. Background and border stay neutral;
+  // straight up would sink under the day header, straight down would double
+  // the stamina strip.
+  box-shadow: 5px -5px 12px -4px var(--st-shadow, transparent);
+  transition: border-color 0.18s ease, box-shadow 0.5s ease;
 
-  // Paused: fade only the data chips (time/git). The mode picker manages its own
-  // disabled state, and Pause/Resume must stay prominent. The time chip is now
-  // wrapped in .time-anchor, so it needs its own selector.
-  &.paused .metrics > .chip,
-  &.paused .metrics > .time-anchor > .chip {
+  // Paused: fade only the data (time/stats). The status badge must stay
+  // prominent and the mode picker manages its own disabled state.
+  &.paused .c-dur,
+  &.paused .c-stats {
     opacity: 0.75;
   }
 
@@ -30,137 +35,126 @@
   }
 }
 
-// ─── 1 · Identity ───────────────────────────────────────────────────────────
-.head {
-  display: flex;
-  align-items: center;
+// ─── Two bands on the shared Logged grid ────────────────────────────────────
+// Band 1: ticket chip | repo · branch | time. Band 2: status badge | commits ·
+// churn | mode picker. Same column template as the Logged rows, so the day
+// view reads as one table.
+.r-l1 {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
-  margin-bottom: 10px;
-  min-width: 0;
-
-  // Repo + branch are one identity line split by a divider — peers, no block.
-  // The task tag was dropped: it only duplicated the branch prefix, and its
-  // colour stopped meaning anything once the shared timeline bar (where repo
-  // colours lived) was removed.
-  .repo {
-    flex-shrink: 0;
-    font-weight: 600;
-    color: #cdd6f4;
-  }
-
-  // Divider between the two identity parts: repo │ branch.
-  .sep {
-    width: 1px;
-    height: 12px;
-    background: #45475a;
-    flex-shrink: 0;
-  }
-
-  // Long branch fades into transparency on the right instead of an ellipsis.
-  .branch {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    color: #6c7086;
-    font-size: 11px;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
-  }
-}
-
-// Status badge (incl. its built-in Pause/Resume) moved to StatusBadgeComponent.
-
-// ─── 2 · Metrics ────────────────────────────────────────────────────────────
-.metrics {
-  display: flex;
   align-items: center;
-  gap: 12px;          // clear gap between time · git · mode
-  margin-bottom: 0;   // last content row; card padding spaces it from the edge
-  min-width: 0;
+  height: 18px;
+  font-size: 11px;
+}
 
-  // Every metric sits in a subtle chip (one shade lighter than the card) so the
-  // info reads as discrete data blocks, not loose floating text.
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: #1e1e2e;
-    border: 1px solid transparent; // keeps time/git chips the exact same height
-    border-radius: 5px;
-    padding: 3px 8px;
-    font-size: 11px;
-    white-space: nowrap;
-    flex-shrink: 0;
+// Band 2's first column may exceed 74px (wide badge faces like Switched /
+// Resume) — max-content lets it push instead of overlapping the stats.
+.r-l2 {
+  display: grid;
+  grid-template-columns: minmax(74px, max-content) minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+  height: 22px; // fits the badge and the mode dropdown without growing the card
+  margin-top: 5px;
+}
 
-    .mi {
-      width: 12px;
-      height: 12px;
-      color: #6c7086;
-      flex-shrink: 0;
-    }
+// Ticket from the branch — green chip: chip colour = the entry's life stage
+// (green tracked → mauve logged).
+.c-key {
+  justify-self: start;
+  color: #a6e3a1;
+  font-weight: 600;
+  background: rgba(166, 227, 161, 0.12);
+  padding: 1px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
 
-    // Divider between paired values (commits│diff). Extra side margin
-    // (on top of the chip gap) gives the values room to breathe.
-    .sep {
-      width: 1px;
-      height: 11px;
-      background: #45475a;
-      margin: 0 2px;
-      flex-shrink: 0;
-    }
-  }
-
-  // Time chip is clickable — opens the add-time dialog (like the day-start time).
-  .time {
-    font-family: inherit;
-    cursor: pointer;
-    transition: border-color 0.15s ease, background 0.15s ease;
-
-    .time-val {
-      color: #cdd6f4;
-      font-weight: 600;
-      text-decoration: underline dotted #585b70;
-      text-underline-offset: 3px;
-      transition: color 0.15s ease, text-decoration-color 0.15s ease;
-    }
-
-    &:hover:not(:disabled) {
-      border-color: #313244;
-      background: #232334;
-      .time-val { color: #ffffff; text-decoration-color: #cdd6f4; }
-    }
-    // Past day: time is read-only, drop the affordance.
-    &:disabled {
-      cursor: default;
-      .time-val { text-decoration: none; }
-    }
-  }
-
-  // Git block = one chip: commits │ +added −removed, divider between.
-  .git {
-    font-variant-numeric: tabular-nums;
-
-    .commits { color: #bac2de; }
-    .added   { color: #a6e3a1; }
-    .removed { color: #f38ba8; margin-left: 5px; }
+  // Branch without a ticket — dashed neutral placeholder, no new colours.
+  &.none {
+    color: #6c7086;
+    background: transparent;
+    border: 1px dashed #45475a;
+    padding: 0 8px;
   }
 }
 
-// ─── Add-time popover (anchored to the time chip) ────────────────────────────
-// The chip sits at the row's right edge — time is right-aligned app-wide.
+// repo · branch in the name slot: bold repo, dim branch; a long tail fades out
+// instead of a hard ellipsis cut (same mask as the Logged rows' name).
+.c-nm {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: default;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+
+  .repo { font-weight: 600; color: #cdd6f4; }
+  .br   { color: #6c7086; }
+}
+
+// ─── Time — band 1's right column, the same slot as every row's time ────────
+// A bare bold number like the Logged rows'; still a button — click opens the
+// add-time popover, the dotted underline keeps the old chip's affordance.
 .time-anchor {
   position: relative;
   display: inline-flex;
-  margin-left: auto;
+  justify-self: end;
 }
 
-// Chip reads "armed" while its popover is open.
-.time.active {
-  border-color: #cba6f7;
-  background: #232334;
+.c-dur {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: #cdd6f4;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: underline dotted #585b70;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+
+  &:hover:not(:disabled) { color: #ffffff; text-decoration-color: #cdd6f4; }
+
+  // Reads "armed" while its popover is open — underline only, number stays white.
+  &.armed { text-decoration-color: #cba6f7; }
+
+  // No task / pending: time is read-only, drop the affordance.
+  &:disabled { cursor: default; text-decoration: none; }
 }
 
+// ─── Band 2 slots ───────────────────────────────────────────────────────────
+// Status badge (its own component, untouched) sits in the first column.
+app-status-badge {
+  justify-self: start;
+}
+
+// Commits · churn in the description slot — commit glyph + counts in half-tone,
+// like the session-born rows in Logged.
+.c-stats {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #7f849c;
+
+  svg { flex-shrink: 0; opacity: 0.7; }
+
+  .csep  { color: #45475a; }
+  .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
+  .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
+}
+
+app-mode-dropdown {
+  justify-self: end;
+}
+
+// ─── Add-time popover (anchored to the time slot) ────────────────────────────
 .add-pop-backdrop {
   position: fixed;
   inset: 0;
@@ -169,8 +163,8 @@
 
 .add-pop {
   position: absolute;
-  top: calc(100% + 8px); // opens downward from the chip
-  right: 0;              // chip lives at the right edge — hang left
+  top: calc(100% + 8px); // opens downward from the time
+  right: 0;              // time lives at the right edge — hang left
   z-index: 50;
   width: 236px;
   box-sizing: border-box;
@@ -180,7 +174,7 @@
   padding: 11px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 
-  // Caret at the top, pointing up to the time chip.
+  // Caret at the top, pointing up to the time.
   &::after {
     content: '';
     position: absolute;

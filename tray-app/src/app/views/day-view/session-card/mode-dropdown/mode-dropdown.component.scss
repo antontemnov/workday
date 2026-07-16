@@ -56,7 +56,7 @@
 .menu {
   position: absolute;
   top: calc(100% + 5px);
-  left: 0;
+  right: 0; // the picker sits at the card's right edge — hang the menu left
   z-index: 50;
   width: 244px;
   background: #11111b;

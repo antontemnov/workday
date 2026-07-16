@@ -16,11 +16,14 @@ interface SpeedPillOption {
 type TrackingAction = 'pause' | 'resume';
 
 /**
- * Single open-session card. Compact 2-row layout:
- *   1. identity   — repo │ branch (fade-masked) · status badge (Pause/Resume
- *                   built into the badge for Live/manual-paused)
- *   2. metrics    — clickable time (+manual) · git stats · mode dropdown
- * Stamina is the card's bottom edge, not a row.
+ * Single open-session card on the shared two-band grid (74px | 1fr | 48px+,
+ * same as the Logged rows):
+ *   band 1 — green ticket chip (from the branch) · repo · branch ·
+ *            clickable time (+manual)
+ *   band 2 — status badge (Pause/Resume built into the badge for
+ *            Live/manual-paused) · commits · churn · mode dropdown
+ * Stamina stays the card's bottom edge; the tracked highlight is a 45°
+ * top-right shadow tinted by the same state.
  *
  * Mostly a projection of one SessionDetail; the only local state is the
  * anchored Add-time popover (open flag + duration text), like the mode
@@ -56,6 +59,10 @@ export class SessionCardComponent {
 
   get repoName(): string {
     return this.session.repo.split('/').pop() ?? this.session.repo;
+  }
+
+  get identityTitle(): string {
+    return `${this.repoName} · ${this.session.branch}`;
   }
 
   // ─── Status badge ──────────────────────────────────────────────────────
@@ -141,6 +148,25 @@ export class SessionCardComponent {
     if (this.isManualPaused) return `Frozen · ${this.staminaPercent}%`;
     if (this.isAlwaysOn) return 'Nonstop — no idle pause';
     return `Stamina ${this.staminaPercent}%`;
+  }
+
+  // Tracked highlight — the 45° top-right shadow follows the edge fill:
+  // stamina colour normally, teal for Nonstop, off when the edge is empty.
+  get stateShadow(): string {
+    if (this.isNonstopPaused) return 'transparent';
+    if (this.isAlwaysOn) return 'rgba(148, 226, 213, 0.3)';
+    if (this.isManualPaused) return 'rgba(69, 71, 90, 0.3)';
+    const n = this.session.normalizedScore;
+    if (n >= 0.6) return 'rgba(166, 227, 161, 0.3)';
+    if (n >= 0.3) return 'rgba(249, 226, 175, 0.28)';
+    return 'rgba(243, 139, 168, 0.28)';
+  }
+
+  // ─── Git stats ─────────────────────────────────────────────────────────
+
+  get statsTitle(): string {
+    const e = this.session.evidence;
+    return `${e.commits} commits · ${e.filesChanged} files changed`;
   }
 
   // ─── Time ──────────────────────────────────────────────────────────────
