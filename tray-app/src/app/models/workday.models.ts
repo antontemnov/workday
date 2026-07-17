@@ -126,6 +126,22 @@ export enum SuggestionsDayState {
   Pushed = 'pushed',   // day pushed to Tempo — suggestions silenced for good
 }
 
+// Ticket resolution learned from past accepts. `description` is present only
+// when the user deviated from the default (= meeting title).
+export interface SuggestionResolved {
+  readonly task: string;
+  readonly activity: string;
+  readonly description?: string;
+  readonly level: 'series' | 'title';
+}
+
+// One side of a titleKey conflict — never a generic top-N.
+export interface SuggestionCandidate {
+  readonly task: string;
+  readonly activity: string;
+  readonly lastUsedAt: string;
+}
+
 export interface Suggestion {
   readonly uid: string;
   readonly date: string;
@@ -136,6 +152,8 @@ export interface Suggestion {
   readonly ongoing: boolean;
   readonly isPrivate: boolean;
   readonly source: 'meeting';
+  readonly resolved?: SuggestionResolved;
+  readonly candidates?: readonly SuggestionCandidate[];
 }
 
 export interface SuggestionsResponse {
@@ -147,15 +165,28 @@ export interface SuggestionsResponse {
 export interface SuggestionAcceptRequest {
   readonly uid: string;
   readonly date: string;
-  readonly task: string;
+  readonly task?: string;          // default: resolved.task (error when neither)
   readonly minutes?: number;       // default: plannedMinutes (capped)
-  readonly description?: string;   // default: title (empty for private)
-  readonly activity?: string;      // default: Other
+  readonly description?: string;   // default: resolved.description → title (empty for private)
+  readonly activity?: string;      // default: resolved.activity → Other
 }
 
 export interface SuggestionAcceptResponse {
   readonly entry: ManualEntryResponse;
   readonly day: SuggestionsResponse;
+}
+
+// Muted series surface (CLI-only; no tray UI by design).
+export interface SuggestionsMutedResponse {
+  readonly muted: readonly {
+    readonly uid: string;
+    readonly mutedAt: string;
+    readonly title: string | null;
+  }[];
+}
+
+export interface SuggestionUnmuteResponse {
+  readonly uid: string;
 }
 
 export interface SensitivityResponse {

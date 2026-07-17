@@ -50,6 +50,8 @@ import {
   SuggestionsDayState,
   SuggestionAcceptRequest,
   SuggestionAcceptResponse,
+  SuggestionsMutedResponse,
+  SuggestionUnmuteResponse,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -114,13 +116,20 @@ export class MockWorkdayApiService extends WorkdayApiService {
   // Mock calendar behind the suggestion rows: two finished meetings and one
   // "happening now" (born at DTSTART), plus a private one — accept/dismiss
   // round-trip like the daemon's derived engine.
+  // One row per resolution outcome: learned series prefill, a titleKey
+  // conflict (candidates), an unknown meeting, a private one.
   private readonly mockMeetings: Suggestion[] = [
     { uid: 'ev-standup', date: this.today, title: 'Daily standup',
       start: this.iso(9, 30), end: this.iso(9, 45), plannedMinutes: 15,
-      ongoing: false, isPrivate: false, source: 'meeting' },
+      ongoing: false, isPrivate: false, source: 'meeting',
+      resolved: { task: 'ATL-101', activity: 'Other', description: 'Daily', level: 'series' } },
     { uid: 'ev-groom', date: this.today, title: 'Backlog grooming — payments squad',
       start: this.iso(13, 0), end: this.iso(14, 0), plannedMinutes: 60,
-      ongoing: false, isPrivate: false, source: 'meeting' },
+      ongoing: false, isPrivate: false, source: 'meeting',
+      candidates: [
+        { task: 'ATL-205', activity: 'Other', lastUsedAt: this.iso(9, 0) },
+        { task: 'ATL-118', activity: 'Meeting', lastUsedAt: this.iso(8, 0) },
+      ] },
     { uid: 'ev-sync', date: this.today, title: 'Design sync',
       start: this.iso(16, 0), end: this.iso(16, 30), plannedMinutes: 30,
       ongoing: true, isPrivate: false, source: 'meeting' },
@@ -632,12 +641,14 @@ export class MockWorkdayApiService extends WorkdayApiService {
     if (this.mockManualEntries.some(e => e.sourceRef === sourceRef)) {
       return { ok: false, error: 'Meeting is already logged' };
     }
+    const task = request.task || meeting.resolved?.task;
+    if (!task) return { ok: false, error: 'Missing task (no learned resolution for this meeting)' };
     const entry: ManualEntry = {
       id: `m${this.mockEntrySeq++}`,
-      task: request.task,
+      task,
       minutes: request.minutes ?? meeting.plannedMinutes,
-      description: request.description ?? (meeting.isPrivate ? '' : meeting.title),
-      activity: request.activity || 'Other',
+      description: request.description ?? meeting.resolved?.description ?? (meeting.isPrivate ? '' : meeting.title),
+      activity: request.activity || meeting.resolved?.activity || 'Other',
       createdAt: new Date().toISOString(),
       sourceRef,
     };
@@ -661,6 +672,14 @@ export class MockWorkdayApiService extends WorkdayApiService {
       && !this.mockDismissed.has(`${s.uid}:${s.date}`)
       && !this.mockManualEntries.some(e => e.sourceRef === `meeting:${s.uid}:${s.date}`));
     return { date, state: SuggestionsDayState.Active, suggestions };
+  }
+
+  async getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>> {
+    return { ok: true, data: { muted: [] } };
+  }
+
+  async unmuteSuggestion(uid: string): Promise<ApiResponse<SuggestionUnmuteResponse>> {
+    return { ok: true, data: { uid } };
   }
 
   async getSettings(): Promise<ApiResponse<SettingsResponse>> {

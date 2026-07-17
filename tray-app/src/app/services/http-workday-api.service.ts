@@ -43,6 +43,8 @@ import {
   SuggestionsResponse,
   SuggestionAcceptRequest,
   SuggestionAcceptResponse,
+  SuggestionsMutedResponse,
+  SuggestionUnmuteResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -320,6 +322,14 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>> {
     return this.post<SuggestionsResponse>('/api/suggestions/dismiss', { uid, date });
+  }
+
+  override async getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>> {
+    return this.get<SuggestionsMutedResponse>('/api/suggestions/muted');
+  }
+
+  override async unmuteSuggestion(uid: string): Promise<ApiResponse<SuggestionUnmuteResponse>> {
+    return this.post<SuggestionUnmuteResponse>('/api/suggestions/unmute', { uid });
   }
 
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {

@@ -54,8 +54,16 @@ import {
   TEST_NOTIFICATION_DEFAULT_MINUTES,
   TEST_NOTIFICATION_MAX_MINUTES,
 } from './core/constants.js';
-import { deriveSuggestions, meetingSourceRef } from './core/suggestions.js';
-import { dismissSuggestionKey, loadSuggestionsState } from './core/suggestions-state.js';
+import { deriveSuggestions, meetingSourceRef, parseMeetingSourceRef } from './core/suggestions.js';
+import { dismissSuggestionKey, loadSuggestionsState, suggestionKey } from './core/suggestions-state.js';
+import {
+  learnFromAccept,
+  learnFromEdit,
+  loadMeetingAssociations,
+  registerDismiss,
+  resolveSuggestion,
+  unmuteSeries,
+} from './core/meeting-associations.js';
 import type { NotificationCenter } from './core/notification-center.js';
 import type { CalendarCollector } from './collectors/calendar-collector.js';
 import type {
@@ -101,6 +109,8 @@ import type {
   CalendarRefreshResponse,
   SuggestionsResponse,
   SuggestionAcceptResponse,
+  SuggestionsMutedResponse,
+  SuggestionUnmuteResponse,
 } from './core/types.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
@@ -377,6 +387,13 @@ export class HttpServer {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, this.handleSuggestionDismiss(body));
       }
+      if (method === 'GET' && path === '/api/suggestions/muted') {
+        return this.sendJson(res, 200, this.handleSuggestionsMuted());
+      }
+      if (method === 'POST' && path === '/api/suggestions/unmute') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleSuggestionUnmute(body));
+      }
       if (method === 'GET' && path === '/api/update/check') {
         try {
           const data = await this.deps.checkUpdate();
@@ -455,6 +472,7 @@ export class HttpServer {
       dismissedKeys: new Set(Object.keys(loadSuggestionsState().dismissed)),
       hidePrivate: this.deps.config.calendar.hidePrivate,
       nowMs: Date.now(),
+      associations: loadMeetingAssociations(),
     });
   }
 
@@ -475,8 +493,12 @@ export class HttpServer {
     const instance = this.deps.calendarCollector.getInstances().find(i => i.uid === uid && i.date === date);
     if (!instance) return { ok: false, error: 'Meeting not found in the calendar cache' };
 
-    const task = typeof body.task === 'string' ? body.task.trim() : '';
-    if (!task) return { ok: false, error: 'Missing task' };
+    // Omitted fields fall back to the learned resolution (an unambiguous one
+    // only — candidates never auto-pick), then to the plain defaults.
+    const isPrivate = instance.isPrivate === true;
+    const resolution = resolveSuggestion(uid, instance.title, isPrivate, loadMeetingAssociations());
+    const task = (typeof body.task === 'string' ? body.task.trim() : '') || resolution.resolved?.task || '';
+    if (!task) return { ok: false, error: 'Missing task (no learned resolution for this meeting)' };
 
     const sourceRef = meetingSourceRef(uid, date);
     const existing = this.getLogForDate(date);
@@ -486,24 +508,26 @@ export class HttpServer {
 
     const plannedMinutes = Math.max(1, Math.round((Date.parse(instance.end) - Date.parse(instance.start)) / MS_PER_MINUTE));
     const minutes = typeof body.minutes === 'number' ? body.minutes : Math.min(plannedMinutes, MAX_ENTRY_MINUTES);
-    const activity = typeof body.activity === 'string' && body.activity.trim()
-      ? body.activity
-      : DEFAULT_MANUAL_ACTIVITY;
+    const activity = (typeof body.activity === 'string' && body.activity.trim() ? body.activity : '')
+      || resolution.resolved?.activity
+      || DEFAULT_MANUAL_ACTIVITY;
     // Private titles never prefill the description; core rejects a
     // non-Development entry left without one, so the user must type it.
-    const description = typeof body.description === 'string' && body.description.trim()
-      ? body.description
-      : (instance.isPrivate ? '' : instance.title);
+    const description = (typeof body.description === 'string' && body.description.trim() ? body.description : '')
+      || resolution.resolved?.description
+      || (isPrivate ? '' : instance.title);
 
     const jiraError = await this.validateTaskInJira(task);
     if (jiraError) return jiraError;
 
     try {
+      const learn = () => learnFromAccept({ uid, title: instance.title, isPrivate, task, activity, description });
       if (date === today) {
         const tracker = this.deps.sessionTracker;
         const result = tracker.addManualEntry({ task, minutes, description, activity, sourceRef });
         if (!result.ok || !result.entry) return { ok: false, error: result.error };
         tracker.flush();
+        learn();
         return {
           ok: true,
           data: {
@@ -513,6 +537,7 @@ export class HttpServer {
         };
       }
       const { entry, log } = addEntryOnDate(date, { task, minutes, description, activity, sourceRef }, this.deps.config);
+      learn();
       return {
         ok: true,
         data: { entry: this.toEntryData(entry, log), day: this.computeSuggestions(date) },
@@ -529,8 +554,32 @@ export class HttpServer {
     if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
     const exists = this.deps.calendarCollector.getInstances().some(i => i.uid === uid && i.date === date);
     if (!exists) return { ok: false, error: 'Meeting not found in the calendar cache' };
+    // The mute streak counts distinct instances on live days only: a repeat
+    // dismiss of the same key and dismisses on pushed days don't spin it.
+    const repeat = loadSuggestionsState().dismissed[suggestionKey(uid, date)] != null;
+    const pushed = this.getLogForDate(date)?.pushedAt != null;
+    if (!repeat && !pushed) registerDismiss(uid);
     dismissSuggestionKey(uid, date);
     return { ok: true, data: this.computeSuggestions(date) };
+  }
+
+  private handleSuggestionsMuted(): ApiResponse<SuggestionsMutedResponse> {
+    const instances = this.deps.calendarCollector.getInstances();
+    const muted = Object.entries(loadMeetingAssociations().muted)
+      .map(([uid, m]) => ({
+        uid,
+        mutedAt: m.mutedAt,
+        title: instances.find(i => i.uid === uid)?.title ?? null,
+      }))
+      .sort((a, b) => a.mutedAt.localeCompare(b.mutedAt));
+    return { ok: true, data: { muted } };
+  }
+
+  private handleSuggestionUnmute(body: Record<string, unknown>): ApiResponse<SuggestionUnmuteResponse> {
+    const uid = typeof body.uid === 'string' ? body.uid : '';
+    if (!uid) return { ok: false, error: 'Missing uid' };
+    if (!unmuteSeries(uid)) return { ok: false, error: 'Series is not muted' };
+    return { ok: true, data: { uid } };
   }
 
   private handleToday(): ApiResponse<TodayResponse> {
@@ -783,6 +832,7 @@ export class HttpServer {
     if (parsed.date) {
       try {
         const { entry, log } = editEntryOnDate(parsed.date, target, patch, this.deps.config);
+        this.relearnFromEditedEntry(entry);
         return this.toEntryResponse(entry, log);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -799,7 +849,25 @@ export class HttpServer {
     const log = tracker.getDailyLog();
     const entry = findManualEntry(log, found.id);
     if (!entry) return { ok: false, error: 'Manual entry not found after update' };
+    this.relearnFromEditedEntry(entry);
     return this.toEntryResponse(entry, log);
+  }
+
+  /** Editing an accepted meeting re-learns its association (activity always,
+   *  description by the deviation rule). The instance may already be pruned
+   *  from the cache — then the stored description stays untouched. */
+  private relearnFromEditedEntry(entry: ManualEntry): void {
+    const ref = entry.sourceRef ? parseMeetingSourceRef(entry.sourceRef) : null;
+    if (!ref) return;
+    const instance = this.deps.calendarCollector.getInstances().find(i => i.uid === ref.uid && i.date === ref.date);
+    learnFromEdit({
+      uid: ref.uid,
+      task: entry.task,
+      activity: entry.activity,
+      description: entry.description,
+      title: instance ? instance.title : null,
+      isPrivate: instance?.isPrivate === true,
+    });
   }
 
   private handleDeleteManualEntry(body: Record<string, unknown>): ApiResponse<ManualEntryDeleteResponse> {

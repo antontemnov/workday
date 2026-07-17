@@ -53,9 +53,11 @@ workday notifications test [minutes]   Inject a test notification (pipeline chec
 workday notifications ack <id> <act>   Acknowledge (shown|opened|hidden)
 workday calendar                       Outlook ICS feed status (meeting suggestions)
 workday calendar refresh               Re-fetch the calendar feed now
-workday suggestions [--date D]         Pending meeting suggestions for a day
-workday suggestions accept <#N|uid>    Log a suggested meeting (--task required)
+workday suggestions [--date D]         Pending meeting suggestions for a day (→ learned ticket)
+workday suggestions accept <#N|uid>    Log a suggested meeting (--task optional once learned)
 workday suggestions dismiss <#N|uid>   Dismiss a suggestion (permanent per meeting+day)
+workday suggestions muted              Series muted by 10 consecutive dismissals
+workday suggestions unmute <uid>       Release a muted series
 workday daemon                         Run in foreground (live dashboard)
 ```
 
@@ -127,6 +129,14 @@ in `data/suggestions-state.json`. A day pushed to Tempo is silenced for
 good. Feed re-fetches hourly during the 10:00–14:00 morning window, every
 ~3h otherwise; `calendar.enabled: false` in config.json switches it off,
 `calendar.hidePrivate: true` hides CLASS:PRIVATE meetings from suggestions.
+
+Accepting a meeting **teaches** the daemon (`data/meeting-associations.json`):
+the next instance of the series prefills the same ticket, activity and — when
+you typed a custom one — description. A recreated series (new UID, same
+normalized title) resolves by title; when the title maps to *different*
+tickets the suggestion carries the conflicting candidates instead of guessing.
+Ten consecutive dismissals mute a series (`workday suggestions muted` /
+`unmute` to manage).
 
 Config can also live next to `package.json` for local development — the daemon checks there first before falling back to `~/.workday/`.
 

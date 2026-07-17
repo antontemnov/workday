@@ -37,6 +37,8 @@ import {
   SuggestionsResponse,
   SuggestionAcceptRequest,
   SuggestionAcceptResponse,
+  SuggestionsMutedResponse,
+  SuggestionUnmuteResponse,
 } from '../models/workday.models';
 
 /**
@@ -124,10 +126,14 @@ export abstract class WorkdayApiService {
 
   // Meeting suggestions — derived daemon-side on every read. Accept creates
   // a standalone ManualEntry carrying sourceRef; dismiss is permanent per
-  // uid+date. Both return the recomputed day.
+  // uid+date. Both return the recomputed day. Rows carry the learned ticket
+  // resolution (resolved prefill / candidates on a titleKey conflict).
   abstract getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>>;
   abstract acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>>;
   abstract dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>>;
+  // Muted series (10 consecutive dismissals) — CLI parity mirrors, no tray UI.
+  abstract getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>>;
+  abstract unmuteSuggestion(uid: string): Promise<ApiResponse<SuggestionUnmuteResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;

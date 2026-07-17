@@ -618,6 +618,24 @@ export enum SuggestionsDayState {
   Pushed = 'pushed',
 }
 
+// Ticket resolution learned from past accepts. `description` is present only
+// when the user deviated from the default (= meeting title) — an absent value
+// means "prefill the live title".
+export interface SuggestionResolved {
+  readonly task: string;
+  readonly activity: string;
+  readonly description?: string;
+  readonly level: 'series' | 'title';
+}
+
+// One side of a titleKey conflict — candidates materialize an ambiguity
+// (same normalized title, different tickets), never a generic top-N.
+export interface SuggestionCandidate {
+  readonly task: string;
+  readonly activity: string;
+  readonly lastUsedAt: string;
+}
+
 export interface Suggestion {
   readonly uid: string;
   readonly date: string;
@@ -628,6 +646,8 @@ export interface Suggestion {
   readonly ongoing: boolean;       // started but DTEND not reached yet
   readonly isPrivate: boolean;
   readonly source: 'meeting';
+  readonly resolved?: SuggestionResolved;
+  readonly candidates?: readonly SuggestionCandidate[];
 }
 
 export interface SuggestionsResponse {
@@ -639,6 +659,20 @@ export interface SuggestionsResponse {
 export interface SuggestionAcceptResponse {
   readonly entry: ManualEntryResponse;
   readonly day: SuggestionsResponse;
+}
+
+// Muted series surface (CLI-only; no tray UI by design). Title comes from
+// the calendar cache when an instance is still around, null otherwise.
+export interface SuggestionsMutedResponse {
+  readonly muted: readonly {
+    readonly uid: string;
+    readonly mutedAt: string;
+    readonly title: string | null;
+  }[];
+}
+
+export interface SuggestionUnmuteResponse {
+  readonly uid: string;
 }
 
 export interface UpdateCheckResponse {

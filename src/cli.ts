@@ -62,6 +62,9 @@ import type {
   CalendarRefreshResponse,
   SuggestionsResponse,
   SuggestionAcceptResponse,
+  SuggestionsMutedResponse,
+  SuggestionUnmuteResponse,
+  Suggestion,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus, MonthDayStatus, SuggestionsDayState } from './core/types.js';
 
@@ -1400,6 +1403,13 @@ function fmtSuggestionTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+/** Learned-ticket column: resolved prefill, a titleKey conflict, or nothing. */
+function fmtSuggestionResolution(s: Suggestion): string {
+  if (s.resolved) return `  → ${s.resolved.task} · ${s.resolved.activity}`;
+  if (s.candidates?.length) return `  → task? (${s.candidates.map(c => c.task).join(' | ')})`;
+  return '';
+}
+
 function printSuggestionsDay(day: SuggestionsResponse): void {
   if (day.state === SuggestionsDayState.Pushed) {
     console.log(`${day.date} is pushed to Tempo — suggestions are silenced.`);
@@ -1413,10 +1423,10 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   day.suggestions.forEach((s, i) => {
     const flags = [s.ongoing ? 'ongoing' : null, s.isPrivate ? 'private' : null].filter(Boolean).join(' · ');
     const title = s.title || '(no title)';
-    console.log(`  #${i + 1}  ${fmtSuggestionTime(s.start)}–${fmtSuggestionTime(s.end)}  ${String(s.plannedMinutes).padStart(3)}m  ${title}${flags ? `  [${flags}]` : ''}`);
+    console.log(`  #${i + 1}  ${fmtSuggestionTime(s.start)}–${fmtSuggestionTime(s.end)}  ${String(s.plannedMinutes).padStart(3)}m  ${title}${flags ? `  [${flags}]` : ''}${fmtSuggestionResolution(s)}`);
   });
   console.log('');
-  console.log('Accept:  workday suggestions accept <#N> --task <KEY> [--minutes N] [--desc "..."] [--activity X]');
+  console.log('Accept:  workday suggestions accept <#N> [--task <KEY>] [--minutes N] [--desc "..."] [--activity X]  (resolved rows accept without --task)');
   console.log('Dismiss: workday suggestions dismiss <#N>');
 }
 
@@ -1441,14 +1451,16 @@ async function handleSuggestions(args: string[]): Promise<void> {
     const rest = args.slice(1);
     const target = rest[0];
     const task = parseArgValue(rest, '--task');
-    if (!target || !task) {
-      console.log('Usage: workday suggestions accept <#N|uid> --task <KEY> [--minutes N] [--desc "..."] [--activity X] [--date D]');
+    if (!target) {
+      console.log('Usage: workday suggestions accept <#N|uid> [--task <KEY>] [--minutes N] [--desc "..."] [--activity X] [--date D]');
+      console.log('--task is optional when the row shows a learned resolution (→ KEY).');
       return;
     }
     const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'));
     if (!resolved) return;
 
-    const payload: Record<string, unknown> = { uid: resolved.uid, date: resolved.date, task };
+    const payload: Record<string, unknown> = { uid: resolved.uid, date: resolved.date };
+    if (task) payload.task = task;
     const minutesStr = parseArgValue(rest, '--minutes');
     if (minutesStr !== null) {
       const minutes = parseInt(minutesStr, 10);
@@ -1483,8 +1495,37 @@ async function handleSuggestions(args: string[]): Promise<void> {
     return;
   }
 
+  if (sub === 'muted') {
+    const result = await apiGet<SuggestionsMutedResponse>('/api/suggestions/muted');
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    if (result.data.muted.length === 0) {
+      console.log('No muted series.');
+      return;
+    }
+    console.log('Muted series (10 consecutive dismissals):');
+    for (const m of result.data.muted) {
+      console.log(`  ${m.title ?? '(not in the calendar cache)'}  muted ${m.mutedAt.slice(0, 10)}`);
+      console.log(`    uid: ${m.uid}`);
+    }
+    console.log('');
+    console.log('Unmute: workday suggestions unmute <uid>');
+    return;
+  }
+
+  if (sub === 'unmute') {
+    const uid = args[1];
+    if (!uid) {
+      console.log('Usage: workday suggestions unmute <uid>   (uids: workday suggestions muted)');
+      return;
+    }
+    const result = await apiPost<SuggestionUnmuteResponse>('/api/suggestions/unmute', { uid });
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    console.log('Unmuted — the series suggests again.');
+    return;
+  }
+
   if (sub !== undefined && sub !== '--date') {
-    console.log('Usage: workday suggestions [--date D] | accept <#N|uid> --task <KEY> ... | dismiss <#N|uid>');
+    console.log('Usage: workday suggestions [--date D] | accept <#N|uid> [--task <KEY>] ... | dismiss <#N|uid> | muted | unmute <uid>');
     return;
   }
 
@@ -1644,9 +1685,11 @@ Usage:
   workday notifications ack <id> <shown|opened|hidden> Acknowledge a notification
   workday calendar                                     Outlook ICS feed status (meeting suggestions)
   workday calendar refresh                             Re-fetch the calendar feed now
-  workday suggestions [--date D]                       Pending meeting suggestions for a day
-  workday suggestions accept <#N|uid> --task <KEY>     Log a suggested meeting (--minutes/--desc/--activity/--date)
+  workday suggestions [--date D]                       Pending meeting suggestions for a day (→ learned ticket)
+  workday suggestions accept <#N|uid> [--task <KEY>]   Log a suggested meeting (--minutes/--desc/--activity/--date)
   workday suggestions dismiss <#N|uid> [--date D]      Dismiss a suggestion (per uid+date, permanent)
+  workday suggestions muted                            Series muted by 10 consecutive dismissals
+  workday suggestions unmute <uid>                     Release a muted series
 
 Target: session index (#1, #2) or session id (hex)`);
 }

@@ -9,7 +9,8 @@
  */
 import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before config.ts loads
 import assert from 'node:assert/strict';
-import { deriveSuggestions, meetingSourceRef } from '../../src/core/suggestions.js';
+import { deriveSuggestions, meetingSourceRef, parseMeetingSourceRef } from '../../src/core/suggestions.js';
+import { emptyMeetingAssociations, type MeetingAssociations } from '../../src/core/meeting-associations.js';
 import {
   dismissSuggestionKey,
   loadSuggestionsState,
@@ -77,7 +78,7 @@ function makeInstance(over: Partial<CalendarInstance> = {}): CalendarInstance {
 
 function derive(
   instances: CalendarInstance[],
-  over: Partial<{ log: DailyLog | null; dismissedKeys: Set<string>; hidePrivate: boolean; nowMs: number; date: string }> = {},
+  over: Partial<{ log: DailyLog | null; dismissedKeys: Set<string>; hidePrivate: boolean; nowMs: number; date: string; associations: MeetingAssociations }> = {},
 ): ReturnType<typeof deriveSuggestions> {
   return deriveSuggestions({
     date: over.date ?? DATE,
@@ -86,6 +87,7 @@ function derive(
     dismissedKeys: over.dismissedKeys ?? new Set(),
     hidePrivate: over.hidePrivate ?? false,
     nowMs: over.nowMs ?? NOW,
+    associations: over.associations,
   });
 }
 
@@ -170,6 +172,47 @@ test('a pushed day is silenced entirely', () => {
   const day = derive([makeInstance()], { log });
   assert.equal(day.state, SuggestionsDayState.Pushed);
   assert.equal(day.suggestions.length, 0);
+});
+
+console.log('');
+console.log('Derivation — learning integration');
+
+test('muted series never surface', () => {
+  const associations: MeetingAssociations = {
+    ...emptyMeetingAssociations(),
+    muted: { 'ev-1': { mutedAt: '2026-07-01T10:00:00.000Z' } },
+  };
+  const day = derive([makeInstance(), makeInstance({ uid: 'ev-2' })], { associations });
+  assert.deepEqual(day.suggestions.map(s => s.uid), ['ev-2']);
+});
+
+test('rows carry resolved (uid tier) and candidates (titleKey conflict)', () => {
+  const associations: MeetingAssociations = {
+    ...emptyMeetingAssociations(),
+    series: {
+      'ev-1': { task: 'ATL-1', activity: 'Other', titleKey: 'standup', uses: 3, lastUsedAt: '2026-07-15T10:00:00.000Z' },
+      'dead-a': { task: 'ATL-2', activity: 'Other', titleKey: 'grooming', uses: 1, lastUsedAt: '2026-07-10T10:00:00.000Z' },
+      'dead-b': { task: 'ATL-3', activity: 'Meeting', titleKey: 'grooming', uses: 1, lastUsedAt: '2026-07-14T10:00:00.000Z' },
+    },
+  };
+  const day = derive([makeInstance(), makeInstance({ uid: 'ev-2', title: 'Grooming' })], { associations });
+  assert.equal(day.suggestions[0].resolved?.task, 'ATL-1');
+  assert.equal(day.suggestions[0].resolved?.level, 'series');
+  assert.equal(day.suggestions[1].resolved, undefined);
+  assert.deepEqual(day.suggestions[1].candidates?.map(c => c.task), ['ATL-3', 'ATL-2']);
+});
+
+test('without associations rows stay plain (no resolved/candidates keys)', () => {
+  const day = derive([makeInstance()]);
+  assert.equal(day.suggestions[0].resolved, undefined);
+  assert.equal(day.suggestions[0].candidates, undefined);
+});
+
+test('parseMeetingSourceRef inverts meetingSourceRef, colons in uids included', () => {
+  const ref = meetingSourceRef('weird:uid:with:colons', DATE);
+  assert.deepEqual(parseMeetingSourceRef(ref), { uid: 'weird:uid:with:colons', date: DATE });
+  assert.equal(parseMeetingSourceRef('session:abc'), null);
+  assert.equal(parseMeetingSourceRef('meeting:short'), null);
 });
 
 console.log('');
