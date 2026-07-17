@@ -16,6 +16,9 @@ import {
   Favorite,
   FavoriteInput,
   FavoriteRemoveResponse,
+  Suggestion,
+  SuggestionsResponse,
+  SuggestionAcceptRequest,
 } from './models/workday.models';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
@@ -93,6 +96,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // Entry id from the latest add — the Logged panel opens its draft window.
   freshEntryId: string | null = null;
+
+  // Today's meeting suggestions (daemon-derived, polled with the day). Kept
+  // on failure — an old daemon without the endpoint simply never fills it,
+  // a transient miss self-heals on the next poll.
+  private suggestionsDay: SuggestionsResponse | null = null;
 
   // Toast + action gate
   actionError: string | null = null;
@@ -264,11 +272,21 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  get daySuggestions(): readonly Suggestion[] {
+    return this.suggestionsDay?.suggestions ?? [];
+  }
+
+  private async refreshSuggestions(): Promise<void> {
+    const res = await this.api.getSuggestions();
+    if (res.ok && res.data) this.suggestionsDay = res.data;
+  }
+
   async refresh(): Promise<void> {
     const res = await this.api.getToday();
     if (res.ok && res.data) {
       this.data = res.data;
       this.error = null;
+      void this.refreshSuggestions();
       // Daemon reachable again after a failure window — e.g. it finished a
       // self-update mid-session, possibly with a new apiVersion. Re-pull
       // activity types: they're never cleared on failure (so they can't fall
@@ -466,6 +484,30 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async submitEntryEdit(e: { target: string; patch: ManualEntryPatch }): Promise<void> {
     await this.runAction(() => this.api.updateManualEntry(e.target, e.patch));
+  }
+
+  // ─── Meeting suggestions ───────────────────────────────────────────────
+
+  // Accept = a standalone ManualEntry with the meeting's sourceRef. The
+  // response carries both the entry (→ draft window, like submitLog) and the
+  // recalculated day — applied immediately, not left to the next poll.
+  async submitSuggestionAccept(req: SuggestionAcceptRequest): Promise<void> {
+    await this.runAction(async () => {
+      const res = await this.api.acceptSuggestion(req);
+      if (res.ok && res.data) {
+        this.freshEntryId = res.data.entry.id;
+        this.suggestionsDay = res.data.day;
+      }
+      return res;
+    });
+  }
+
+  async submitSuggestionDismiss(e: { uid: string; date: string }): Promise<void> {
+    await this.runAction(async () => {
+      const res = await this.api.dismissSuggestion(e.uid, e.date);
+      if (res.ok && res.data) this.suggestionsDay = res.data;
+      return res;
+    });
   }
 
   // Deferred DELETE — the panel already played the undo window; a failure

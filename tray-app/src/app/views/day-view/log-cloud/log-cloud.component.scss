@@ -27,6 +27,27 @@
   pointer-events: auto;
 }
 
+// Accept-mode header — which meeting the picks below resolve.
+.accept-ctx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  font-size: 10.5px;
+  color: rgba(148, 226, 213, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+
+  .spark { flex-shrink: 0; color: rgba(148, 226, 213, 0.5); }
+
+  .ac-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
+}
+
 .cloud-filter {
   display: flex;
   align-items: center;

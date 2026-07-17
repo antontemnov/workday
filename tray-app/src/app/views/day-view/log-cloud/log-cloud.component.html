@@ -1,3 +1,10 @@
+<!-- Accept mode: the meeting being resolved — every pick below only chooses
+     its ticket, the submit accepts the suggestion. -->
+<div class="accept-ctx" *ngIf="acceptTarget as t">
+  <svg class="spark" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg>
+  <span class="ac-title">{{ t.title }}</span>
+</div>
+
 <div class="cloud-filter">
   <span class="f-ic">⌕</span>
   <input #filterInput
@@ -5,13 +12,15 @@
          [ngModel]="filter"
          (ngModelChange)="onFilterInput($event)"
          (keydown.enter)="onFilterEnter()"
-         placeholder="favorites · no match → search Jira"
+         [placeholder]="isAcceptMode ? 'pick a ticket — favorites · no match → Jira' : 'favorites · no match → search Jira'"
          autocomplete="off" />
   <button type="button"
+          *ngIf="!isAcceptMode"
           class="f-edit"
           (click)="toggleEditMode()"
           title="edit favorites — mark chips, remove at once">✎ edit</button>
   <button type="button"
+          *ngIf="!isAcceptMode"
           class="f-batch"
           (click)="toggleBatch()"
           title="collect several · Ctrl+click a chip">⧉ multi</button>
@@ -26,11 +35,12 @@
           [class.marked]="isEditMode && isMarked(f)"
           [class.shrink]="shrinkingIds.has(f.id)"
           [style.animation-delay]="chipDelay(i)"
-          [title]="isEditMode ? 'click — mark for removal' : f.activity + ' · Ctrl+click: collect'"
+          [title]="favTitle(f)"
           (click)="pickFavorite(f, $event)">
       <span class="f-task">{{ f.task }}</span>
       <span class="f-name">{{ f.name }}</span>
-      <span class="f-min">{{ formatMinutes(f.minutes) }}</span>
+      <!-- Template minutes are meaningless while only the ticket is picked -->
+      <span class="f-min" *ngIf="!isAcceptMode">{{ formatMinutes(f.minutes) }}</span>
     </span>
 
     <!-- Jira zone — stage 2/3 of the search, only when favorites don't match. -->

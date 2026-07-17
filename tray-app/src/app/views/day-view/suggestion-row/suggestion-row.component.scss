@@ -22,7 +22,7 @@
 
     .s-title { color: #a6adc8; }
     .s-src .spark { color: #94e2d5; }
-    .btn.no { opacity: 1; }
+    .btn.ok:not(:disabled), .btn.no:not(:disabled) { opacity: 1; }
   }
 }
 
@@ -55,13 +55,22 @@
   border-radius: 4px;
   white-space: nowrap;
 
-  // No ticket resolved yet — a dashed neutral placeholder.
+  // No ticket resolved yet — a dashed neutral placeholder; clicking it is
+  // the "pick a ticket" affordance (opens the accept flow, same as ✓).
   &.ask {
+    font: inherit;
     color: #6c7086;
     background: transparent;
     border: 1px dashed #45475a;
     padding: 0 8px;
     font-weight: 400;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      color: rgba(148, 226, 213, 0.75);
+      border-color: rgba(148, 226, 213, 0.45);
+    }
   }
 }
 
@@ -77,11 +86,35 @@
           mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
 }
 
+// Minutes double as a stepper (wheel ±15m, same feel as the fresh logged
+// row) — the value prefills the accept form. Transparent border keeps the
+// box from shifting when the hover affordance lights up.
 .s-dur {
   justify-self: end;
   color: rgba(148, 226, 213, 0.55);
   font-weight: 700;
   white-space: nowrap;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: ns-resize;
+
+  &:hover {
+    border-color: rgba(148, 226, 213, 0.5);
+    color: rgba(148, 226, 213, 0.85);
+  }
+}
+
+// Static teal dot — the meeting is happening right now (born at DTSTART).
+.live-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-right: 6px;
+  margin-bottom: 1px;
+  background: #94e2d5;
+  box-shadow: 0 0 5px rgba(148, 226, 213, 0.8);
 }
 
 .s-when {
@@ -90,6 +123,8 @@
   white-space: nowrap;
   color: #565973;
   font-size: 10.5px;
+
+  &.live { color: rgba(148, 226, 213, 0.75); }
 }
 
 // Origin marker rhymes with the session-born rows: their commit glyph says
@@ -132,17 +167,20 @@
 
   svg { display: block; }
 
-  // Decorative until the daemon's engine wires it up.
   &.ok {
     border-color: rgba(148, 226, 213, 0.25);
-    opacity: 0.35;
-    cursor: default;
+    opacity: 0.75;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: rgba(148, 226, 213, 0.1); }
   }
 
   &.no {
     opacity: 0.75;
     cursor: pointer;
 
-    &:hover { background: rgba(243, 139, 168, 0.1); }
+    &:hover:not(:disabled) { background: rgba(243, 139, 168, 0.1); }
   }
+
+  &:disabled { opacity: 0.35; cursor: default; }
 }

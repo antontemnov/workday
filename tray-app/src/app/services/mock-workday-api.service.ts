@@ -45,6 +45,7 @@ import {
   NotificationAckAction,
   NotificationAckResponse,
   CalendarRefreshResponse,
+  Suggestion,
   SuggestionsResponse,
   SuggestionsDayState,
   SuggestionAcceptRequest,
@@ -106,6 +107,25 @@ export class MockWorkdayApiService extends WorkdayApiService {
     d.setHours(h, m, 0, 0);
     return d.toISOString();
   }
+
+  // Mock calendar behind the suggestion rows: two finished meetings and one
+  // "happening now" (born at DTSTART), plus a private one — accept/dismiss
+  // round-trip like the daemon's derived engine.
+  private readonly mockMeetings: Suggestion[] = [
+    { uid: 'ev-standup', date: this.today, title: 'Daily standup',
+      start: this.iso(9, 30), end: this.iso(9, 45), plannedMinutes: 15,
+      ongoing: false, isPrivate: false, source: 'meeting' },
+    { uid: 'ev-groom', date: this.today, title: 'Backlog grooming — payments squad',
+      start: this.iso(13, 0), end: this.iso(14, 0), plannedMinutes: 60,
+      ongoing: false, isPrivate: false, source: 'meeting' },
+    { uid: 'ev-sync', date: this.today, title: 'Design sync',
+      start: this.iso(16, 0), end: this.iso(16, 30), plannedMinutes: 30,
+      ongoing: true, isPrivate: false, source: 'meeting' },
+    { uid: 'ev-private', date: this.today, title: 'Private appointment',
+      start: this.iso(11, 0), end: this.iso(11, 30), plannedMinutes: 30,
+      ongoing: false, isPrivate: true, source: 'meeting' },
+  ];
+  private readonly mockDismissed = new Set<string>();
 
   private buildToday(): TodayResponse {
     return {
@@ -579,20 +599,53 @@ export class MockWorkdayApiService extends WorkdayApiService {
   }
 
   async refreshCalendar(): Promise<ApiResponse<CalendarRefreshResponse>> {
-    return { ok: true, data: { fetchedAt: new Date().toISOString(), instanceCount: 0 } };
+    return { ok: true, data: { fetchedAt: new Date().toISOString(), instanceCount: this.mockMeetings.length } };
   }
 
+  // Same derivation as the daemon: calendar minus covered (an entry carrying
+  // the meeting's sourceRef) minus dismissed.
   async getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>> {
-    const day = date ?? new Date().toISOString().slice(0, 10);
-    return { ok: true, data: { date: day, state: SuggestionsDayState.Active, suggestions: [] } };
+    await delay(100);
+    const day = date ?? this.today;
+    return { ok: true, data: this.suggestionsDay(day) };
   }
 
   async acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>> {
-    return { ok: false, error: `No meeting ${request.uid} in the mock calendar` };
+    await delay(200);
+    const meeting = this.mockMeetings.find(s => s.uid === request.uid && s.date === request.date);
+    if (!meeting) return { ok: false, error: `No meeting ${request.uid} in the mock calendar` };
+    const sourceRef = `meeting:${meeting.uid}:${meeting.date}`;
+    if (this.mockManualEntries.some(e => e.sourceRef === sourceRef)) {
+      return { ok: false, error: 'Meeting is already logged' };
+    }
+    const entry: ManualEntry = {
+      id: `m${this.mockEntrySeq++}`,
+      task: request.task,
+      minutes: request.minutes ?? meeting.plannedMinutes,
+      description: request.description ?? (meeting.isPrivate ? '' : meeting.title),
+      activity: request.activity || 'Other',
+      createdAt: new Date().toISOString(),
+      sourceRef,
+    };
+    this.mockManualEntries.push(entry);
+    return { ok: true, data: { entry: this.toEntryResponse(entry), day: this.suggestionsDay(meeting.date) } };
   }
 
-  async dismissSuggestion(_uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>> {
-    return { ok: true, data: { date, state: SuggestionsDayState.Active, suggestions: [] } };
+  async dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>> {
+    await delay(150);
+    if (!this.mockMeetings.some(s => s.uid === uid && s.date === date)) {
+      return { ok: false, error: 'Meeting not found in the calendar cache' };
+    }
+    this.mockDismissed.add(`${uid}:${date}`);
+    return { ok: true, data: this.suggestionsDay(date) };
+  }
+
+  private suggestionsDay(date: string): SuggestionsResponse {
+    const suggestions = this.mockMeetings.filter(s =>
+      s.date === date
+      && !this.mockDismissed.has(`${s.uid}:${s.date}`)
+      && !this.mockManualEntries.some(e => e.sourceRef === `meeting:${s.uid}:${s.date}`));
+    return { date, state: SuggestionsDayState.Active, suggestions };
   }
 
   async getSettings(): Promise<ApiResponse<SettingsResponse>> {

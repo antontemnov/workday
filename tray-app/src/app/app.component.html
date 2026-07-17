@@ -74,6 +74,7 @@
       [activityAllowed]="activityAllowed"
       [favorites]="favorites"
       [freshEntryId]="freshEntryId"
+      [suggestions]="daySuggestions"
       (pillSelected)="onPillSelected($event)"
       (addTimeSubmitted)="onAddTime($event)"
       (logSubmitted)="submitLog($event)"
@@ -82,6 +83,8 @@
       (entryDeleteSubmitted)="submitEntryDelete($event)"
       (favoriteAddSubmitted)="submitFavoriteAdd($event)"
       (favoritesRemoveSubmitted)="submitFavoritesRemove($event)"
+      (suggestionAcceptSubmitted)="submitSuggestionAccept($event)"
+      (suggestionDismissSubmitted)="submitSuggestionDismiss($event)"
       (settingsRequested)="setView('set')" />
 
     <app-timesheets-view *ngSwitchCase="'sheet'" />

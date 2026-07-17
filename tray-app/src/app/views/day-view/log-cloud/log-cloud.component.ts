@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   ActivityType, ApiErrorCode, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, JiraSearchHit,
-  ManualEntryInput, normalizeFavName,
+  ManualEntryInput, normalizeFavName, Suggestion,
 } from '../../../models/workday.models';
 import { WorkdayApiService } from '../../../services/workday-api.service';
 import { activityOptions } from '../activity.util';
@@ -43,6 +43,8 @@ const JIRA_DEBOUNCE_MS = 350;
 const JIRA_MIN_QUERY = 2;
 const JIRA_MAX_HITS = 5;
 const DEFAULT_FORM_MINUTES = 30;
+// Accept-form default — mirrors the daemon's DEFAULT_MANUAL_ACTIVITY.
+const ACCEPT_ACTIVITY = 'Other';
 const FAV_NAME_MAX = 26;
 const FAV_FEEDBACK_MS = 1200;
 // Removed favorite chips shrink away (staggered in batch) before the emit.
@@ -69,6 +71,12 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() activityAllowed: readonly string[] = [];
   @Input() actionPending = false;
+  // Accept mode (meeting suggestion resolve): picks only choose the ticket —
+  // favorites lose their instant-log/template role, batch and edit go dark —
+  // and the form prefills from the meeting. The parent turns the submit into
+  // an accept. acceptMinutes carries the suggestion row's stepper value.
+  @Input() acceptTarget: Suggestion | null = null;
+  @Input() acceptMinutes = 0;
 
   @Output() chipPicked = new EventEmitter<ChipPick>();
   @Output() formSubmitted = new EventEmitter<ManualEntryInput>();
@@ -92,6 +100,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @HostBinding('class.review-mode') get isReviewMode(): boolean { return this.mode === 'review'; }
   @HostBinding('class.batch-mode') get isBatchMode(): boolean { return this.batch && this.mode === 'chips'; }
   @HostBinding('class.edit-mode') get isEditMode(): boolean { return this.editMode && this.mode === 'chips'; }
+  @HostBinding('class.accept-mode') get isAcceptMode(): boolean { return this.acceptTarget !== null; }
 
   filter = '';
   mode: CloudMode = 'chips';
@@ -214,6 +223,10 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   // ─── Picks (instant / batch collect) ───────────────────────────────────
 
   pickFavorite(f: Favorite, ev: MouseEvent): void {
+    if (this.isAcceptMode) {
+      this.enterAcceptForm(f.task);
+      return;
+    }
     if (this.editMode) {
       this.toggleMarked(f);
       return;
@@ -228,6 +241,10 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   }
 
   pickJira(h: JiraSearchHit, ev: MouseEvent): void {
+    if (this.isAcceptMode) {
+      this.enterAcceptForm(h.key);
+      return;
+    }
     if (this.collectOnPick(ev)) {
       this.toggleBasket(this.jiraBasketItem(h));
       return;
@@ -237,6 +254,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   // Ctrl+click collects even outside batch mode (and switches it on).
   private collectOnPick(ev: MouseEvent): boolean {
+    if (this.isAcceptMode) return false;
     if (this.batch) return true;
     if (ev.ctrlKey || ev.metaKey) {
       this.batch = true;
@@ -254,6 +272,14 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   // clear the filter for the next pick; empty filter + basket → review.
   onFilterEnter(): void {
     if (this.editMode) return; // edit mode: clicks mark chips, Enter is idle
+    if (this.isAcceptMode) {
+      const fav = this.filteredFavorites[0];
+      if (fav) { this.enterAcceptForm(fav.task); return; }
+      if (this.jiraZone === 'results' && this.jiraHits.length > 0) {
+        this.enterAcceptForm(this.jiraHits[0].key);
+      }
+      return;
+    }
     const q = this.query;
     if (this.batch) {
       if (!q && this.basket.length) {
@@ -514,6 +540,26 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     }, 140);
   }
 
+  // Accept mode: any pick lands here — the ticket comes from the pick, the
+  // rest prefills from the meeting (minutes = row stepper, description =
+  // title unless private, activity = the daemon's accept default).
+  private enterAcceptForm(task: string): void {
+    const t = this.acceptTarget;
+    if (!t) return;
+    this.formTask = task;
+    this.formDescription = t.isPrivate ? '' : t.title;
+    this.formMinutes = this.acceptMinutes > 0 ? this.acceptMinutes : t.plannedMinutes;
+    const preset = this.activityOptions.find(a => a.value === ACCEPT_ACTIVITY);
+    this.formActivity = preset?.value ?? '';
+    this.formActivityNeeded = !preset;
+    this.mode = 'form';
+    setTimeout(() => {
+      const el = this.formMin?.nativeElement;
+      el?.focus();
+      el?.select();
+    }, 140);
+  }
+
   exitForm(): void {
     this.mode = 'chips';
     this.focusFilter(80);
@@ -557,6 +603,12 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   chipDelay(i: number): string {
     return `${30 + i * 12}ms`;
+  }
+
+  // Accept mode neutralizes the chip hints — picks only choose the ticket.
+  favTitle(f: Favorite): string {
+    if (this.isAcceptMode) return '';
+    return this.isEditMode ? 'click — mark for removal' : f.activity + ' · Ctrl+click: collect';
   }
 
   formatMinutes(minutes: number): string {

@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { SessionCardComponent } from './session-card/session-card.component';
 import { LoggedPanelComponent } from './logged-panel/logged-panel.component';
 import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
-import { SuggestedEntry, SuggestionRowComponent } from './suggestion-row/suggestion-row.component';
+import { SuggestionRowComponent } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
 import {
   SessionDetail,
@@ -18,6 +18,8 @@ import {
   ActivityType,
   Favorite,
   FavoriteInput,
+  Suggestion,
+  SuggestionAcceptRequest,
 } from '../../models/workday.models';
 
 interface SensitivityPillOption {
@@ -47,6 +49,8 @@ export class DayViewComponent implements OnChanges {
   @Input() favorites: readonly Favorite[] = [];
   // Entry created by the latest log action — the panel opens its draft window.
   @Input() freshEntryId: string | null = null;
+  // Today's pending meeting offers (daemon-derived, polled with the day).
+  @Input() suggestions: readonly Suggestion[] = [];
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
@@ -57,6 +61,8 @@ export class DayViewComponent implements OnChanges {
   @Output() favoriteAddSubmitted = new EventEmitter<FavoriteInput>();
   @Output() favoritesRemoveSubmitted = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();
+  @Output() suggestionAcceptSubmitted = new EventEmitter<SuggestionAcceptRequest>();
+  @Output() suggestionDismissSubmitted = new EventEmitter<{ uid: string; date: string }>();
 
   @ViewChild('dayHead')
   private dayHeadRef?: ElementRef<HTMLElement>;
@@ -175,17 +181,12 @@ export class DayViewComponent implements OnChanges {
 
   // ─── Suggestions (teal rows between the live cards and the history) ─────
 
-  // No daemon surface yet (meeting-suggestions plan) — always empty in
-  // production; the rows light up once the engine feeds them.
-  suggestions: readonly SuggestedEntry[] = [];
-
-  // Local-only until the daemon owns dismiss state (epoch 4).
-  dismissSuggestion(s: SuggestedEntry): void {
-    this.suggestions = this.suggestions.filter(x => x !== s);
+  onSuggestionDismiss(s: Suggestion): void {
+    this.suggestionDismissSubmitted.emit({ uid: s.uid, date: s.date });
   }
 
-  trackBySuggestion(_i: number, s: SuggestedEntry): string {
-    return s.id;
+  trackBySuggestion(_i: number, s: Suggestion): string {
+    return `${s.uid}:${s.date}`;
   }
 
   // ─── Log cloud ─────────────────────────────────────────────────────────
@@ -194,14 +195,30 @@ export class DayViewComponent implements OnChanges {
   // The cloud hangs just below the sticky day header; measured at open time.
   overlayTop = 0;
 
+  // Non-null → the cloud resolves a meeting suggestion instead of logging:
+  // every pick lands in the form prefilled from the meeting, and the submit
+  // becomes an accept. Minutes carry the row stepper's current value.
+  acceptTarget: Suggestion | null = null;
+  acceptMinutes = 0;
+
   openCloud(): void {
     if (this.actionPending) return;
+    this.acceptTarget = null;
+    this.overlayTop = this.headHeight() + 6;
+    this.cloudOpen = true;
+  }
+
+  openCloudForAccept(s: Suggestion, minutes: number): void {
+    if (this.actionPending) return;
+    this.acceptTarget = s;
+    this.acceptMinutes = minutes;
     this.overlayTop = this.headHeight() + 6;
     this.cloudOpen = true;
   }
 
   closeCloud(): void {
     this.cloudOpen = false;
+    this.acceptTarget = null;
   }
 
   private headHeight(): number {
@@ -217,8 +234,21 @@ export class DayViewComponent implements OnChanges {
   }
 
   // Jira-result form → a single entry; lands with the usual draft window.
+  // In accept mode the same form resolves a suggestion instead.
   onFormSubmitted(entry: ManualEntryInput): void {
+    const target = this.acceptTarget;
     this.closeCloud();
+    if (target) {
+      this.suggestionAcceptSubmitted.emit({
+        uid: target.uid,
+        date: target.date,
+        task: entry.task,
+        minutes: entry.minutes,
+        description: entry.description,
+        activity: entry.activity,
+      });
+      return;
+    }
     this.logSubmitted.emit(entry);
   }
 
