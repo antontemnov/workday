@@ -49,6 +49,16 @@ type FeedItem =
   | { readonly kind: 'entry'; readonly entry: ManualEntry; readonly at: string }
   | { readonly kind: 'group'; readonly group: TrackedGroup; readonly at: string };
 
+// A suggestion accept in flight: the entry it creates (matched by the
+// meeting sourceRef) is not a NEW thing — the offer row became it. So on
+// first sight it slides from the offer's old spot into its place in the
+// feed instead of popping in; a same-spot landing (the bottom suggestion)
+// plays nothing at all.
+export interface ArriveFrom {
+  readonly sourceRef: string;
+  readonly top: number;
+}
+
 /**
  * History feed of the day view — manual entries and session-born groups
  * interleaved newest-first, two-band rows on one shared grid. A just-logged
@@ -78,6 +88,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input() favorites: readonly Favorite[] = [];
   // Id of the entry created by the latest cloud pick — opens the draft window.
   @Input() freshEntryId: string | null = null;
+  // Latest suggestion accept — its entry arrives with a slide, not a pop.
+  @Input() arriveFrom: ArriveFrom | null = null;
 
   @Output() patchCommitted = new EventEmitter<{ id: string; patch: ManualEntryPatch }>();
   // Fired when the undo window closes — the entry is gone for the user; the
@@ -124,6 +136,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   poppingIds = new Set<string>();
   popDelayMs = new Map<string, number>();
   private popTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Accepted-suggestion row mid-slide — suppresses the fresh/pop entry
+  // animation (the class outlives the slide: re-enabling `animation` would
+  // replay row-in from scratch).
+  arrivingId: string | null = null;
 
   // "★ added to favorites" feedback riding the description for ~1.2s.
   favDoneId: string | null = null;
@@ -195,6 +211,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     let stagger = 0;
     for (const e of this.entries) {
       const id = e.id;
+      // An accepted suggestion's entry slides from the offer's old spot —
+      // checked before the fresh skip: accepts open the draft window too.
+      if (!prev.has(id) && this.arriveFrom && e.sourceRef === this.arriveFrom.sourceRef) {
+        this.playArrive(id, this.arriveFrom.top);
+        continue;
+      }
       // Existing, draft, or session-born (renders inside a group, not as a row).
       if (prev.has(id) || id === this.freshId || e.sourceSessionId) continue;
       this.poppingIds.add(id);
@@ -215,6 +237,26 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.popTimers.clear();
     this.poppingIds.clear();
     this.popDelayMs.clear();
+    this.arrivingId = null;
+  }
+
+  // FLIP: start the row at the offer's old Y, settle into its natural spot.
+  // Runs a tick later — the row isn't in the DOM until this change renders.
+  private playArrive(id: string, fromTop: number): void {
+    this.arrivingId = id;
+    setTimeout(() => {
+      const row = this.host.nativeElement.querySelector<HTMLElement>(
+        `.log-row2[data-eid="${CSS.escape(id)}"]`);
+      if (!row) return;
+      const delta = fromTop - row.getBoundingClientRect().top;
+      if (Math.abs(delta) < 8) return; // bottom suggestion: same spot, no motion
+      row.style.transition = 'none';
+      row.style.transform = `translateY(${delta}px)`;
+      void row.offsetHeight;
+      row.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.9, 0.3, 1)';
+      row.style.transform = '';
+      setTimeout(() => { row.style.transition = ''; }, 360);
+    });
   }
 
   // ─── Feed ──────────────────────────────────────────────────────────────

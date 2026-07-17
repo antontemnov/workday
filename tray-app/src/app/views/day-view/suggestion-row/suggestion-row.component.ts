@@ -16,8 +16,8 @@ export interface SuggestionPick {
   readonly activity?: string;
 }
 
-// Submitted accept + where the row's chip sat — the parent flies a clone
-// from there into the history feed (same FLIP as the cloud's instant log).
+// Submitted accept + where the row sat — the created entry's row slides
+// down into the feed from this spot (FLIP), since the offer becomes it.
 export interface SuggestionAcceptEvent {
   readonly entry: ManualEntryInput;
   readonly sourceRect: DOMRect;
@@ -147,9 +147,6 @@ export class SuggestionRowComponent implements OnChanges {
       this.host.nativeElement.querySelector<HTMLInputElement>('.le-desc')?.focus();
       return;
     }
-    // Measured while the form still renders — the fly-clone departs from the
-    // ticket chip's spot.
-    const chip = this.host.nativeElement.querySelector('.chip') ?? this.host.nativeElement;
     this.editing = false;
     this.acceptSubmitted.emit({
       entry: {
@@ -158,7 +155,7 @@ export class SuggestionRowComponent implements OnChanges {
         description: this.editDescription.trim(),
         activity: this.editActivity,
       },
-      sourceRect: chip.getBoundingClientRect(),
+      sourceRect: this.host.nativeElement.getBoundingClientRect(),
     });
   }
 

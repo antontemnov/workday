@@ -7,7 +7,9 @@
 
     <div class="log-row2"
          *ngIf="it.kind === 'entry'"
+         [attr.data-eid]="it.entry.id"
          [class.fresh]="isFresh(it.entry)"
+         [class.arrive]="arrivingId === it.entry.id"
          [class.pop]="poppingIds.has(it.entry.id)"
          [style.animation-delay.ms]="popDelayMs.get(it.entry.id)"
          [class.editing]="editingId === it.entry.id"

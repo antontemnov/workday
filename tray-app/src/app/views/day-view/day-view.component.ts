@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionCardComponent } from './session-card/session-card.component';
-import { LoggedPanelComponent } from './logged-panel/logged-panel.component';
+import { LoggedPanelComponent, type ArriveFrom } from './logged-panel/logged-panel.component';
 import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
 import { SuggestionRowComponent, type SuggestionAcceptEvent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
@@ -203,6 +203,9 @@ export class DayViewComponent implements OnChanges {
   acceptTarget: Suggestion | null = null;
   // The pick, addressed to its row (`uid:date`); a fresh object per pick.
   private suggestionPick: { key: string; pick: SuggestionPick } | null = null;
+  // Latest accept's departure point — the feed slides the created entry's row
+  // down from the offer's old spot when it lands.
+  suggestionArrive: ArriveFrom | null = null;
 
   openCloud(): void {
     if (this.actionPending) return;
@@ -236,9 +239,9 @@ export class DayViewComponent implements OnChanges {
   onSuggestionAccept(s: Suggestion, ev: SuggestionAcceptEvent): void {
     this.suggestionPick = null;
     const entry = ev.entry;
-    // Same flight as the cloud's instant log — the accepted time visibly
-    // travels from the offer into the history feed.
-    this.flyChip(ev.sourceRect, entry.description || entry.task, entry.minutes);
+    // Not a new entity — the offer row BECOMES the logged row, so no fly-chip
+    // here: the feed slides the landed row down from the offer's old spot.
+    this.suggestionArrive = { sourceRef: `meeting:${s.uid}:${s.date}`, top: ev.sourceRect.top };
     this.suggestionAcceptSubmitted.emit({
       uid: s.uid,
       date: s.date,

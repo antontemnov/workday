@@ -207,6 +207,12 @@
   background: rgba(203, 166, 247, 0.08);
 }
 
+// An accepted suggestion's row is NOT a new thing — it slides down from the
+// offer's old spot (inline FLIP transform), so the entry animation is off.
+.log-row2.arrive {
+  animation: none;
+}
+
 // Edit: the active row is marked by fill only (no rails anywhere in the
 // system); band 1 stays put with the name dimmed, time edits in its slot.
 .log-row2.editing {
