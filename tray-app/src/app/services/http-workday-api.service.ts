@@ -39,6 +39,7 @@ import {
   NotificationsResponse,
   NotificationAckAction,
   NotificationAckResponse,
+  CalendarRefreshResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -300,6 +301,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async ackNotification(id: string, action: NotificationAckAction): Promise<ApiResponse<NotificationAckResponse>> {
     return this.post<NotificationAckResponse>('/api/notifications/ack', { id, action });
+  }
+
+  override async refreshCalendar(): Promise<ApiResponse<CalendarRefreshResponse>> {
+    return this.post<CalendarRefreshResponse>('/api/calendar/refresh');
   }
 
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {

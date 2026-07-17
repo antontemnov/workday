@@ -59,6 +59,7 @@ import type {
   NotificationsResponse,
   NotificationAckResponse,
   NotificationTestResponse,
+  CalendarRefreshResponse,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus, MonthDayStatus } from './core/types.js';
 
@@ -1361,6 +1362,36 @@ async function handleNotifications(args: string[]): Promise<void> {
   }
 }
 
+// ─── Calendar ────────────────────────────────────────────────────────────
+
+async function handleCalendar(args: string[]): Promise<void> {
+  const sub = args[0];
+
+  if (sub === 'refresh') {
+    const result = await apiPost<CalendarRefreshResponse>('/api/calendar/refresh');
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    console.log(`Calendar refreshed: ${result.data.instanceCount} instance(s), fetched ${result.data.fetchedAt}`);
+    return;
+  }
+
+  if (sub !== undefined) {
+    console.log('Usage: workday calendar [refresh]');
+    return;
+  }
+
+  const result = await apiGet<StatusResponse>('/api/status');
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+  const cal = result.data.calendar;
+  if (!cal || !cal.configured) {
+    console.log('Calendar feed: not configured (set Calendar_IcsUrl in secrets.json).');
+    return;
+  }
+  console.log('Calendar feed: configured');
+  console.log(`  Last fetch: ${cal.lastFetchAt ?? 'never'}`);
+  console.log(`  Instances:  ${cal.instanceCount}`);
+  if (cal.lastError) console.log(`  Last error: ${cal.lastError}`);
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1451,6 +1482,9 @@ async function main(): Promise<void> {
     case 'notifications':
       await handleNotifications(args.slice(1));
       break;
+    case 'calendar':
+      await handleCalendar(args.slice(1));
+      break;
     case 'init':
       handleInit();
       break;
@@ -1503,6 +1537,8 @@ Usage:
   workday notifications                                Active notifications (what the tray would toast)
   workday notifications test [minutes]                 Inject a test notification (delivery pipeline check)
   workday notifications ack <id> <shown|opened|hidden> Acknowledge a notification
+  workday calendar                                     Outlook ICS feed status (meeting suggestions)
+  workday calendar refresh                             Re-fetch the calendar feed now
 
 Target: session index (#1, #2) or session id (hex)`);
 }

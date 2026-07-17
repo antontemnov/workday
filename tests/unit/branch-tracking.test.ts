@@ -44,6 +44,7 @@ function makeConfig(): AppConfig {
     search: { projectKeys: ['ATL'], knownProjects: [] },
     activities: { values: [] },
     notifications: { timesheetReminder: { enabled: true, notifyHour: 14 } },
+    calendar: { enabled: true },
   };
 }
 

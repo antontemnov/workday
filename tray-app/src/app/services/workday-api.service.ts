@@ -33,6 +33,7 @@ import {
   NotificationsResponse,
   NotificationAckAction,
   NotificationAckResponse,
+  CalendarRefreshResponse,
 } from '../models/workday.models';
 
 /**
@@ -113,6 +114,10 @@ export abstract class WorkdayApiService {
   // (at-most-once), 'opened'/'hidden' after the user acts.
   abstract getNotifications(): Promise<ApiResponse<NotificationsResponse>>;
   abstract ackNotification(id: string, action: NotificationAckAction): Promise<ApiResponse<NotificationAckResponse>>;
+
+  // Outlook ICS feed (meeting suggestions groundwork) — re-fetch now; feed
+  // status rides on getStatus().calendar.
+  abstract refreshCalendar(): Promise<ApiResponse<CalendarRefreshResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;

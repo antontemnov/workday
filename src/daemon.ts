@@ -7,6 +7,7 @@ import { readDailyLog, writeDailyLog } from './core/daily-log.js';
 import { runStartupJanitor } from './core/janitor.js';
 import { writeStopMarker, clearStopMarker } from './core/stop-marker.js';
 import { GitTracker } from './collectors/git-tracker.js';
+import { CalendarCollector } from './collectors/calendar-collector.js';
 import { SessionTracker } from './core/session-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
 import { checkGap } from './core/gap-detector.js';
@@ -36,6 +37,7 @@ export class Daemon {
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
   private updateManager: UpdateManager = new UpdateManager();
   private notificationCenter!: NotificationCenter;
+  private calendarCollector!: CalendarCollector;
   // Version installed on disk and waiting for a quiet window to restart into.
   private pendingRestartVersion: string | null = null;
   private updateInFlight: boolean = false;
@@ -94,6 +96,10 @@ export class Daemon {
       // The month aggregate reads from disk — same flush contract as handleMonth.
       flushToday: () => this.sessionTracker.flush(),
     });
+    this.calendarCollector = new CalendarCollector({
+      getConfig: () => this.config,
+      getIcsUrl: () => this.secrets.Calendar_IcsUrl?.trim() || null,
+    });
     const deps: HttpServerDeps = {
       sessionTracker: this.sessionTracker,
       config: this.config,
@@ -109,6 +115,7 @@ export class Daemon {
       applyUpdate: () => this.applyUpdateNow(),
       getWatchingRepos: () => this.gitTracker.getWatchingRepos(),
       notificationCenter: this.notificationCenter,
+      calendarCollector: this.calendarCollector,
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();
@@ -135,6 +142,12 @@ export class Daemon {
     const boundaryMs = this.config.session.dayBoundaryCheckSeconds * 1000;
     this.dayBoundaryTimer = setInterval(() => this.checkDayBoundary(), boundaryMs);
     this.scheduleUpdateCheck(true);
+
+    if (this.calendarCollector.isConfigured()) {
+      void this.calendarCollector.refresh()
+        .then(r => console.log(`[calendar] feed fetched: ${r.instanceCount} instance(s)`))
+        .catch(err => console.warn(`[calendar] initial fetch failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
 
     if (!this.foreground) {
       console.log(`Daemon started (PID ${process.pid}) — http://127.0.0.1:${this.config.apiPort}`);
@@ -474,8 +487,10 @@ export class Daemon {
     this.handleObservationGap(Date.now());
 
     // Piggyback on the 60s boundary timer: pending updates wait here for a
-    // quiet window instead of having their own restart poller.
+    // quiet window instead of having their own restart poller; the calendar
+    // feed re-fetches on its own cadence the same way.
     this.maybeRestartIntoUpdate();
+    this.calendarCollector.maybeScheduledRefresh();
 
     const newDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
     if (newDate === this.currentDate) return;

@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { ActivityScopeConfig, AppConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimesheetReminderConfig, TrackingConfig } from './types.js';
+import type { ActivityScopeConfig, AppConfig, CalendarConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimesheetReminderConfig, TrackingConfig } from './types.js';
 import { SensitivityLevel } from './types.js';
 import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_NOTIFY_HOUR, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
@@ -91,6 +91,7 @@ export function validateConfig(config: AppConfig): void {
   validateSearchConfig(config.search);
   validateActivityScopeConfig(config.activities);
   validateNotificationsConfig(config.notifications);
+  validateCalendarConfig(config.calendar);
 
   if (config.defaultBranch !== undefined && typeof config.defaultBranch !== 'string') {
     throw new Error('config.json: defaultBranch must be a string');
@@ -163,6 +164,15 @@ function validateNotificationsConfig(notifications: NotificationsConfig): void {
   }
   if (!Number.isInteger(reminder.notifyHour) || reminder.notifyHour < 0 || reminder.notifyHour > 23) {
     throw new Error('config.json: notifications.timesheetReminder.notifyHour must be an integer 0-23');
+  }
+}
+
+function validateCalendarConfig(calendar: CalendarConfig): void {
+  if (!calendar || typeof calendar !== 'object') {
+    throw new Error('config.json: calendar must be an object');
+  }
+  if (typeof calendar.enabled !== 'boolean') {
+    throw new Error('config.json: calendar.enabled must be a boolean');
   }
 }
 
@@ -280,6 +290,9 @@ export function loadConfig(): AppConfig {
   const rawActivities = (raw.activities ?? {}) as Partial<ActivityScopeConfig>;
   const activities: ActivityScopeConfig = { values: rawActivities.values ?? [] };
 
+  const rawCalendar = (raw.calendar ?? {}) as Partial<CalendarConfig>;
+  const calendar: CalendarConfig = { enabled: rawCalendar.enabled ?? true };
+
   const rawNotifications = (raw.notifications ?? {}) as Partial<NotificationsConfig>;
   const rawReminder = (rawNotifications.timesheetReminder ?? {}) as Partial<TimesheetReminderConfig>;
   const notifications: NotificationsConfig = {
@@ -299,6 +312,7 @@ export function loadConfig(): AppConfig {
     search,
     activities,
     notifications,
+    calendar,
     session: {
       ...rawSession,
       idleCloseHours: rawSession.idleCloseHours ?? DEFAULT_IDLE_CLOSE_HOURS,
@@ -356,6 +370,9 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
         enabled: patch.notifications?.timesheetReminder?.enabled ?? current.notifications.timesheetReminder.enabled,
         notifyHour: patch.notifications?.timesheetReminder?.notifyHour ?? current.notifications.timesheetReminder.notifyHour,
       },
+    },
+    calendar: {
+      enabled: patch.calendar?.enabled ?? current.calendar.enabled,
     },
   };
   validateConfig(merged);

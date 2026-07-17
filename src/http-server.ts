@@ -54,6 +54,7 @@ import {
   TEST_NOTIFICATION_MAX_MINUTES,
 } from './core/constants.js';
 import type { NotificationCenter } from './core/notification-center.js';
+import type { CalendarCollector } from './collectors/calendar-collector.js';
 import type {
   AppConfig,
   ApiResponse,
@@ -94,6 +95,7 @@ import type {
   NotificationAckResponse,
   NotificationTestResponse,
   NotificationAckAction,
+  CalendarRefreshResponse,
 } from './core/types.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
@@ -131,6 +133,8 @@ export interface HttpServerDeps {
   readonly getWatchingRepos: () => readonly WatchingRepo[];
   /** Desktop-notification rules + delivery state (lazy-evaluated on GET). */
   readonly notificationCenter: NotificationCenter;
+  /** Outlook ICS feed collector (meeting suggestions groundwork). */
+  readonly calendarCollector: CalendarCollector;
 }
 
 // ─── Watching-card synthesis (A-6) ─────────────────────────────────────
@@ -352,6 +356,9 @@ export class HttpServer {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, this.handleNotificationTest(body));
       }
+      if (method === 'POST' && path === '/api/calendar/refresh') {
+        return this.sendJson(res, 200, await this.handleCalendarRefresh());
+      }
       if (method === 'GET' && path === '/api/update/check') {
         try {
           const data = await this.deps.checkUpdate();
@@ -399,8 +406,18 @@ export class HttpServer {
         date: this.deps.getCurrentDate(),
         uptime: Math.floor((Date.now() - this.deps.getStartedAt()) / 1000),
         openSessions: summaries,
+        calendar: this.deps.calendarCollector.getStatus(),
       },
     };
+  }
+
+  private async handleCalendarRefresh(): Promise<ApiResponse<CalendarRefreshResponse>> {
+    try {
+      const data = await this.deps.calendarCollector.refresh();
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   private handleToday(): ApiResponse<TodayResponse> {

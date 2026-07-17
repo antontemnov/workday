@@ -100,6 +100,21 @@ export interface StatusResponse {
   pid: number;
   date: string;
   uptime: number;
+  calendar?: CalendarFeedStatus;
+}
+
+// ─── Calendar feed (meeting suggestions groundwork) ──────────────────────
+
+export interface CalendarFeedStatus {
+  readonly configured: boolean;
+  readonly lastFetchAt: string | null;
+  readonly lastError: string | null;
+  readonly instanceCount: number;
+}
+
+export interface CalendarRefreshResponse {
+  readonly fetchedAt: string;
+  readonly instanceCount: number;
 }
 
 export interface SensitivityResponse {

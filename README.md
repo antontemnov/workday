@@ -51,6 +51,8 @@ workday approval [YYYY-MM]             Tempo timesheet approval status
 workday notifications                  Active desktop notifications (tray toasts)
 workday notifications test [minutes]   Inject a test notification (pipeline check)
 workday notifications ack <id> <act>   Acknowledge (shown|opened|hidden)
+workday calendar                       Outlook ICS feed status (meeting suggestions)
+workday calendar refresh               Re-fetch the calendar feed now
 workday daemon                         Run in foreground (live dashboard)
 ```
 
@@ -104,9 +106,17 @@ at the first moment the user is actually at the keyboard.
   "Jira_Email": "your-email@company.com",
   "Jira_BaseUrl": "https://your-company.atlassian.net",
   "Jira_Token": "",
-  "Tempo_Token": ""
+  "Tempo_Token": "",
+  "Calendar_IcsUrl": ""
 }
 ```
+
+`Calendar_IcsUrl` (optional) is an Outlook published-calendar ICS link
+(OWA Settings → Calendar → Shared calendars → Publish); the token in the URL
+is a secret. When set, the daemon keeps `data/calendar-cache.json` with the
+expanded meeting instances of the last 90 days — groundwork for meeting
+suggestions. Re-fetched hourly during the 10:00–14:00 morning window, every
+~3h otherwise; `calendar.enabled: false` in config.json switches it off.
 
 Config can also live next to `package.json` for local development — the daemon checks there first before falling back to `~/.workday/`.
 

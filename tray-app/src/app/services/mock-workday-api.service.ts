@@ -44,6 +44,7 @@ import {
   NotificationsResponse,
   NotificationAckAction,
   NotificationAckResponse,
+  CalendarRefreshResponse,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -571,6 +572,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   async ackNotification(id: string, action: NotificationAckAction): Promise<ApiResponse<NotificationAckResponse>> {
     return { ok: true, data: { id, status: action === 'shown' ? 'delivered' : 'consumed' } };
+  }
+
+  async refreshCalendar(): Promise<ApiResponse<CalendarRefreshResponse>> {
+    return { ok: true, data: { fetchedAt: new Date().toISOString(), instanceCount: 0 } };
   }
 
   async getSettings(): Promise<ApiResponse<SettingsResponse>> {

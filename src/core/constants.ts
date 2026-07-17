@@ -115,6 +115,27 @@ export const SCHEDULE_CACHE_TTL_MS = 24 * 3_600_000;
 export const APPROVAL_CACHE_FILE = 'approval-cache.json';
 export const APPROVAL_CACHE_TTL_MS = 15 * 60_000;
 
+// ─── Calendar feed (meeting suggestions) ────────────────────────────────
+export const CALENDAR_CACHE_FILE = 'calendar-cache.json';
+/** Expansion window: past for Timesheets backfill, +1 day for "идёт" rows */
+export const CALENDAR_WINDOW_PAST_DAYS = 90;
+export const CALENDAR_WINDOW_FUTURE_DAYS = 1;
+/** Base re-fetch cadence (Exchange-side publish cache lags anyway) */
+export const CALENDAR_FETCH_INTERVAL_MS = 3 * 3_600_000;
+/**
+ * Morning window: calendar re-shuffles are most likely at the start of the
+ * working day, so 10:00–14:00 local time fetches hourly instead of 3-hourly.
+ */
+export const CALENDAR_MORNING_FETCH_INTERVAL_MS = 3_600_000;
+export const CALENDAR_MORNING_FROM_HOUR = 10; // inclusive, local time
+export const CALENDAR_MORNING_TO_HOUR = 14;   // exclusive
+/** Outlook answers 417 to non-browser user agents on the legacy /owa/ path */
+export const ICS_BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+export const ICS_FETCH_TIMEOUT_MS = 30_000;
+/** Runaway guard for recurrence expansion of a single series */
+export const RRULE_MAX_ITERATIONS = 20_000;
+
 // ─── Notifications (desktop toasts) ──────────────────────────────────────
 export const NOTIFICATIONS_STATE_FILE = 'notifications-state.json';
 /** Delivery window opens at this hour on the last working day of the month */

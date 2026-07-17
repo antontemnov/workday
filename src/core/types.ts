@@ -26,6 +26,7 @@ export interface AppConfig {
   readonly search: SearchConfig;
   readonly activities: ActivityScopeConfig;
   readonly notifications: NotificationsConfig;
+  readonly calendar: CalendarConfig;
 }
 
 // ─── Git tracking scope ──────────────────────────────────────────────────
@@ -69,6 +70,14 @@ export interface ActivityScopeConfig {
   // push are never filtered — this scopes what can be picked, not what exists.
   // The catalog itself lives in the work-attributes cache, not here.
   readonly values: readonly string[];
+}
+
+// ─── Calendar config ─────────────────────────────────────────────────────
+
+export interface CalendarConfig {
+  // Master switch for the Outlook ICS feed collector. The feed also needs
+  // secrets.Calendar_IcsUrl — absent URL means not configured regardless.
+  readonly enabled: boolean;
 }
 
 // ─── Notifications config ────────────────────────────────────────────────
@@ -120,6 +129,8 @@ export interface Secrets {
   readonly Jira_BaseUrl: string;
   readonly Jira_Token: string;
   readonly Tempo_Token: string;
+  // Outlook published-calendar ICS URL (the token in the path IS the secret).
+  readonly Calendar_IcsUrl?: string;
 }
 
 // ─── Pause ──────────────────────────────────────────────────────────────
@@ -185,6 +196,39 @@ export interface Favorite {
   readonly minutes: number;       // default duration, > 0, max MAX_ENTRY_MINUTES
   readonly activity: string;      // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;     // ISO timestamp
+}
+
+// ─── Calendar instances (meeting suggestions) ────────────────────────────
+//
+// Flat materialization of the Outlook ICS feed inside the expansion window:
+// recurring series are expanded to individual instances, overrides applied.
+// The cache stores FACTS unfiltered (Free/Tentative/all-day included) — the
+// suggestions layer applies its own entry filters on read.
+
+export interface CalendarInstance {
+  // VEVENT UID — shared by every instance of a recurring series (series key
+  // for learning/mute); unique per event otherwise.
+  readonly uid: string;
+  // Working date the instance belongs to (boundaryHour attribution, same as
+  // sessions) — the day-feed key and half of the dismiss key `uid:date`.
+  readonly date: string;
+  readonly start: string;       // ISO UTC
+  readonly end: string;         // ISO UTC
+  readonly title: string;       // SUMMARY, unescaped
+  readonly busyStatus: string;  // X-MICROSOFT-CDO-BUSYSTATUS: BUSY|TENTATIVE|FREE|OOF|…
+  readonly allDay: boolean;
+  readonly cancelled: boolean;  // STATUS:CANCELLED
+  readonly recurring: boolean;
+  // Vanished from the feed after its DTEND had already passed — kept as a
+  // happened fact (DTEND reconciliation). Feed regains authority the moment
+  // the same uid+date reappears.
+  readonly frozen?: boolean;
+}
+
+/** data/calendar-cache.json — atomic write, daemon is the only writer. */
+export interface CalendarCache {
+  readonly fetchedAt: string;   // last successful feed fetch, ISO
+  readonly instances: readonly CalendarInstance[];
 }
 
 // ─── Evidence & Sessions ─────────────────────────────────────────────────
@@ -537,6 +581,20 @@ export interface StatusResponse {
   readonly date: string;
   readonly uptime: number;
   readonly openSessions: readonly SessionSummary[];
+  readonly calendar?: CalendarFeedStatus;
+}
+
+export interface CalendarFeedStatus {
+  // enabled in config AND secrets.Calendar_IcsUrl present
+  readonly configured: boolean;
+  readonly lastFetchAt: string | null;  // last successful fetch (cache.fetchedAt)
+  readonly lastError: string | null;    // last attempt's failure, null when ok
+  readonly instanceCount: number;
+}
+
+export interface CalendarRefreshResponse {
+  readonly fetchedAt: string;
+  readonly instanceCount: number;
 }
 
 export interface UpdateCheckResponse {
