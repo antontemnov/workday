@@ -113,6 +113,15 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return d.toISOString();
   }
 
+  // The mock day runs on fictional clocks (presets stamped 09:00–15:00), so
+  // new entries must NOT use the real wall clock — at night it sorts them to
+  // the bottom of the newest-first feed. Monotonic stamps after every preset
+  // keep them on top, like the real daemon's "now" does.
+  private mockClockMin = 0;
+  private nextCreatedAt(): string {
+    return this.iso(17, this.mockClockMin++);
+  }
+
   // Mock calendar behind the suggestion rows: two finished meetings and one
   // "happening now" (born at DTSTART), plus a private one — accept/dismiss
   // round-trip like the daemon's derived engine.
@@ -316,6 +325,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
         'ATL-6781': 'Daily standup and team sync',
         'ATL-6712': 'Existing Transaction: add missing reactive behaviour for Policy Dictionaries',
         'APP-1019': 'Pricing engine: clean up dead code branches',
+        // Accepted-suggestion tickets — the real daemon backfills these too.
+        'ATL-101': 'Team ceremonies & sync rituals',
+        'ATL-205': 'Payments backlog refinement',
+        'ATL-118': 'Payments squad: grooming & planning',
         // APP-1024 left unmapped → its Logged row shows the "name not cached" placeholder
       },
     };
@@ -433,7 +446,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       minutes: input.minutes,
       description: input.description.trim(),
       activity,
-      createdAt: this.iso(12, 0),
+      createdAt: this.nextCreatedAt(),
     };
     this.mockManualEntries = [...this.mockManualEntries, entry];
     return { ok: true, data: this.toEntryResponse(entry) };
@@ -649,7 +662,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       minutes: request.minutes ?? meeting.plannedMinutes,
       description: request.description ?? meeting.resolved?.description ?? (meeting.isPrivate ? '' : meeting.title),
       activity: request.activity || meeting.resolved?.activity || 'Other',
-      createdAt: new Date().toISOString(),
+      createdAt: this.nextCreatedAt(),
       sourceRef,
     };
     this.mockManualEntries.push(entry);
