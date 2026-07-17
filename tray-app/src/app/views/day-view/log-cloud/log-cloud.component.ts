@@ -43,8 +43,6 @@ const JIRA_DEBOUNCE_MS = 350;
 const JIRA_MIN_QUERY = 2;
 const JIRA_MAX_HITS = 5;
 const DEFAULT_FORM_MINUTES = 30;
-// Accept-form default — mirrors the daemon's DEFAULT_MANUAL_ACTIVITY.
-const ACCEPT_ACTIVITY = 'Other';
 const FAV_NAME_MAX = 26;
 const FAV_FEEDBACK_MS = 1200;
 // Removed favorite chips shrink away (staggered in batch) before the emit.
@@ -71,17 +69,19 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() activityAllowed: readonly string[] = [];
   @Input() actionPending = false;
-  // Accept mode (meeting suggestion resolve): picks only choose the ticket —
-  // favorites lose their instant-log/template role, batch and edit go dark —
-  // and the form prefills from the meeting. The parent turns the submit into
-  // an accept. acceptMinutes carries the suggestion row's stepper value.
+  // Accept mode (meeting suggestion resolve): the cloud is a pure ticket
+  // picker — favorites lose their instant-log/template role, batch and edit
+  // go dark, and any pick emits acceptPicked instead of morphing into the
+  // form (the row hosts the accept form inline, twin of the logged edit).
   @Input() acceptTarget: Suggestion | null = null;
-  @Input() acceptMinutes = 0;
   // Jira summaries for the candidate tickets (daemon name cache; misses
   // render as bare keys and fill in with a later poll).
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
 
   @Output() chipPicked = new EventEmitter<ChipPick>();
+  // Accept mode: the chosen ticket (a candidate also carries its learned
+  // activity) — the parent routes it back into the suggestion row.
+  @Output() acceptPicked = new EventEmitter<{ task: string; activity?: string }>();
   @Output() formSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   // Favorites management: right-click a Jira result → save a template;
@@ -142,14 +142,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     if (!changes['open']) return;
     if (this.open) {
       this.resetState();
-      // A resolved suggestion skips the picking stage entirely: the cloud
-      // opens straight on the form, fully prefilled from the learned
-      // association. Esc still unwinds to the chips for a different ticket.
-      const resolved = this.acceptTarget?.resolved;
-      if (resolved) {
-        this.enterAcceptForm(resolved.task, resolved.activity, resolved.description);
-        return;
-      }
       this.spawn = true;
       if (this.spawnTimer) clearTimeout(this.spawnTimer);
       this.spawnTimer = setTimeout(() => this.spawn = false, SPAWN_MS);
@@ -235,7 +227,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   pickFavorite(f: Favorite, ev: MouseEvent): void {
     if (this.isAcceptMode) {
-      this.enterAcceptForm(f.task);
+      this.acceptPicked.emit({ task: f.task });
       return;
     }
     if (this.editMode) {
@@ -253,7 +245,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   pickJira(h: JiraSearchHit, ev: MouseEvent): void {
     if (this.isAcceptMode) {
-      this.enterAcceptForm(h.key);
+      this.acceptPicked.emit({ task: h.key });
       return;
     }
     if (this.collectOnPick(ev)) {
@@ -285,9 +277,9 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     if (this.editMode) return; // edit mode: clicks mark chips, Enter is idle
     if (this.isAcceptMode) {
       const fav = this.filteredFavorites[0];
-      if (fav) { this.enterAcceptForm(fav.task); return; }
+      if (fav) { this.acceptPicked.emit({ task: fav.task }); return; }
       if (this.jiraZone === 'results' && this.jiraHits.length > 0) {
-        this.enterAcceptForm(this.jiraHits[0].key);
+        this.acceptPicked.emit({ task: this.jiraHits[0].key });
       }
       return;
     }
@@ -551,28 +543,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     }, 140);
   }
 
-  // Accept mode: any pick lands here — the ticket comes from the pick, the
-  // rest prefills from the meeting (minutes = row stepper, description =
-  // learned deviation → title unless private, activity = learned → the
-  // daemon's accept default).
-  private enterAcceptForm(task: string, activity?: string, description?: string): void {
-    const t = this.acceptTarget;
-    if (!t) return;
-    this.formTask = task;
-    this.formDescription = description ?? (t.isPrivate ? '' : t.title);
-    this.formMinutes = this.acceptMinutes > 0 ? this.acceptMinutes : t.plannedMinutes;
-    const preset = this.activityOptions.find(a => a.value === (activity ?? ACCEPT_ACTIVITY))
-      ?? this.activityOptions.find(a => a.value === ACCEPT_ACTIVITY);
-    this.formActivity = preset?.value ?? '';
-    this.formActivityNeeded = !preset;
-    this.mode = 'form';
-    setTimeout(() => {
-      const el = this.formMin?.nativeElement;
-      el?.focus();
-      el?.select();
-    }, 140);
-  }
-
   // Learned-ticket conflict of the accepted meeting — teal chips above the
   // favorites; picking one resolves the ambiguity (and teaches the uid).
   get acceptCandidates(): readonly SuggestionCandidate[] {
@@ -580,7 +550,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   }
 
   pickCandidate(c: SuggestionCandidate): void {
-    this.enterAcceptForm(c.task, c.activity);
+    this.acceptPicked.emit({ task: c.task, activity: c.activity });
   }
 
   candidateName(c: SuggestionCandidate): string {

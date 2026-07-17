@@ -1,25 +1,55 @@
-<div class="sug2">
+<div class="sug2" [class.editing]="editing" (dblclick)="accept()">
   <div class="r-l1">
     <!-- Resolved (learned) ticket shows in the chip; unresolved stays "task?".
-         Both open the accept flow — resolved lands straight on the form. -->
-    <button *ngIf="suggestion.resolved as r; else askChip"
-            type="button" class="chip key" [disabled]="actionPending" (click)="accept()">{{ r.task }}</button>
-    <ng-template #askChip>
-      <button type="button" class="chip ask" [disabled]="actionPending" (click)="accept()">task?</button>
+         Both open the accept flow — resolved morphs this row into the form,
+         unresolved picks a ticket in the cloud first. While editing the chip
+         is the picked ticket, a plain fact. -->
+    <span *ngIf="editing; else chipButtons" class="chip">{{ editTask }}</span>
+    <ng-template #chipButtons>
+      <button *ngIf="suggestion.resolved as r; else askChip"
+              type="button" class="chip key" [disabled]="actionPending" (click)="accept()">{{ r.task }}</button>
+      <ng-template #askChip>
+        <button type="button" class="chip ask" [disabled]="actionPending" (click)="accept()">task?</button>
+      </ng-template>
     </ng-template>
     <span class="s-title"><span class="live-dot" *ngIf="suggestion.ongoing"></span>{{ suggestion.title }}</span>
-    <span class="s-dur" (wheel)="onDurWheel($event)">{{ durLabel }}</span>
+    <!-- Time never leaves its slot: the form swaps the span for a frameless
+         wdDuration input — minutes are editable ONLY here (logged-edit rule). -->
+    <input *ngIf="editing; else viewDur"
+           class="s-dur edit"
+           [(wdDuration)]="editMinutes"
+           (durEnter)="submitEdit()"
+           (keydown.escape)="cancelEdit(); $event.stopPropagation()" />
+    <ng-template #viewDur><span class="s-dur">{{ durLabel }}</span></ng-template>
   </div>
   <div class="r-l2">
-    <span class="s-when" [class.live]="suggestion.ongoing">{{ whenLabel }}</span>
-    <span class="s-src"><svg class="spark" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg>meeting</span>
-    <span class="s-act">
-      <button type="button" class="btn ok" [disabled]="actionPending" (click)="accept()">
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 5.5l2.5 2.5 4.5-5" fill="none" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <button type="button" class="btn no" [disabled]="actionPending" (click)="dismiss()">
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" fill="none" stroke="#6c7086" stroke-width="1.5" stroke-linecap="round"/></svg>
-      </button>
-    </span>
+    <!-- Edit band — same form as a logged row's dblclick edit. -->
+    <div class="rf" *ngIf="editing; else viewBand" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
+      <button type="button" class="le-back" (click)="cancelEdit()">←</button>
+      <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="submitEdit()">
+        <option value="" disabled hidden>activity…</option>
+        <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+      </select>
+      <input class="le-desc"
+             [class.need]="editDescNeeded"
+             [(ngModel)]="editDescription"
+             (keydown.enter)="submitEdit()"
+             placeholder="description" />
+      <button type="button" class="le-save" [disabled]="actionPending" (click)="submitEdit()">Log</button>
+    </div>
+    <ng-template #viewBand>
+      <div class="rv">
+        <span class="s-when" [class.live]="suggestion.ongoing">{{ whenLabel }}</span>
+        <span class="s-src"><svg class="spark" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg>meeting</span>
+        <span class="s-act">
+          <button type="button" class="btn ok" [disabled]="actionPending" (click)="accept()">
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 5.5l2.5 2.5 4.5-5" fill="none" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button type="button" class="btn no" [disabled]="actionPending" (click)="dismiss()">
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" fill="none" stroke="#6c7086" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </span>
+      </div>
+    </ng-template>
   </div>
 </div>

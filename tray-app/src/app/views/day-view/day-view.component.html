@@ -43,7 +43,11 @@
     *ngFor="let g of suggestions; trackBy: trackBySuggestion"
     [suggestion]="g"
     [actionPending]="actionPending"
-    (acceptRequested)="openCloudForAccept(g, $event)"
+    [activityTypes]="activityTypes"
+    [activityAllowed]="activityAllowed"
+    [picked]="pickFor(g)"
+    (pickRequested)="openCloudForAccept(g)"
+    (acceptSubmitted)="onSuggestionAccept(g, $event)"
     (dismissed)="onSuggestionDismiss(g)" />
 
   <!-- Radar only when the whole day is empty — otherwise the history speaks -->
@@ -86,8 +90,8 @@
   [activityAllowed]="activityAllowed"
   [actionPending]="actionPending"
   [acceptTarget]="acceptTarget"
-  [acceptMinutes]="acceptMinutes"
   [issueSummaries]="suggestionSummaries"
+  (acceptPicked)="onAcceptPicked($event)"
   [style.top.px]="overlayTop"
   (chipPicked)="onChipPicked($event)"
   (formSubmitted)="onFormSubmitted($event)"

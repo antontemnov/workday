@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { SessionCardComponent } from './session-card/session-card.component';
 import { LoggedPanelComponent } from './logged-panel/logged-panel.component';
 import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
-import { SuggestionRowComponent } from './suggestion-row/suggestion-row.component';
+import { SuggestionRowComponent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
 import {
   SessionDetail,
@@ -197,11 +197,12 @@ export class DayViewComponent implements OnChanges {
   // The cloud hangs just below the sticky day header; measured at open time.
   overlayTop = 0;
 
-  // Non-null → the cloud resolves a meeting suggestion instead of logging:
-  // every pick lands in the form prefilled from the meeting, and the submit
-  // becomes an accept. Minutes carry the row stepper's current value.
+  // Non-null → the cloud is a pure ticket picker for an unresolved meeting
+  // suggestion: a pick closes the cloud and flows back into the row, which
+  // opens its inline accept form (the logged-edit twin).
   acceptTarget: Suggestion | null = null;
-  acceptMinutes = 0;
+  // The pick, addressed to its row (`uid:date`); a fresh object per pick.
+  private suggestionPick: { key: string; pick: SuggestionPick } | null = null;
 
   openCloud(): void {
     if (this.actionPending) return;
@@ -210,10 +211,9 @@ export class DayViewComponent implements OnChanges {
     this.cloudOpen = true;
   }
 
-  openCloudForAccept(s: Suggestion, minutes: number): void {
+  openCloudForAccept(s: Suggestion): void {
     if (this.actionPending) return;
     this.acceptTarget = s;
-    this.acceptMinutes = minutes;
     this.overlayTop = this.headHeight() + 6;
     this.cloudOpen = true;
   }
@@ -221,6 +221,28 @@ export class DayViewComponent implements OnChanges {
   closeCloud(): void {
     this.cloudOpen = false;
     this.acceptTarget = null;
+  }
+
+  pickFor(s: Suggestion): SuggestionPick | null {
+    return this.suggestionPick?.key === `${s.uid}:${s.date}` ? this.suggestionPick.pick : null;
+  }
+
+  onAcceptPicked(pick: SuggestionPick): void {
+    const target = this.acceptTarget;
+    this.closeCloud();
+    if (target) this.suggestionPick = { key: `${target.uid}:${target.date}`, pick };
+  }
+
+  onSuggestionAccept(s: Suggestion, entry: ManualEntryInput): void {
+    this.suggestionPick = null;
+    this.suggestionAcceptSubmitted.emit({
+      uid: s.uid,
+      date: s.date,
+      task: entry.task,
+      minutes: entry.minutes,
+      description: entry.description,
+      activity: entry.activity,
+    });
   }
 
   private headHeight(): number {
@@ -236,21 +258,9 @@ export class DayViewComponent implements OnChanges {
   }
 
   // Jira-result form → a single entry; lands with the usual draft window.
-  // In accept mode the same form resolves a suggestion instead.
+  // (Accept mode never reaches this form — picks flow back into the row.)
   onFormSubmitted(entry: ManualEntryInput): void {
-    const target = this.acceptTarget;
     this.closeCloud();
-    if (target) {
-      this.suggestionAcceptSubmitted.emit({
-        uid: target.uid,
-        date: target.date,
-        task: entry.task,
-        minutes: entry.minutes,
-        description: entry.description,
-        activity: entry.activity,
-      });
-      return;
-    }
     this.logSubmitted.emit(entry);
   }
 

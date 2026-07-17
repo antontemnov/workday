@@ -35,13 +35,117 @@
   height: 17px;
 }
 
+// Same two-band skeleton as the logged rows: band 2 is a flex shell so the
+// edit form (.rf) can take the full width; the view content sits in a .rv
+// grid with the shared column template.
 .r-l2 {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.rv {
+  flex: 1;
+  min-width: 0;
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
   align-items: center;
-  height: 20px;
-  margin-top: 1px;
+}
+
+// Inline accept form — 1:1 the logged row's edit band, teal accents (this is
+// still suggested time until Log lands it).
+.editing {
+  border-style: solid;
+  background: rgba(148, 226, 213, 0.04);
+}
+
+.rf {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform-origin: 0 50%;
+  animation: le-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1);
+
+  select, input {
+    background: rgba(17, 17, 27, 0.85);
+    border: 1px solid #313244;
+    border-radius: 5px;
+    color: #cdd6f4;
+    font-family: inherit;
+    font-size: 10.5px;
+    padding: 2px 7px;
+    height: 20px;
+    outline: none;
+
+    &:focus { border-color: #94e2d5; }
+  }
+
+  .le-act {
+    width: 104px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #bac2de;
+    padding: 2px 3px;
+    cursor: pointer;
+  }
+
+  .le-desc {
+    flex: 1;
+    min-width: 0;
+
+    &::placeholder { color: #4b4d63; }
+
+    &.need {
+      border-color: rgba(148, 226, 213, 0.65);
+      animation: need-pulse 1.6s ease-in-out infinite;
+
+      &::placeholder { color: rgba(148, 226, 213, 0.55); }
+    }
+  }
+
+  .le-back {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0 2px;
+    height: 20px;
+
+    &:hover { color: #a6adc8; }
+  }
+
+  .le-save {
+    flex-shrink: 0;
+    background: #94e2d5;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0 10px;
+    height: 20px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #7fd6c6; }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+}
+
+@keyframes le-in {
+  0% { transform: scaleX(0.5); opacity: 0; }
+}
+
+@keyframes need-pulse {
+  0%, 100% { border-color: rgba(148, 226, 213, 0.65); }
+  50%      { border-color: rgba(148, 226, 213, 0.25); }
 }
 
 // Ticket chip in the suggestion species' own colour — it turns mauve only
@@ -104,9 +208,9 @@
           mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
 }
 
-// Minutes double as a stepper (wheel ±15m, same feel as the fresh logged
-// row) — the value prefills the accept form. Transparent border keeps the
-// box from shifting when the hover affordance lights up.
+// Planned minutes — display only; the time is editable ONLY inside the
+// inline form, where this slot swaps for a frameless duration input
+// (the logged-edit rule).
 .s-dur {
   justify-self: end;
   color: rgba(148, 226, 213, 0.55);
@@ -115,11 +219,16 @@
   padding: 0 5px;
   border: 1px solid transparent;
   border-radius: 5px;
-  cursor: ns-resize;
 
-  &:hover {
-    border-color: rgba(148, 226, 213, 0.5);
-    color: rgba(148, 226, 213, 0.85);
+  &.edit {
+    width: 64px;
+    height: 17px;
+    background: transparent;
+    color: #94e2d5;
+    font-family: inherit;
+    font-size: 11px;
+    text-align: right;
+    outline: none;
   }
 }
 
