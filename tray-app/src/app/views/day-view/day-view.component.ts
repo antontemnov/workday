@@ -51,6 +51,8 @@ export class DayViewComponent implements OnChanges {
   @Input() freshEntryId: string | null = null;
   // Today's pending meeting offers (daemon-derived, polled with the day).
   @Input() suggestions: readonly Suggestion[] = [];
+  // Jira summaries for resolved/candidate tasks (daemon name cache).
+  @Input() suggestionSummaries: Readonly<Record<string, string>> = {};
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();

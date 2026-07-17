@@ -276,6 +276,10 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.suggestionsDay?.suggestions ?? [];
   }
 
+  get suggestionSummaries(): Readonly<Record<string, string>> {
+    return this.suggestionsDay?.issueSummaries ?? {};
+  }
+
   private async refreshSuggestions(): Promise<void> {
     const res = await this.api.getSuggestions();
     if (res.ok && res.data) this.suggestionsDay = res.data;

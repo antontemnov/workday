@@ -192,18 +192,28 @@
   }
 
   // Learned-ticket candidates (accept mode) — teal suggestion species,
-  // resurrected from the old cloud suggested row (473c095). Ticket only.
+  // resurrected from the old cloud suggested row (473c095): key + summary.
   &.sugg {
     border: 1px solid rgba(148, 226, 213, 0.4);
     background: rgba(148, 226, 213, 0.06);
+    max-width: 100%;
 
-    .f-spark { color: #94e2d5; font-size: 10px; }
-    .f-task  { color: rgba(148, 226, 213, 0.8); }
+    .f-spark { color: #94e2d5; font-size: 10px; flex-shrink: 0; }
+    .f-task  { color: rgba(148, 226, 213, 0.8); flex-shrink: 0; }
+    .f-name {
+      color: #a6adc8;
+      font-weight: 400;
+      font-style: italic;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 300px;
+    }
 
     &:hover {
       background: rgba(148, 226, 213, 0.13);
       border-color: #94e2d5;
-      .f-task { color: #94e2d5; }
+      .f-name { color: #cdd6f4; }
     }
   }
 

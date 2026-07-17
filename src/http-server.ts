@@ -465,7 +465,7 @@ export class HttpServer {
   }
 
   private computeSuggestions(date: string): SuggestionsResponse {
-    return deriveSuggestions({
+    const day = deriveSuggestions({
       date,
       instances: this.deps.calendarCollector.getInstances(),
       log: this.getLogForDate(date),
@@ -474,6 +474,11 @@ export class HttpServer {
       nowMs: Date.now(),
       associations: loadMeetingAssociations(),
     });
+    const keys = day.suggestions.flatMap(s => [
+      ...(s.resolved ? [s.resolved.task] : []),
+      ...(s.candidates?.map(c => c.task) ?? []),
+    ]);
+    return keys.length === 0 ? day : { ...day, issueSummaries: this.cachedSummariesFor(keys) };
   }
 
   private handleSuggestions(url: URL): ApiResponse<SuggestionsResponse> {

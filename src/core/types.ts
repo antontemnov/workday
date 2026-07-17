@@ -654,6 +654,10 @@ export interface SuggestionsResponse {
   readonly date: string;
   readonly state: SuggestionsDayState;
   readonly suggestions: readonly Suggestion[];
+  // Jira summaries for every resolved/candidate task on the rows — cached
+  // lookups only, same contract as DayResponse.issueSummaries (a miss
+  // triggers a background backfill and fills in on a later poll).
+  readonly issueSummaries?: Readonly<Record<string, string>>;
 }
 
 export interface SuggestionAcceptResponse {

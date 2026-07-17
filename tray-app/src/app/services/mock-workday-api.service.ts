@@ -671,7 +671,14 @@ export class MockWorkdayApiService extends WorkdayApiService {
       && !(s.isPrivate && this.mockCalendar.hidePrivate)
       && !this.mockDismissed.has(`${s.uid}:${s.date}`)
       && !this.mockManualEntries.some(e => e.sourceRef === `meeting:${s.uid}:${s.date}`));
-    return { date, state: SuggestionsDayState.Active, suggestions };
+    return {
+      date, state: SuggestionsDayState.Active, suggestions,
+      // ATL-118 left unmapped → its candidate chip shows the bare key.
+      issueSummaries: {
+        'ATL-101': 'Team ceremonies & sync rituals',
+        'ATL-205': 'Payments backlog refinement',
+      },
+    };
   }
 
   async getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>> {

@@ -28,14 +28,16 @@
          logged to different tickets before; teal species, pick to resolve. -->
     <ng-container *ngIf="isAcceptMode && acceptCandidates.length > 0">
       <span class="row-label sugg">✦ previously logged as</span>
-      <!-- Ticket only — the learned activity silently prefills the form on
-           pick, showing it here would be noise (type never gets a badge). -->
+      <!-- Key + Jira summary; the learned activity silently prefills the form
+           on pick — type never gets a badge. A missing summary renders as a
+           bare key and fills in with a later poll. -->
       <span class="fav sugg"
             *ngFor="let c of acceptCandidates; let i = index"
             [style.animation-delay]="chipDelay(i)"
             (click)="pickCandidate(c)">
         <span class="f-spark">✦</span>
         <span class="f-task">{{ c.task }}</span>
+        <span class="f-name" *ngIf="candidateName(c)">{{ candidateName(c) }}</span>
       </span>
       <span class="row-label" *ngIf="filteredFavorites.length > 0">favorites</span>
     </ng-container>

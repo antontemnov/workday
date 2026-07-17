@@ -77,6 +77,9 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   // an accept. acceptMinutes carries the suggestion row's stepper value.
   @Input() acceptTarget: Suggestion | null = null;
   @Input() acceptMinutes = 0;
+  // Jira summaries for the candidate tickets (daemon name cache; misses
+  // render as bare keys and fill in with a later poll).
+  @Input() issueSummaries: Readonly<Record<string, string>> = {};
 
   @Output() chipPicked = new EventEmitter<ChipPick>();
   @Output() formSubmitted = new EventEmitter<ManualEntryInput>();
@@ -578,6 +581,10 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   pickCandidate(c: SuggestionCandidate): void {
     this.enterAcceptForm(c.task, c.activity);
+  }
+
+  candidateName(c: SuggestionCandidate): string {
+    return this.issueSummaries[c.task] ?? '';
   }
 
   exitForm(): void {
