@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
 import {
-  ActivityType, ProjectRef, SensitivityLevel, SettingsConfigSubset, SettingsResponse, TrackingConfig,
+  ActivityType, CalendarFeedStatus, ProjectRef, SensitivityLevel, SettingsConfigSubset,
+  SettingsResponse, TrackingConfig,
 } from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
@@ -11,7 +12,7 @@ type UpdateState = 'idle' | 'checking' | 'available' | 'applying' | 'restarting'
 
 interface PendingPatch {
   config?: Partial<SettingsConfigSubset>;
-  secrets?: { jiraToken?: string; tempoToken?: string };
+  secrets?: { jiraToken?: string; tempoToken?: string; calendarIcsUrl?: string };
 }
 
 @Component({
@@ -43,6 +44,11 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
 
   jiraTokenDraft: string | null = null;
   tempoTokenDraft: string | null = null;
+  calendarUrlDraft: string | null = null;
+
+  // Feed health for the calendar row — from /api/status, best-effort.
+  calendarStatus: CalendarFeedStatus | null = null;
+  private calendarStatusTimer: number | null = null;
 
   // Display labels only — backing enum values (low/normal/patient/always_on)
   // are unchanged. Mirrors the day-view scale naming.
@@ -123,6 +129,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
     if (this.savedFlashTimer !== null) window.clearTimeout(this.savedFlashTimer);
     if (this.updatePollTimer !== null) window.clearInterval(this.updatePollTimer);
+    if (this.calendarStatusTimer !== null) window.clearTimeout(this.calendarStatusTimer);
   }
 
   // ─── Daemon updates ─────────────────────────────────────────────────────
@@ -492,10 +499,12 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
 
   // ─── Token editing (explicit commit on Enter / ✓) ─────────────────────
 
-  startEditJira():   void { this.jiraTokenDraft  = ''; }
-  startEditTempo():  void { this.tempoTokenDraft = ''; }
-  cancelEditJira():  void { this.jiraTokenDraft  = null; }
-  cancelEditTempo(): void { this.tempoTokenDraft = null; }
+  startEditJira():      void { this.jiraTokenDraft   = ''; }
+  startEditTempo():     void { this.tempoTokenDraft  = ''; }
+  startEditCalendar():  void { this.calendarUrlDraft = ''; }
+  cancelEditJira():     void { this.jiraTokenDraft   = null; }
+  cancelEditTempo():    void { this.tempoTokenDraft  = null; }
+  cancelEditCalendar(): void { this.calendarUrlDraft = null; }
 
   async saveJiraToken(): Promise<void> {
     if (this.jiraTokenDraft === null || this.jiraTokenDraft.trim() === '') return;
@@ -525,6 +534,77 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     } else {
       this.setIndicator('error', res.error ?? 'Failed to save token');
     }
+  }
+
+  // ─── Calendar feed (ICS URL secret + status + private filter) ──────────
+
+  async saveCalendarUrl(): Promise<void> {
+    if (this.calendarUrlDraft === null || this.calendarUrlDraft.trim() === '') return;
+    const url = this.calendarUrlDraft.trim();
+    this.calendarUrlDraft = null;
+    this.setIndicator('saving', 'Saving...');
+    const res = await this.api.updateSettings({ secrets: { calendarIcsUrl: url } });
+    if (res.ok) {
+      await this.refresh();
+      this.setIndicator('saved', 'Saved');
+      this.scheduleSavedFlash();
+      // The daemon kicked off a feed fetch — pull the status again once it
+      // had a chance to land, so the row shows the result without a reopen.
+      if (this.calendarStatusTimer !== null) window.clearTimeout(this.calendarStatusTimer);
+      this.calendarStatusTimer = window.setTimeout(() => void this.refreshCalendarStatus(), 4000);
+    } else {
+      this.setIndicator('error', res.error ?? 'Failed to save the feed URL');
+    }
+  }
+
+  get calendarBlockVisible(): boolean {
+    return this.settings?.config.calendar !== undefined;
+  }
+
+  get calendarConfigured(): boolean {
+    return this.settings?.secretsMeta.calendarConfigured === true;
+  }
+
+  get hidePrivateOn(): boolean {
+    return this.settings?.config.calendar?.hidePrivate === true;
+  }
+
+  toggleHidePrivate(): void {
+    const cal = this.settings?.config.calendar;
+    if (!cal) return;
+    const next = { enabled: cal.enabled, hidePrivate: !cal.hidePrivate };
+    this.applyLocal(c => ({ ...c, calendar: next }));
+    this.queue({ calendar: next }, 'immediate');
+  }
+
+  /** One quiet line under the URL field: health of the configured feed. */
+  get calendarStatusLabel(): string {
+    if (!this.calendarConfigured) return 'Feed not configured — meeting suggestions stay off.';
+    const s = this.calendarStatus;
+    if (!s) return '';
+    if (s.lastError) return `Feed error: ${s.lastError}`;
+    if (!s.lastFetchAt) return 'Waiting for the first fetch…';
+    return `Fetched ${this.agoLabel(s.lastFetchAt)} · ${s.instanceCount} meetings cached`;
+  }
+
+  get calendarStatusIsError(): boolean {
+    return this.calendarConfigured && !!this.calendarStatus?.lastError;
+  }
+
+  private async refreshCalendarStatus(): Promise<void> {
+    const res = await this.api.getStatus();
+    if (res.ok && res.data) this.calendarStatus = res.data.calendar ?? null;
+  }
+
+  private agoLabel(iso: string): string {
+    const ms = Date.now() - Date.parse(iso);
+    if (!Number.isFinite(ms) || ms < 0) return 'just now';
+    const min = Math.round(ms / 60_000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min}m ago`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.round(h / 24)}d ago`;
   }
 
   // ─── Queue / flush ─────────────────────────────────────────────────────
@@ -570,6 +650,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   private async refresh(): Promise<void> {
     const res = await this.api.getSettings();
     if (res.ok && res.data) this.settings = res.data;
+    void this.refreshCalendarStatus();
   }
 
   private applyLocal(updater: (cfg: SettingsConfigSubset) => SettingsConfigSubset): void {

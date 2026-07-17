@@ -313,6 +313,49 @@
           </div>
         </div>
       </div>
+
+      <!-- Calendar feed: the published-calendar URL is the secret (anyone
+           with the link reads the calendar). Hidden on daemons < 0.32.0. -->
+      <div class="opt-row" *ngIf="calendarBlockVisible">
+        <div class="left">
+          <span class="name">Calendar feed (ICS)</span>
+          <span class="hint" [class.update-error]="calendarStatusIsError">
+            {{ calendarStatusLabel || 'Outlook published-calendar URL — drives meeting suggestions.' }}
+          </span>
+        </div>
+        <div class="right">
+          <div class="token-field" [class.configured]="calendarConfigured">
+            <span class="dot" [title]="calendarConfigured ? 'Configured' : 'Not set'"></span>
+            <ng-container *ngIf="calendarUrlDraft === null; else calendarEdit">
+              <input class="input-token" type="password" [value]="calendarConfigured ? '••••••••••••' : ''" placeholder="not set" disabled />
+              <button class="token-eye" (click)="startEditCalendar()" title="Replace URL">edit</button>
+            </ng-container>
+            <ng-template #calendarEdit>
+              <div class="token-edit">
+                <input class="input-token edit"
+                       type="password"
+                       placeholder="paste the published .ics URL"
+                       [(ngModel)]="calendarUrlDraft"
+                       (keydown.enter)="saveCalendarUrl()"
+                       (keydown.escape)="cancelEditCalendar()"
+                       autofocus />
+                <button class="btn small primary" (click)="saveCalendarUrl()" title="Save">✓</button>
+                <button class="btn small ghost" (click)="cancelEditCalendar()" title="Cancel">×</button>
+              </div>
+            </ng-template>
+          </div>
+        </div>
+      </div>
+
+      <div class="opt-row" *ngIf="calendarBlockVisible">
+        <div class="left">
+          <span class="name">Hide private meetings</span>
+          <span class="hint">Private appointments never appear as suggestions.</span>
+        </div>
+        <div class="right">
+          <div class="toggle" [class.on]="hidePrivateOn" (click)="toggleHidePrivate()"></div>
+        </div>
+      </div>
     </div>
   </ng-container>
 

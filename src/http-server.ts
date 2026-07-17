@@ -140,6 +140,8 @@ export interface HttpServerDeps {
   readonly notificationCenter: NotificationCenter;
   /** Outlook ICS feed collector (meeting suggestions groundwork). */
   readonly calendarCollector: CalendarCollector;
+  /** Secrets were rewritten via the API — holders of a startup copy reload. */
+  readonly onSecretsUpdated: () => void;
 }
 
 // ─── Watching-card synthesis (A-6) ─────────────────────────────────────
@@ -1005,11 +1007,13 @@ export class HttpServer {
     const c = this.deps.config;
     let jiraConfigured = false;
     let tempoConfigured = false;
+    let calendarConfigured = false;
     try {
       const s = loadSecrets();
       jiraConfigured = !!s.Jira_Token && s.Jira_Token.trim().length > 0;
       tempoConfigured = !!s.Tempo_Token && s.Tempo_Token.trim().length > 0;
-    } catch { /* secrets missing → both false */ }
+      calendarConfigured = !!s.Calendar_IcsUrl && s.Calendar_IcsUrl.trim().length > 0;
+    } catch { /* secrets missing → all false */ }
 
     return {
       ok: true,
@@ -1031,8 +1035,9 @@ export class HttpServer {
             knownProjects: c.search.knownProjects.map(p => ({ ...p })),
           },
           activities: { values: [...c.activities.values] },
+          calendar: { enabled: c.calendar.enabled, hidePrivate: c.calendar.hidePrivate },
         },
-        secretsMeta: { jiraConfigured, tempoConfigured },
+        secretsMeta: { jiraConfigured, tempoConfigured, calendarConfigured },
         daemonVersion: this.deps.getVersion(),
       },
     };
@@ -1041,7 +1046,7 @@ export class HttpServer {
   private async handlePostSettings(body: Record<string, unknown>): Promise<ApiResponse<SettingsResponse>> {
     const patch = body as {
       config?: Partial<AppConfig>;
-      secrets?: { jiraToken?: string; tempoToken?: string };
+      secrets?: { jiraToken?: string; tempoToken?: string; calendarIcsUrl?: string };
     };
 
     if (patch.config) {
@@ -1071,8 +1076,16 @@ export class HttpServer {
           ...current,
           ...(patch.secrets.jiraToken !== undefined ? { Jira_Token: patch.secrets.jiraToken } : {}),
           ...(patch.secrets.tempoToken !== undefined ? { Tempo_Token: patch.secrets.tempoToken } : {}),
+          ...(patch.secrets.calendarIcsUrl !== undefined ? { Calendar_IcsUrl: patch.secrets.calendarIcsUrl } : {}),
         };
         writeSecrets(next);
+        // Jira/Tempo handlers re-read secrets per request, but the calendar
+        // collector holds the daemon's startup copy — reload it so a new ICS
+        // URL takes effect without a restart, and fetch right away.
+        this.deps.onSecretsUpdated();
+        if (patch.secrets.calendarIcsUrl !== undefined && this.deps.calendarCollector.isConfigured()) {
+          void this.deps.calendarCollector.refresh().catch(() => {});
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }

@@ -116,6 +116,7 @@ export class Daemon {
       getWatchingRepos: () => this.gitTracker.getWatchingRepos(),
       notificationCenter: this.notificationCenter,
       calendarCollector: this.calendarCollector,
+      onSecretsUpdated: () => { this.secrets = loadSecrets(); },
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();

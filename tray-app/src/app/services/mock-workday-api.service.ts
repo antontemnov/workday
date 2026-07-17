@@ -74,6 +74,9 @@ export class MockWorkdayApiService extends WorkdayApiService {
     { key: 'WEB', name: 'Web Portal', id: '10004' },
   ];
   private mockActivityValues: string[] = ['Development', 'CodeReview', 'Other'];
+  private mockCalendar = { enabled: true, hidePrivate: false };
+  private mockCalendarConfigured = true;
+  private mockCalendarFetchedAt = new Date(Date.now() - 25 * 60_000).toISOString();
 
   // Mutable so add/edit manual entries feel real in mock mode.
   private mockManualEntries: ManualEntry[] = [
@@ -322,7 +325,18 @@ export class MockWorkdayApiService extends WorkdayApiService {
   }
 
   async getStatus(): Promise<ApiResponse<StatusResponse>> {
-    return { ok: true, data: { running: true, pid: 1234, date: this.today, uptime: 3600 } };
+    return {
+      ok: true,
+      data: {
+        running: true, pid: 1234, date: this.today, uptime: 3600,
+        calendar: {
+          configured: this.mockCalendarConfigured,
+          lastFetchAt: this.mockCalendarConfigured ? this.mockCalendarFetchedAt : null,
+          lastError: null,
+          instanceCount: this.mockCalendarConfigured ? this.mockMeetings.length : 0,
+        },
+      },
+    };
   }
 
   async pause(): Promise<ApiResponse<{ paused: string[] }>> {
@@ -643,6 +657,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private suggestionsDay(date: string): SuggestionsResponse {
     const suggestions = this.mockMeetings.filter(s =>
       s.date === date
+      && !(s.isPrivate && this.mockCalendar.hidePrivate)
       && !this.mockDismissed.has(`${s.uid}:${s.date}`)
       && !this.mockManualEntries.some(e => e.sourceRef === `meeting:${s.uid}:${s.date}`));
     return { date, state: SuggestionsDayState.Active, suggestions };
@@ -660,8 +675,13 @@ export class MockWorkdayApiService extends WorkdayApiService {
           sensitivity: { default: this.mockSensitivity },
           search: { projectKeys: [...this.mockProjectKeys], knownProjects: this.mockKnownProjects.map(p => ({ ...p })) },
           activities: { values: [...this.mockActivityValues] },
+          calendar: { ...this.mockCalendar },
         },
-        secretsMeta: { jiraConfigured: this.mockJiraConfigured, tempoConfigured: this.mockTempoConfigured },
+        secretsMeta: {
+          jiraConfigured: this.mockJiraConfigured,
+          tempoConfigured: this.mockTempoConfigured,
+          calendarConfigured: this.mockCalendarConfigured,
+        },
       },
     };
   }
@@ -681,6 +701,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
       if (patch.config.sensitivity?.default) this.mockSensitivity = patch.config.sensitivity.default;
       if (patch.config.search?.projectKeys) this.mockProjectKeys = [...patch.config.search.projectKeys];
       if (patch.config.activities?.values) this.mockActivityValues = [...patch.config.activities.values];
+      if (patch.config.calendar) {
+        this.mockCalendar = {
+          enabled: patch.config.calendar.enabled ?? this.mockCalendar.enabled,
+          hidePrivate: patch.config.calendar.hidePrivate ?? this.mockCalendar.hidePrivate,
+        };
+      }
     }
     if (patch.secrets) {
       if (patch.secrets.jiraToken !== undefined) {
@@ -688,6 +714,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
       }
       if (patch.secrets.tempoToken !== undefined) {
         this.mockTempoConfigured = patch.secrets.tempoToken.trim() !== '';
+      }
+      if (patch.secrets.calendarIcsUrl !== undefined) {
+        this.mockCalendarConfigured = patch.secrets.calendarIcsUrl.trim() !== '';
+        this.mockCalendarFetchedAt = new Date().toISOString();
       }
     }
     return { ok: true, data: {} };

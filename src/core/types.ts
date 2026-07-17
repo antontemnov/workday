@@ -978,6 +978,7 @@ export interface SettingsConfigSubset {
   };
   readonly search: SearchConfig;
   readonly activities: ActivityScopeConfig;
+  readonly calendar: CalendarConfig;
 }
 
 export interface SettingsResponse {
@@ -985,6 +986,8 @@ export interface SettingsResponse {
   readonly secretsMeta: {
     readonly jiraConfigured: boolean;
     readonly tempoConfigured: boolean;
+    // Calendar_IcsUrl present — the feed URL is the secret here.
+    readonly calendarConfigured: boolean;
   };
   readonly daemonVersion: string;
 }

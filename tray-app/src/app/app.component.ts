@@ -319,9 +319,13 @@ export class AppComponent implements OnInit, OnDestroy {
     // the fresh id, and returning would replay the draft stepper on the last
     // row. Drop it so the one-shot never outlives the view it targets.
     if (v !== 'day') this.freshEntryId = null;
-    // Returning to the Day view re-pulls the activity scope — the user may
-    // have just changed it in Settings (cheap: served from the daemon cache).
-    if (v === 'day' && this.activeView !== 'day') void this.refreshActivityTypes();
+    // Returning to the Day view re-pulls the activity scope and suggestions —
+    // the user may have just changed the scope or calendar settings there
+    // (cheap: served from the daemon cache / derived).
+    if (v === 'day' && this.activeView !== 'day') {
+      void this.refreshActivityTypes();
+      void this.refreshSuggestions();
+    }
     this.activeView = v;
   }
 

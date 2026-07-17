@@ -537,6 +537,11 @@ export interface SettingsConfigSubset {
   readonly search?: SearchConfig;
   // Optional for the same reason — absent on older daemons.
   readonly activities?: ActivityScopeConfig;
+  // Absent on daemons < 0.32.0 — the Settings calendar block hides itself.
+  readonly calendar?: {
+    readonly enabled: boolean;
+    readonly hidePrivate: boolean;
+  };
 }
 
 // GET /api/settings returns config + metadata about which secrets are set
@@ -546,6 +551,8 @@ export interface SettingsResponse {
   readonly secretsMeta: {
     readonly jiraConfigured: boolean;
     readonly tempoConfigured: boolean;
+    // The ICS feed URL is itself the secret. Absent on daemons < 0.32.0.
+    readonly calendarConfigured?: boolean;
   };
   readonly daemonVersion?: string;
 }
@@ -567,6 +574,7 @@ export interface SettingsPatch {
   readonly secrets?: {
     readonly jiraToken?: string;
     readonly tempoToken?: string;
+    readonly calendarIcsUrl?: string;
   };
 }
 
