@@ -331,7 +331,6 @@ export enum DayType {
   Workday = 'workday',
   Weekend = 'weekend',
   Holiday = 'holiday',
-  Overtime = 'overtime',
 }
 
 export interface DailyLog {
