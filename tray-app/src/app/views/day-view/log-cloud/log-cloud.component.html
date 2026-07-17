@@ -1,10 +1,5 @@
-<!-- Accept mode: the meeting being resolved — every pick below only chooses
-     its ticket, the submit accepts the suggestion. -->
-<div class="accept-ctx" *ngIf="acceptTarget as t">
-  <svg class="spark" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg>
-  <span class="ac-title">{{ t.title }}</span>
-</div>
-
+<!-- Accept mode (acceptTarget set) has no context header on purpose: the
+     user just clicked the meeting row, echoing its title here is noise. -->
 <div class="cloud-filter">
   <span class="f-ic">⌕</span>
   <input #filterInput
@@ -29,6 +24,22 @@
 
 <div class="cloud-body">
   <div class="cloud-chips">
+    <!-- Learned-ticket conflict (accept mode) — the same meeting title was
+         logged to different tickets before; teal species, pick to resolve. -->
+    <ng-container *ngIf="isAcceptMode && acceptCandidates.length > 0">
+      <span class="row-label sugg">✦ previously logged as</span>
+      <!-- Ticket only — the learned activity silently prefills the form on
+           pick, showing it here would be noise (type never gets a badge). -->
+      <span class="fav sugg"
+            *ngFor="let c of acceptCandidates; let i = index"
+            [style.animation-delay]="chipDelay(i)"
+            (click)="pickCandidate(c)">
+        <span class="f-spark">✦</span>
+        <span class="f-task">{{ c.task }}</span>
+      </span>
+      <span class="row-label" *ngIf="filteredFavorites.length > 0">favorites</span>
+    </ng-container>
+
     <span class="fav"
           *ngFor="let f of filteredFavorites; let i = index; trackBy: trackByFavorite"
           [class.sel]="!isEditMode && isFavPicked(f)"

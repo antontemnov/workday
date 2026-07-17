@@ -27,26 +27,6 @@
   pointer-events: auto;
 }
 
-// Accept-mode header — which meeting the picks below resolve.
-.accept-ctx {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 7px;
-  font-size: 10.5px;
-  color: rgba(148, 226, 213, 0.75);
-  white-space: nowrap;
-  overflow: hidden;
-
-  .spark { flex-shrink: 0; color: rgba(148, 226, 213, 0.5); }
-
-  .ac-title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-weight: 600;
-  }
-}
 
 .cloud-filter {
   display: flex;
@@ -157,6 +137,7 @@
   margin: 2px 0 1px;
 
   &.jira { color: rgba(137, 180, 250, 0.75); }
+  &.sugg { color: rgba(148, 226, 213, 0.75); }
 }
 
 .fav {
@@ -208,6 +189,22 @@
     transform: scale(0.5);
     opacity: 0;
     pointer-events: none;
+  }
+
+  // Learned-ticket candidates (accept mode) — teal suggestion species,
+  // resurrected from the old cloud suggested row (473c095). Ticket only.
+  &.sugg {
+    border: 1px solid rgba(148, 226, 213, 0.4);
+    background: rgba(148, 226, 213, 0.06);
+
+    .f-spark { color: #94e2d5; font-size: 10px; }
+    .f-task  { color: rgba(148, 226, 213, 0.8); }
+
+    &:hover {
+      background: rgba(148, 226, 213, 0.13);
+      border-color: #94e2d5;
+      .f-task { color: #94e2d5; }
+    }
   }
 
   // Jira search results — blue species, summary truncates.

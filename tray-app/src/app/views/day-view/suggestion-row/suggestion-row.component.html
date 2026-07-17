@@ -1,6 +1,12 @@
 <div class="sug2">
   <div class="r-l1">
-    <button type="button" class="chip ask" [disabled]="actionPending" (click)="accept()">task?</button>
+    <!-- Resolved (learned) ticket shows in the chip; unresolved stays "task?".
+         Both open the accept flow — resolved lands straight on the form. -->
+    <button *ngIf="suggestion.resolved as r; else askChip"
+            type="button" class="chip key" [disabled]="actionPending" (click)="accept()">{{ r.task }}</button>
+    <ng-template #askChip>
+      <button type="button" class="chip ask" [disabled]="actionPending" (click)="accept()">task?</button>
+    </ng-template>
     <span class="s-title"><span class="live-dot" *ngIf="suggestion.ongoing"></span>{{ suggestion.title }}</span>
     <span class="s-dur" (wheel)="onDurWheel($event)">{{ durLabel }}</span>
   </div>

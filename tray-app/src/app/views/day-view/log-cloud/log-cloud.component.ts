@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   ActivityType, ApiErrorCode, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, JiraSearchHit,
-  ManualEntryInput, normalizeFavName, Suggestion,
+  ManualEntryInput, normalizeFavName, Suggestion, SuggestionCandidate,
 } from '../../../models/workday.models';
 import { WorkdayApiService } from '../../../services/workday-api.service';
 import { activityOptions } from '../activity.util';
@@ -139,6 +139,14 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     if (!changes['open']) return;
     if (this.open) {
       this.resetState();
+      // A resolved suggestion skips the picking stage entirely: the cloud
+      // opens straight on the form, fully prefilled from the learned
+      // association. Esc still unwinds to the chips for a different ticket.
+      const resolved = this.acceptTarget?.resolved;
+      if (resolved) {
+        this.enterAcceptForm(resolved.task, resolved.activity, resolved.description);
+        return;
+      }
       this.spawn = true;
       if (this.spawnTimer) clearTimeout(this.spawnTimer);
       this.spawnTimer = setTimeout(() => this.spawn = false, SPAWN_MS);
@@ -542,14 +550,16 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   // Accept mode: any pick lands here — the ticket comes from the pick, the
   // rest prefills from the meeting (minutes = row stepper, description =
-  // title unless private, activity = the daemon's accept default).
-  private enterAcceptForm(task: string): void {
+  // learned deviation → title unless private, activity = learned → the
+  // daemon's accept default).
+  private enterAcceptForm(task: string, activity?: string, description?: string): void {
     const t = this.acceptTarget;
     if (!t) return;
     this.formTask = task;
-    this.formDescription = t.isPrivate ? '' : t.title;
+    this.formDescription = description ?? (t.isPrivate ? '' : t.title);
     this.formMinutes = this.acceptMinutes > 0 ? this.acceptMinutes : t.plannedMinutes;
-    const preset = this.activityOptions.find(a => a.value === ACCEPT_ACTIVITY);
+    const preset = this.activityOptions.find(a => a.value === (activity ?? ACCEPT_ACTIVITY))
+      ?? this.activityOptions.find(a => a.value === ACCEPT_ACTIVITY);
     this.formActivity = preset?.value ?? '';
     this.formActivityNeeded = !preset;
     this.mode = 'form';
@@ -558,6 +568,16 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
       el?.focus();
       el?.select();
     }, 140);
+  }
+
+  // Learned-ticket conflict of the accepted meeting — teal chips above the
+  // favorites; picking one resolves the ambiguity (and teaches the uid).
+  get acceptCandidates(): readonly SuggestionCandidate[] {
+    return this.acceptTarget?.candidates ?? [];
+  }
+
+  pickCandidate(c: SuggestionCandidate): void {
+    this.enterAcceptForm(c.task, c.activity);
   }
 
   exitForm(): void {

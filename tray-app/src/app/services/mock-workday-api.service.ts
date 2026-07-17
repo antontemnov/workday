@@ -128,7 +128,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       ongoing: false, isPrivate: false, source: 'meeting',
       candidates: [
         { task: 'ATL-205', activity: 'Other', lastUsedAt: this.iso(9, 0) },
-        { task: 'ATL-118', activity: 'Meeting', lastUsedAt: this.iso(8, 0) },
+        { task: 'ATL-118', activity: 'CodeReview', lastUsedAt: this.iso(8, 0) },
       ] },
     { uid: 'ev-sync', date: this.today, title: 'Design sync',
       start: this.iso(16, 0), end: this.iso(16, 30), plannedMinutes: 30,

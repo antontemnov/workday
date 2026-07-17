@@ -10,9 +10,9 @@ const MAX_MINUTES = 480;
 /**
  * Suggested row — a teal offer on the shared two-band grid, deliberately
  * muted so it clearly reads as NOT logged time (full voice on hover):
- *   band 1 — dashed "task?" chip (no resolver yet — every accept picks the
- *            ticket by hand) · title (live dot while ongoing) · minutes
- *            (wheel stepper, prefills the accept form)
+ *   band 1 — ticket chip: the learned resolution's key (teal), or a dashed
+ *            "task?" when the resolver has nothing · title (live dot while
+ *            ongoing) · minutes (wheel stepper, prefills the accept form)
  *   band 2 — when ("09:30–10:00", or "live · till 10:00" from DTSTART) ·
  *            origin spark · ✓ accept / ✕ dismiss
  * ✓ and the chip open the log cloud in accept mode; ✕ dismisses through the
