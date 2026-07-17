@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { SessionCardComponent } from './session-card/session-card.component';
 import { LoggedPanelComponent } from './logged-panel/logged-panel.component';
 import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
-import { SuggestionRowComponent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
+import { SuggestionRowComponent, type SuggestionAcceptEvent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
 import {
   SessionDetail,
@@ -233,8 +233,12 @@ export class DayViewComponent implements OnChanges {
     if (target) this.suggestionPick = { key: `${target.uid}:${target.date}`, pick };
   }
 
-  onSuggestionAccept(s: Suggestion, entry: ManualEntryInput): void {
+  onSuggestionAccept(s: Suggestion, ev: SuggestionAcceptEvent): void {
     this.suggestionPick = null;
+    const entry = ev.entry;
+    // Same flight as the cloud's instant log — the accepted time visibly
+    // travels from the offer into the history feed.
+    this.flyChip(ev.sourceRect, entry.description || entry.task, entry.minutes);
     this.suggestionAcceptSubmitted.emit({
       uid: s.uid,
       date: s.date,

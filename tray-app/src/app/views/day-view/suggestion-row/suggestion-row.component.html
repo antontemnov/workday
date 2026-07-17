@@ -1,13 +1,11 @@
 <div class="sug2" [class.editing]="editing" (dblclick)="accept()">
   <div class="r-l1">
-    <!-- Resolved (learned) ticket shows in the chip; unresolved stays "task?".
-         Both open the accept flow — resolved morphs this row into the form,
-         unresolved picks a ticket in the cloud first. While editing the chip
-         is the picked ticket, a plain fact. -->
-    <span *ngIf="editing; else chipButtons" class="chip">{{ editTask }}</span>
-    <ng-template #chipButtons>
-      <button *ngIf="suggestion.resolved as r; else askChip"
-              type="button" class="chip key" [disabled]="actionPending" (click)="accept()">{{ r.task }}</button>
+    <!-- Resolved (learned) ticket is a static badge — accept lives on ✓ and
+         dblclick only. Unresolved "task?" IS a button: its whole meaning is
+         "go pick a ticket". While editing the chip is the picked ticket. -->
+    <span *ngIf="editing; else chipView" class="chip">{{ editTask }}</span>
+    <ng-template #chipView>
+      <span *ngIf="suggestion.resolved as r; else askChip" class="chip key">{{ r.task }}</span>
       <ng-template #askChip>
         <button type="button" class="chip ask" [disabled]="actionPending" (click)="accept()">task?</button>
       </ng-template>

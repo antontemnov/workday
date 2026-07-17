@@ -16,6 +16,13 @@ export interface SuggestionPick {
   readonly activity?: string;
 }
 
+// Submitted accept + where the row's chip sat — the parent flies a clone
+// from there into the history feed (same FLIP as the cloud's instant log).
+export interface SuggestionAcceptEvent {
+  readonly entry: ManualEntryInput;
+  readonly sourceRect: DOMRect;
+}
+
 /**
  * Suggested row — a teal offer on the shared two-band grid, deliberately
  * muted so it clearly reads as NOT logged time (full voice on hover):
@@ -24,10 +31,10 @@ export interface SuggestionPick {
  *            ongoing) · planned minutes
  *   band 2 — when ("09:30–10:00", or "live · till 10:00" from DTSTART) ·
  *            origin spark · ✓ accept / ✕ dismiss
- * Accept mirrors the logged rows' edit: dblclick (or ✓ / the chip) morphs the
- * SAME row into the inline form — activity · description · Log, with the time
- * slot swapping to a frameless duration input (minutes are editable only
- * here). Unresolved rows first open the log cloud purely to pick the ticket;
+ * Accept mirrors the logged rows' edit: dblclick (or ✓) morphs the SAME row
+ * into the inline form — activity · description · Log, with the time slot
+ * swapping to a frameless duration input (minutes are editable only here).
+ * Unresolved rows first open the log cloud purely to pick the ticket;
  * the pick comes back via [picked] and opens the form. ✕ dismisses through
  * the daemon (permanent per uid+date). Suggested time never joins any totals.
  */
@@ -49,7 +56,7 @@ export class SuggestionRowComponent implements OnChanges {
   // Unresolved accept: the parent opens the log cloud as a ticket picker.
   @Output() pickRequested = new EventEmitter<void>();
   // Inline form submit — the parent turns it into the daemon accept.
-  @Output() acceptSubmitted = new EventEmitter<ManualEntryInput>();
+  @Output() acceptSubmitted = new EventEmitter<SuggestionAcceptEvent>();
   @Output() dismissed = new EventEmitter<void>();
 
   editing = false;
@@ -91,8 +98,8 @@ export class SuggestionRowComponent implements OnChanges {
     return `${this.formatHm(s.start)}–${this.formatHm(s.end)}`;
   }
 
-  // ✓ / the chip / dblclick: resolved rows morph into the form right away,
-  // unresolved ones go pick a ticket first.
+  // ✓ / dblclick: resolved rows morph into the form right away, unresolved
+  // ones go pick a ticket first.
   accept(): void {
     if (this.actionPending || this.editing) return;
     const r = this.suggestion.resolved;
@@ -140,12 +147,18 @@ export class SuggestionRowComponent implements OnChanges {
       this.host.nativeElement.querySelector<HTMLInputElement>('.le-desc')?.focus();
       return;
     }
+    // Measured while the form still renders — the fly-clone departs from the
+    // ticket chip's spot.
+    const chip = this.host.nativeElement.querySelector('.chip') ?? this.host.nativeElement;
     this.editing = false;
     this.acceptSubmitted.emit({
-      task: this.editTask,
-      minutes: this.editMinutes,
-      description: this.editDescription.trim(),
-      activity: this.editActivity,
+      entry: {
+        task: this.editTask,
+        minutes: this.editMinutes,
+        description: this.editDescription.trim(),
+        activity: this.editActivity,
+      },
+      sourceRect: chip.getBoundingClientRect(),
     });
   }
 

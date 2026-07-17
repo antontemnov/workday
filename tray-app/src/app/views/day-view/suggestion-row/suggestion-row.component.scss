@@ -159,22 +159,10 @@
   border-radius: 4px;
   white-space: nowrap;
 
-  // Learned ticket (resolver hit) — teal like the species, still an offer;
-  // clicking opens the prefilled accept form, same as ✓.
+  // Learned ticket (resolver hit) — a static teal badge, not a control;
+  // accepting is ✓ / dblclick.
   &.key {
-    font: inherit;
-    font-size: 11px;
-    font-weight: 600;
     border: 1px solid transparent;
-    cursor: pointer;
-    transition: color 0.15s ease, background 0.15s ease;
-
-    &:hover:not(:disabled) {
-      color: rgba(148, 226, 213, 0.95);
-      background: rgba(148, 226, 213, 0.14);
-    }
-
-    &:disabled { cursor: default; }
   }
 
   // No ticket resolved yet — a dashed neutral placeholder; clicking it is
