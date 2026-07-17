@@ -75,6 +75,8 @@ export interface ManualEntry {
   readonly activity: string;        // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;
   readonly sourceSessionId?: string;
+  // Origin marker of an accepted suggestion: `meeting:<uid>:<date>`.
+  readonly sourceRef?: string;
 }
 
 export interface TodayResponse {
@@ -115,6 +117,45 @@ export interface CalendarFeedStatus {
 export interface CalendarRefreshResponse {
   readonly fetchedAt: string;
   readonly instanceCount: number;
+}
+
+// ─── Meeting suggestions (derived on the daemon, never stored) ───────────
+
+export enum SuggestionsDayState {
+  Active = 'active',
+  Pushed = 'pushed',   // day pushed to Tempo — suggestions silenced for good
+}
+
+export interface Suggestion {
+  readonly uid: string;
+  readonly date: string;
+  readonly title: string;
+  readonly start: string;          // ISO UTC
+  readonly end: string;            // ISO UTC
+  readonly plannedMinutes: number;
+  readonly ongoing: boolean;
+  readonly isPrivate: boolean;
+  readonly source: 'meeting';
+}
+
+export interface SuggestionsResponse {
+  readonly date: string;
+  readonly state: SuggestionsDayState;
+  readonly suggestions: readonly Suggestion[];
+}
+
+export interface SuggestionAcceptRequest {
+  readonly uid: string;
+  readonly date: string;
+  readonly task: string;
+  readonly minutes?: number;       // default: plannedMinutes (capped)
+  readonly description?: string;   // default: title (empty for private)
+  readonly activity?: string;      // default: Other
+}
+
+export interface SuggestionAcceptResponse {
+  readonly entry: ManualEntryResponse;
+  readonly day: SuggestionsResponse;
 }
 
 export interface SensitivityResponse {

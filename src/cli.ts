@@ -60,8 +60,10 @@ import type {
   NotificationAckResponse,
   NotificationTestResponse,
   CalendarRefreshResponse,
+  SuggestionsResponse,
+  SuggestionAcceptResponse,
 } from './core/types.js';
-import { SensitivityLevel, DayStatus, MonthDayStatus } from './core/types.js';
+import { SensitivityLevel, DayStatus, MonthDayStatus, SuggestionsDayState } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1392,6 +1394,106 @@ async function handleCalendar(args: string[]): Promise<void> {
   if (cal.lastError) console.log(`  Last error: ${cal.lastError}`);
 }
 
+// ─── Meeting suggestions ────────────────────────────────────────────────
+
+function fmtSuggestionTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function printSuggestionsDay(day: SuggestionsResponse): void {
+  if (day.state === SuggestionsDayState.Pushed) {
+    console.log(`${day.date} is pushed to Tempo — suggestions are silenced.`);
+    return;
+  }
+  if (day.suggestions.length === 0) {
+    console.log(`No pending suggestions for ${day.date}.`);
+    return;
+  }
+  console.log(`Suggestions for ${day.date}:`);
+  day.suggestions.forEach((s, i) => {
+    const flags = [s.ongoing ? 'ongoing' : null, s.isPrivate ? 'private' : null].filter(Boolean).join(' · ');
+    const title = s.title || '(no title)';
+    console.log(`  #${i + 1}  ${fmtSuggestionTime(s.start)}–${fmtSuggestionTime(s.end)}  ${String(s.plannedMinutes).padStart(3)}m  ${title}${flags ? `  [${flags}]` : ''}`);
+  });
+  console.log('');
+  console.log('Accept:  workday suggestions accept <#N> --task <KEY> [--minutes N] [--desc "..."] [--activity X]');
+  console.log('Dismiss: workday suggestions dismiss <#N>');
+}
+
+/** Resolve `#N` against the day's current list; a raw uid passes through. */
+async function resolveSuggestionTarget(target: string, date: string | null): Promise<{ uid: string; date: string } | null> {
+  const result = await apiGet<SuggestionsResponse>(`/api/suggestions${date ? `?date=${date}` : ''}`);
+  if (!result.ok || !result.data) { console.log(result.error); return null; }
+  const day = result.data;
+  if (!target.startsWith('#')) return { uid: target, date: day.date };
+  const index = parseInt(target.slice(1), 10);
+  if (isNaN(index) || index < 1 || index > day.suggestions.length) {
+    console.log(`No suggestion ${target} on ${day.date} (${day.suggestions.length} pending)`);
+    return null;
+  }
+  return { uid: day.suggestions[index - 1].uid, date: day.date };
+}
+
+async function handleSuggestions(args: string[]): Promise<void> {
+  const sub = args[0];
+
+  if (sub === 'accept') {
+    const rest = args.slice(1);
+    const target = rest[0];
+    const task = parseArgValue(rest, '--task');
+    if (!target || !task) {
+      console.log('Usage: workday suggestions accept <#N|uid> --task <KEY> [--minutes N] [--desc "..."] [--activity X] [--date D]');
+      return;
+    }
+    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'));
+    if (!resolved) return;
+
+    const payload: Record<string, unknown> = { uid: resolved.uid, date: resolved.date, task };
+    const minutesStr = parseArgValue(rest, '--minutes');
+    if (minutesStr !== null) {
+      const minutes = parseInt(minutesStr, 10);
+      if (isNaN(minutes) || minutes <= 0) { console.log('Minutes must be positive'); return; }
+      payload.minutes = minutes;
+    }
+    const desc = parseArgValue(rest, '--desc');
+    if (desc !== null) payload.description = desc;
+    const activity = parseArgValue(rest, '--activity');
+    if (activity !== null) payload.activity = activity;
+
+    const result = await apiPost<SuggestionAcceptResponse>('/api/suggestions/accept', payload);
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    const e = result.data.entry;
+    console.log(`Logged ${e.task} on ${e.date}: ${e.minutes}m ${e.activity} — "${e.description}"`);
+    console.log(`Pending suggestions left: ${result.data.day.suggestions.length}`);
+    return;
+  }
+
+  if (sub === 'dismiss') {
+    const rest = args.slice(1);
+    const target = rest[0];
+    if (!target) {
+      console.log('Usage: workday suggestions dismiss <#N|uid> [--date D]');
+      return;
+    }
+    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'));
+    if (!resolved) return;
+    const result = await apiPost<SuggestionsResponse>('/api/suggestions/dismiss', resolved);
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    console.log(`Dismissed. Pending suggestions left: ${result.data.suggestions.length}`);
+    return;
+  }
+
+  if (sub !== undefined && sub !== '--date') {
+    console.log('Usage: workday suggestions [--date D] | accept <#N|uid> --task <KEY> ... | dismiss <#N|uid>');
+    return;
+  }
+
+  const date = parseArgValue(args, '--date');
+  const result = await apiGet<SuggestionsResponse>(`/api/suggestions${date ? `?date=${date}` : ''}`);
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+  printSuggestionsDay(result.data);
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1485,6 +1587,9 @@ async function main(): Promise<void> {
     case 'calendar':
       await handleCalendar(args.slice(1));
       break;
+    case 'suggestions':
+      await handleSuggestions(args.slice(1));
+      break;
     case 'init':
       handleInit();
       break;
@@ -1539,6 +1644,9 @@ Usage:
   workday notifications ack <id> <shown|opened|hidden> Acknowledge a notification
   workday calendar                                     Outlook ICS feed status (meeting suggestions)
   workday calendar refresh                             Re-fetch the calendar feed now
+  workday suggestions [--date D]                       Pending meeting suggestions for a day
+  workday suggestions accept <#N|uid> --task <KEY>     Log a suggested meeting (--minutes/--desc/--activity/--date)
+  workday suggestions dismiss <#N|uid> [--date D]      Dismiss a suggestion (per uid+date, permanent)
 
 Target: session index (#1, #2) or session id (hex)`);
 }

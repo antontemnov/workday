@@ -53,6 +53,9 @@ workday notifications test [minutes]   Inject a test notification (pipeline chec
 workday notifications ack <id> <act>   Acknowledge (shown|opened|hidden)
 workday calendar                       Outlook ICS feed status (meeting suggestions)
 workday calendar refresh               Re-fetch the calendar feed now
+workday suggestions [--date D]         Pending meeting suggestions for a day
+workday suggestions accept <#N|uid>    Log a suggested meeting (--task required)
+workday suggestions dismiss <#N|uid>   Dismiss a suggestion (permanent per meeting+day)
 workday daemon                         Run in foreground (live dashboard)
 ```
 
@@ -79,7 +82,8 @@ workday daemon                         Run in foreground (live dashboard)
   "workDays": [1, 2, 3, 4, 5],
   "notifications": {
     "timesheetReminder": { "enabled": true, "notifyHour": 14 }
-  }
+  },
+  "calendar": { "enabled": true, "hidePrivate": false }
 }
 ```
 
@@ -114,9 +118,15 @@ at the first moment the user is actually at the keyboard.
 `Calendar_IcsUrl` (optional) is an Outlook published-calendar ICS link
 (OWA Settings → Calendar → Shared calendars → Publish); the token in the URL
 is a secret. When set, the daemon keeps `data/calendar-cache.json` with the
-expanded meeting instances of the last 90 days — groundwork for meeting
-suggestions. Re-fetched hourly during the 10:00–14:00 morning window, every
-~3h otherwise; `calendar.enabled: false` in config.json switches it off.
+expanded meeting instances of the last 90 days and derives **meeting
+suggestions** from it: every started BUSY meeting (not cancelled, not
+all-day) becomes an offer to log a manual entry, until it is accepted or
+dismissed. Accepts are never stored — the created entry carries a
+`sourceRef` marker, so deleting it revives the suggestion; dismissals live
+in `data/suggestions-state.json`. A day pushed to Tempo is silenced for
+good. Feed re-fetches hourly during the 10:00–14:00 morning window, every
+~3h otherwise; `calendar.enabled: false` in config.json switches it off,
+`calendar.hidePrivate: true` hides CLASS:PRIVATE meetings from suggestions.
 
 Config can also live next to `package.json` for local development — the daemon checks there first before falling back to `~/.workday/`.
 

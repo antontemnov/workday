@@ -53,7 +53,7 @@ function makeConfig(over?: { enabled?: boolean }): AppConfig {
     search: { projectKeys: [], knownProjects: [] },
     activities: { values: [] },
     notifications: { timesheetReminder: { enabled: true, notifyHour: 14 } },
-    calendar: { enabled: over?.enabled ?? true },
+    calendar: { enabled: over?.enabled ?? true, hidePrivate: false },
   } as AppConfig;
 }
 

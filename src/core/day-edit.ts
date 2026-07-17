@@ -33,7 +33,7 @@ function requireLog(date: string): DailyLog {
  */
 export function addEntryOnDate(
   date: string,
-  input: { task: string; minutes: number; description: string; activity: string },
+  input: { task: string; minutes: number; description: string; activity: string; sourceRef?: string },
   config: AppConfig,
 ): { entry: ManualEntry; log: DailyLog } {
   const log = readDailyLog(date) ?? createEmptyLog(date, config);

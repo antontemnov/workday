@@ -303,7 +303,7 @@ export class SessionTracker {
   }
 
   /** Add a manual entry to today's log */
-  public addManualEntry(input: { task: string; minutes: number; description: string; activity: string }): { ok: boolean; error?: string; entry?: ManualEntry } {
+  public addManualEntry(input: { task: string; minutes: number; description: string; activity: string; sourceRef?: string }): { ok: boolean; error?: string; entry?: ManualEntry } {
     try {
       const entry = addManualEntry(this.dailyLog, input, this.config);
       return { ok: true, entry };

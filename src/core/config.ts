@@ -174,6 +174,9 @@ function validateCalendarConfig(calendar: CalendarConfig): void {
   if (typeof calendar.enabled !== 'boolean') {
     throw new Error('config.json: calendar.enabled must be a boolean');
   }
+  if (typeof calendar.hidePrivate !== 'boolean') {
+    throw new Error('config.json: calendar.hidePrivate must be a boolean');
+  }
 }
 
 /**
@@ -291,7 +294,10 @@ export function loadConfig(): AppConfig {
   const activities: ActivityScopeConfig = { values: rawActivities.values ?? [] };
 
   const rawCalendar = (raw.calendar ?? {}) as Partial<CalendarConfig>;
-  const calendar: CalendarConfig = { enabled: rawCalendar.enabled ?? true };
+  const calendar: CalendarConfig = {
+    enabled: rawCalendar.enabled ?? true,
+    hidePrivate: rawCalendar.hidePrivate ?? false,
+  };
 
   const rawNotifications = (raw.notifications ?? {}) as Partial<NotificationsConfig>;
   const rawReminder = (rawNotifications.timesheetReminder ?? {}) as Partial<TimesheetReminderConfig>;
@@ -373,6 +379,7 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
     },
     calendar: {
       enabled: patch.calendar?.enabled ?? current.calendar.enabled,
+      hidePrivate: patch.calendar?.hidePrivate ?? current.calendar.hidePrivate,
     },
   };
   validateConfig(merged);

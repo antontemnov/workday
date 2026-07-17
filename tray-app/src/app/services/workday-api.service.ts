@@ -34,6 +34,9 @@ import {
   NotificationAckAction,
   NotificationAckResponse,
   CalendarRefreshResponse,
+  SuggestionsResponse,
+  SuggestionAcceptRequest,
+  SuggestionAcceptResponse,
 } from '../models/workday.models';
 
 /**
@@ -118,6 +121,13 @@ export abstract class WorkdayApiService {
   // Outlook ICS feed (meeting suggestions groundwork) — re-fetch now; feed
   // status rides on getStatus().calendar.
   abstract refreshCalendar(): Promise<ApiResponse<CalendarRefreshResponse>>;
+
+  // Meeting suggestions — derived daemon-side on every read. Accept creates
+  // a standalone ManualEntry carrying sourceRef; dismiss is permanent per
+  // uid+date. Both return the recomputed day.
+  abstract getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>>;
+  abstract acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>>;
+  abstract dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;

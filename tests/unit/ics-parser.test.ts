@@ -233,6 +233,31 @@ test('occurrence fully before the window is dropped', () => {
   assert.equal(out.length, 0);
 });
 
+// ─── CLASS:PRIVATE ───────────────────────────────────────────────────────
+
+test('CLASS:PRIVATE marks the occurrence; absent/PUBLIC does not', () => {
+  const text = ics(
+    vevent('UID:priv', 'CLASS:PRIVATE', 'DTSTART:20260716T100000Z', 'DTEND:20260716T103000Z'),
+    vevent('UID:pub', 'CLASS:PUBLIC', 'DTSTART:20260716T110000Z', 'DTEND:20260716T113000Z'),
+    vevent('UID:none', 'DTSTART:20260716T120000Z', 'DTEND:20260716T123000Z'),
+  );
+  const out = expand(text, JUL_2026.from, JUL_2026.to);
+  assert.deepEqual(out.map(o => [o.uid, o.isPrivate]), [['priv', true], ['pub', false], ['none', false]]);
+});
+
+test('override without CLASS inherits privacy from the master', () => {
+  const text = ics(
+    vevent(
+      'UID:ser', 'CLASS:PRIVATE', 'DTSTART:20260706T100000Z', 'DTEND:20260706T103000Z',
+      'RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2',
+    ),
+    vevent('UID:ser', 'RECURRENCE-ID:20260713T100000Z', 'DTSTART:20260713T113000Z', 'DTEND:20260713T120000Z'),
+  );
+  const out = expand(text, JUL_2026.from, JUL_2026.to);
+  assert.equal(out.length, 2);
+  assert.ok(out.every(o => o.isPrivate));
+});
+
 // ─── Summary ─────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);

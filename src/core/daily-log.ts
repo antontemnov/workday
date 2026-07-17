@@ -511,7 +511,7 @@ export function assertValidTask(task: string): void {
  */
 export function addManualEntry(
   log: DailyLog,
-  input: { task: string; minutes: number; description: string; activity: string; sourceSessionId?: string },
+  input: { task: string; minutes: number; description: string; activity: string; sourceSessionId?: string; sourceRef?: string },
   config: AppConfig,
 ): ManualEntry {
   const task = input.task.trim();
@@ -551,6 +551,7 @@ export function addManualEntry(
     activity,
     createdAt: new Date().toISOString(),
     ...(sessionBorn ? { sourceSessionId: input.sourceSessionId } : {}),
+    ...(!sessionBorn && input.sourceRef ? { sourceRef: input.sourceRef } : {}),
   };
   log.manualEntries.push(entry);
   return entry;

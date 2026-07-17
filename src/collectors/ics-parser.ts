@@ -26,6 +26,7 @@ export interface IcsEvent {
   readonly dtEnd: IcsDateTime | null;
   readonly status: string;       // CONFIRMED | CANCELLED | …
   readonly busyStatus: string;   // X-MICROSOFT-CDO-BUSYSTATUS value
+  readonly icsClass: string;     // CLASS value: PUBLIC | PRIVATE | …, '' when absent
   readonly rrule: string;        // raw RRULE value, '' when non-recurring
   readonly exdates: readonly IcsDateTime[];
   readonly recurrenceId: IcsDateTime | null;
@@ -47,6 +48,7 @@ export interface IcsOccurrence {
   readonly allDay: boolean;
   readonly cancelled: boolean;
   readonly recurring: boolean;
+  readonly isPrivate: boolean;
 }
 
 // ─── Line unfolding + property split ────────────────────────────────────
@@ -125,7 +127,7 @@ export function parseIcs(text: string): ParsedIcs {
 
   let inEvent = false;
   let ev: {
-    uid: string; summary: string; status: string; busyStatus: string; rrule: string;
+    uid: string; summary: string; status: string; busyStatus: string; icsClass: string; rrule: string;
     dtStart: IcsDateTime | null; dtEnd: IcsDateTime | null;
     exdates: IcsDateTime[]; recurrenceId: IcsDateTime | null;
   } | null = null;
@@ -137,14 +139,14 @@ export function parseIcs(text: string): ParsedIcs {
   for (const line of lines) {
     if (line === 'BEGIN:VEVENT') {
       inEvent = true;
-      ev = { uid: '', summary: '', status: '', busyStatus: '', rrule: '', dtStart: null, dtEnd: null, exdates: [], recurrenceId: null };
+      ev = { uid: '', summary: '', status: '', busyStatus: '', icsClass: '', rrule: '', dtStart: null, dtEnd: null, exdates: [], recurrenceId: null };
       continue;
     }
     if (line === 'END:VEVENT') {
       if (ev?.uid && ev.dtStart) {
         events.push({
           uid: ev.uid, summary: ev.summary, dtStart: ev.dtStart, dtEnd: ev.dtEnd,
-          status: ev.status, busyStatus: ev.busyStatus, rrule: ev.rrule,
+          status: ev.status, busyStatus: ev.busyStatus, icsClass: ev.icsClass, rrule: ev.rrule,
           exdates: ev.exdates, recurrenceId: ev.recurrenceId,
         });
       }
@@ -175,6 +177,7 @@ export function parseIcs(text: string): ParsedIcs {
       case 'SUMMARY': ev.summary = unescapeText(prop.value).trim(); break;
       case 'STATUS': ev.status = prop.value.trim().toUpperCase(); break;
       case 'X-MICROSOFT-CDO-BUSYSTATUS': ev.busyStatus = prop.value.trim().toUpperCase(); break;
+      case 'CLASS': ev.icsClass = prop.value.trim().toUpperCase(); break;
       case 'RRULE': ev.rrule = prop.value.trim(); break;
       case 'DTSTART': ev.dtStart = toIcsDateTime(prop); break;
       case 'DTEND': ev.dtEnd = toIcsDateTime(prop); break;
@@ -533,6 +536,7 @@ export function expandInstances(
       allDay: ev.dtStart.isDate,
       cancelled: ev.status === 'CANCELLED',
       recurring,
+      isPrivate: (ev.icsClass || master?.icsClass || '') === 'PRIVATE',
     });
   };
 

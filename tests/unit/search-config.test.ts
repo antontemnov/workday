@@ -42,7 +42,7 @@ function makeConfig(): AppConfig {
     },
     activities: { values: ['Development', 'CodeReview'] },
     notifications: { timesheetReminder: { enabled: true, notifyHour: 14 } },
-    calendar: { enabled: true },
+    calendar: { enabled: true, hidePrivate: false },
   };
 }
 

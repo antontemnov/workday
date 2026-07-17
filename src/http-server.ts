@@ -48,11 +48,14 @@ import {
   MAX_BODY_BYTES,
   API_VERSION,
   MS_PER_MINUTE,
+  MAX_ENTRY_MINUTES,
   DEFAULT_MANUAL_ACTIVITY,
   JIRA_SEARCH_MIN_QUERY_LENGTH,
   TEST_NOTIFICATION_DEFAULT_MINUTES,
   TEST_NOTIFICATION_MAX_MINUTES,
 } from './core/constants.js';
+import { deriveSuggestions, meetingSourceRef } from './core/suggestions.js';
+import { dismissSuggestionKey, loadSuggestionsState } from './core/suggestions-state.js';
 import type { NotificationCenter } from './core/notification-center.js';
 import type { CalendarCollector } from './collectors/calendar-collector.js';
 import type {
@@ -96,6 +99,8 @@ import type {
   NotificationTestResponse,
   NotificationAckAction,
   CalendarRefreshResponse,
+  SuggestionsResponse,
+  SuggestionAcceptResponse,
 } from './core/types.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
@@ -359,6 +364,17 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/calendar/refresh') {
         return this.sendJson(res, 200, await this.handleCalendarRefresh());
       }
+      if (method === 'GET' && path === '/api/suggestions') {
+        return this.sendJson(res, 200, this.handleSuggestions(url));
+      }
+      if (method === 'POST' && path === '/api/suggestions/accept') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleSuggestionAccept(body));
+      }
+      if (method === 'POST' && path === '/api/suggestions/dismiss') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleSuggestionDismiss(body));
+      }
       if (method === 'GET' && path === '/api/update/check') {
         try {
           const data = await this.deps.checkUpdate();
@@ -418,6 +434,101 @@ export class HttpServer {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  // ─── Meeting suggestions ──────────────────────────────────────────
+
+  /** Today reads the tracker's in-memory log; past days come from disk. */
+  private getLogForDate(date: string): DailyLog | null {
+    return date === this.deps.getCurrentDate()
+      ? this.deps.sessionTracker.getDailyLog()
+      : readDailyLog(date);
+  }
+
+  private computeSuggestions(date: string): SuggestionsResponse {
+    return deriveSuggestions({
+      date,
+      instances: this.deps.calendarCollector.getInstances(),
+      log: this.getLogForDate(date),
+      dismissedKeys: new Set(Object.keys(loadSuggestionsState().dismissed)),
+      hidePrivate: this.deps.config.calendar.hidePrivate,
+      nowMs: Date.now(),
+    });
+  }
+
+  private handleSuggestions(url: URL): ApiResponse<SuggestionsResponse> {
+    const date = url.searchParams.get('date') ?? this.deps.getCurrentDate();
+    if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
+    return { ok: true, data: this.computeSuggestions(date) };
+  }
+
+  private async handleSuggestionAccept(body: Record<string, unknown>): Promise<ApiResponse<SuggestionAcceptResponse>> {
+    const uid = typeof body.uid === 'string' ? body.uid : '';
+    const date = typeof body.date === 'string' ? body.date : '';
+    if (!uid) return { ok: false, error: 'Missing uid' };
+    if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
+    const today = this.deps.getCurrentDate();
+    if (date > today) return { ok: false, error: `Cannot log on a future date (${date} > ${today})` };
+
+    const instance = this.deps.calendarCollector.getInstances().find(i => i.uid === uid && i.date === date);
+    if (!instance) return { ok: false, error: 'Meeting not found in the calendar cache' };
+
+    const task = typeof body.task === 'string' ? body.task.trim() : '';
+    if (!task) return { ok: false, error: 'Missing task' };
+
+    const sourceRef = meetingSourceRef(uid, date);
+    const existing = this.getLogForDate(date);
+    if (existing?.manualEntries?.some(e => e.sourceRef === sourceRef)) {
+      return { ok: false, error: 'Meeting is already logged' };
+    }
+
+    const plannedMinutes = Math.max(1, Math.round((Date.parse(instance.end) - Date.parse(instance.start)) / MS_PER_MINUTE));
+    const minutes = typeof body.minutes === 'number' ? body.minutes : Math.min(plannedMinutes, MAX_ENTRY_MINUTES);
+    const activity = typeof body.activity === 'string' && body.activity.trim()
+      ? body.activity
+      : DEFAULT_MANUAL_ACTIVITY;
+    // Private titles never prefill the description; core rejects a
+    // non-Development entry left without one, so the user must type it.
+    const description = typeof body.description === 'string' && body.description.trim()
+      ? body.description
+      : (instance.isPrivate ? '' : instance.title);
+
+    const jiraError = await this.validateTaskInJira(task);
+    if (jiraError) return jiraError;
+
+    try {
+      if (date === today) {
+        const tracker = this.deps.sessionTracker;
+        const result = tracker.addManualEntry({ task, minutes, description, activity, sourceRef });
+        if (!result.ok || !result.entry) return { ok: false, error: result.error };
+        tracker.flush();
+        return {
+          ok: true,
+          data: {
+            entry: this.toEntryData(result.entry, tracker.getDailyLog()),
+            day: this.computeSuggestions(date),
+          },
+        };
+      }
+      const { entry, log } = addEntryOnDate(date, { task, minutes, description, activity, sourceRef }, this.deps.config);
+      return {
+        ok: true,
+        data: { entry: this.toEntryData(entry, log), day: this.computeSuggestions(date) },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private handleSuggestionDismiss(body: Record<string, unknown>): ApiResponse<SuggestionsResponse> {
+    const uid = typeof body.uid === 'string' ? body.uid : '';
+    const date = typeof body.date === 'string' ? body.date : '';
+    if (!uid) return { ok: false, error: 'Missing uid' };
+    if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
+    const exists = this.deps.calendarCollector.getInstances().some(i => i.uid === uid && i.date === date);
+    if (!exists) return { ok: false, error: 'Meeting not found in the calendar cache' };
+    dismissSuggestionKey(uid, date);
+    return { ok: true, data: this.computeSuggestions(date) };
   }
 
   private handleToday(): ApiResponse<TodayResponse> {
@@ -585,19 +696,20 @@ export class HttpServer {
     return { date: date === today ? null : date };
   }
 
-  private toEntryResponse(entry: ManualEntry, log: DailyLog): ApiResponse<ManualEntryResponse> {
+  private toEntryData(entry: ManualEntry, log: DailyLog): ManualEntryResponse {
     return {
-      ok: true,
-      data: {
-        id: entry.id,
-        task: entry.task,
-        minutes: entry.minutes,
-        description: entry.description,
-        activity: entry.activity,
-        date: log.date,
-        totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
-      },
+      id: entry.id,
+      task: entry.task,
+      minutes: entry.minutes,
+      description: entry.description,
+      activity: entry.activity,
+      date: log.date,
+      totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
     };
+  }
+
+  private toEntryResponse(entry: ManualEntry, log: DailyLog): ApiResponse<ManualEntryResponse> {
+    return { ok: true, data: this.toEntryData(entry, log) };
   }
 
   private async handleAddManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {

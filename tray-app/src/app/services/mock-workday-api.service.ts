@@ -45,6 +45,10 @@ import {
   NotificationAckAction,
   NotificationAckResponse,
   CalendarRefreshResponse,
+  SuggestionsResponse,
+  SuggestionsDayState,
+  SuggestionAcceptRequest,
+  SuggestionAcceptResponse,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -576,6 +580,19 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   async refreshCalendar(): Promise<ApiResponse<CalendarRefreshResponse>> {
     return { ok: true, data: { fetchedAt: new Date().toISOString(), instanceCount: 0 } };
+  }
+
+  async getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>> {
+    const day = date ?? new Date().toISOString().slice(0, 10);
+    return { ok: true, data: { date: day, state: SuggestionsDayState.Active, suggestions: [] } };
+  }
+
+  async acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>> {
+    return { ok: false, error: `No meeting ${request.uid} in the mock calendar` };
+  }
+
+  async dismissSuggestion(_uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>> {
+    return { ok: true, data: { date, state: SuggestionsDayState.Active, suggestions: [] } };
   }
 
   async getSettings(): Promise<ApiResponse<SettingsResponse>> {

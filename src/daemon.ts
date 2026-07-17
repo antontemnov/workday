@@ -16,7 +16,7 @@ import { NotificationCenter } from './core/notification-center.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { ActivityScopeConfig, AppConfig, Secrets, SearchConfig, TrackingConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
+import type { ActivityScopeConfig, AppConfig, CalendarConfig, Secrets, SearchConfig, TrackingConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
@@ -229,6 +229,15 @@ export class Daemon {
     if (patch.activities?.values) {
       (this.config as { activities: ActivityScopeConfig }).activities = {
         values: [...patch.activities.values],
+      };
+    }
+
+    // calendar — the collector reads config lazily, so swapping suffices.
+    if (patch.calendar) {
+      const cur = this.config.calendar;
+      (this.config as { calendar: CalendarConfig }).calendar = {
+        enabled: patch.calendar.enabled ?? cur.enabled,
+        hidePrivate: patch.calendar.hidePrivate ?? cur.hidePrivate,
       };
     }
   }

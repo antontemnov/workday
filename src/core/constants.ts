@@ -136,6 +136,11 @@ export const ICS_FETCH_TIMEOUT_MS = 30_000;
 /** Runaway guard for recurrence expansion of a single series */
 export const RRULE_MAX_ITERATIONS = 20_000;
 
+// ─── Meeting suggestions ────────────────────────────────────────────────
+/** data/suggestions-state.json — dismissed keys only; accept is derived */
+export const SUGGESTIONS_STATE_FILE = 'suggestions-state.json';
+export const SUGGESTION_SOURCE_MEETING = 'meeting';
+
 // ─── Notifications (desktop toasts) ──────────────────────────────────────
 export const NOTIFICATIONS_STATE_FILE = 'notifications-state.json';
 /** Delivery window opens at this hour on the last working day of the month */

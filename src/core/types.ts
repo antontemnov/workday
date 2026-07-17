@@ -78,6 +78,9 @@ export interface CalendarConfig {
   // Master switch for the Outlook ICS feed collector. The feed also needs
   // secrets.Calendar_IcsUrl — absent URL means not configured regardless.
   readonly enabled: boolean;
+  // Hide CLASS:PRIVATE meetings from suggestions entirely. Default false:
+  // private meetings are offered with an empty description prefill instead.
+  readonly hidePrivate: boolean;
 }
 
 // ─── Notifications config ────────────────────────────────────────────────
@@ -184,6 +187,11 @@ export interface ManualEntry {
   // Origin marker only — push merges by task, never by this id, so a
   // dangling id (session later deleted) is harmless.
   readonly sourceSessionId?: string;
+  // Origin marker for accepted suggestions, namespaced: `meeting:<uid>:<date>`
+  // (future: `review:<date>:<repo>:<task>`). Same rules as sourceSessionId —
+  // never followed, dangling is harmless. Its presence in a day log is what
+  // marks the suggestion covered (accept is derived, never stored).
+  readonly sourceRef?: string;
 }
 
 // Reusable manual-entry template ("favorite"). Day-independent — lives in
@@ -219,6 +227,7 @@ export interface CalendarInstance {
   readonly allDay: boolean;
   readonly cancelled: boolean;  // STATUS:CANCELLED
   readonly recurring: boolean;
+  readonly isPrivate?: boolean; // CLASS:PRIVATE ("Private appointment")
   // Vanished from the feed after its DTEND had already passed — kept as a
   // happened fact (DTEND reconciliation). Feed regains authority the moment
   // the same uid+date reappears.
@@ -594,6 +603,42 @@ export interface CalendarFeedStatus {
 export interface CalendarRefreshResponse {
   readonly fetchedAt: string;
   readonly instanceCount: number;
+}
+
+// ─── Meeting suggestions (derived, never stored) ─────────────────────────
+//
+// A suggestion = a cached calendar instance that passed the entry filters
+// and is neither covered (a ManualEntry with its sourceRef exists in the
+// day log) nor dismissed (suggestions-state.json). Recomputed on every read.
+
+export enum SuggestionsDayState {
+  Active = 'active',
+  // The day was pushed to Tempo at least once (log.pushedAt) — suggestions
+  // are silenced for good; later drift/edits never resurrect them.
+  Pushed = 'pushed',
+}
+
+export interface Suggestion {
+  readonly uid: string;
+  readonly date: string;
+  readonly title: string;          // as published (Outlook masks private titles itself)
+  readonly start: string;          // ISO UTC
+  readonly end: string;            // ISO UTC
+  readonly plannedMinutes: number; // DTEND − DTSTART; accept may override
+  readonly ongoing: boolean;       // started but DTEND not reached yet
+  readonly isPrivate: boolean;
+  readonly source: 'meeting';
+}
+
+export interface SuggestionsResponse {
+  readonly date: string;
+  readonly state: SuggestionsDayState;
+  readonly suggestions: readonly Suggestion[];
+}
+
+export interface SuggestionAcceptResponse {
+  readonly entry: ManualEntryResponse;
+  readonly day: SuggestionsResponse;
 }
 
 export interface UpdateCheckResponse {

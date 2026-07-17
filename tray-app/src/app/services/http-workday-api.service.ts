@@ -40,6 +40,9 @@ import {
   NotificationAckAction,
   NotificationAckResponse,
   CalendarRefreshResponse,
+  SuggestionsResponse,
+  SuggestionAcceptRequest,
+  SuggestionAcceptResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -305,6 +308,18 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async refreshCalendar(): Promise<ApiResponse<CalendarRefreshResponse>> {
     return this.post<CalendarRefreshResponse>('/api/calendar/refresh');
+  }
+
+  override async getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>> {
+    return this.get<SuggestionsResponse>(`/api/suggestions${date ? `?date=${date}` : ''}`);
+  }
+
+  override async acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>> {
+    return this.post<SuggestionAcceptResponse>('/api/suggestions/accept', request as unknown as Record<string, unknown>);
+  }
+
+  override async dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>> {
+    return this.post<SuggestionsResponse>('/api/suggestions/dismiss', { uid, date });
   }
 
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {

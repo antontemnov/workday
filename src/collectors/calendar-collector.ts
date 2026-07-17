@@ -173,6 +173,7 @@ export class CalendarCollector {
         allDay: o.allDay,
         cancelled: o.cancelled,
         recurring: o.recurring,
+        ...(o.isPrivate ? { isPrivate: true } : {}),
       }));
 
       const prev = this.readCache()?.instances ?? [];
