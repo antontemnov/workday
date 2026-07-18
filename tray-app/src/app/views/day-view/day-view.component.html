@@ -12,6 +12,17 @@
   </div>
 </div>
 
+<!-- Displacement map for the day header's bottom edge (lab-2 liquid stage):
+     R/G channels = x/y offsets, #808000 = neutral; the ramp to G=255 pulls
+     the backdrop up as records slide under the glass. -->
+<svg class="fx-defs" aria-hidden="true">
+  <filter id="dayheadLens" x="-10%" y="-100%" width="120%" height="300%" color-interpolation-filters="sRGB">
+    <feImage href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='10'><linearGradient id='y' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23808000'/><stop offset='1' stop-color='%2380ff00'/></linearGradient><rect width='40' height='10' fill='url(%23y)'/></svg>"
+      x="0" y="0" width="2000" height="10" preserveAspectRatio="none" result="m"/>
+    <feDisplacementMap in="SourceGraphic" in2="m" scale="18" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
 <!-- The feed: sticky day header, then live sessions → (suggestions slot,
      epoch 4) → history newest-first. One scroll, no sections. -->
 <div class="content" *ngIf="data && !error">
