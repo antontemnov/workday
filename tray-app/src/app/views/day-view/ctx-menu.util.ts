@@ -4,7 +4,8 @@
 // .ctx-menu rules in styles.scss. One menu at a time.
 
 export interface CtxMenuItem {
-  readonly icon: string;
+  // Omitted/empty → the label starts at the menu edge (no icon gutter).
+  readonly icon?: string;
   readonly label: string;
   readonly danger?: boolean;
   // Rendered dimmed and inert — states a fact ("In favorites") rather than
@@ -14,6 +15,13 @@ export interface CtxMenuItem {
   readonly action: () => void;
 }
 
+// Thin rule between groups (e.g. under a "← Back" row in a sub-menu).
+export interface CtxMenuSeparator {
+  readonly separator: true;
+}
+
+export type CtxMenuEntry = CtxMenuItem | CtxMenuSeparator;
+
 let menuEl: HTMLElement | null = null;
 let removeListeners: (() => void) | null = null;
 
@@ -22,20 +30,29 @@ export function closeCtxMenu(): void {
   if (menuEl) { menuEl.remove(); menuEl = null; }
 }
 
-export function openCtxMenu(x: number, y: number, items: readonly CtxMenuItem[]): void {
+export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]): void {
   closeCtxMenu();
   if (items.length === 0) return;
 
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
   for (const item of items) {
+    if ('separator' in item) {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-sep';
+      menu.appendChild(sep);
+      continue;
+    }
     const el = document.createElement('div');
     el.className = 'ctx-item' + (item.danger ? ' danger' : '') + (item.disabled ? ' disabled' : '');
     if (item.title) el.title = item.title;
-    const ic = document.createElement('span');
-    ic.className = 'ci-ic';
-    ic.textContent = item.icon;
-    el.append(ic, document.createTextNode(item.label));
+    if (item.icon) {
+      const ic = document.createElement('span');
+      ic.className = 'ci-ic';
+      ic.textContent = item.icon;
+      el.appendChild(ic);
+    }
+    el.appendChild(document.createTextNode(item.label));
     if (!item.disabled) {
       el.addEventListener('click', () => { closeCtxMenu(); item.action(); });
     }

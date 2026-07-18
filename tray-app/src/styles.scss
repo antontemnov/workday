@@ -72,6 +72,12 @@ html:has(body.toast-window), body.toast-window {
       &:hover { background: none; color: #585b70; }
     }
   }
+
+  .ctx-sep {
+    height: 1px;
+    background: #313244;
+    margin: 3px 4px;
+  }
 }
 
 @keyframes ctx-menu-in {

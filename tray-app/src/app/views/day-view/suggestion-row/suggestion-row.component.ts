@@ -116,15 +116,22 @@ export class SuggestionRowComponent implements OnChanges {
   }
 
   // Right-click: the full action set (logged-row parity), mute picks its
-  // window in a second menu at the same spot.
+  // window in a second menu at the same spot. Edit mirrors dblclick, which
+  // opens the inline form directly only on resolved rows — unresolved ones
+  // route through the ticket picker, so they get no Edit entry.
   onContextMenu(ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
     if (this.editing || this.actionPending) return;
-    const x = ev.clientX;
-    const y = ev.clientY;
+    this.openMainMenu(ev.clientX, ev.clientY);
+  }
+
+  private openMainMenu(x: number, y: number): void {
     openCtxMenu(x, y, [
       { icon: '✓', label: 'Accept', action: () => this.accept() },
+      ...(this.suggestion.resolved
+        ? [{ icon: '✎', label: 'Edit', action: (): void => this.accept() }]
+        : []),
       { icon: '✕', label: 'Dismiss', action: () => this.dismiss() },
       { icon: '⏸', label: 'Mute series…', action: () => this.openMuteMenu(x, y) },
     ]);
@@ -132,10 +139,12 @@ export class SuggestionRowComponent implements OnChanges {
 
   private openMuteMenu(x: number, y: number): void {
     openCtxMenu(x, y, [
-      { icon: '', label: 'For a week', action: () => this.muteSubmitted.emit(7) },
-      { icon: '', label: 'For a month', action: () => this.muteSubmitted.emit(30) },
-      { icon: '', label: 'For 3 months', action: () => this.muteSubmitted.emit(90) },
-      { icon: '∞', label: 'Forever', action: () => this.muteSubmitted.emit(null) },
+      { label: '← Back', action: () => this.openMainMenu(x, y) },
+      { separator: true },
+      { label: 'For a week', action: () => this.muteSubmitted.emit(7) },
+      { label: 'For a month', action: () => this.muteSubmitted.emit(30) },
+      { label: 'For 3 months', action: () => this.muteSubmitted.emit(90) },
+      { label: 'Forever', action: () => this.muteSubmitted.emit(null) },
     ]);
   }
 
