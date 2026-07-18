@@ -93,7 +93,7 @@
 
 // ＋Log — the entry point (the panel's ghost row died with the panel); opens
 // the log cloud right below the header. A glass capsule: neutral translucent
-// fill, a drop of mauve in the frame, the same rim catch-light as the cards.
+// fill, the drop of mauve lives in the rim's light — no drawn outline.
 .g-btn {
   margin-left: auto;
   align-self: center;
@@ -105,11 +105,12 @@
   font-size: 10px;
   font-weight: 700;
   color: #cba6f7;
-  border: 1px solid rgba(203, 166, 247, 0.24);
+  border: 1px solid transparent;
   background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
   border-radius: 999px;
   padding: 3px 11px;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   transition: background 0.15s ease;
 
   svg {
@@ -125,14 +126,17 @@
     }
   }
 
-  // Rim catch-light — the cards' mask trick on the capsule.
+  // Rim catch-light — the cards' mask trick on the capsule; the mauve accent
+  // rides the light, a neutral counter-glint closes the ring below.
   &::before {
     content: '';
     position: absolute;
     inset: -1px;
     border-radius: inherit;
     padding: 1px;
-    background: linear-gradient(178deg, rgba(205, 214, 244, 0.4), transparent 58%);
+    background:
+      linear-gradient(178deg, rgba(203, 166, 247, 0.45), transparent 58%),
+      linear-gradient(358deg, rgba(205, 214, 244, 0.12), transparent 26%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);

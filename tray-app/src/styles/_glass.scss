@@ -2,9 +2,11 @@
 // frost: near-invisible fills, a 1px catch-light on the border, colour only
 // where it carries meaning (green = tracked, teal = suggested, mauve = logged).
 
-// Rim catch-light: a 1px ring hugging the border, painted in ::before and
+// Rim catch-light: a 1px ring hugging the edge, painted in ::before and
 // carved out by the mask so the fill underneath stays untouched. Brightest at
-// the top, gone by mid-height; $soft is the faint counter-glint from below.
+// the top, fading down the sides, gone before the bottom; $soft is the faint
+// counter-glint from below. This ring IS the edge of the glass — the border
+// itself stays transparent (real glass has no drawn outline).
 @mixin glass-rim($top: rgba(205, 214, 244, 0.28), $soft: transparent) {
   &::before {
     content: '';
@@ -13,8 +15,8 @@
     border-radius: inherit;
     padding: 1px;
     background:
-      linear-gradient(178deg, #{$top}, transparent 46%),
-      linear-gradient(358deg, #{$soft}, transparent 22%);
+      linear-gradient(178deg, #{$top}, transparent 56%),
+      linear-gradient(358deg, #{$soft}, transparent 26%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -25,22 +27,22 @@
 
 // Convex ticket capsule — a small lens: white curvature light over the tint,
 // a bright inner top edge, a shaded inner bottom, and a whisper of drop
-// shadow lifting it off the card. Tint parameters pick the species.
+// shadow seating it on the card. No drawn outline — the edge is the rim's
+// light and the seat shadow. Tint parameters pick the species.
 @mixin glass-capsule(
   $tint: rgba(205, 214, 244, 0.14),
   $tint-soft: rgba(205, 214, 244, 0.04),
-  $border: rgba(205, 214, 244, 0.24),
-  $rim: rgba(255, 255, 255, 0.35)
+  $rim: rgba(255, 255, 255, 0.4)
 ) {
   position: relative;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 42%, rgba(8, 8, 16, 0.1)),
     linear-gradient(180deg, #{$tint}, #{$tint-soft});
-  border: 1px solid #{$border};
+  border: 1px solid transparent;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     inset 0 -1px 1px rgba(8, 8, 16, 0.18),
-    0 1px 2px rgba(0, 0, 0, 0.3);
+    0 1px 3px rgba(0, 0, 0, 0.35);
   @include glass-rim($rim);
 }
 
@@ -48,8 +50,9 @@
 @mixin glass-chip {
   position: relative;
   background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
-  border: 1px solid rgba(205, 214, 244, 0.14);
-  @include glass-rim();
+  border: 1px solid transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  @include glass-rim(rgba(205, 214, 244, 0.34));
 
   // Keyboard focus stays visible, but in the glass voice — not the UA ring.
   &:focus-visible {
