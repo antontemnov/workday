@@ -27,7 +27,9 @@ import {
   readDailyLog,
 } from '../../src/core/daily-log.js';
 import { addEntryOnDate, deleteEntryOnDate } from '../../src/core/day-edit.js';
-import { SensitivityLevel, SuggestionsDayState, type AppConfig, type CalendarInstance, type DailyLog } from '../../src/core/types.js';
+import { SessionTracker } from '../../src/core/session-tracker.js';
+import { isDayMaterialized } from '../../src/core/day-lifecycle.js';
+import { SensitivityLevel, SuggestionsDayState, type AppConfig, type CalendarInstance, type DailyLog, type ForeignCheckout, type PollResult } from '../../src/core/types.js';
 
 let passed = 0;
 let failed = 0;
@@ -301,6 +303,53 @@ test('review accept → covered; delete the entry → the row revives', () => {
   deleteEntryOnDate(acceptDate, entry.id);
   const revived = derive([], { date: acceptDate, log: readDailyLog(acceptDate) });
   assert.deepEqual(revived.suggestions.map(s => s.uid), ['ATL-77']);
+});
+
+console.log('');
+console.log('Review facts — day scoping (a quiet day stays silent)');
+
+function makeForeignPoll(foreignCheckouts: ForeignCheckout[]): PollResult {
+  return {
+    repoPath: '/tmp/repoZ',
+    branch: 'ATL-500-ivanov-x',
+    task: null,
+    snapshot: {
+      branch: 'ATL-500-ivanov-x',
+      trackedLines: { added: 0, removed: 0 },
+      trackedFileCount: 0,
+      untrackedCount: 0,
+      timestamp: Date.now(),
+      churnFiles: new Map(),
+    },
+    delta: { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 },
+    newReflogEntries: [],
+    currentHead: 'h',
+    evidenceSnapshot: null,
+    evidenceBasis: null,
+    mergeBaseSha: null,
+    prevEvidenceSnapshot: null,
+    ledgerUpdate: null,
+    foreignCheckouts,
+  };
+}
+
+test('a stale checkout from a past day never lands in today\'s log', () => {
+  const tracker = new SessionTracker(makeConfig());
+  const now = Date.now();
+  tracker.processPollResult(makeForeignPoll([
+    { ts: now - 2 * 86_400_000, task: 'ATL-500', branch: 'ATL-500-ivanov-x' },  // Friday's checkout in the window
+    { ts: now, task: 'ATL-501', branch: 'ATL-501-ivanov-y' },
+  ]));
+  assert.deepEqual(tracker.getDailyLog().reviewCheckouts?.map(rc => rc.task), ['ATL-501']);
+});
+
+test('the stale checkout alone does not materialize the day — no file, no noise', () => {
+  const tracker = new SessionTracker(makeConfig());
+  tracker.processPollResult(makeForeignPoll([
+    { ts: Date.now() - 2 * 86_400_000, task: 'ATL-500', branch: 'ATL-500-ivanov-x' },
+  ]));
+  assert.equal(tracker.getDailyLog().reviewCheckouts, undefined);
+  assert.equal(isDayMaterialized(tracker.getDailyLog(), false), false);
 });
 
 console.log('');
