@@ -128,10 +128,10 @@ export class SuggestionRowComponent implements OnChanges {
 
   private openMainMenu(x: number, y: number): void {
     openCtxMenu(x, y, [
-      { icon: '✓', label: 'Accept', action: () => this.accept() },
       ...(this.suggestion.resolved
         ? [{ icon: '✎', label: 'Edit', action: (): void => this.accept() }]
         : []),
+      { icon: '✓', label: 'Accept', action: () => this.accept() },
       { icon: '✕', label: 'Dismiss', action: () => this.dismiss() },
       { icon: '⏸', label: 'Mute series…', action: () => this.openMuteMenu(x, y) },
     ]);
