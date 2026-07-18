@@ -14,24 +14,30 @@
             type="button"
             class="c-key act"
             [class.will-pause]="trackingAction === 'pause'"
+            [class.will-resume]="trackingAction === 'resume'"
             [disabled]="actionPending"
             [attr.aria-label]="trackingActionTitle"
             (click)="onTrackingClick()">
-      <span class="face state"><span class="k-dot" [class.on]="isAccruing"></span>{{ session.task }}</span>
-      <span class="face action" [class.resume]="trackingAction === 'resume'" aria-hidden="true">
-        <svg *ngIf="trackingAction === 'pause'" class="k-ico" viewBox="0 0 10 10">
-          <rect x="1.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
-          <rect x="6.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
+      <!-- The indicator swaps glyphs inside a fixed box — the key text never
+           moves: ● running / ■ stopped, hover reveals ⏸ / ▶ in place. -->
+      <span class="k-ind" aria-hidden="true">
+        <span class="k-lamp" *ngIf="isAccruing"></span>
+        <span class="k-stop" *ngIf="!isAccruing"></span>
+        <svg class="k-act-ico" *ngIf="trackingAction === 'pause'" viewBox="0 0 10 10">
+          <rect x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect>
+          <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
         </svg>
-        <svg *ngIf="trackingAction === 'resume'" class="k-ico" viewBox="0 0 10 10">
-          <path d="M1.5 0.6 L9 5 L1.5 9.4 Z"></path>
+        <svg class="k-act-ico" *ngIf="trackingAction === 'resume'" viewBox="0 0 10 10">
+          <path d="M2 1 L9 5 L2 9 Z"></path>
         </svg>
-        {{ trackingAction === 'pause' ? 'Pause' : 'Resume' }}
-      </span>
+      </span>{{ session.task }}
     </button>
     <ng-template #staticKey>
       <span class="c-key" [class.none]="!session.task">
-        <span class="k-dot" *ngIf="session.task" [class.on]="isAccruing"></span>{{ session.task || '—' }}
+        <span class="k-ind" *ngIf="session.task" aria-hidden="true">
+          <span class="k-lamp" *ngIf="isAccruing"></span>
+          <span class="k-stop" *ngIf="!isAccruing"></span>
+        </span>{{ session.task || '—' }}
       </span>
     </ng-template>
     <span class="c-nm"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>

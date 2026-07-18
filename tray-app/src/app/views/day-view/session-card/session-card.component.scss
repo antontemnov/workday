@@ -90,96 +90,110 @@
   margin-top: 1px;
 }
 
-// Ticket chip — the session's identity AND its tracking control, in tinted
-// green glass (green = tracked). The dot is the whole status: green pulse =
-// accruing, grey = not. The actionable variant crossfades to Pause / Resume.
+// Ticket chip — the session's identity AND its tracking control. The capsule
+// itself is NEUTRAL convex glass: green means "accruing", so the colour lives
+// only in the indicator lamp. The key text never changes or moves.
 .c-key {
   justify-self: start;
-  position: relative;
   display: inline-flex;
   align-items: center;
   height: 17px;
   padding: 0 7px 0 5px;
   border-radius: 7px;
-  color: #a6e3a1;
+  color: #bac2de;
   font-weight: 600;
   font-size: 11px;
   white-space: nowrap;
-  background: linear-gradient(180deg, rgba(166, 227, 161, 0.16), rgba(166, 227, 161, 0.05));
-  border: 1px solid rgba(166, 227, 161, 0.22);
-  @include glass.glass-rim(rgba(166, 227, 161, 0.35));
+  @include glass.glass-capsule();
 
   // Branch without a ticket — dashed neutral placeholder, no new colours.
   &.none {
     color: #6c7086;
     background: transparent;
     border: 1px dashed #45475a;
+    box-shadow: none;
     padding: 0 8px;
 
     &::before { content: none; }
   }
 }
 
-.k-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #6c7086;
+// Indicator — a fixed 9px box; glyphs swap inside it, the key never shifts.
+// ● steady green lamp = accruing (the rim sweep is the moving part, the lamp
+// just glows), ■ grey = stopped; hover reveals ⏸ / ▶ in the same box.
+.k-ind {
+  position: relative;
+  width: 9px;
+  height: 9px;
   margin-right: 5px;
   flex-shrink: 0;
 
-  &.on {
-    background: #a6e3a1;
-    animation: status-pulse 1.6s ease-in-out infinite;
+  > * {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    transition: opacity 0.15s ease;
   }
 }
 
-// Actionable chip (Live → Pause, manual pause → Resume): both faces stack in
-// one grid cell so the capsule is sized to the wider face — content
-// crossfades on hover with no layout shift (the status-badge mechanic).
+.k-lamp {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a6e3a1;
+  box-shadow: 0 0 4px rgba(166, 227, 161, 0.9), 0 0 9px rgba(166, 227, 161, 0.4);
+}
+
+.k-stop {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: #7f849c;
+}
+
+.k-act-ico {
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+}
+
+// Actionable chip (Live → Pause, manual pause → Resume): only the indicator
+// glyph and the capsule tint react to hover.
 .c-key.act {
-  display: inline-grid;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-
-  .face {
-    grid-area: 1 / 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: flex-start;
-    transition: opacity 0.15s ease;
-  }
-  .action {
-    opacity: 0;
-    gap: 4px;
-  }
-
-  .k-ico {
-    width: 8px;
-    height: 8px;
-    fill: currentColor;
-    flex-shrink: 0;
-  }
+  transition: background 0.15s ease, border-color 0.15s ease;
 
   &:hover:not(:disabled) {
-    .state { opacity: 0; }
-    .action { opacity: 1; }
+    .k-lamp, .k-stop { opacity: 0; }
+    .k-act-ico { opacity: 1; }
   }
 
-  // Pause reads as "stop the green": the whole capsule shifts to red glass.
-  &.will-pause:hover:not(:disabled) {
-    color: #f38ba8;
-    background: linear-gradient(180deg, rgba(243, 139, 168, 0.16), rgba(243, 139, 168, 0.05));
-    border-color: rgba(243, 139, 168, 0.28);
+  // Pause reads as "stop": the capsule reddens, the lamp becomes ⏸.
+  &.will-pause {
+    .k-act-ico { fill: #f38ba8; }
+
+    &:hover:not(:disabled) {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02) 42%, rgba(8, 8, 16, 0.1)),
+        linear-gradient(180deg, rgba(243, 139, 168, 0.2), rgba(243, 139, 168, 0.06));
+      border-color: rgba(243, 139, 168, 0.32);
+    }
+  }
+
+  // Resume: the capsule warms green, ■ becomes ▶.
+  &.will-resume {
+    .k-act-ico { fill: #a6e3a1; }
+
+    &:hover:not(:disabled) {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02) 42%, rgba(8, 8, 16, 0.1)),
+        linear-gradient(180deg, rgba(166, 227, 161, 0.18), rgba(166, 227, 161, 0.05));
+      border-color: rgba(166, 227, 161, 0.3);
+    }
   }
 
   &:disabled { cursor: default; opacity: 0.6; }
-}
-
-@keyframes status-pulse {
-  0%, 100% { opacity: 1;   transform: scale(1);   }
-  50%      { opacity: 0.5; transform: scale(0.7); }
 }
 
 // repo · branch in the name slot: bold repo, dim branch; a long tail fades out

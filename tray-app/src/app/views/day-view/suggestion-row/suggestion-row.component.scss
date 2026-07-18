@@ -169,9 +169,12 @@
   // Learned ticket (resolver hit) — a static teal badge, not a control;
   // accepting is ✓ / dblclick.
   &.key {
-    background: linear-gradient(180deg, rgba(148, 226, 213, 0.12), rgba(148, 226, 213, 0.04));
-    border: 1px solid rgba(148, 226, 213, 0.18);
-    @include glass.glass-rim(rgba(148, 226, 213, 0.28));
+    @include glass.glass-capsule(
+      rgba(148, 226, 213, 0.12),
+      rgba(148, 226, 213, 0.04),
+      rgba(148, 226, 213, 0.2),
+      rgba(148, 226, 213, 0.32)
+    );
   }
 
   // No ticket resolved yet — a dashed neutral placeholder; clicking it is

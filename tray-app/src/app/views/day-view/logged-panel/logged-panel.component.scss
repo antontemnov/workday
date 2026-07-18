@@ -58,10 +58,8 @@
   align-items: center;
 }
 
-// Ticket chip — logged species: the same tinted-glass capsule as the session
-// and suggestion chips, in mauve.
+// Ticket chip — logged species: the shared convex glass capsule, in mauve.
 .c-key {
-  position: relative;
   display: inline-flex;
   align-items: center;
   height: 17px;
@@ -71,14 +69,19 @@
   border-radius: 7px;
   white-space: nowrap;
   justify-self: start;
-  background: linear-gradient(180deg, rgba(203, 166, 247, 0.16), rgba(203, 166, 247, 0.05));
-  border: 1px solid rgba(203, 166, 247, 0.22);
-  @include glass.glass-rim(rgba(203, 166, 247, 0.35));
+  @include glass.glass-capsule(
+    rgba(203, 166, 247, 0.16),
+    rgba(203, 166, 247, 0.05),
+    rgba(203, 166, 247, 0.24),
+    rgba(203, 166, 247, 0.4)
+  );
 
   &.no-title {
     color: #9a8ec4;
-    background: linear-gradient(180deg, rgba(203, 166, 247, 0.1), rgba(203, 166, 247, 0.03));
-    border-color: rgba(203, 166, 247, 0.14);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.08)),
+      linear-gradient(180deg, rgba(203, 166, 247, 0.1), rgba(203, 166, 247, 0.03));
+    border-color: rgba(203, 166, 247, 0.15);
   }
 }
 
