@@ -135,24 +135,27 @@
 
 // ＋Log — the entry point (the panel's ghost row died with the panel); opens
 // the log cloud right below the header. The same mauve candy capsule as the
-// logged keys, rolled into a pill; hover thickens the dye, nothing moves.
+// logged keys, sized to hold its own next to the session medallions (22px —
+// still under the Day total's 18px numerals); hover thickens the dye,
+// nothing moves.
 .g-btn {
   margin-left: auto;
   align-self: center;
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  height: 22px;
   font-family: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   border-radius: 999px;
-  padding: 3px 11px;
+  padding: 0 12px;
   cursor: pointer;
   @include glass.glass-candy((203 166 247), (228 205 252), #cba6f7);
 
   svg {
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
     flex-shrink: 0;
 
     path {

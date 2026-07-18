@@ -253,7 +253,31 @@ export class SessionCardComponent {
         ? { icon: '⊙', label: 'Mode', hint: `${current} · paused`, disabled: true,
             title: 'Resume the session to change its mode', action: (): void => {} }
         : { icon: '⊙', label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
+      { icon: '⧉', label: 'Copy branch', action: (): void => this.copyBranch() },
     ]);
+  }
+
+  // The branch left the card face (the name slot shows the Jira summary), so
+  // the menu is where it lives now.
+  private copyBranch(): void {
+    const text = this.session.branch;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => this.copyBranchFallback(text));
+    } else {
+      this.copyBranchFallback(text);
+    }
+  }
+
+  // execCommand path for webviews without the async clipboard.
+  private copyBranchFallback(text: string): void {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
   }
 
   private openModeMenu(x: number, y: number): void {
