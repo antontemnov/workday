@@ -478,7 +478,7 @@ export class HttpServer {
       ...(s.resolved ? [s.resolved.task] : []),
       ...(s.candidates?.map(c => c.task) ?? []),
     ]);
-    return keys.length === 0 ? day : { ...day, issueSummaries: this.cachedSummariesFor(keys) };
+    return keys.length === 0 ? day : { ...day, issueSummaries: this.cachedSummariesFor(keys, true) };
   }
 
   private handleSuggestions(url: URL): ApiResponse<SuggestionsResponse> {
@@ -640,17 +640,20 @@ export class HttpServer {
     return this.cachedSummariesFor([
       ...(log.manualEntries ?? []).map(e => e.task),
       ...log.sessions.map(s => s.task).filter((t): t is string => !!t),
-    ]);
+    ], true);
   }
 
-  private cachedSummariesFor(taskKeys: readonly string[]): Record<string, string> {
+  // refreshStale re-fetches summaries older than the TTL so renames surface —
+  // day-sized key sets only; the month view stays misses-only (dozens of
+  // historical keys, and the active ones refresh via the day poll anyway).
+  private cachedSummariesFor(taskKeys: readonly string[], refreshStale = false): Record<string, string> {
     const keys = [...new Set(taskKeys)];
     if (keys.length === 0) return {};
     const secrets = tryLoadSecrets();
     if (secrets && isJiraConfigured(secrets)) {
       // Fire-and-forget: a floating rejection would crash the daemon (no global
       // unhandledRejection handler), so neutralize it at the boundary too.
-      backfillIssueSummaries(keys, secrets).catch(() => {});
+      backfillIssueSummaries(keys, secrets, refreshStale).catch(() => {});
     }
     return loadCachedSummaries(keys);
   }

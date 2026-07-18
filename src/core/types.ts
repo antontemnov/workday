@@ -1100,6 +1100,9 @@ export interface TempoMonthSnapshot {
 export interface JiraIssue {
   readonly issueId: number;
   readonly summary: string;
+  // Summary freshness stamp for the TTL refresh; legacy entries without it
+  // count as stale and pick one up on their first re-fetch.
+  readonly fetchedAt?: string;
 }
 
 export type PushActionType = 'create' | 'update' | 'delete' | 'skip' | 'error';

@@ -98,6 +98,10 @@ export const JIRA_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
 
 // ─── Push / Tempo ───────────────────────────────────────────────────────
 export const ISSUE_CACHE_FILE = 'issue-cache.json';
+/** Cached issue summaries older than this are re-fetched by the background
+ *  backfill, so Jira-side renames surface. Day-sized key sets only — the
+ *  month view stays misses-only. */
+export const ISSUE_SUMMARY_TTL_MS = 30 * 60_000;
 export const PUSH_LOG_FILE = 'push-log.json';
 export const PUSH_TOMBSTONES_FILE = 'push-tombstones.json';
 export const TEMPO_REPORT_DIR = 'tempo';
