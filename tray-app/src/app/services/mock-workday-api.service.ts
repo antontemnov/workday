@@ -53,6 +53,7 @@ import {
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
   MutedSuggestionSeries,
+  suggestionSourceRef,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -657,8 +658,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
   async acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>> {
     await delay(200);
     const meeting = this.mockMeetings.find(s => s.uid === request.uid && s.date === request.date);
-    if (!meeting) return { ok: false, error: `No meeting ${request.uid} in the mock calendar` };
-    const sourceRef = `meeting:${meeting.uid}:${meeting.date}`;
+    if (!meeting) return { ok: false, error: `No suggestion ${request.uid} in the mock calendar` };
+    const sourceRef = suggestionSourceRef(meeting);
     if (this.mockManualEntries.some(e => e.sourceRef === sourceRef)) {
       return { ok: false, error: 'Meeting is already logged' };
     }
@@ -692,7 +693,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       && !(s.isPrivate && this.mockCalendar.hidePrivate)
       && !this.mockDismissed.has(`${s.uid}:${s.date}`)
       && !this.mockMuted.some(m => m.uid === s.uid)
-      && !this.mockManualEntries.some(e => e.sourceRef === `meeting:${s.uid}:${s.date}`));
+      && !this.mockManualEntries.some(e => e.sourceRef === suggestionSourceRef(s)));
     return {
       date, state: SuggestionsDayState.Active, suggestions,
       // ATL-118 left unmapped → its candidate chip shows the bare key.

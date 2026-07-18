@@ -20,6 +20,7 @@ import {
   FavoriteInput,
   Suggestion,
   SuggestionAcceptRequest,
+  suggestionSourceRef,
 } from '../../models/workday.models';
 
 interface SensitivityPillOption {
@@ -246,7 +247,7 @@ export class DayViewComponent implements OnChanges {
     const entry = ev.entry;
     // Not a new entity — the offer row BECOMES the logged row, so no fly-chip
     // here: the feed slides the landed row down from the offer's old spot.
-    this.suggestionArrive = { sourceRef: `meeting:${s.uid}:${s.date}`, top: ev.sourceRect.top };
+    this.suggestionArrive = { sourceRef: suggestionSourceRef(s), top: ev.sourceRect.top };
     this.suggestionAcceptSubmitted.emit({
       uid: s.uid,
       date: s.date,

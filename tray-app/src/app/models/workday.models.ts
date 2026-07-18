@@ -75,7 +75,8 @@ export interface ManualEntry {
   readonly activity: string;        // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;
   readonly sourceSessionId?: string;
-  // Origin marker of an accepted suggestion: `meeting:<uid>:<date>`.
+  // Origin marker of an accepted suggestion: `meeting:<uid>:<date>` or
+  // `review:<date>:<task>` — see suggestionSourceRef().
   readonly sourceRef?: string;
 }
 
@@ -158,6 +159,12 @@ export interface Suggestion {
   readonly source: 'meeting' | 'review';
   readonly resolved?: SuggestionResolved;
   readonly candidates?: readonly SuggestionCandidate[];
+}
+
+/** The origin marker an accept writes into the entry — mirrors the daemon's
+ *  namespaces: `meeting:<uid>:<date>` / `review:<date>:<task>`. */
+export function suggestionSourceRef(s: Pick<Suggestion, 'uid' | 'date' | 'source'>): string {
+  return s.source === 'review' ? `review:${s.date}:${s.uid}` : `meeting:${s.uid}:${s.date}`;
 }
 
 export interface SuggestionsResponse {

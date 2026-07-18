@@ -30,14 +30,17 @@ export interface SuggestionAcceptEvent {
  *   band 1 — ticket chip: the learned resolution's key (teal), or a dashed
  *            "task?" when the resolver has nothing · title (live dot while
  *            ongoing) · planned minutes
- *   band 2 — when ("09:30–10:00", or "live · till 10:00" from DTSTART) ·
- *            origin spark · ✓ accept / ✕ dismiss
+ *   band 2 — when ("09:30–10:00", or "live · till 10:00" from DTSTART;
+ *            review rows: the checkout moment) · origin spark (meeting /
+ *            review) · ✓ accept / ✕ dismiss
  * Accept mirrors the logged rows' edit: dblclick (or ✓) morphs the SAME row
  * into the inline form — activity · description · Log, with the time slot
  * swapping to a frameless duration input (minutes are editable only here).
  * Unresolved rows first open the log cloud purely to pick the ticket;
  * the pick comes back via [picked] and opens the form. ✕ dismisses through
- * the daemon (permanent per uid+date). Suggested time never joins any totals.
+ * the daemon (permanent per uid+date). Review rows (title = the colleague's
+ * branch) are always resolved and carry no Mute — there is no series.
+ * Suggested time never joins any totals.
  */
 @Component({
   selector: 'app-suggestion-row',
@@ -97,6 +100,7 @@ export class SuggestionRowComponent implements OnChanges {
 
   get whenLabel(): string {
     const s = this.suggestion;
+    if (s.source === 'review') return this.formatHm(s.start);  // the checkout moment
     if (s.ongoing) return `live · till ${this.formatHm(s.end)}`;
     return `${this.formatHm(s.start)}–${this.formatHm(s.end)}`;
   }
@@ -133,7 +137,10 @@ export class SuggestionRowComponent implements OnChanges {
         : []),
       { icon: '✓', label: 'Accept', action: () => this.accept() },
       { icon: '✕', label: 'Dismiss', action: () => this.dismiss() },
-      { icon: '⏸', label: 'Mute series…', action: () => this.openMuteMenu(x, y) },
+      // Review rows have no series to mute — dismiss closes the day.
+      ...(this.suggestion.source === 'review'
+        ? []
+        : [{ icon: '⏸', label: 'Mute series…', action: (): void => this.openMuteMenu(x, y) }]),
     ]);
   }
 
