@@ -118,11 +118,7 @@
       radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.26), transparent 72%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
       linear-gradient(180deg, rgba(166, 227, 161, 0.09), rgba(166, 227, 161, 0.02));
-
-    &::before {
-      // Specular pool sits over the lamp — the light source is inside.
-      background: radial-gradient(55% 190% at 22% -30%, rgba(166, 227, 161, 0.42), transparent 70%);
-    }
+    box-shadow: inset 0 1px 2px -1px rgba(166, 227, 161, 0.5);
   }
 
   // System-stopped (idle / switched / away) — frosted-over glass: clearly
@@ -147,13 +143,8 @@
     background-repeat: no-repeat;
     box-shadow:
       inset 0 0 9px rgba(130, 172, 242, 0.3),
-      inset 0 1px 1px rgba(180, 210, 250, 0.22),
-      0 2px 5px rgba(0, 0, 0, 0.25),
+      inset 0 1px 2px -1px rgba(180, 210, 250, 0.4),
       0 0 8px rgba(110, 160, 240, 0.18);
-
-    &::before {
-      background: radial-gradient(60% 200% at 34% -35%, rgba(175, 208, 250, 0.5), transparent 70%);
-    }
 
     // The key behind the ice: murky, softly blurred, a frost sheen around
     // the letters — legible, but clearly frozen over.
@@ -177,13 +168,7 @@
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.005) 42%, rgba(8, 8, 16, 0.14)),
       linear-gradient(180deg, rgba(205, 214, 244, 0.06), rgba(205, 214, 244, 0.015));
-    box-shadow:
-      inset 0 1px 1px rgba(255, 255, 255, 0.04),
-      0 2px 4px rgba(0, 0, 0, 0.2);
-
-    &::before {
-      background: radial-gradient(50% 180% at 30% -30%, rgba(205, 214, 244, 0.18), transparent 68%);
-    }
+    box-shadow: inset 0 1px 2px -1px rgba(205, 214, 244, 0.16);
   }
 
   // Branch without a ticket — dashed neutral placeholder, no new colours.
@@ -267,10 +252,7 @@
         radial-gradient(30px 16px at 9px 60%, rgba(243, 139, 168, 0.28), transparent 72%),
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
         linear-gradient(180deg, rgba(243, 139, 168, 0.1), rgba(243, 139, 168, 0.02));
-
-      &::before {
-        background: radial-gradient(55% 190% at 22% -30%, rgba(243, 139, 168, 0.4), transparent 70%);
-      }
+      box-shadow: inset 0 1px 2px -1px rgba(243, 139, 168, 0.5);
     }
   }
 
@@ -284,10 +266,7 @@
         radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.22), transparent 72%),
         linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
         linear-gradient(180deg, rgba(166, 227, 161, 0.08), rgba(166, 227, 161, 0.02));
-
-      &::before {
-        background: radial-gradient(55% 190% at 22% -30%, rgba(166, 227, 161, 0.38), transparent 70%);
-      }
+      box-shadow: inset 0 1px 2px -1px rgba(166, 227, 161, 0.45);
     }
   }
 
