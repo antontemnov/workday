@@ -134,40 +134,42 @@
   // blurred, still legible. The ■ says "stopped"; the frost says "by itself,
   // from the cold".
   &.frozen {
-    color: #93a8cc;
+    color: #8aa4d0;
+    // Dendrites are forked polylines (Y-splits with sub-ticks), not uniform
+    // herringbone — closer to real fractal hoarfrost.
     background:
-      url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 17' preserveAspectRatio='none'><g fill='none' stroke='%23dcebfd' stroke-linecap='round'><g stroke-width='0.55' opacity='0.7'><path d='M0 2.2 Q6 3.6 13 3.2'/><path d='M1.5 2.6 L2.8 0.9'/><path d='M3.4 3 L4.8 1.3'/><path d='M5.6 3.3 L7 1.7'/><path d='M8 3.4 L9.2 2'/><path d='M10.4 3.3 L11.4 2.2'/><path d='M2.4 2.9 L3.4 4.7'/><path d='M4.6 3.2 L5.6 5.1'/><path d='M6.8 3.4 L7.6 5'/><path d='M9.2 3.4 L9.8 4.8'/></g><g stroke-width='0.5' opacity='0.5'><path d='M0 8.5 Q3.5 9 6.5 12'/><path d='M1.3 8.8 L2.2 7.3'/><path d='M2.8 9.6 L4.2 8.6'/><path d='M4.3 10.7 L5.5 9.8'/><path d='M2 9.2 L2.6 10.8'/></g><g stroke-width='0.5' opacity='0.42'><path d='M30 0 Q31 2.4 33.5 3.4'/><path d='M30.6 1.4 L29.4 2.2'/><path d='M31.8 2.6 L31 3.8'/><path d='M32.6 3 L33 4.4'/></g><g stroke-width='0.5' opacity='0.38'><path d='M44 0 Q45.5 2 48 2.6'/><path d='M44.8 1.2 L43.8 2'/><path d='M46.2 2 L45.6 3.2'/></g><g stroke-width='0.55' opacity='0.65'><path d='M80 3 Q73 4.6 66.5 3.6'/><path d='M78 3.6 L77 1.9'/><path d='M75.8 4.2 L74.6 2.5'/><path d='M73.2 4.3 L72.2 2.8'/><path d='M70.6 4.1 L69.8 2.8'/><path d='M77 3.9 L76.2 5.6'/><path d='M74.4 4.3 L73.6 6'/><path d='M71.8 4.2 L71 5.7'/></g><g stroke-width='0.5' opacity='0.5'><path d='M80 8.5 Q76.5 9 74 11'/><path d='M78.6 8.8 L77.8 7.4'/><path d='M77 9.5 L75.8 8.7'/><path d='M75.4 10.3 L74.4 9.5'/></g><g stroke-width='0.5' opacity='0.45'><path d='M80 13.5 Q75 12.8 70.5 15'/><path d='M77.6 13 L76.9 14.6'/><path d='M75 13.4 L74.2 15'/><path d='M72.6 14 L72 15.4'/></g><g stroke-width='0.5' opacity='0.45'><path d='M12 17 Q14.5 14.4 18 13.6'/><path d='M13.6 15.6 L12.5 14.5'/><path d='M15.3 14.6 L14.7 13.2'/><path d='M16.6 14 L16.2 12.6'/></g><g stroke-width='0.5' opacity='0.4'><path d='M0 14 Q2 14.5 3.6 16'/><path d='M1.2 14.3 L1.8 13.2'/></g><g stroke-width='0.5' opacity='0.35'><path d='M42 17 Q43.5 15 46 14.4'/><path d='M43 15.9 L42 14.9'/><path d='M44.5 15 L44 13.7'/></g></g><g fill='%23e2eefe'><circle cx='13' cy='6' r='0.45' opacity='0.55'/><circle cx='20' cy='2.6' r='0.4' opacity='0.45'/><circle cx='26' cy='13' r='0.45' opacity='0.4'/><circle cx='36' cy='5.8' r='0.4' opacity='0.4'/><circle cx='40' cy='2.4' r='0.35' opacity='0.45'/><circle cx='50' cy='13.8' r='0.4' opacity='0.35'/><circle cx='55' cy='3.2' r='0.45' opacity='0.5'/><circle cx='58' cy='8.4' r='0.35' opacity='0.35'/><circle cx='63' cy='13.4' r='0.4' opacity='0.35'/><circle cx='67' cy='7.6' r='0.4' opacity='0.4'/><circle cx='24' cy='8' r='0.3' opacity='0.3'/></g></svg>"),
-      radial-gradient(120% 110% at 50% -40%, rgba(185, 212, 250, 0.26), transparent 62%),
-      radial-gradient(95% 115% at 104% 120%, rgba(165, 198, 245, 0.18), transparent 58%),
-      radial-gradient(80% 100% at -6% 118%, rgba(170, 200, 245, 0.14), transparent 52%),
-      linear-gradient(180deg, rgba(120, 158, 220, 0.14), rgba(13, 20, 42, 0.58));
+      url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 17' preserveAspectRatio='none'><g fill='none' stroke='%23a9c9f2' stroke-linecap='round'><g stroke-width='0.5' opacity='0.75'><path d='M0 2 Q6 3.6 14 3.3'/><path d='M1.8 2.5 L2.6 1.2 L3.6 0.7 M2.6 1.2 L3.3 1.7'/><path d='M4 3 L5 1.6 L6.2 1.2 M5 1.6 L5.8 2.1'/><path d='M6.6 3.2 L7.6 2 L8.8 1.6 M7.6 2 L8.3 2.5'/><path d='M9.4 3.3 L10.2 2.3 L11.2 2 M10.2 2.3 L10.8 2.8'/><path d='M2.8 2.8 L3.6 4.3 L4.6 5 M3.6 4.3 L4.3 3.9'/><path d='M5.4 3.1 L6.2 4.6 L7 5.2 M6.2 4.6 L6.9 4.2'/><path d='M8.2 3.3 L8.9 4.6 L9.7 5.1 M8.9 4.6 L9.5 4.2'/></g><g stroke-width='0.5' opacity='0.55'><path d='M0 8.2 Q3.4 8.8 6.4 11.6'/><path d='M1.4 8.5 L2.2 7.2 L3.2 6.7 M2.2 7.2 L2.9 7.7'/><path d='M2.9 9.3 L4.1 8.5 L5.2 8.4 M4.1 8.5 L4.6 9.2'/><path d='M4.5 10.4 L5.6 9.7 M4.5 10.4 L5 11.4'/><path d='M2 9 L2.5 10.5 L3.3 11.3'/></g><g stroke-width='0.5' opacity='0.45'><path d='M32 0 Q32.8 2.2 35 3.6'/><path d='M32.3 1 L31.2 1.8 L30.4 2.6 M31.2 1.8 L30.5 1.2'/><path d='M33.2 2.5 L32.4 3.5 M33.2 2.5 L34 3.3'/></g><g stroke-width='0.5' opacity='0.4'><path d='M46 0 Q47.2 1.9 49.5 2.5'/><path d='M46.7 1.1 L45.8 1.9 M46.7 1.1 L47.4 2'/></g><g stroke-width='0.5' opacity='0.7'><path d='M80 2.8 Q73 4.4 66 3.5'/><path d='M78.2 3.4 L77.2 1.9 L76 1.3 M77.2 1.9 L76.4 2.4'/><path d='M75.8 4 L74.6 2.6 L73.4 2.2 M74.6 2.6 L73.9 3.2'/><path d='M73 4.2 L72 2.9 L70.9 2.6 M72 2.9 L71.3 3.5'/><path d='M77 3.8 L76.2 5.4 L75.2 6 M76.2 5.4 L75.5 4.9'/><path d='M74.2 4.2 L73.4 5.7 L72.4 6.2 M73.4 5.7 L72.8 5.2'/></g><g stroke-width='0.5' opacity='0.55'><path d='M80 8.2 Q76.6 8.8 74 10.8'/><path d='M78.5 8.5 L77.6 7.2 L76.5 6.8 M77.6 7.2 L76.9 7.8'/><path d='M76.9 9.3 L75.7 8.6 M76.9 9.3 L76.2 10.2'/></g><g stroke-width='0.5' opacity='0.5'><path d='M80 13.3 Q75 12.7 70.3 14.9'/><path d='M77.7 12.9 L76.9 14.4 L75.9 15 M76.9 14.4 L76.2 13.9'/><path d='M74.8 13.3 L74 14.8 M74.8 13.3 L74.1 12.7'/><path d='M72.4 13.9 L71.8 15.3'/></g><g stroke-width='0.5' opacity='0.5'><path d='M12 17 Q14.5 14.3 18.2 13.5'/><path d='M13.5 15.6 L12.4 14.6 L11.6 13.7 M12.4 14.6 L13 13.9'/><path d='M15.2 14.5 L14.6 13.1 M15.2 14.5 L16 13.8'/><path d='M16.8 13.9 L16.4 12.5 L15.7 11.7'/></g><g stroke-width='0.5' opacity='0.45'><path d='M0 13.6 Q2.2 14.2 4 16'/><path d='M1.3 13.9 L2 12.7 M1.3 13.9 L0.7 12.9'/><path d='M2.6 14.9 L3.5 14.1'/></g><g stroke-width='0.5' opacity='0.4'><path d='M44 17 Q45.4 15 48 14.3'/><path d='M44.9 15.8 L44 14.8 M44.9 15.8 L45.7 15'/><path d='M46.5 14.8 L46 13.5'/></g></g><g fill='%23bcd6f8'><circle cx='13' cy='6.2' r='0.45' opacity='0.6'/><circle cx='20' cy='2.6' r='0.4' opacity='0.5'/><circle cx='26' cy='13' r='0.45' opacity='0.45'/><circle cx='36' cy='5.8' r='0.4' opacity='0.45'/><circle cx='40' cy='2.4' r='0.35' opacity='0.5'/><circle cx='50' cy='13.8' r='0.4' opacity='0.4'/><circle cx='55' cy='3.2' r='0.45' opacity='0.55'/><circle cx='58' cy='8.4' r='0.35' opacity='0.4'/><circle cx='63' cy='13.4' r='0.4' opacity='0.4'/><circle cx='67' cy='7.6' r='0.4' opacity='0.45'/><circle cx='24' cy='8' r='0.3' opacity='0.35'/></g></svg>"),
+      radial-gradient(120% 110% at 50% -40%, rgba(140, 180, 245, 0.3), transparent 62%),
+      radial-gradient(95% 115% at 104% 120%, rgba(120, 165, 240, 0.22), transparent 58%),
+      radial-gradient(80% 100% at -6% 118%, rgba(125, 168, 240, 0.18), transparent 52%),
+      linear-gradient(180deg, rgba(95, 145, 225, 0.18), rgba(10, 18, 48, 0.62));
     background-size: 100% 100%, auto, auto, auto, auto;
     background-repeat: no-repeat;
-    border-color: rgba(168, 198, 244, 0.4);
+    border-color: rgba(135, 175, 240, 0.45);
     box-shadow:
-      inset 0 0 9px rgba(168, 198, 246, 0.24),
-      inset 0 1px 0 rgba(214, 231, 253, 0.2),
-      inset 0 -1px 1px rgba(6, 10, 22, 0.35),
+      inset 0 0 9px rgba(130, 172, 242, 0.3),
+      inset 0 1px 0 rgba(180, 210, 250, 0.24),
+      inset 0 -1px 1px rgba(5, 9, 24, 0.4),
       0 1px 2px rgba(0, 0, 0, 0.3),
-      0 0 7px rgba(140, 180, 240, 0.13);
+      0 0 8px rgba(110, 160, 240, 0.18);
 
     &::before {
       background:
-        linear-gradient(178deg, rgba(212, 229, 252, 0.45), transparent 52%),
-        linear-gradient(358deg, rgba(190, 212, 246, 0.18), transparent 28%);
+        linear-gradient(178deg, rgba(175, 208, 250, 0.5), transparent 52%),
+        linear-gradient(358deg, rgba(150, 190, 245, 0.22), transparent 28%);
     }
 
     // The key behind the ice: murky, softly blurred, a frost sheen around
     // the letters — legible, but clearly frozen over.
     .k-txt {
-      color: rgba(168, 190, 226, 0.68);
+      color: rgba(150, 180, 230, 0.66);
       filter: blur(0.35px);
-      text-shadow: 0 0 3px rgba(196, 218, 252, 0.4);
+      text-shadow: 0 0 3px rgba(165, 200, 250, 0.45);
     }
 
     .k-stop {
-      background: #9fb6de;
-      box-shadow: 0 0 3px rgba(159, 182, 222, 0.55);
+      background: #8fb0e6;
+      box-shadow: 0 0 3px rgba(130, 170, 235, 0.6);
     }
   }
 
