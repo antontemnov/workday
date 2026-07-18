@@ -1,3 +1,5 @@
+@use 'glass';
+
 :host {
   display: flex;
   flex-direction: column;
@@ -92,26 +94,21 @@
 }
 
 // ＋Log — the entry point (the panel's ghost row died with the panel); opens
-// the log cloud right below the header. A glass capsule with no drawn
-// outline: one soft continuous mauve glow along the inner top edge.
+// the log cloud right below the header. The same mauve candy capsule as the
+// logged keys, rolled into a pill; hover thickens the dye, nothing moves.
 .g-btn {
   margin-left: auto;
   align-self: center;
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-family: inherit;
   font-size: 10px;
   font-weight: 700;
-  color: #cba6f7;
-  border: 1px solid transparent;
-  background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
   border-radius: 999px;
   padding: 3px 11px;
   cursor: pointer;
-  box-shadow: inset 0 1px 2px -1px rgba(203, 166, 247, 0.5);
-  transition: background 0.15s ease;
+  @include glass.glass-candy((203 166 247), (228 205 252), #cba6f7);
 
   svg {
     width: 9px;
@@ -127,7 +124,9 @@
   }
 
   &:hover:not(:disabled) {
-    background: linear-gradient(180deg, rgba(205, 214, 244, 0.13), rgba(205, 214, 244, 0.05));
+    --m1: 0.2;
+    --m2: 0.09;
+    --m3: 0.15;
   }
 
   &:disabled { opacity: 0.4; cursor: default; }

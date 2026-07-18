@@ -101,28 +101,46 @@
   height: 17px;
   padding: 0 7px 0 5px;
   border-radius: 7px;
-  color: #bac2de;
   font-weight: 600;
   font-size: 11px;
   white-space: nowrap;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  @include glass.glass-capsule();
+  transition: color 0.2s ease;
+  // Lamp centre: 5px left padding + half the 9px indicator box.
+  --lx: 9.5px;
+  @include glass.glass-candy((205 214 244), (228 233 250), #8b90ab);
+  // Unlit by default (covers .off) — quiet neutral dye; the lamp's light in
+  // .lit is what wakes the glass.
+  --m1: 0.08;
+  --m2: 0.03;
+  --m3: 0.06;
+  --eg: 0.12;
+  --ec: 0.14;
+  --pool: 0.1;
 
-  // Lit: the lamp's light diffuses through the glass — a green wash radiating
-  // from the indicator's spot, a faint green breath over the whole capsule,
-  // and a green-tinted rim instead of the white one (no white-on-white fight).
+  // Lit: the lamp is a light source — a hot halo around the indicator, a
+  // wash over the left half, and a bright rim segment where the ring passes
+  // the lamp. Everything reads --lc/--rc, so will-pause floods the same
+  // layers red by swapping two vars.
   &.lit {
-    color: #cdd6f4;
+    --c: 166 227 161;
+    --ci: 214 245 208;
+    --ink: #cdd6f4;
+    --lc: 166 227 161;
+    --m1: 0.14;
+    --m2: 0.05;
+    --m3: 0.1;
+    --eg: 0.22;
+    --ec: 0.3;
+    --pool: 0.22;
     background:
-      radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.26), transparent 72%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
-      linear-gradient(180deg, rgba(166, 227, 161, 0.09), rgba(166, 227, 161, 0.02));
-    border-color: rgba(166, 227, 161, 0.28);
+      radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.38), rgb(var(--lc) / 0.1) 11px, transparent 24px),
+      radial-gradient(70px 30px at 14px 58%, rgb(var(--lc) / 0.15), transparent 78%),
+      glass.$candy-body;
 
     &::before {
       background:
-        linear-gradient(178deg, rgba(166, 227, 161, 0.32), transparent 46%),
-        linear-gradient(358deg, rgba(166, 227, 161, 0.1), transparent 22%);
+        radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.7), rgb(var(--lc) / 0.28) 12px, transparent 30px),
+        glass.$candy-rim;
     }
   }
 
@@ -146,7 +164,6 @@
       linear-gradient(180deg, rgba(95, 145, 225, 0.18), rgba(10, 18, 48, 0.62));
     background-size: 100% 100%, auto, auto, auto, auto;
     background-repeat: no-repeat;
-    border-color: rgba(135, 175, 240, 0.45);
     box-shadow:
       inset 0 0 9px rgba(130, 172, 242, 0.3),
       inset 0 1px 0 rgba(180, 210, 250, 0.24),
@@ -154,11 +171,22 @@
       0 1px 2px rgba(0, 0, 0, 0.3),
       0 0 8px rgba(110, 160, 240, 0.18);
 
+    // Frost-toned ring; fixed colours — no light ever floods a frozen chip.
     &::before {
-      background:
-        linear-gradient(178deg, rgba(175, 208, 250, 0.5), transparent 52%),
-        linear-gradient(358deg, rgba(150, 190, 245, 0.22), transparent 28%);
+      background: conic-gradient(from 0deg,
+        rgba(175, 208, 250, 0.45) 0deg,
+        rgba(150, 190, 245, 0.12) 48deg,
+        rgba(150, 190, 245, 0.22) 100deg,
+        rgba(255, 255, 255, 0.35) 135deg,
+        rgba(150, 190, 245, 0.18) 195deg,
+        rgba(150, 190, 245, 0.08) 228deg,
+        rgba(150, 190, 245, 0.25) 275deg,
+        rgba(255, 255, 255, 0.52) 316deg,
+        rgba(175, 208, 250, 0.45) 360deg);
     }
+
+    // No front blik: the ice sheet IS the front surface here.
+    &::after { content: none; }
 
     // The key behind the ice: murky, softly blurred, a frost sheen around
     // the letters — legible, but clearly frozen over.
@@ -174,34 +202,20 @@
     }
   }
 
-  // Lamp out by the user's hand — unlit glass: flat, darker, dimmer key, a
-  // steady grey ⏸ waiting for its ▶. Warmer than the frozen chip: this one
-  // wakes only when you wake it.
-  &.off {
-    color: #8b90ab;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.005) 42%, rgba(8, 8, 16, 0.14)),
-      linear-gradient(180deg, rgba(205, 214, 244, 0.06), rgba(205, 214, 244, 0.015));
-    border-color: rgba(205, 214, 244, 0.15);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.04),
-      inset 0 -1px 1px rgba(8, 8, 16, 0.2),
-      0 1px 2px rgba(0, 0, 0, 0.25);
-
-    &::before {
-      background: linear-gradient(178deg, rgba(205, 214, 244, 0.12), transparent 40%);
-    }
-  }
+  // .off (lamp out by the user's hand) is the base look above: unlit neutral
+  // glass, a steady grey ⏸ waiting for its ▶.
 
   // Branch without a ticket — dashed neutral placeholder, no new colours.
   &.none {
     color: #6c7086;
+    text-shadow: none;
     background: transparent;
     border: 1px dashed #45475a;
     box-shadow: none;
     padding: 0 8px;
 
     &::before { content: none; }
+    &::after { content: none; }
   }
 }
 
@@ -210,6 +224,9 @@
 // just glows), ■ grey = stopped; hover reveals ⏸ / ▶ in the same box.
 .k-ind {
   position: relative;
+  // The crisp foreground plane — above the front-surface blik (::after, z2),
+  // exactly how the frozen chip layers its ■ over the ice.
+  z-index: 3;
   width: 9px;
   height: 9px;
   margin-right: 5px;
@@ -223,12 +240,14 @@
   }
 }
 
+// The lamp wears the light's colour (--lc) — it blushes red for the beat the
+// hover swap takes to fade it out behind the ⏸.
 .k-lamp {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #a6e3a1;
-  box-shadow: 0 0 4px rgba(166, 227, 161, 0.9), 0 0 9px rgba(166, 227, 161, 0.4);
+  background: rgb(var(--lc));
+  box-shadow: 0 0 4px rgb(var(--lc) / 0.9), 0 0 9px rgb(var(--lc) / 0.5), 0 0 16px rgb(var(--lc) / 0.25);
 }
 
 .k-stop {
@@ -252,54 +271,51 @@
 }
 
 // Actionable chip (Live → Pause, manual pause → Resume): only the indicator
-// glyph and the capsule tint react to hover.
+// glyph and the light react to hover.
 .c-key.act {
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
 
   &:hover:not(:disabled) {
     .k-lamp, .k-stop, .k-hold { opacity: 0; }
     .k-act-ico { opacity: 1; }
   }
 
-  // Pause: the lamp switches to red — red light floods the same glass, the
-  // glyph becomes ⏸.
+  // Pause: the lamp turns red and the red light takes over everything that
+  // reads it — the halo, the wash, the WHOLE ring (--rc), while the white
+  // specular peaks stay white. Two vars do all the work; the halo only grows
+  // a touch hotter.
   &.will-pause {
     .k-act-ico { fill: #f38ba8; }
 
     &:hover:not(:disabled) {
-      color: #cdd6f4;
+      --lc: 243 139 168;
+      --rc: 243 139 168;
       background:
-        radial-gradient(30px 16px at 9px 60%, rgba(243, 139, 168, 0.28), transparent 72%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
-        linear-gradient(180deg, rgba(243, 139, 168, 0.1), rgba(243, 139, 168, 0.02));
-      border-color: rgba(243, 139, 168, 0.32);
-
-      &::before {
-        background:
-          linear-gradient(178deg, rgba(243, 139, 168, 0.3), transparent 46%),
-          linear-gradient(358deg, rgba(243, 139, 168, 0.1), transparent 22%);
-      }
+        radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.44), rgb(var(--lc) / 0.15) 12px, transparent 27px),
+        radial-gradient(80px 32px at 16px 58%, rgb(var(--lc) / 0.19), transparent 80%),
+        glass.$candy-body;
     }
   }
 
-  // Resume: green light previews in the cold glass, ■ becomes ▶.
+  // Resume: green light previews in the cold glass — the lamp relights, the
+  // ring goes green, the dye stays quiet until the click actually resumes.
   &.will-resume {
     .k-act-ico { fill: #a6e3a1; }
 
     &:hover:not(:disabled) {
-      color: #cdd6f4;
+      --lc: 166 227 161;
+      --rc: 166 227 161;
+      --ink: #cdd6f4;
       background:
-        radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.22), transparent 72%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
-        linear-gradient(180deg, rgba(166, 227, 161, 0.08), rgba(166, 227, 161, 0.02));
-      border-color: rgba(166, 227, 161, 0.28);
+        radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.38), rgb(var(--lc) / 0.1) 11px, transparent 24px),
+        radial-gradient(70px 30px at 14px 58%, rgb(var(--lc) / 0.15), transparent 78%),
+        glass.$candy-body;
 
       &::before {
         background:
-          linear-gradient(178deg, rgba(166, 227, 161, 0.28), transparent 46%),
-          linear-gradient(358deg, rgba(166, 227, 161, 0.09), transparent 22%);
+          radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.7), rgb(var(--lc) / 0.28) 12px, transparent 30px),
+          glass.$candy-rim;
       }
     }
   }
