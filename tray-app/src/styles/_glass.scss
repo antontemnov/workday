@@ -3,10 +3,12 @@
 // where it carries meaning (green = tracked, teal = suggested, mauve = logged).
 
 // Rim catch-light: a 1px ring hugging the edge, painted in ::before and
-// carved out by the mask so the fill underneath stays untouched. Brightest at
-// the top, fading down the sides, gone before the bottom; $soft is the faint
-// counter-glint from below. This ring IS the edge of the glass — the border
-// itself stays transparent (real glass has no drawn outline).
+// carved out by the mask so the fill underneath stays untouched. The light is
+// LOCAL — an elliptical specular pool near the upper-left of the edge and a
+// fainter counter-glint by the lower-right corner, each fading along the edge
+// in both directions. A full-width linear gradient here reads as a drawn
+// straight line (underline / topline artifact) — never use one. This ring IS
+// the edge of the glass; the border itself stays transparent.
 @mixin glass-rim($top: rgba(205, 214, 244, 0.28), $soft: transparent) {
   &::before {
     content: '';
@@ -15,8 +17,8 @@
     border-radius: inherit;
     padding: 1px;
     background:
-      linear-gradient(178deg, #{$top}, transparent 56%),
-      linear-gradient(358deg, #{$soft}, transparent 26%);
+      radial-gradient(52% 190% at 30% -30%, #{$top}, transparent 70%),
+      radial-gradient(42% 160% at 74% 128%, #{$soft}, transparent 66%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -39,8 +41,9 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 42%, rgba(8, 8, 16, 0.1)),
     linear-gradient(180deg, #{$tint}, #{$tint-soft});
   border: 1px solid transparent;
+  // Inner highlight is blurred (1px spread of light, not a crisp inner line).
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 1px 1px rgba(255, 255, 255, 0.06),
     inset 0 -1px 1px rgba(8, 8, 16, 0.18),
     0 1px 3px rgba(0, 0, 0, 0.35);
   @include glass-rim($rim);

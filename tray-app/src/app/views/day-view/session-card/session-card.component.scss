@@ -120,9 +120,10 @@
       linear-gradient(180deg, rgba(166, 227, 161, 0.09), rgba(166, 227, 161, 0.02));
 
     &::before {
+      // Specular pool sits over the lamp — the light source is inside.
       background:
-        linear-gradient(178deg, rgba(166, 227, 161, 0.4), transparent 56%),
-        linear-gradient(358deg, rgba(166, 227, 161, 0.12), transparent 26%);
+        radial-gradient(55% 190% at 22% -30%, rgba(166, 227, 161, 0.42), transparent 70%),
+        radial-gradient(42% 160% at 76% 128%, rgba(166, 227, 161, 0.12), transparent 66%);
     }
   }
 
@@ -155,8 +156,8 @@
 
     &::before {
       background:
-        linear-gradient(178deg, rgba(175, 208, 250, 0.5), transparent 52%),
-        linear-gradient(358deg, rgba(150, 190, 245, 0.22), transparent 28%);
+        radial-gradient(60% 200% at 34% -35%, rgba(175, 208, 250, 0.5), transparent 70%),
+        radial-gradient(36% 150% at 82% 125%, rgba(150, 190, 245, 0.22), transparent 64%);
     }
 
     // The key behind the ice: murky, softly blurred, a frost sheen around
@@ -187,7 +188,7 @@
       0 1px 2px rgba(0, 0, 0, 0.25);
 
     &::before {
-      background: linear-gradient(178deg, rgba(205, 214, 244, 0.16), transparent 48%);
+      background: radial-gradient(50% 180% at 30% -30%, rgba(205, 214, 244, 0.18), transparent 68%);
     }
   }
 
@@ -275,8 +276,8 @@
 
       &::before {
         background:
-          linear-gradient(178deg, rgba(243, 139, 168, 0.38), transparent 56%),
-          linear-gradient(358deg, rgba(243, 139, 168, 0.12), transparent 26%);
+          radial-gradient(55% 190% at 22% -30%, rgba(243, 139, 168, 0.4), transparent 70%),
+          radial-gradient(42% 160% at 76% 128%, rgba(243, 139, 168, 0.12), transparent 66%);
       }
     }
   }
@@ -294,8 +295,8 @@
 
       &::before {
         background:
-          linear-gradient(178deg, rgba(166, 227, 161, 0.36), transparent 56%),
-          linear-gradient(358deg, rgba(166, 227, 161, 0.11), transparent 26%);
+          radial-gradient(55% 190% at 22% -30%, rgba(166, 227, 161, 0.38), transparent 70%),
+          radial-gradient(42% 160% at 76% 128%, rgba(166, 227, 161, 0.11), transparent 66%);
       }
     }
   }
