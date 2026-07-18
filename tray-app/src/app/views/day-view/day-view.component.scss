@@ -93,9 +93,10 @@
   font-variant-numeric: tabular-nums;
   user-select: none;
 
-  // Lens band on the bottom edge: the backdrop bends (SVG displacement) and
-  // brightens where it slides under the glass, fading in from nothing so no
-  // hard line appears (the 5.8 lesson: never a bottom stripe).
+  // Lens band on the bottom edge: pure displacement, no light lift — any
+  // uniform brightness here reads as a stripe (the 5.8 lesson). At rest the
+  // band redraws the matte over itself and disappears; it only shows as a
+  // stretch on content actually crossing the edge.
   &::after {
     content: '';
     position: absolute;
@@ -103,7 +104,7 @@
     right: 0;
     bottom: 0;
     height: 10px;
-    backdrop-filter: url(#dayheadLens) saturate(1.5) brightness(1.07);
+    backdrop-filter: url(#dayheadLens);
     -webkit-mask-image: linear-gradient(180deg, transparent, #000 70%);
             mask-image: linear-gradient(180deg, transparent, #000 70%);
     pointer-events: none;
