@@ -152,8 +152,9 @@ export class SessionCardComponent {
   // [top catch-light, bottom counter-glint, travelling sweep] — same hue;
   // the sweep speaks a little louder because it exists only for a moment.
   private get glintPair(): readonly [string, string, string] {
+    // Nonstop rim is glassy-neutral like its shimmer — teal is suggestions'.
     if (this.isAlwaysOn) {
-      return ['rgba(148, 226, 213, 0.35)', 'rgba(148, 226, 213, 0.12)', 'rgba(148, 226, 213, 0.75)'];
+      return ['rgba(205, 214, 244, 0.3)', 'rgba(205, 214, 244, 0.1)', 'rgba(205, 214, 244, 0.7)'];
     }
     const n = this.session.normalizedScore;
     if (this.isNonstopPaused || this.isManualPaused || n <= 0) {

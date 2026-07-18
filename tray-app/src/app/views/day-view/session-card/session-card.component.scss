@@ -316,13 +316,14 @@ app-mode-dropdown {
     transition: width 0.5s ease, background-color 0.5s ease;
   }
 
-  // Always-on (Nonstop) — never drains; a slow teal shimmer reads "wired to power".
+  // Always-on (Nonstop) — never drains; a slow glassy shimmer reads "wired to
+  // power". Neutral on purpose: teal belongs to suggestions now.
   .fill.shimmer {
     background: linear-gradient(
       90deg,
-      rgba(148, 226, 213, 0.4) 0%,
-      rgba(148, 226, 213, 0.95) 50%,
-      rgba(148, 226, 213, 0.4) 100%
+      rgba(205, 214, 244, 0.35) 0%,
+      rgba(205, 214, 244, 0.9) 50%,
+      rgba(205, 214, 244, 0.35) 100%
     );
     background-size: 200% 100%;
     animation: edge-shimmer 3s linear infinite;
