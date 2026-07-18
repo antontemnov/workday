@@ -134,9 +134,8 @@
     inset: -1px;
     border-radius: inherit;
     padding: 1px;
-    background:
-      radial-gradient(52% 190% at 30% -30%, rgba(203, 166, 247, 0.5), transparent 70%),
-      radial-gradient(42% 160% at 74% 128%, rgba(205, 214, 244, 0.12), transparent 66%);
+    background: radial-gradient(52% 190% at 30% -30%, rgba(203, 166, 247, 0.5), transparent 70%);
+    filter: blur(0.4px);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);

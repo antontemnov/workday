@@ -16,9 +16,11 @@
     inset: -1px; // abspos offsets run from the padding box — -1px lands exactly on the border
     border-radius: inherit;
     padding: 1px;
-    background:
-      radial-gradient(52% 190% at 30% -30%, #{$top}, transparent 70%),
-      radial-gradient(42% 160% at 74% 128%, #{$soft}, transparent 66%);
+    // Top pool only — NO light on the bottom edge, ever: any bottom glint
+    // under a row of text reads as an underline.
+    background: radial-gradient(52% 190% at 30% -30%, #{$top}, transparent 70%);
+    // Bloom: a crisp 1px ring is still a drawn line — blur melts it into glow.
+    filter: blur(0.4px);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -41,11 +43,12 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 42%, rgba(8, 8, 16, 0.1)),
     linear-gradient(180deg, #{$tint}, #{$tint-soft});
   border: 1px solid transparent;
-  // Inner highlight is blurred (1px spread of light, not a crisp inner line).
+  // Inner highlight is blurred; NO dark inner bottom line and NO tight seat
+  // shadow — both read as an underline under the key. Depth comes from the
+  // curvature gradient and a diffuse shadow pool.
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.06),
-    inset 0 -1px 1px rgba(8, 8, 16, 0.18),
-    0 1px 3px rgba(0, 0, 0, 0.35);
+    0 2px 5px rgba(0, 0, 0, 0.25);
   @include glass-rim($rim);
 }
 
@@ -54,7 +57,7 @@
   position: relative;
   background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
   border: 1px solid transparent;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   @include glass-rim(rgba(205, 214, 244, 0.34));
 
   // Keyboard focus stays visible, but in the glass voice — not the UA ring.
