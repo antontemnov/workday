@@ -39,7 +39,7 @@
         <svg class="k-act-ico" *ngIf="trackingAction === 'resume'" viewBox="0 0 10 10">
           <path d="M2 1 L9 5 L2 9 Z"></path>
         </svg>
-      </span>{{ session.task }}
+      </span><span class="k-txt">{{ session.task }}</span>
     </button>
     <ng-template #staticKey>
       <span class="c-key"
@@ -54,7 +54,7 @@
             <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
           </svg>
           <span class="k-stop" *ngIf="!isAccruing && !isManualPaused"></span>
-        </span>{{ session.task || '—' }}
+        </span><span class="k-txt">{{ session.task || '—' }}</span>
       </span>
     </ng-template>
     <span class="c-nm"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>
