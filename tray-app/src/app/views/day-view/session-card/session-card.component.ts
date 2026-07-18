@@ -135,20 +135,39 @@ export class SessionCardComponent {
 
   // Tracked highlight — the glass rim's catch-light follows the edge fill:
   // stamina colour while accruing, an electric sky-blue for Nonstop, plain
-  // glass (neutral) the moment tracking stops. The triple is
-  // [top catch-light, bottom counter-glint, travelling sweep] — same hue;
-  // the sweep speaks a little louder because it exists only for a moment.
-  private get glintPair(): readonly [string, string, string] {
+  // glass (neutral) the moment tracking stops. The quad is
+  // [top catch-light, bottom counter-glint, strong sweep, soft post-wave] —
+  // same hue family; the strong sweep speaks loudest, its echo whispers.
+  private get glintPair(): readonly [string, string, string, string] {
     if (this.isAlwaysOn) {
-      return ['rgba(116, 199, 236, 0.4)', 'rgba(137, 180, 250, 0.14)', 'rgba(137, 180, 250, 0.8)'];
+      return [
+        'rgba(116, 199, 236, 0.4)', 'rgba(137, 180, 250, 0.14)',
+        'rgba(137, 180, 250, 0.8)', 'rgba(148, 226, 213, 0.32)',
+      ];
     }
     const n = this.session.normalizedScore;
     if (!this.isAccruing || n <= 0) {
-      return ['rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)', 'rgba(205, 214, 244, 0.3)'];
+      return [
+        'rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)',
+        'rgba(205, 214, 244, 0.3)', 'rgba(205, 214, 244, 0.12)',
+      ];
     }
-    if (n >= 0.6) return ['rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)', 'rgba(166, 227, 161, 0.8)'];
-    if (n >= 0.3) return ['rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)', 'rgba(249, 226, 175, 0.75)'];
-    return ['rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)', 'rgba(243, 139, 168, 0.75)'];
+    if (n >= 0.6) {
+      return [
+        'rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)',
+        'rgba(166, 227, 161, 0.8)', 'rgba(166, 227, 161, 0.3)',
+      ];
+    }
+    if (n >= 0.3) {
+      return [
+        'rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)',
+        'rgba(249, 226, 175, 0.75)', 'rgba(249, 226, 175, 0.28)',
+      ];
+    }
+    return [
+      'rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)',
+      'rgba(243, 139, 168, 0.75)', 'rgba(243, 139, 168, 0.28)',
+    ];
   }
 
   get stateGlint(): string {
@@ -161,6 +180,10 @@ export class SessionCardComponent {
 
   get stateSweep(): string {
     return this.glintPair[2];
+  }
+
+  get stateSweepSoft(): string {
+    return this.glintPair[3];
   }
 
   // ─── Time ──────────────────────────────────────────────────────────────

@@ -35,10 +35,11 @@
     padding: 1px;
     background:
       linear-gradient(100deg, transparent 42%, var(--st-sweep, var(--st-glint, transparent)) 50%, transparent 58%),
+      linear-gradient(100deg, transparent 28%, var(--st-sweep-soft, transparent) 50%, transparent 72%),
       linear-gradient(178deg, var(--st-glint, transparent), transparent 46%),
       linear-gradient(358deg, var(--st-glint-soft, transparent), transparent 22%);
-    background-size: 240% 100%, 100% 100%, 100% 100%;
-    background-position: -20% 0, 0 0, 0 0;
+    background-size: 240% 100%, 240% 100%, 100% 100%, 100% 100%;
+    background-position: -20% 0, -20% 0, 0 0, 0 0;
     background-repeat: no-repeat;
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
@@ -50,7 +51,7 @@
   // The glint travels only while the session is actually accruing — a paused
   // card is still glass.
   &:not(.paused)::before {
-    animation: rim-sweep 10s ease-in-out infinite;
+    animation: rim-sweep 11s ease-in-out infinite;
   }
 
   // Paused: fade only the data (time/stats). The status badge must stay
@@ -90,9 +91,10 @@
   margin-top: 1px;
 }
 
-// Ticket chip — the session's identity AND its tracking control. The capsule
-// itself is NEUTRAL convex glass: green means "accruing", so the colour lives
-// only in the indicator lamp. The key text never changes or moves.
+// Ticket chip — the session's identity AND its tracking control. Neutral
+// convex glass that the indicator lamp illuminates from within: while time
+// accrues, green light spills from the lamp into the capsule; when the lamp
+// is out the glass goes cold and dark. The key text never changes or moves.
 .c-key {
   justify-self: start;
   display: inline-flex;
@@ -104,7 +106,44 @@
   font-weight: 600;
   font-size: 11px;
   white-space: nowrap;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   @include glass.glass-capsule();
+
+  // Lit: the lamp's light diffuses through the glass — a green wash radiating
+  // from the indicator's spot, a faint green breath over the whole capsule,
+  // and a green-tinted rim instead of the white one (no white-on-white fight).
+  &.lit {
+    color: #cdd6f4;
+    background:
+      radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.26), transparent 72%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
+      linear-gradient(180deg, rgba(166, 227, 161, 0.09), rgba(166, 227, 161, 0.02));
+    border-color: rgba(166, 227, 161, 0.28);
+
+    &::before {
+      background:
+        linear-gradient(178deg, rgba(166, 227, 161, 0.32), transparent 46%),
+        linear-gradient(358deg, rgba(166, 227, 161, 0.1), transparent 22%);
+    }
+  }
+
+  // Lamp out — unlit glass: flat, darker, dimmer key. Reads stopped at a
+  // glance even before the ■ registers.
+  &.off {
+    color: #8b90ab;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.005) 42%, rgba(8, 8, 16, 0.14)),
+      linear-gradient(180deg, rgba(205, 214, 244, 0.06), rgba(205, 214, 244, 0.015));
+    border-color: rgba(205, 214, 244, 0.15);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      inset 0 -1px 1px rgba(8, 8, 16, 0.2),
+      0 1px 2px rgba(0, 0, 0, 0.25);
+
+    &::before {
+      background: linear-gradient(178deg, rgba(205, 214, 244, 0.12), transparent 40%);
+    }
+  }
 
   // Branch without a ticket — dashed neutral placeholder, no new colours.
   &.none {
@@ -145,10 +184,10 @@
 }
 
 .k-stop {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 1px;
-  background: #7f849c;
+  background: #9399b2;
 }
 
 .k-act-ico {
@@ -169,27 +208,44 @@
     .k-act-ico { opacity: 1; }
   }
 
-  // Pause reads as "stop": the capsule reddens, the lamp becomes ⏸.
+  // Pause: the lamp switches to red — red light floods the same glass, the
+  // glyph becomes ⏸.
   &.will-pause {
     .k-act-ico { fill: #f38ba8; }
 
     &:hover:not(:disabled) {
+      color: #cdd6f4;
       background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02) 42%, rgba(8, 8, 16, 0.1)),
-        linear-gradient(180deg, rgba(243, 139, 168, 0.2), rgba(243, 139, 168, 0.06));
+        radial-gradient(30px 16px at 9px 60%, rgba(243, 139, 168, 0.28), transparent 72%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
+        linear-gradient(180deg, rgba(243, 139, 168, 0.1), rgba(243, 139, 168, 0.02));
       border-color: rgba(243, 139, 168, 0.32);
+
+      &::before {
+        background:
+          linear-gradient(178deg, rgba(243, 139, 168, 0.3), transparent 46%),
+          linear-gradient(358deg, rgba(243, 139, 168, 0.1), transparent 22%);
+      }
     }
   }
 
-  // Resume: the capsule warms green, ■ becomes ▶.
+  // Resume: green light previews in the cold glass, ■ becomes ▶.
   &.will-resume {
     .k-act-ico { fill: #a6e3a1; }
 
     &:hover:not(:disabled) {
+      color: #cdd6f4;
       background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02) 42%, rgba(8, 8, 16, 0.1)),
-        linear-gradient(180deg, rgba(166, 227, 161, 0.18), rgba(166, 227, 161, 0.05));
-      border-color: rgba(166, 227, 161, 0.3);
+        radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.22), transparent 72%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
+        linear-gradient(180deg, rgba(166, 227, 161, 0.08), rgba(166, 227, 161, 0.02));
+      border-color: rgba(166, 227, 161, 0.28);
+
+      &::before {
+        background:
+          linear-gradient(178deg, rgba(166, 227, 161, 0.28), transparent 46%),
+          linear-gradient(358deg, rgba(166, 227, 161, 0.09), transparent 22%);
+      }
     }
   }
 
@@ -439,12 +495,15 @@ app-mode-dropdown {
   100% { background-position: 300% 0; }
 }
 
-// One quiet pass along the rim, then a long rest. Only layer 1 moves (the
-// sweep band); the two static glints keep their position on every frame.
+// Two waves per cycle: the strong glint passes first, then its echo — a
+// wider, dimmer post-wave — flows slowly along the same path, then rest.
+// Layers: [strong sweep, soft echo, static glint, static counter-glint].
 @keyframes rim-sweep {
-  0%   { background-position: 120% 0, 0 0, 0 0; }
-  28%  { background-position: -20% 0, 0 0, 0 0; }
-  100% { background-position: -20% 0, 0 0, 0 0; }
+  0%   { background-position: 120% 0, 120% 0, 0 0, 0 0; }
+  8%   { background-position: 76% 0, 120% 0, 0 0, 0 0; }
+  24%  { background-position: -20% 0, 98% 0, 0 0, 0 0; }
+  68%  { background-position: -20% 0, -20% 0, 0 0, 0 0; }
+  100% { background-position: -20% 0, -20% 0, 0 0, 0 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

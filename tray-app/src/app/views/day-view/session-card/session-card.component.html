@@ -4,7 +4,8 @@
      [class.pop-open]="addPopoverOpen"
      [style.--st-glint]="stateGlint"
      [style.--st-glint-soft]="stateGlintSoft"
-     [style.--st-sweep]="stateSweep">
+     [style.--st-sweep]="stateSweep"
+     [style.--st-sweep-soft]="stateSweepSoft">
   <!-- Band 1: identity — ticket chip (doubles as the tracking control) ·
        repo · branch · time. The dot is the whole status story: green pulse =
        accruing, grey = not. Hover morphs to the action only when one exists
@@ -13,6 +14,8 @@
     <button *ngIf="session.task && trackingAction; else staticKey"
             type="button"
             class="c-key act"
+            [class.lit]="isAccruing"
+            [class.off]="!isAccruing"
             [class.will-pause]="trackingAction === 'pause'"
             [class.will-resume]="trackingAction === 'resume'"
             [disabled]="actionPending"
@@ -33,7 +36,10 @@
       </span>{{ session.task }}
     </button>
     <ng-template #staticKey>
-      <span class="c-key" [class.none]="!session.task">
+      <span class="c-key"
+            [class.lit]="session.task && isAccruing"
+            [class.off]="session.task && !isAccruing"
+            [class.none]="!session.task">
         <span class="k-ind" *ngIf="session.task" aria-hidden="true">
           <span class="k-lamp" *ngIf="isAccruing"></span>
           <span class="k-stop" *ngIf="!isAccruing"></span>
