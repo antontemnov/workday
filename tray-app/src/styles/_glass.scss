@@ -1,0 +1,53 @@
+// Glass material — the tray's one surface language. Dark glass, not white
+// frost: near-invisible fills, a 1px catch-light on the border, colour only
+// where it carries meaning (green = tracked, teal = suggested, mauve = logged).
+
+// Rim catch-light: a 1px ring hugging the border, painted in ::before and
+// carved out by the mask so the fill underneath stays untouched. Brightest at
+// the top, gone by mid-height; $soft is the faint counter-glint from below.
+@mixin glass-rim($top: rgba(205, 214, 244, 0.28), $soft: transparent) {
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -1px; // abspos offsets run from the padding box — -1px lands exactly on the border
+    border-radius: inherit;
+    padding: 1px;
+    background:
+      linear-gradient(178deg, #{$top}, transparent 46%),
+      linear-gradient(358deg, #{$soft}, transparent 22%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+// Small control capsule (badges, pickers, the ＋Log button family).
+@mixin glass-chip {
+  position: relative;
+  background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
+  border: 1px solid rgba(205, 214, 244, 0.14);
+  @include glass-rim();
+
+  // Keyboard focus stays visible, but in the glass voice — not the UA ring.
+  &:focus-visible {
+    outline: 1px solid rgba(205, 214, 244, 0.5);
+    outline-offset: 1px;
+  }
+}
+
+@mixin glass-chip-hover {
+  background: linear-gradient(180deg, rgba(205, 214, 244, 0.13), rgba(205, 214, 244, 0.05));
+}
+
+// Floating surface (menus, popovers): translucent slab over the page with a
+// blur, same rim as the chips, deeper shadow. Sets no position — the caller
+// places the panel (absolute/fixed); any positioned box anchors the rim.
+@mixin glass-panel {
+  background: linear-gradient(180deg, rgba(30, 30, 46, 0.88), rgba(24, 24, 37, 0.92));
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(205, 214, 244, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  @include glass-rim(rgba(205, 214, 244, 0.2));
+}

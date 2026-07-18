@@ -1,69 +1,59 @@
+@use 'glass';
+
 :host {
   position: relative;
   display: inline-flex;
 }
 
-// Closed control — same chip language as the time/git chips, tinted by the
-// active mode. Nonstop is the only filled one (its drifting gradient).
+// Closed control — the same neutral glass capsule as the status badge; the
+// mode is a setting, not a state, so it gets no colour of its own.
 .dd {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  padding: 3px 8px;
-  background: #1e1e2e;
-  color: #cdd6f4;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  color: #a6adc8;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 10.5px;
   cursor: pointer;
-  transition: filter 0.15s ease;
+  transition: background 0.15s ease;
+  @include glass.glass-chip;
 
   .lbl { font-weight: 600; }
 
   .dsep {
     width: 1px;
-    height: 11px;
-    margin: 0 2px;
-    background: #45475a;
+    height: 10px;
+    margin: 0 1px;
+    background: rgba(205, 214, 244, 0.14);
     flex-shrink: 0;
   }
 
   .chev {
-    font-size: 9px;
+    font-size: 8px;
     line-height: 1;
+    color: #6c7086;
     transition: transform 0.15s ease;
   }
   &.open .chev { transform: rotate(180deg); }
 
-  &:hover:not(:disabled) { filter: brightness(1.12); }
+  &:hover:not(:disabled) { @include glass.glass-chip-hover; color: #cdd6f4; }
   &:disabled { cursor: default; opacity: 0.5; }
-
-  &.m-low     { background: #3a3520; color: #f9e2af; .dsep { background: rgba(249, 226, 175, 0.4); } }
-  &.m-normal  { background: #1e3a2a; color: #a6e3a1; .dsep { background: rgba(166, 227, 161, 0.4); } }
-  &.m-patient { background: #20283a; color: #89b4fa; .dsep { background: rgba(137, 180, 250, 0.4); } }
-  &.m-always_on {
-    background: linear-gradient(120deg, #94e2d5, #74c7ec, #89b4fa, #94e2d5);
-    background-size: 300% 100%;
-    color: #0e2a24;
-    animation: nonstop-flow 7s linear infinite;
-    .dsep { background: rgba(14, 42, 36, 0.45); }
-  }
 }
 
-// Open menu — coloured labels on dark rows + a short idle-leash hint. Only the
-// Nonstop row is filled; a 2px gap between rows keeps the colours from touching.
+// Open menu — a glass slab; the selected row is the only emphasis (✓ + bright
+// label), no per-mode colours.
 .menu {
   position: absolute;
   top: calc(100% + 5px);
   right: 0; // the picker sits at the card's right edge — hang the menu left
   z-index: 50;
-  width: 244px;
-  background: #11111b;
-  border: 1px solid #313244;
-  border-radius: 6px;
+  width: 264px;
+  border-radius: 8px;
   padding: 3px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  @include glass.glass-panel;
 
   .opt {
     display: flex;
@@ -71,43 +61,24 @@
     gap: 6px;
     width: 100%;
     border: 0;
-    border-radius: 4px;
-    margin-bottom: 2px;
+    border-radius: 5px;
     padding: 6px 9px;
-    background: #181825;
-    color: #cdd6f4;
+    background: transparent;
+    color: #a6adc8;
     font-family: inherit;
     font-size: 11px;
     text-align: left;
     cursor: pointer;
-    transition: background 0.12s ease, filter 0.12s ease;
+    transition: background 0.12s ease, color 0.12s ease;
 
-    &:last-child { margin-bottom: 0; }
-    &:hover { background: #232334; }
+    &:hover { background: rgba(205, 214, 244, 0.07); color: #cdd6f4; }
 
     // Check in a fixed left gutter so labels align across rows; only the
     // selected row paints the ✓ (others render an empty 12px spacer).
-    .chk { width: 12px; flex-shrink: 0; text-align: center; font-size: 11px; color: #6c7086; }
+    .chk { width: 12px; flex-shrink: 0; text-align: center; font-size: 11px; color: #cdd6f4; }
     .ml { font-weight: 600; flex-shrink: 0; }
-    .md { color: #6c7086; min-width: 0; }
+    .md { color: #6c7086; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    &.o-low     { .ml, .chk { color: #f9e2af; } }
-    &.o-normal  { .ml, .chk { color: #a6e3a1; } }
-    &.o-patient { .ml, .chk { color: #89b4fa; } }
-
-    &.o-always_on {
-      background: linear-gradient(120deg, #94e2d5, #74c7ec, #89b4fa, #94e2d5);
-      background-size: 300% 100%;
-      animation: nonstop-flow 7s linear infinite;
-      .ml { color: #0e2a24; }
-      .md { color: #0c3a30; }
-      .chk { color: #0e2a24; }
-      &:hover { filter: brightness(1.06); }
-    }
+    &.sel { color: #cdd6f4; }
   }
-}
-
-@keyframes nonstop-flow {
-  0%   { background-position: 0 0; }
-  100% { background-position: 300% 0; }
 }

@@ -1,27 +1,32 @@
+@use 'glass';
+
 :host {
   flex-shrink: 0;
   display: inline-flex;
 }
 
+// One neutral glass capsule for every state — the word carries the state, the
+// dot carries the only colour: green = accruing time right now, grey = not.
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 10.5px;
   letter-spacing: 0.15px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  line-height: 1.3;
+  line-height: 1;
   white-space: nowrap;
-  background: rgba(108, 112, 134, 0.14);
   color: #a6adc8;
+  @include glass.glass-chip;
 }
 
 .badge-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: currentColor;
+  background: #6c7086;
   flex-shrink: 0;
 }
 
@@ -29,7 +34,6 @@
 // wider (action) face — the content crossfades on hover with no layout shift.
 .badge.act {
   display: inline-grid;
-  border: 0;
   font-family: inherit;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -44,6 +48,7 @@
   }
   .action { opacity: 0; }
   &:hover:not(:disabled) {
+    @include glass.glass-chip-hover;
     .state { opacity: 0; }
     .action { opacity: 1; }
   }
@@ -58,29 +63,16 @@
   &:disabled { opacity: 0.5; cursor: default; }
 }
 
-.status-live {
-  background: rgba(166, 227, 161, 0.14);
-  color: #a6e3a1;
-  .badge-dot { animation: status-pulse 1.6s ease-in-out infinite; }
+// Live is the only coloured state: the dot goes tracked-green and pulses.
+.status-live .badge-dot {
+  background: #a6e3a1;
+  animation: status-pulse 1.6s ease-in-out infinite;
 }
-.status-pending  { background: rgba(249, 226, 175, 0.14); color: #f9e2af; }
-.status-idle     { background: rgba(250, 179, 135, 0.14); color: #fab387; }
-.status-paused   { background: rgba(243, 139, 168, 0.14); color: #f38ba8; }
-.status-switched { background: rgba(116, 199, 236, 0.14); color: #74c7ec; }
-.status-away     { background: rgba(180, 190, 254, 0.14); color: #b4befe; }
 
-// Deeper tint on hover — only the two action-capable states are buttons.
-// Live morphs to the Pause action: recolour the face + tint to red so "stop"
-// reads clearly against the green Live state.
-.badge.act.status-live:hover:not(:disabled) {
-  background: rgba(243, 139, 168, 0.22);
-  .action { color: #f38ba8; }
-}
-// Paused morphs to the Resume action: recolour to a warm light-brown.
-.badge.act.status-paused:hover:not(:disabled) {
-  background: rgba(212, 163, 115, 0.20);
-  .action { color: #d4a373; }
-}
+// Hover morphs to the action word in its functional colour: red = stops the
+// tracking, green = starts it accruing again. Text only — the glass stays.
+.badge.act.status-live:hover:not(:disabled) .action { color: #f38ba8; }
+.badge.act.status-paused:hover:not(:disabled) .action { color: #a6e3a1; }
 
 @keyframes status-pulse {
   0%, 100% { opacity: 1;   transform: scale(1);   }

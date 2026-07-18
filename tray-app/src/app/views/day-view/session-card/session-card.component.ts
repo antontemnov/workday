@@ -148,17 +148,20 @@ export class SessionCardComponent {
 
   // Tracked highlight — the glass rim's catch-light follows the edge fill:
   // stamina colour while stamina is non-zero, teal for Nonstop, plain glass
-  // (neutral) when the edge is frozen or empty. The pair is
-  // [top catch-light, bottom counter-glint] — same hue, a third the voice.
-  private get glintPair(): readonly [string, string] {
-    if (this.isAlwaysOn) return ['rgba(148, 226, 213, 0.35)', 'rgba(148, 226, 213, 0.12)'];
+  // (neutral) when the edge is frozen or empty. The triple is
+  // [top catch-light, bottom counter-glint, travelling sweep] — same hue;
+  // the sweep speaks a little louder because it exists only for a moment.
+  private get glintPair(): readonly [string, string, string] {
+    if (this.isAlwaysOn) {
+      return ['rgba(148, 226, 213, 0.35)', 'rgba(148, 226, 213, 0.12)', 'rgba(148, 226, 213, 0.75)'];
+    }
     const n = this.session.normalizedScore;
     if (this.isNonstopPaused || this.isManualPaused || n <= 0) {
-      return ['rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)'];
+      return ['rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)', 'rgba(205, 214, 244, 0.3)'];
     }
-    if (n >= 0.6) return ['rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)'];
-    if (n >= 0.3) return ['rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)'];
-    return ['rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)'];
+    if (n >= 0.6) return ['rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)', 'rgba(166, 227, 161, 0.8)'];
+    if (n >= 0.3) return ['rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)', 'rgba(249, 226, 175, 0.75)'];
+    return ['rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)', 'rgba(243, 139, 168, 0.75)'];
   }
 
   get stateGlint(): string {
@@ -167,6 +170,10 @@ export class SessionCardComponent {
 
   get stateGlintSoft(): string {
     return this.glintPair[1];
+  }
+
+  get stateSweep(): string {
+    return this.glintPair[2];
   }
 
   // ─── Time ──────────────────────────────────────────────────────────────

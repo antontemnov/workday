@@ -10,7 +10,9 @@
   background: rgba(205, 214, 244, 0.025);
   border: 1px solid rgba(205, 214, 244, 0.12);
   border-radius: 7px;
-  padding: 9px 11px 11px;
+  // Same skeleton as the history rows — the feed is one uniform stack; only
+  // the rim and the stamina edge say "this one is alive".
+  padding: 3px 8px 4px;
   margin-bottom: 8px;
   font-variant-numeric: tabular-nums;
   // Visible so the mode dropdown's menu can overflow the card; the stamina edge
@@ -21,7 +23,8 @@
   // border, brightest at the top and gone by mid-height, tinted by the same
   // state the stamina edge shows (plain glass when the edge is empty).
   // Barely-there by design. The mask carves the painted ring out of the
-  // pseudo so the card fill stays untouched.
+  // pseudo so the card fill stays untouched. Layer 1 is the living glint —
+  // a narrow band that sweeps the ring once per cycle (position-only motion).
   &::before {
     content: '';
     position: absolute;
@@ -29,13 +32,23 @@
     border-radius: inherit;
     padding: 1px;
     background:
+      linear-gradient(100deg, transparent 42%, var(--st-sweep, var(--st-glint, transparent)) 50%, transparent 58%),
       linear-gradient(178deg, var(--st-glint, transparent), transparent 46%),
       linear-gradient(358deg, var(--st-glint-soft, transparent), transparent 22%);
+    background-size: 240% 100%, 100% 100%, 100% 100%;
+    background-position: -20% 0, 0 0, 0 0;
+    background-repeat: no-repeat;
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            mask-composite: exclude;
+    mask-composite: exclude;
     pointer-events: none;
+  }
+
+  // The glint travels only while the session is actually accruing — a paused
+  // card is still glass.
+  &:not(.paused)::before {
+    animation: rim-sweep 10s ease-in-out infinite;
   }
 
   // Paused: fade only the data (time/stats). The status badge must stay
@@ -62,7 +75,7 @@
   grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
   align-items: center;
-  height: 18px;
+  height: 17px;
   font-size: 11px;
 }
 
@@ -73,8 +86,8 @@
   grid-template-columns: minmax(74px, max-content) minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
   align-items: center;
-  height: 22px; // fits the badge and the mode dropdown without growing the card
-  margin-top: 5px;
+  height: 20px; // fits the 18px capsules with 1px air
+  margin-top: 1px;
 }
 
 // Ticket from the branch — green chip: chip colour = the entry's life stage
@@ -345,4 +358,16 @@ app-mode-dropdown {
 @keyframes edge-shimmer {
   0%   { background-position: 100% 0; }
   100% { background-position: -100% 0; }
+}
+
+// One quiet pass along the rim, then a long rest. Only layer 1 moves (the
+// sweep band); the two static glints keep their position on every frame.
+@keyframes rim-sweep {
+  0%   { background-position: 120% 0, 0 0, 0 0; }
+  28%  { background-position: -20% 0, 0 0, 0 0; }
+  100% { background-position: -20% 0, 0 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card::before { animation: none !important; }
 }

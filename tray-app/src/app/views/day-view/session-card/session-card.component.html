@@ -3,7 +3,8 @@
      [class.menu-open]="menuOpen"
      [class.pop-open]="addPopoverOpen"
      [style.--st-glint]="stateGlint"
-     [style.--st-glint-soft]="stateGlintSoft">
+     [style.--st-glint-soft]="stateGlintSoft"
+     [style.--st-sweep]="stateSweep">
   <!-- Band 1: identity — ticket chip · repo · branch · time -->
   <div class="r-l1">
     <span class="c-key" [class.none]="!session.task">{{ session.task || '—' }}</span>
