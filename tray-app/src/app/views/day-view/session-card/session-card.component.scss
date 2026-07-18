@@ -530,7 +530,7 @@
 
   // Always-on (Nonstop) — never drains; the mode's old signature gradient
   // (teal → sky → lavender) drifts along the edge: "wired to power",
-  // unmistakably not a frozen grey and not the suggestions' flat teal.
+  // unmistakably not a frozen grey.
   .fill.shimmer {
     background: linear-gradient(120deg, #94e2d5, #74c7ec, #89b4fa, #94e2d5);
     background-size: 300% 100%;

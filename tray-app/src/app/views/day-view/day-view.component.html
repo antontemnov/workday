@@ -52,7 +52,7 @@
     (pillSelected)="pillSelected.emit($event)"
     (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
 
-  <!-- Suggested — teal offers under the live cards; never counted anywhere -->
+  <!-- Suggested — graphite blueprint offers under the live cards; never counted anywhere -->
   <app-suggestion-row
     *ngFor="let g of suggestions; trackBy: trackBySuggestion"
     [suggestion]="g"

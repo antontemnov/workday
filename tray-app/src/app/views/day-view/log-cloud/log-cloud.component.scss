@@ -137,7 +137,7 @@
   margin: 2px 0 1px;
 
   &.jira { color: rgba(137, 180, 250, 0.75); }
-  &.sugg { color: rgba(148, 226, 213, 0.75); }
+  &.sugg { color: rgba(249, 226, 175, 0.6); }
 }
 
 .fav {
@@ -191,17 +191,22 @@
     pointer-events: none;
   }
 
-  // Learned-ticket candidates (accept mode) — teal suggestion species,
-  // resurrected from the old cloud suggested row (473c095): key + summary.
+  // Learned-ticket candidates (accept mode) — the candidate species: grey
+  // colourless chips, the amber star carries the signal (a candidate is not
+  // a log yet, so it borrows no record colour).
   &.sugg {
-    border: 1px solid rgba(148, 226, 213, 0.4);
-    background: rgba(148, 226, 213, 0.06);
+    border: 1px solid rgba(205, 214, 244, 0.12);
+    background: rgba(205, 214, 244, 0.04);
     max-width: 100%;
 
-    .f-spark { color: #94e2d5; font-size: 10px; flex-shrink: 0; }
-    .f-task  { color: rgba(148, 226, 213, 0.8); flex-shrink: 0; }
+    .f-spark {
+      flex-shrink: 0;
+      color: #f9e2af;
+      filter: drop-shadow(0 0 3px rgba(249, 226, 175, 0.75)) drop-shadow(0 0 6px rgba(249, 226, 175, 0.3));
+    }
+    .f-task  { color: #8b90ab; flex-shrink: 0; }
     .f-name {
-      color: #a6adc8;
+      color: #6c7086;
       font-weight: 400;
       font-style: italic;
       overflow: hidden;
@@ -211,9 +216,9 @@
     }
 
     &:hover {
-      background: rgba(148, 226, 213, 0.13);
-      border-color: #94e2d5;
-      .f-name { color: #cdd6f4; }
+      background: rgba(205, 214, 244, 0.08);
+      border-color: rgba(205, 214, 244, 0.3);
+      .f-name { color: #a6adc8; }
     }
   }
 

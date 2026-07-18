@@ -183,7 +183,7 @@ export class DayViewComponent implements OnChanges {
     this.entryEditSubmitted.emit({ target: e.id, patch: e.patch });
   }
 
-  // ─── Suggestions (teal rows between the live cards and the history) ─────
+  // ─── Suggestions (graphite blueprint rows between the live cards and the history) ─────
 
   onSuggestionDismiss(s: Suggestion): void {
     this.suggestionDismissSubmitted.emit({ uid: s.uid, date: s.date });
