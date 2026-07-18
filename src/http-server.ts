@@ -50,11 +50,14 @@ import {
   MS_PER_MINUTE,
   MAX_ENTRY_MINUTES,
   DEFAULT_MANUAL_ACTIVITY,
+  DEFAULT_REVIEW_MINUTES,
+  REVIEW_ACTIVITY,
+  REVIEW_DESCRIPTION,
   JIRA_SEARCH_MIN_QUERY_LENGTH,
   TEST_NOTIFICATION_DEFAULT_MINUTES,
   TEST_NOTIFICATION_MAX_MINUTES,
 } from './core/constants.js';
-import { deriveSuggestions, meetingSourceRef, parseMeetingSourceRef } from './core/suggestions.js';
+import { deriveSuggestions, meetingSourceRef, parseMeetingSourceRef, reviewSourceRef } from './core/suggestions.js';
 import { dismissSuggestionKey, loadSuggestionsState } from './core/suggestions-state.js';
 import {
   learnFromAccept,
@@ -500,44 +503,66 @@ export class HttpServer {
     const today = this.deps.getCurrentDate();
     if (date > today) return { ok: false, error: `Cannot log on a future date (${date} > ${today})` };
 
+    const bodyTask = typeof body.task === 'string' ? body.task.trim() : '';
+    const bodyActivity = typeof body.activity === 'string' && body.activity.trim() ? body.activity : '';
+    const bodyDescription = typeof body.description === 'string' && body.description.trim() ? body.description : '';
+
+    // Source lookup: a meeting instance first, then a review-checkout fact.
     const instance = this.deps.calendarCollector.getInstances().find(i => i.uid === uid && i.date === date);
-    if (!instance) return { ok: false, error: 'Meeting not found in the calendar cache' };
+    const review = instance ? null
+      : this.getLogForDate(date)?.reviewCheckouts?.find(rc => rc.task === uid) ?? null;
+    if (!instance && !review) return { ok: false, error: 'Suggestion not found for this uid and date' };
 
-    // Omitted fields fall back to the learned resolution (an unambiguous one
-    // only — candidates never auto-pick), then to the plain defaults.
-    const isPrivate = instance.isPrivate === true;
-    const resolution = resolveSuggestion(uid, instance.title, isPrivate, loadMeetingAssociations());
-    const task = (typeof body.task === 'string' ? body.task.trim() : '') || resolution.resolved?.task || '';
-    if (!task) return { ok: false, error: 'Missing task (no learned resolution for this meeting)' };
+    let sourceRef: string;
+    let task: string;
+    let minutes: number;
+    let activity: string;
+    let description: string;
+    let learn: (() => void) | null = null;
 
-    const sourceRef = meetingSourceRef(uid, date);
-    const existing = this.getLogForDate(date);
-    if (existing?.manualEntries?.some(e => e.sourceRef === sourceRef)) {
-      return { ok: false, error: 'Meeting is already logged' };
+    if (instance) {
+      // Omitted fields fall back to the learned resolution (an unambiguous one
+      // only — candidates never auto-pick), then to the plain defaults.
+      const isPrivate = instance.isPrivate === true;
+      const resolution = resolveSuggestion(uid, instance.title, isPrivate, loadMeetingAssociations());
+      task = bodyTask || resolution.resolved?.task || '';
+      if (!task) return { ok: false, error: 'Missing task (no learned resolution for this meeting)' };
+
+      sourceRef = meetingSourceRef(uid, date);
+      const plannedMinutes = Math.max(1, Math.round((Date.parse(instance.end) - Date.parse(instance.start)) / MS_PER_MINUTE));
+      minutes = typeof body.minutes === 'number' ? body.minutes : Math.min(plannedMinutes, MAX_ENTRY_MINUTES);
+      activity = bodyActivity || resolution.resolved?.activity || DEFAULT_MANUAL_ACTIVITY;
+      // Private titles never prefill the description; core rejects a
+      // non-Development entry left without one, so the user must type it.
+      description = bodyDescription
+        || resolution.resolved?.description
+        || (isPrivate ? '' : instance.title);
+      const learned = { task, activity, description };
+      learn = () => learnFromAccept({ uid, title: instance.title, isPrivate, ...learned });
+    } else {
+      // Review checkout: static defaults by design — no dwell, no learning.
+      sourceRef = reviewSourceRef(uid, date);
+      task = bodyTask || review!.task;
+      minutes = typeof body.minutes === 'number' ? body.minutes : DEFAULT_REVIEW_MINUTES;
+      activity = bodyActivity || REVIEW_ACTIVITY;
+      description = bodyDescription || REVIEW_DESCRIPTION;
     }
 
-    const plannedMinutes = Math.max(1, Math.round((Date.parse(instance.end) - Date.parse(instance.start)) / MS_PER_MINUTE));
-    const minutes = typeof body.minutes === 'number' ? body.minutes : Math.min(plannedMinutes, MAX_ENTRY_MINUTES);
-    const activity = (typeof body.activity === 'string' && body.activity.trim() ? body.activity : '')
-      || resolution.resolved?.activity
-      || DEFAULT_MANUAL_ACTIVITY;
-    // Private titles never prefill the description; core rejects a
-    // non-Development entry left without one, so the user must type it.
-    const description = (typeof body.description === 'string' && body.description.trim() ? body.description : '')
-      || resolution.resolved?.description
-      || (isPrivate ? '' : instance.title);
+    const existing = this.getLogForDate(date);
+    if (existing?.manualEntries?.some(e => e.sourceRef === sourceRef)) {
+      return { ok: false, error: instance ? 'Meeting is already logged' : 'Review is already logged' };
+    }
 
     const jiraError = await this.validateTaskInJira(task);
     if (jiraError) return jiraError;
 
     try {
-      const learn = () => learnFromAccept({ uid, title: instance.title, isPrivate, task, activity, description });
       if (date === today) {
         const tracker = this.deps.sessionTracker;
         const result = tracker.addManualEntry({ task, minutes, description, activity, sourceRef });
         if (!result.ok || !result.entry) return { ok: false, error: result.error };
         tracker.flush();
-        learn();
+        learn?.();
         return {
           ok: true,
           data: {
@@ -547,7 +572,7 @@ export class HttpServer {
         };
       }
       const { entry, log } = addEntryOnDate(date, { task, minutes, description, activity, sourceRef }, this.deps.config);
-      learn();
+      learn?.();
       return {
         ok: true,
         data: { entry: this.toEntryData(entry, log), day: this.computeSuggestions(date) },
@@ -562,8 +587,9 @@ export class HttpServer {
     const date = typeof body.date === 'string' ? body.date : '';
     if (!uid) return { ok: false, error: 'Missing uid' };
     if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
-    const exists = this.deps.calendarCollector.getInstances().some(i => i.uid === uid && i.date === date);
-    if (!exists) return { ok: false, error: 'Meeting not found in the calendar cache' };
+    const exists = this.deps.calendarCollector.getInstances().some(i => i.uid === uid && i.date === date)
+      || (this.getLogForDate(date)?.reviewCheckouts?.some(rc => rc.task === uid) ?? false);
+    if (!exists) return { ok: false, error: 'Suggestion not found for this uid and date' };
     dismissSuggestionKey(uid, date);
     return { ok: true, data: this.computeSuggestions(date) };
   }

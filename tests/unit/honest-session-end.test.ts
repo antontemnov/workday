@@ -79,6 +79,7 @@ function poll(dyn: boolean): PollResult {
     mergeBaseSha: null,
     prevEvidenceSnapshot: null,
     ledgerUpdate: null,
+    foreignCheckouts: [],
   };
 }
 

@@ -81,6 +81,7 @@ function poll(repoPath: string, task: string, dyn: boolean): PollResult {
     mergeBaseSha: null,
     prevEvidenceSnapshot: null,
     ledgerUpdate: null,
+    foreignCheckouts: [],
   };
 }
 

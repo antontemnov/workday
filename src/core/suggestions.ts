@@ -1,16 +1,29 @@
-// Meeting suggestions — fully derived on every read: cached calendar
-// instances for the date, minus entry filters (BUSY only, not cancelled,
-// not all-day, private hidden only when configured, a row is born at
-// DTSTART), minus covered (a ManualEntry carrying the instance's sourceRef
-// exists in the day log), minus dismissed keys, minus muted series. Each
-// surviving row carries its learned ticket resolution (see
-// meeting-associations.ts). Accepts are never stored.
+// Suggestions — fully derived on every read, two sources sharing one engine.
+//
+// Meetings: cached calendar instances for the date, minus entry filters
+// (BUSY only, not cancelled, not all-day, private hidden only when
+// configured, a row is born at DTSTART), minus covered (a ManualEntry
+// carrying the instance's sourceRef exists in the day log), minus dismissed
+// keys, minus muted series. Each surviving row carries its learned ticket
+// resolution (see meeting-associations.ts). Accepts are never stored.
+//
+// Reviews: the day log's reviewCheckouts facts (colleague-branch checkouts),
+// minus covered, minus dismissed. Always resolved by construction (the
+// ticket comes from the branch name) with static defaults — no duration
+// tracking, no learning, no mute (there are no series).
 //
 // A day pushed to Tempo at least once (log.pushedAt) is silenced for good:
 // its dismissed keys are pruned at that point, so resurrecting on
 // pushed→outdated drift would revive explicit rejections. Every calendar
 // day gets the same full treatment — there is no day-off concept.
-import { MS_PER_MINUTE, SUGGESTION_SOURCE_MEETING } from './constants.js';
+import {
+  DEFAULT_REVIEW_MINUTES,
+  MS_PER_MINUTE,
+  REVIEW_ACTIVITY,
+  REVIEW_DESCRIPTION,
+  SUGGESTION_SOURCE_MEETING,
+  SUGGESTION_SOURCE_REVIEW,
+} from './constants.js';
 import { resolveSuggestion, type MeetingAssociations } from './meeting-associations.js';
 import { suggestionKey } from './suggestions-state.js';
 import {
@@ -32,6 +45,12 @@ export function parseMeetingSourceRef(ref: string): { uid: string; date: string 
   if (!ref.startsWith(prefix) || ref.length < prefix.length + 12) return null;
   if (ref[ref.length - 11] !== ':') return null;
   return { uid: ref.slice(prefix.length, -11), date: ref.slice(-10) };
+}
+
+/** No repo in the ref: reviewing one ticket across several repos is one
+ *  review — the fact and the suggestion both key on (task, date). */
+export function reviewSourceRef(task: string, date: string): string {
+  return `${SUGGESTION_SOURCE_REVIEW}:${date}:${task}`;
 }
 
 export interface DeriveSuggestionsInput {
@@ -85,6 +104,25 @@ export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsRes
       isPrivate: instance.isPrivate === true,
       source: SUGGESTION_SOURCE_MEETING,
       ...resolution,
+    });
+  }
+
+  // Review rows — born instantly at the recorded checkout, static defaults.
+  for (const rc of log?.reviewCheckouts ?? []) {
+    if (covered.has(reviewSourceRef(rc.task, date))) continue;
+    if (input.dismissedKeys.has(suggestionKey(rc.task, date))) continue;
+    const startIso = new Date(rc.ts).toISOString();
+    suggestions.push({
+      uid: rc.task,
+      date,
+      title: rc.branch,
+      start: startIso,
+      end: startIso,
+      plannedMinutes: DEFAULT_REVIEW_MINUTES,
+      ongoing: false,
+      isPrivate: false,
+      source: SUGGESTION_SOURCE_REVIEW,
+      resolved: { task: rc.task, activity: REVIEW_ACTIVITY, description: REVIEW_DESCRIPTION, level: 'source' },
     });
   }
 

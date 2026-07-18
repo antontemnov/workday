@@ -1,15 +1,16 @@
 /**
- * Unit tests for meeting suggestions: the derived pipeline (entry filters,
- * covered via sourceRef, dismissed, pushed-day silencing), the dismissed-only
- * state store with its prune rules, and the sourceRef plumbing through
- * manual-entry creation (including the accept→delete→revive invariant).
+ * Unit tests for suggestions: the derived pipeline (entry filters, covered
+ * via sourceRef, dismissed, pushed-day silencing), review rows from
+ * colleague-branch checkout facts, the dismissed-only state store with its
+ * prune rules, and the sourceRef plumbing through manual-entry creation
+ * (including the accept→delete→revive invariant).
  *
  * Run: npx tsx tests/unit/suggestions.test.ts
  * Exit code: 0 = all pass, 1 = any fail
  */
 import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before config.ts loads
 import assert from 'node:assert/strict';
-import { deriveSuggestions, meetingSourceRef, parseMeetingSourceRef } from '../../src/core/suggestions.js';
+import { deriveSuggestions, meetingSourceRef, parseMeetingSourceRef, reviewSourceRef } from '../../src/core/suggestions.js';
 import { emptyMeetingAssociations, type MeetingAssociations } from '../../src/core/meeting-associations.js';
 import {
   dismissSuggestionKey,
@@ -20,6 +21,7 @@ import {
 } from '../../src/core/suggestions-state.js';
 import {
   addManualEntry,
+  addReviewCheckout,
   createEmptyLog,
   writeDailyLog,
   readDailyLog,
@@ -213,6 +215,92 @@ test('parseMeetingSourceRef inverts meetingSourceRef, colons in uids included', 
   assert.deepEqual(parseMeetingSourceRef(ref), { uid: 'weird:uid:with:colons', date: DATE });
   assert.equal(parseMeetingSourceRef('session:abc'), null);
   assert.equal(parseMeetingSourceRef('meeting:short'), null);
+});
+
+console.log('');
+console.log('Review rows — colleague-branch checkout facts');
+
+function logWithReviewCheckout(over: Partial<{ task: string; ts: number; branch: string }> = {}): DailyLog {
+  const log = createEmptyLog(DATE, makeConfig());
+  addReviewCheckout(log, {
+    task: over.task ?? 'ATL-123',
+    ts: over.ts ?? Date.parse('2026-07-16T11:40:00.000Z'),
+    branch: over.branch ?? 'ATL-123-ivanov-feature',
+    repo: 'web-frontend',
+  });
+  return log;
+}
+
+test('a checkout fact births a review row: static 30m, resolved by construction', () => {
+  const day = derive([], { log: logWithReviewCheckout() });
+  assert.equal(day.suggestions.length, 1);
+  const row = day.suggestions[0];
+  assert.equal(row.source, 'review');
+  assert.equal(row.uid, 'ATL-123');
+  assert.equal(row.title, 'ATL-123-ivanov-feature');
+  assert.equal(row.plannedMinutes, 30);
+  assert.equal(row.ongoing, false);
+  assert.deepEqual(row.resolved, { task: 'ATL-123', activity: 'CodeReview', description: 'code review', level: 'source' });
+});
+
+test('addReviewCheckout dedups by task — repeats and other branches change nothing', () => {
+  const log = logWithReviewCheckout();
+  assert.equal(addReviewCheckout(log, { task: 'ATL-123', ts: 1, branch: 'ATL-123-ivanov-feature', repo: 'x' }), false);
+  assert.equal(addReviewCheckout(log, { task: 'ATL-123', ts: 2, branch: 'ATL-123-ivanov-feature-fixes', repo: 'y' }), false);
+  assert.equal(log.reviewCheckouts?.length, 1);
+  assert.equal(log.reviewCheckouts?.[0].branch, 'ATL-123-ivanov-feature');
+  assert.equal(addReviewCheckout(log, { task: 'ATL-9', ts: 3, branch: 'ATL-9-petrov-fix', repo: 'x' }), true);
+  assert.equal(log.reviewCheckouts?.length, 2);
+});
+
+test('an entry with the review sourceRef covers the row; unrelated entries do not', () => {
+  const config = makeConfig();
+  const log = logWithReviewCheckout();
+  addManualEntry(log, { task: 'ATL-123', minutes: 45, description: 'own work on the same ticket', activity: 'Other' }, config);
+  assert.equal(derive([], { log }).suggestions.length, 1);
+  addManualEntry(log, { task: 'ATL-123', minutes: 30, description: 'code review', activity: 'CodeReview', sourceRef: reviewSourceRef('ATL-123', DATE) }, config);
+  assert.equal(derive([], { log }).suggestions.length, 0);
+});
+
+test('a dismissed review key hides the row', () => {
+  const day = derive([], {
+    log: logWithReviewCheckout(),
+    dismissedKeys: new Set([suggestionKey('ATL-123', DATE)]),
+  });
+  assert.equal(day.suggestions.length, 0);
+});
+
+test('review rows merge with meetings, sorted by start', () => {
+  const day = derive(
+    [makeInstance({ uid: 'late', start: '2026-07-16T13:00:00.000Z', end: '2026-07-16T13:30:00.000Z' })],
+    { log: logWithReviewCheckout() },  // checkout at 11:40 — before the meeting
+  );
+  assert.deepEqual(day.suggestions.map(s => [s.source, s.uid]), [['review', 'ATL-123'], ['meeting', 'late']]);
+});
+
+test('a pushed day silences review rows too', () => {
+  const log = logWithReviewCheckout();
+  log.pushedAt = '2026-07-16T18:00:00.000Z';
+  const day = derive([], { log });
+  assert.equal(day.state, SuggestionsDayState.Pushed);
+  assert.equal(day.suggestions.length, 0);
+});
+
+test('review accept → covered; delete the entry → the row revives', () => {
+  const config = makeConfig();
+  const acceptDate = '2026-07-12';
+  const log = createEmptyLog(acceptDate, config);
+  addReviewCheckout(log, { task: 'ATL-77', ts: Date.parse('2026-07-12T10:00:00.000Z'), branch: 'ATL-77-sidorov-fix', repo: 'api' });
+  writeDailyLog(log);
+
+  const ref = reviewSourceRef('ATL-77', acceptDate);
+  const { entry } = addEntryOnDate(acceptDate, { task: 'ATL-77', minutes: 30, description: 'code review', activity: 'CodeReview', sourceRef: ref }, config);
+  const covered = derive([], { date: acceptDate, log: readDailyLog(acceptDate) });
+  assert.equal(covered.suggestions.length, 0);
+
+  deleteEntryOnDate(acceptDate, entry.id);
+  const revived = derive([], { date: acceptDate, log: readDailyLog(acceptDate) });
+  assert.deepEqual(revived.suggestions.map(s => s.uid), ['ATL-77']);
 });
 
 console.log('');

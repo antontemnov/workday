@@ -1,6 +1,6 @@
 {
   "name": "workday-daemon",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "description": "Lightweight activity tracker & timesheet tool",
   "type": "module",
   "bin": {

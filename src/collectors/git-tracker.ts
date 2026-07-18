@@ -8,10 +8,11 @@ import type {
   WatchingRepo,
   EvidenceSnapshot,
   EvidenceBasis,
+  ForeignCheckout,
   LedgerQuery,
   LedgerUpdate,
 } from '../core/types.js';
-import { buildTaskPattern, extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
+import { buildTaskPattern, extractForeignTask, extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
 import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
 import { SnapshotParser } from './snapshot-parser.js';  // static methods only
@@ -164,6 +165,20 @@ export class GitTracker {
     const allEntries = this.reflogParser.parseEntries(raw.reflog);
     const newEntries = this.filterNewReflogEntries(allEntries, state);
 
+    // Review-suggestion signal: checkouts onto colleague ticket branches.
+    // Scanned over ALL entries every tick (not only new) — the daily-log
+    // dedup makes it idempotent and same-day facts survive daemon restarts.
+    const foreignCheckouts: ForeignCheckout[] = [];
+    for (const entry of allEntries) {
+      if (entry.type !== 'checkout') continue;
+      const target = this.reflogParser.extractCheckoutTarget(entry.message);
+      if (!target) continue;
+      const foreignTask = extractForeignTask(target, this.config.tracking, this.config.genericBranches);
+      if (foreignTask !== null) {
+        foreignCheckouts.push({ ts: entry.ts, task: foreignTask, branch: target });
+      }
+    }
+
     // Branch-guard for prev-snapshot seeding (A-3): a snapshot taken on
     // another branch must never seed a newborn candidate's baseline.
     const branchChanged = state.currentBranch !== null && state.currentBranch !== raw.branch;
@@ -224,6 +239,7 @@ export class GitTracker {
       mergeBaseSha,
       prevEvidenceSnapshot,
       ledgerUpdate,
+      foreignCheckouts,
     };
   }
 

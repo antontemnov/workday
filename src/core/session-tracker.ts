@@ -10,6 +10,7 @@ import {
   writeDailyLog,
   deleteDailyLog,
   addSignal,
+  addReviewCheckout,
   addManualEntry,
   addImportedEntry,
   editManualEntry,
@@ -122,6 +123,7 @@ export class SessionTracker {
     // 1. Log signals (reflog evidence is now derived from `git rev-list baseSha..HEAD`
     //    each tick, not accumulated from reflog entries — see updateSessionTick).
     this.logSignals(repoName, result);
+    this.recordReviewCheckouts(repoName, result);
 
     // 2. Session lifecycle
     if (result.task === null) {
@@ -263,6 +265,7 @@ export class SessionTracker {
 
     if (this.dailyLog.sessions.length === 0
       && (this.dailyLog.manualEntries ?? []).length === 0
+      && (this.dailyLog.reviewCheckouts ?? []).length === 0
       && !this.dailyLog.pushedAt) {
       deleteDailyLog(this.dailyLog.date);
       this.loadedFromDisk = false; // day de-materializes back into a draft
@@ -941,6 +944,17 @@ export class SessionTracker {
           task: result.task,
         }, dedup);
       }
+    }
+  }
+
+  /** Record today's colleague-branch checkouts as review facts (dedup by
+   *  task — addReviewCheckout skips repeats; other dates in the reflog
+   *  window are ignored). */
+  private recordReviewCheckouts(repoName: string, result: PollResult): void {
+    for (const fc of result.foreignCheckouts) {
+      const date = computeWorkingDate(fc.ts, this.config.boundaryHour, this.config.timezone);
+      if (date !== this.dailyLog.date) continue;
+      addReviewCheckout(this.dailyLog, { task: fc.task, ts: fc.ts, branch: fc.branch, repo: repoName });
     }
   }
 }

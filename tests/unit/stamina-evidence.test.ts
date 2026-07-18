@@ -421,6 +421,7 @@ function poll(spec: PollSpec): PollResult {
     mergeBaseSha: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
     prevEvidenceSnapshot: null,
     ledgerUpdate: null,
+    foreignCheckouts: [],
   };
 }
 

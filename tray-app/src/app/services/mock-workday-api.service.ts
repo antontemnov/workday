@@ -146,6 +146,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
     { uid: 'ev-private', date: this.today, title: 'Private appointment',
       start: this.iso(11, 0), end: this.iso(11, 30), plannedMinutes: 30,
       ongoing: false, isPrivate: true, source: 'meeting' },
+    // Review suggestion: a colleague-branch checkout — always resolved,
+    // static 30m default, title = the branch.
+    { uid: 'ATL-4512', date: this.today, title: 'ATL-4512-ivanov-payment-retry',
+      start: this.iso(11, 40), end: this.iso(11, 40), plannedMinutes: 30,
+      ongoing: false, isPrivate: false, source: 'review',
+      resolved: { task: 'ATL-4512', activity: 'CodeReview', description: 'code review', level: 'source' } },
   ];
   private readonly mockDismissed = new Set<string>();
   private mockMuted: MutedSuggestionSeries[] = [];

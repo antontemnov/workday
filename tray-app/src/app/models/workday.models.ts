@@ -127,12 +127,13 @@ export enum SuggestionsDayState {
 }
 
 // Ticket resolution learned from past accepts. `description` is present only
-// when the user deviated from the default (= meeting title).
+// when the user deviated from the default (= meeting title). Review rows are
+// resolved by construction (ticket from the branch name) — level 'source'.
 export interface SuggestionResolved {
   readonly task: string;
   readonly activity: string;
   readonly description?: string;
-  readonly level: 'series' | 'title';
+  readonly level: 'series' | 'title' | 'source';
 }
 
 // One side of a titleKey conflict — never a generic top-N.
@@ -142,6 +143,9 @@ export interface SuggestionCandidate {
   readonly lastUsedAt: string;
 }
 
+// Meetings: uid = ICS uid, title = published title, start/end = the slot.
+// Reviews: uid = ticket key, title = the checked-out branch, start = end =
+// checkout time, plannedMinutes = static default, always resolved ('source').
 export interface Suggestion {
   readonly uid: string;
   readonly date: string;
@@ -151,7 +155,7 @@ export interface Suggestion {
   readonly plannedMinutes: number;
   readonly ongoing: boolean;
   readonly isPrivate: boolean;
-  readonly source: 'meeting';
+  readonly source: 'meeting' | 'review';
   readonly resolved?: SuggestionResolved;
   readonly candidates?: readonly SuggestionCandidate[];
 }

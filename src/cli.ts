@@ -1423,7 +1423,11 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   day.suggestions.forEach((s, i) => {
     const flags = [s.ongoing ? 'ongoing' : null, s.isPrivate ? 'private' : null].filter(Boolean).join(' · ');
     const title = s.title || '(no title)';
-    console.log(`  #${i + 1}  ${fmtSuggestionTime(s.start)}–${fmtSuggestionTime(s.end)}  ${String(s.plannedMinutes).padStart(3)}m  ${title}${flags ? `  [${flags}]` : ''}${fmtSuggestionResolution(s)}`);
+    // Review rows: title = the checked-out branch, time = the checkout moment.
+    const time = s.source === 'review'
+      ? `${fmtSuggestionTime(s.start)} review`
+      : `${fmtSuggestionTime(s.start)}–${fmtSuggestionTime(s.end)}`;
+    console.log(`  #${i + 1}  ${time}  ${String(s.plannedMinutes).padStart(3)}m  ${title}${flags ? `  [${flags}]` : ''}${fmtSuggestionResolution(s)}`);
   });
   console.log('');
   console.log('Accept:  workday suggestions accept <#N> [--task <KEY>] [--minutes N] [--desc "..."] [--activity X]  (resolved rows accept without --task)');

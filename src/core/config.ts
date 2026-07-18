@@ -504,3 +504,18 @@ export function extractTask(branch: string, tracking: TrackingConfig, genericBra
   const match = branch.match(new RegExp(buildTaskPattern(tracking.projectKeys)));
   return match ? match[0] : null;
 }
+
+/**
+ * Extract task key from a COLLEAGUE'S branch: the ticket pattern matches but
+ * the owner check fails — the review-suggestion signal. Null when the owner
+ * list is empty (every branch counts as the developer's own, so the review
+ * source is silently off).
+ */
+export function extractForeignTask(branch: string, tracking: TrackingConfig, genericBranches: readonly string[]): string | null {
+  if (tracking.branchOwners.length === 0) return null;
+  if (/^[0-9a-f]{7,40}$/.test(branch)) return null;
+  if (genericBranches.includes(branch)) return null;
+  if (branchMatchesOwner(branch, tracking.branchOwners)) return null;
+  const match = branch.match(new RegExp(buildTaskPattern(tracking.projectKeys)));
+  return match ? match[0] : null;
+}

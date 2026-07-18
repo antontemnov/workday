@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdi
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
-import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualEntry, type ActiveInterval } from './types.js';
+import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualEntry, type ActiveInterval, type ReviewCheckout } from './types.js';
 import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ENTRY_MINUTES, MS_PER_MINUTE, DEFAULT_ACTIVITY, JIRA_KEY_PATTERN } from './constants.js';
 
 /** Generate short unique session id */
@@ -712,4 +712,17 @@ export function addSignal(log: DailyLog, signal: Signal, deduplicationSeconds: n
     }
   }
   log.signals.push(signal);
+}
+
+// ─── Review checkouts ───────────────────────────────────────────────────
+
+/**
+ * Record a review-checkout fact (append-only journal, deduped by task per
+ * day — the first checkout wins). Returns false on dedup skip.
+ */
+export function addReviewCheckout(log: DailyLog, checkout: ReviewCheckout): boolean {
+  const list = log.reviewCheckouts ??= [];
+  if (list.some(rc => rc.task === checkout.task)) return false;
+  list.push(checkout);
+  return true;
 }

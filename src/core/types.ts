@@ -188,8 +188,8 @@ export interface ManualEntry {
   // dangling id (session later deleted) is harmless.
   readonly sourceSessionId?: string;
   // Origin marker for accepted suggestions, namespaced: `meeting:<uid>:<date>`
-  // (future: `review:<date>:<repo>:<task>`). Same rules as sourceSessionId —
-  // never followed, dangling is harmless. Its presence in a day log is what
+  // or `review:<date>:<task>`. Same rules as sourceSessionId — never
+  // followed, dangling is harmless. Its presence in a day log is what
   // marks the suggestion covered (accept is derived, never stored).
   readonly sourceRef?: string;
 }
@@ -342,6 +342,18 @@ export enum DayType {
   Holiday = 'holiday',
 }
 
+// Observed checkout onto a colleague's ticket branch (task key matches, no
+// branch-owner match) — the fact behind a review suggestion. Append-only
+// journal deduped by task per day: repeated checkouts, other branches of the
+// same ticket, or other repos change nothing. Frozen at observation time;
+// accept/dismiss never touch it (they live in manualEntries / dismissed state).
+export interface ReviewCheckout {
+  readonly task: string;
+  readonly ts: number;            // reflog timestamp of the day's first checkout
+  readonly branch: string;
+  readonly repo: string;
+}
+
 export interface DailyLog {
   readonly date: string;
   status: DayStatus;
@@ -349,6 +361,7 @@ export interface DailyLog {
   sessions: Session[];
   signals: Signal[];
   manualEntries: ManualEntry[];
+  reviewCheckouts?: ReviewCheckout[];
   pushedAt: string | null;
 }
 
@@ -541,6 +554,19 @@ export interface PollResult {
   // Null when the branch reflog (or a merge-base) is unavailable — the
   // session then falls back to the positive-jump commit counter.
   readonly ledgerUpdate: LedgerUpdate | null;
+  // Checkouts onto foreign ticket branches seen in the reflog window — ALL
+  // parsed entries, not only new ones: the daily-log dedup by (task, date)
+  // makes re-reporting idempotent, so same-day facts survive daemon restarts.
+  readonly foreignCheckouts: readonly ForeignCheckout[];
+}
+
+// A reflog checkout onto a colleague's ticket branch, as seen by GitTracker.
+// SessionTracker filters these to the current working date and records them
+// into the daily log as ReviewCheckout facts.
+export interface ForeignCheckout {
+  readonly ts: number;
+  readonly task: string;
+  readonly branch: string;
 }
 
 // ─── Daemon runtime state (per repo, not persisted) ─────────────────────
@@ -620,12 +646,13 @@ export enum SuggestionsDayState {
 
 // Ticket resolution learned from past accepts. `description` is present only
 // when the user deviated from the default (= meeting title) — an absent value
-// means "prefill the live title".
+// means "prefill the live title". Review rows are resolved by construction
+// (the ticket comes from the branch name) — level 'source', nothing learned.
 export interface SuggestionResolved {
   readonly task: string;
   readonly activity: string;
   readonly description?: string;
-  readonly level: 'series' | 'title';
+  readonly level: 'series' | 'title' | 'source';
 }
 
 // One side of a titleKey conflict — candidates materialize an ambiguity
@@ -636,6 +663,10 @@ export interface SuggestionCandidate {
   readonly lastUsedAt: string;
 }
 
+// One suggestion row. Meetings: uid = ICS uid, title = published title,
+// start/end = the scheduled slot. Reviews: uid = the ticket key, title = the
+// checked-out branch, start = end = the checkout timestamp, plannedMinutes =
+// the static review default, always resolved (level 'source').
 export interface Suggestion {
   readonly uid: string;
   readonly date: string;
@@ -645,7 +676,7 @@ export interface Suggestion {
   readonly plannedMinutes: number; // DTEND − DTSTART; accept may override
   readonly ongoing: boolean;       // started but DTEND not reached yet
   readonly isPrivate: boolean;
-  readonly source: 'meeting';
+  readonly source: 'meeting' | 'review';
   readonly resolved?: SuggestionResolved;
   readonly candidates?: readonly SuggestionCandidate[];
 }

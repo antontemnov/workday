@@ -150,6 +150,15 @@ export const MEETING_ASSOCIATIONS_FILE = 'meeting-associations.json';
  *  quarterly meetings plus a vacation; the calendar cache window is separate) */
 export const MEETING_ASSOCIATION_RETENTION_DAYS = 183;
 
+// ─── Review suggestions (colleague-branch checkouts) ─────────────────────
+export const SUGGESTION_SOURCE_REVIEW = 'review';
+// Static by design: reviews are reading (no git activity to measure) and
+// there is no reliable "forgot the branch open" detector — a wheel-adjusted
+// default beats any artificial dwell cap.
+export const DEFAULT_REVIEW_MINUTES = 30;
+export const REVIEW_ACTIVITY = 'CodeReview';
+export const REVIEW_DESCRIPTION = 'code review';
+
 // ─── Notifications (desktop toasts) ──────────────────────────────────────
 export const NOTIFICATIONS_STATE_FILE = 'notifications-state.json';
 /** Delivery window opens at this hour on the last working day of the month */

@@ -6,7 +6,7 @@
  * Run: npx tsx tests/unit/branch-tracking.test.ts
  */
 import assert from 'node:assert/strict';
-import { branchMatchesOwner, buildPatchedConfig, buildTaskPattern, extractTask } from '../../src/core/config.js';
+import { branchMatchesOwner, buildPatchedConfig, buildTaskPattern, extractForeignTask, extractTask } from '../../src/core/config.js';
 import { SensitivityLevel, type AppConfig, type TrackingConfig } from '../../src/core/types.js';
 
 let passed = 0;
@@ -121,6 +121,27 @@ test('untracked project yields null', () => {
 test('generic and detached-HEAD branches yield null', () => {
   assert.equal(extractTask('master', makeTracking({ branchOwners: [] }), ['master']), null);
   assert.equal(extractTask('a1b2c3d4e5f', makeTracking({ branchOwners: [] }), []), null);
+});
+
+console.log('');
+console.log('extractForeignTask — the review-suggestion signal');
+
+test('colleague branch with a tracked key yields the task', () => {
+  assert.equal(extractForeignTask('ATL-123-ivanov-feature', makeTracking(), []), 'ATL-123');
+});
+
+test('own branch yields null (that is extractTask territory)', () => {
+  assert.equal(extractForeignTask('ATL-123-atemnov-fixes', makeTracking(), []), null);
+});
+
+test('empty owner list silently disables the review source', () => {
+  assert.equal(extractForeignTask('ATL-123-ivanov-feature', makeTracking({ branchOwners: [] }), []), null);
+});
+
+test('keyless, generic and untracked-project branches yield null', () => {
+  assert.equal(extractForeignTask('ivanov/some-experiment', makeTracking(), []), null);
+  assert.equal(extractForeignTask('develop', makeTracking(), ['develop']), null);
+  assert.equal(extractForeignTask('WEB-9-ivanov-fix', makeTracking(), []), null);
 });
 
 console.log('');

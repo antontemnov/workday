@@ -77,10 +77,12 @@ function migrateAdjustments(log: DailyLog): number {
   return migrated;
 }
 
-/** A day record with zero confirmed facts — safe to delete. */
+/** A day record with zero confirmed facts — safe to delete. A pending
+ *  review checkout is a fact: deleting it would kill the suggestion. */
 export function isEmptyDayLog(log: DailyLog): boolean {
   return log.sessions.length === 0
     && (log.manualEntries ?? []).length === 0
+    && (log.reviewCheckouts ?? []).length === 0
     && !log.pushedAt;
 }
 
