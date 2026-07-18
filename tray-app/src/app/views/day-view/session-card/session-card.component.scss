@@ -127,31 +127,33 @@
     }
   }
 
-  // System-stopped (idle / switched / away) — frozen glass: the cold darkened
-  // it. A frost haze creeps in from the rim, two faint ice facets cross the
-  // capsule, everything shifts toward a cold blue and the key dims. The ■
-  // says "stopped"; the ice says "by itself, from the cold".
+  // System-stopped (idle / switched / away) — frosted-over glass: clearly
+  // blue, with hoarfrost feathers (inline SVG dendrites) creeping in from the
+  // edges and a frost haze hugging the rim; the centre stays clear so the key
+  // reads. The ■ says "stopped"; the frost says "by itself, from the cold".
   &.frozen {
-    color: #8590b0;
+    color: #93a8cc;
     background:
-      radial-gradient(120% 100% at 50% -35%, rgba(180, 200, 235, 0.13), transparent 58%),
-      radial-gradient(90% 110% at -12% 115%, rgba(180, 200, 235, 0.09), transparent 52%),
-      linear-gradient(115deg, transparent 18%, rgba(200, 216, 245, 0.09) 25%, transparent 33%, transparent 55%, rgba(200, 216, 245, 0.06) 63%, transparent 70%),
-      linear-gradient(180deg, rgba(137, 160, 210, 0.05), rgba(14, 17, 31, 0.32));
-    border-color: rgba(163, 180, 218, 0.24);
+      url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 17' preserveAspectRatio='none'><g fill='none' stroke='%23d8e7fb' stroke-linecap='round'><g stroke-width='0.55' opacity='0.6'><path d='M0 2.5 Q5 3.5 11 3'/><path d='M1.5 2.8 L2.6 1.2'/><path d='M3.2 3.1 L4.6 1.6'/><path d='M5.2 3.3 L6.4 1.9'/><path d='M7.4 3.3 L8.4 2'/><path d='M2.4 3 L3.2 4.6'/><path d='M4.4 3.3 L5.2 4.9'/><path d='M6.4 3.4 L7 4.7'/></g><g stroke-width='0.5' opacity='0.45'><path d='M0 9 Q3 9.5 6 12'/><path d='M1.2 9.3 L2 7.9'/><path d='M2.6 10 L3.8 9'/><path d='M4 11 L5 10'/></g><g stroke-width='0.55' opacity='0.55'><path d='M80 3.5 Q74 4.5 68 3.5'/><path d='M78 3.8 L77 2.2'/><path d='M76 4.1 L74.8 2.6'/><path d='M73.6 4.1 L72.6 2.7'/><path d='M77 4 L76.2 5.6'/><path d='M74.6 4.2 L73.8 5.8'/></g><g stroke-width='0.5' opacity='0.4'><path d='M80 13 Q75 12.5 71 14.5'/><path d='M77.5 12.9 L76.8 14.4'/><path d='M75 13.2 L74.2 14.8'/></g><g stroke-width='0.5' opacity='0.35'><path d='M14 17 Q16 14.8 19 14'/><path d='M15.4 15.9 L14.4 14.8'/><path d='M17 14.9 L16.4 13.5'/></g></g><g fill='%23dcebfd'><circle cx='13' cy='6' r='0.45' opacity='0.5'/><circle cx='22' cy='3' r='0.4' opacity='0.4'/><circle cx='30' cy='13.5' r='0.45' opacity='0.35'/><circle cx='45' cy='2.6' r='0.4' opacity='0.45'/><circle cx='52' cy='14.6' r='0.4' opacity='0.3'/><circle cx='63' cy='3.4' r='0.45' opacity='0.5'/><circle cx='58' cy='8' r='0.35' opacity='0.3'/><circle cx='36' cy='6.5' r='0.35' opacity='0.35'/></g></svg>"),
+      radial-gradient(120% 110% at 50% -40%, rgba(185, 212, 250, 0.2), transparent 60%),
+      radial-gradient(95% 115% at 104% 120%, rgba(165, 198, 245, 0.14), transparent 55%),
+      linear-gradient(180deg, rgba(120, 155, 215, 0.12), rgba(16, 24, 46, 0.5));
+    background-size: 100% 100%, auto, auto, auto;
+    background-repeat: no-repeat;
+    border-color: rgba(158, 190, 240, 0.34);
     box-shadow:
-      inset 0 0 6px rgba(170, 195, 240, 0.12),
-      inset 0 1px 0 rgba(200, 220, 250, 0.1),
-      inset 0 -1px 1px rgba(8, 10, 20, 0.3),
+      inset 0 0 7px rgba(165, 195, 245, 0.2),
+      inset 0 1px 0 rgba(210, 228, 252, 0.16),
+      inset 0 -1px 1px rgba(6, 10, 22, 0.35),
       0 1px 2px rgba(0, 0, 0, 0.3);
 
     &::before {
       background:
-        linear-gradient(178deg, rgba(195, 212, 245, 0.28), transparent 46%),
-        linear-gradient(358deg, rgba(180, 200, 235, 0.08), transparent 22%);
+        linear-gradient(178deg, rgba(205, 224, 250, 0.38), transparent 50%),
+        linear-gradient(358deg, rgba(185, 208, 245, 0.14), transparent 26%);
     }
 
-    .k-stop { background: #93a2c8; }
+    .k-stop { background: #9fb6de; }
   }
 
   // Lamp out by the user's hand — unlit glass: flat, darker, dimmer key, a
