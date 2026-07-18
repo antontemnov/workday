@@ -127,8 +127,36 @@
     }
   }
 
-  // Lamp out — unlit glass: flat, darker, dimmer key. Reads stopped at a
-  // glance even before the ■ registers.
+  // System-stopped (idle / switched / away) — frozen glass: the cold darkened
+  // it. A frost haze creeps in from the rim, two faint ice facets cross the
+  // capsule, everything shifts toward a cold blue and the key dims. The ■
+  // says "stopped"; the ice says "by itself, from the cold".
+  &.frozen {
+    color: #8590b0;
+    background:
+      radial-gradient(120% 100% at 50% -35%, rgba(180, 200, 235, 0.13), transparent 58%),
+      radial-gradient(90% 110% at -12% 115%, rgba(180, 200, 235, 0.09), transparent 52%),
+      linear-gradient(115deg, transparent 18%, rgba(200, 216, 245, 0.09) 25%, transparent 33%, transparent 55%, rgba(200, 216, 245, 0.06) 63%, transparent 70%),
+      linear-gradient(180deg, rgba(137, 160, 210, 0.05), rgba(14, 17, 31, 0.32));
+    border-color: rgba(163, 180, 218, 0.24);
+    box-shadow:
+      inset 0 0 6px rgba(170, 195, 240, 0.12),
+      inset 0 1px 0 rgba(200, 220, 250, 0.1),
+      inset 0 -1px 1px rgba(8, 10, 20, 0.3),
+      0 1px 2px rgba(0, 0, 0, 0.3);
+
+    &::before {
+      background:
+        linear-gradient(178deg, rgba(195, 212, 245, 0.28), transparent 46%),
+        linear-gradient(358deg, rgba(180, 200, 235, 0.08), transparent 22%);
+    }
+
+    .k-stop { background: #93a2c8; }
+  }
+
+  // Lamp out by the user's hand — unlit glass: flat, darker, dimmer key, a
+  // steady grey ⏸ waiting for its ▶. Warmer than the frozen chip: this one
+  // wakes only when you wake it.
   &.off {
     color: #8b90ab;
     background:
@@ -190,6 +218,13 @@
   background: #9399b2;
 }
 
+// Static ⏸ — the user's own pause, held until their ▶.
+.k-hold {
+  width: 8px;
+  height: 8px;
+  fill: #9399b2;
+}
+
 .k-act-ico {
   width: 9px;
   height: 9px;
@@ -204,7 +239,7 @@
   transition: background 0.15s ease, border-color 0.15s ease;
 
   &:hover:not(:disabled) {
-    .k-lamp, .k-stop { opacity: 0; }
+    .k-lamp, .k-stop, .k-hold { opacity: 0; }
     .k-act-ico { opacity: 1; }
   }
 

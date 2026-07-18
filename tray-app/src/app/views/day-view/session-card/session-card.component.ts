@@ -70,6 +70,12 @@ export class SessionCardComponent {
     return !this.session.paused && this.session.state === 'active';
   }
 
+  // System-stopped (idle / superseded / away): the cold, frozen-glass chip.
+  // A manual pause is warmer — the user holds it, ⏸ waits for their ▶.
+  get isAutoPaused(): boolean {
+    return this.session.paused && (this.session.pauseSource ?? '').toLowerCase() !== 'manual';
+  }
+
   // ─── Tracking action (Pause / Resume) ──────────────────────────────────
   // Shown only where it does something: Live → Pause, manual-paused → Resume.
   // Auto-pauses (idle/superseded/away) and pending have no button — a manual

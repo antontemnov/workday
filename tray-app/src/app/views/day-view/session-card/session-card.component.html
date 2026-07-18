@@ -15,17 +15,23 @@
             type="button"
             class="c-key act"
             [class.lit]="isAccruing"
-            [class.off]="!isAccruing"
+            [class.frozen]="isAutoPaused"
+            [class.off]="!isAccruing && !isAutoPaused"
             [class.will-pause]="trackingAction === 'pause'"
             [class.will-resume]="trackingAction === 'resume'"
             [disabled]="actionPending"
             [attr.aria-label]="trackingActionTitle"
             (click)="onTrackingClick()">
       <!-- The indicator swaps glyphs inside a fixed box — the key text never
-           moves: ● running / ■ stopped, hover reveals ⏸ / ▶ in place. -->
+           moves: ● running / ⏸ user-paused / ■ system-stopped; hover reveals
+           the action glyph in place. -->
       <span class="k-ind" aria-hidden="true">
         <span class="k-lamp" *ngIf="isAccruing"></span>
-        <span class="k-stop" *ngIf="!isAccruing"></span>
+        <svg class="k-hold" *ngIf="isManualPaused" viewBox="0 0 10 10">
+          <rect x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect>
+          <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
+        </svg>
+        <span class="k-stop" *ngIf="!isAccruing && !isManualPaused"></span>
         <svg class="k-act-ico" *ngIf="trackingAction === 'pause'" viewBox="0 0 10 10">
           <rect x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect>
           <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
@@ -38,11 +44,16 @@
     <ng-template #staticKey>
       <span class="c-key"
             [class.lit]="session.task && isAccruing"
-            [class.off]="session.task && !isAccruing"
+            [class.frozen]="session.task && isAutoPaused"
+            [class.off]="session.task && !isAccruing && !isAutoPaused"
             [class.none]="!session.task">
         <span class="k-ind" *ngIf="session.task" aria-hidden="true">
           <span class="k-lamp" *ngIf="isAccruing"></span>
-          <span class="k-stop" *ngIf="!isAccruing"></span>
+          <svg class="k-hold" *ngIf="isManualPaused" viewBox="0 0 10 10">
+            <rect x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect>
+            <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
+          </svg>
+          <span class="k-stop" *ngIf="!isAccruing && !isManualPaused"></span>
         </span>{{ session.task || '—' }}
       </span>
     </ng-template>
