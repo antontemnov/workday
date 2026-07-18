@@ -249,10 +249,12 @@ export class SessionCardComponent {
     // same "disabled fact" language as the logged rows.
     const current = this.speedPills.find(o => o.key === this.session.sensitivity)?.label ?? '—';
     openCtxMenu(x, y, [
+      // The gear carries U+FE0E (text presentation) — bare U+2699 may render
+      // as a colour emoji in some webviews.
       this.isManualPaused
-        ? { icon: '⊙', label: 'Mode', hint: `${current} · paused`, disabled: true,
+        ? { icon: '⚙︎', label: 'Mode', hint: `${current} · paused`, disabled: true,
             title: 'Resume the session to change its mode', action: (): void => {} }
-        : { icon: '⊙', label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
+        : { icon: '⚙︎', label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
       { icon: '⧉', label: 'Copy branch', action: (): void => this.copyBranch() },
     ]);
   }
