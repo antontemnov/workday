@@ -115,10 +115,16 @@
   &.lit {
     color: #cdd6f4;
     background:
-      linear-gradient(180deg, rgba(166, 227, 161, 0.2), transparent 46%),
       radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.26), transparent 72%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
       linear-gradient(180deg, rgba(166, 227, 161, 0.09), rgba(166, 227, 161, 0.02));
+    border-color: rgba(166, 227, 161, 0.28);
+
+    &::before {
+      background:
+        linear-gradient(178deg, rgba(166, 227, 161, 0.32), transparent 46%),
+        linear-gradient(358deg, rgba(166, 227, 161, 0.1), transparent 22%);
+    }
   }
 
   // System-stopped (idle / switched / away) — frosted-over glass: clearly
@@ -141,11 +147,19 @@
       linear-gradient(180deg, rgba(95, 145, 225, 0.18), rgba(10, 18, 48, 0.62));
     background-size: 100% 100%, auto, auto, auto, auto;
     background-repeat: no-repeat;
-    // Only symmetric glows survive here: the inner frost haze and the outer
-    // cold aura — neither can read as a line.
+    border-color: rgba(135, 175, 240, 0.45);
     box-shadow:
       inset 0 0 9px rgba(130, 172, 242, 0.3),
+      inset 0 1px 0 rgba(180, 210, 250, 0.24),
+      inset 0 -1px 1px rgba(5, 9, 24, 0.4),
+      0 1px 2px rgba(0, 0, 0, 0.3),
       0 0 8px rgba(110, 160, 240, 0.18);
+
+    &::before {
+      background:
+        linear-gradient(178deg, rgba(175, 208, 250, 0.5), transparent 52%),
+        linear-gradient(358deg, rgba(150, 190, 245, 0.22), transparent 28%);
+    }
 
     // The key behind the ice: murky, softly blurred, a frost sheen around
     // the letters — legible, but clearly frozen over.
@@ -167,9 +181,17 @@
   &.off {
     color: #8b90ab;
     background:
-      linear-gradient(180deg, rgba(205, 214, 244, 0.07), transparent 46%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.005) 42%, rgba(8, 8, 16, 0.14)),
       linear-gradient(180deg, rgba(205, 214, 244, 0.06), rgba(205, 214, 244, 0.015));
+    border-color: rgba(205, 214, 244, 0.15);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      inset 0 -1px 1px rgba(8, 8, 16, 0.2),
+      0 1px 2px rgba(0, 0, 0, 0.25);
+
+    &::before {
+      background: linear-gradient(178deg, rgba(205, 214, 244, 0.12), transparent 40%);
+    }
   }
 
   // Branch without a ticket — dashed neutral placeholder, no new colours.
@@ -250,10 +272,16 @@
     &:hover:not(:disabled) {
       color: #cdd6f4;
       background:
-        linear-gradient(180deg, rgba(243, 139, 168, 0.2), transparent 46%),
         radial-gradient(30px 16px at 9px 60%, rgba(243, 139, 168, 0.28), transparent 72%),
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
         linear-gradient(180deg, rgba(243, 139, 168, 0.1), rgba(243, 139, 168, 0.02));
+      border-color: rgba(243, 139, 168, 0.32);
+
+      &::before {
+        background:
+          linear-gradient(178deg, rgba(243, 139, 168, 0.3), transparent 46%),
+          linear-gradient(358deg, rgba(243, 139, 168, 0.1), transparent 22%);
+      }
     }
   }
 
@@ -264,10 +292,16 @@
     &:hover:not(:disabled) {
       color: #cdd6f4;
       background:
-        linear-gradient(180deg, rgba(166, 227, 161, 0.18), transparent 46%),
         radial-gradient(30px 16px at 9px 60%, rgba(166, 227, 161, 0.22), transparent 72%),
         linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
         linear-gradient(180deg, rgba(166, 227, 161, 0.08), rgba(166, 227, 161, 0.02));
+      border-color: rgba(166, 227, 161, 0.28);
+
+      &::before {
+        background:
+          linear-gradient(178deg, rgba(166, 227, 161, 0.28), transparent 46%),
+          linear-gradient(358deg, rgba(166, 227, 161, 0.09), transparent 22%);
+      }
     }
   }
 

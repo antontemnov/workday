@@ -2,13 +2,9 @@
 // frost: near-invisible fills, a 1px catch-light on the border, colour only
 // where it carries meaning (green = tracked, teal = suggested, mauve = logged).
 
-// Rim catch-light: a 1px ring hugging the edge, painted in ::before and
-// carved out by the mask so the fill underneath stays untouched. The light is
-// LOCAL — an elliptical specular pool near the upper-left of the edge and a
-// fainter counter-glint by the lower-right corner, each fading along the edge
-// in both directions. A full-width linear gradient here reads as a drawn
-// straight line (underline / topline artifact) — never use one. This ring IS
-// the edge of the glass; the border itself stays transparent.
+// Rim catch-light: a 1px ring hugging the border, painted in ::before and
+// carved out by the mask so the fill underneath stays untouched. Brightest at
+// the top, gone by mid-height; $soft is the faint counter-glint from below.
 @mixin glass-rim($top: rgba(205, 214, 244, 0.28), $soft: transparent) {
   &::before {
     content: '';
@@ -16,11 +12,9 @@
     inset: -1px; // abspos offsets run from the padding box — -1px lands exactly on the border
     border-radius: inherit;
     padding: 1px;
-    // Top pool only — NO light on the bottom edge, ever: any bottom glint
-    // under a row of text reads as an underline.
-    background: radial-gradient(52% 190% at 30% -30%, #{$top}, transparent 70%);
-    // Bloom: a crisp 1px ring is still a drawn line — blur melts it into glow.
-    filter: blur(0.4px);
+    background:
+      linear-gradient(178deg, #{$top}, transparent 46%),
+      linear-gradient(358deg, #{$soft}, transparent 22%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -29,33 +23,33 @@
   }
 }
 
-// Convex ticket capsule — a small lens: white curvature light over the tint
-// and a soft species-tinted light dissolving from the top. The top light is a
-// BACKGROUND layer, never a box-shadow: an inset shadow's blur wraps all four
-// edges and leaks a visible glow along the bottom (the underline bug, thrice
-// hunted). No shadows at all on small capsules — a dark outer halo makes the
-// bottom edge read as a bright line too (Mach-band contrast).
+// Convex ticket capsule — a small lens: white curvature light over the tint,
+// a bright inner top edge, a shaded inner bottom, and a whisper of drop
+// shadow lifting it off the card. Tint parameters pick the species.
 @mixin glass-capsule(
   $tint: rgba(205, 214, 244, 0.14),
   $tint-soft: rgba(205, 214, 244, 0.04),
-  $glow: rgba(205, 214, 244, 0.14)
+  $border: rgba(205, 214, 244, 0.24),
+  $rim: rgba(255, 255, 255, 0.35)
 ) {
   position: relative;
   background:
-    linear-gradient(180deg, #{$glow}, transparent 46%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(8, 8, 16, 0.1)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 42%, rgba(8, 8, 16, 0.1)),
     linear-gradient(180deg, #{$tint}, #{$tint-soft});
-  border: 1px solid transparent;
+  border: 1px solid #{$border};
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 1px rgba(8, 8, 16, 0.18),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+  @include glass-rim($rim);
 }
 
-// Small control capsule (badges, pickers, the ＋Log button family). Same edge
-// rules as glass-capsule: top light lives in the background, no shadows.
+// Small control capsule (badges, pickers, the ＋Log button family).
 @mixin glass-chip {
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(205, 214, 244, 0.13), transparent 46%),
-    linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
-  border: 1px solid transparent;
+  background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
+  border: 1px solid rgba(205, 214, 244, 0.14);
+  @include glass-rim();
 
   // Keyboard focus stays visible, but in the glass voice — not the UA ring.
   &:focus-visible {

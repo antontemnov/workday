@@ -92,8 +92,8 @@
 }
 
 // ＋Log — the entry point (the panel's ghost row died with the panel); opens
-// the log cloud right below the header. A glass capsule: neutral translucent
-// fill, the drop of mauve lives in the rim's light — no drawn outline.
+// the log cloud right below the header. A glass capsule with no drawn
+// outline: one soft continuous mauve glow along the inner top edge.
 .g-btn {
   margin-left: auto;
   align-self: center;
@@ -110,8 +110,6 @@
   border-radius: 999px;
   padding: 3px 11px;
   cursor: pointer;
-  // One soft continuous mauve glow along the inner top edge — no ring, no
-  // outer shadow (see glass-capsule notes on underline artifacts).
   box-shadow: inset 0 1px 2px -1px rgba(203, 166, 247, 0.5);
   transition: background 0.15s ease;
 
