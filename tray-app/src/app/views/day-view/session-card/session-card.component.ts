@@ -2,7 +2,6 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../models/workday.models';
 import { ModeDropdownComponent } from './mode-dropdown/mode-dropdown.component';
-import { StatusBadgeComponent } from './status-badge/status-badge.component';
 import { DurationFieldComponent } from '../duration-field/duration-field.component';
 import { parseDurationToMinutes } from '../duration-field/duration.util';
 
@@ -18,12 +17,13 @@ type TrackingAction = 'pause' | 'resume';
 /**
  * Single open-session card on the shared two-band grid (74px | 1fr | 48px+,
  * same as the Logged rows):
- *   band 1 — green ticket chip (from the branch) · repo · branch ·
- *            clickable time (+manual)
- *   band 2 — status badge (Pause/Resume built into the badge for
- *            Live/manual-paused) · commits · churn · mode dropdown
+ *   band 1 — green ticket chip that doubles as the tracking control (dot:
+ *            green pulse = accruing, grey = not; hover morphs to Pause /
+ *            Resume where an action exists) · repo · branch · time (+manual)
+ *   band 2 — commits · churn · mode dropdown
  * Stamina stays the card's bottom edge; the tracked highlight is a glass
- * rim — a faint catch-light on the border tinted by the same state.
+ * rim — a faint catch-light on the border tinted by the same state. Any
+ * paused card drops its colour halo entirely: tracking is binary here.
  *
  * Mostly a projection of one SessionDetail; the only local state is the
  * anchored Add-time popover (open flag + duration text), like the mode
@@ -32,7 +32,7 @@ type TrackingAction = 'pause' | 'resume';
 @Component({
   selector: 'app-session-card',
   standalone: true,
-  imports: [CommonModule, ModeDropdownComponent, StatusBadgeComponent, DurationFieldComponent],
+  imports: [CommonModule, ModeDropdownComponent, DurationFieldComponent],
   templateUrl: './session-card.component.html',
   styleUrl: './session-card.component.scss',
 })
@@ -61,32 +61,13 @@ export class SessionCardComponent {
     return this.session.repo.split('/').pop() ?? this.session.repo;
   }
 
-  // ─── Status badge ──────────────────────────────────────────────────────
+  // ─── Tracking status — binary on purpose ───────────────────────────────
+  // The chip's dot answers the only question that matters: is time accruing
+  // right now? The why of a pause (idle / switched / away / manual) stays out
+  // of the UI — the daemon knows, the user doesn't need to.
 
-  get statusClass(): string {
-    const s = this.session;
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'status-idle';
-        case 'superseded':   return 'status-switched';
-        case 'teams_away':   return 'status-away';
-        default:             return 'status-paused';
-      }
-    }
-    return s.state === 'active' ? 'status-live' : 'status-pending';
-  }
-
-  get statusLabel(): string {
-    const s = this.session;
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'Idle';
-        case 'superseded':   return 'Switched';
-        case 'teams_away':   return 'Away';
-        default:             return 'Paused';
-      }
-    }
-    return s.state === 'active' ? 'Live' : 'Pending';
+  get isAccruing(): boolean {
+    return !this.session.paused && this.session.state === 'active';
   }
 
   // ─── Tracking action (Pause / Resume) ──────────────────────────────────
@@ -100,6 +81,10 @@ export class SessionCardComponent {
       return (s.pauseSource ?? '').toLowerCase() === 'manual' ? 'resume' : null;
     }
     return s.state === 'active' ? 'pause' : null;
+  }
+
+  get trackingActionTitle(): string {
+    return this.trackingAction === 'pause' ? 'Pause this session' : 'Resume this session';
   }
 
   // ─── Sensitivity scale ─────────────────────────────────────────────────
@@ -133,7 +118,9 @@ export class SessionCardComponent {
   }
 
   get staminaColor(): string {
-    if (this.isManualPaused) return '#45475a'; // frozen — drain is suspended
+    // Binary halo: any card that isn't accruing shows a grey gauge — the
+    // colour (and the rim's tint) belongs to running tracking only.
+    if (!this.isAccruing) return '#45475a';
     const n = this.session.normalizedScore;
     if (n >= 0.6) return '#a6e3a1';
     if (n >= 0.3) return '#f9e2af';
@@ -147,17 +134,16 @@ export class SessionCardComponent {
   }
 
   // Tracked highlight — the glass rim's catch-light follows the edge fill:
-  // stamina colour while stamina is non-zero, teal for Nonstop, plain glass
-  // (neutral) when the edge is frozen or empty. The triple is
+  // stamina colour while accruing, an electric sky-blue for Nonstop, plain
+  // glass (neutral) the moment tracking stops. The triple is
   // [top catch-light, bottom counter-glint, travelling sweep] — same hue;
   // the sweep speaks a little louder because it exists only for a moment.
   private get glintPair(): readonly [string, string, string] {
-    // Nonstop rim is glassy-neutral like its shimmer — teal is suggestions'.
     if (this.isAlwaysOn) {
-      return ['rgba(205, 214, 244, 0.3)', 'rgba(205, 214, 244, 0.1)', 'rgba(205, 214, 244, 0.7)'];
+      return ['rgba(116, 199, 236, 0.4)', 'rgba(137, 180, 250, 0.14)', 'rgba(137, 180, 250, 0.8)'];
     }
     const n = this.session.normalizedScore;
-    if (this.isNonstopPaused || this.isManualPaused || n <= 0) {
+    if (!this.isAccruing || n <= 0) {
       return ['rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)', 'rgba(205, 214, 244, 0.3)'];
     }
     if (n >= 0.6) return ['rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)', 'rgba(166, 227, 161, 0.8)'];

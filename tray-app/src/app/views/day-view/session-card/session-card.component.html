@@ -5,9 +5,35 @@
      [style.--st-glint]="stateGlint"
      [style.--st-glint-soft]="stateGlintSoft"
      [style.--st-sweep]="stateSweep">
-  <!-- Band 1: identity — ticket chip · repo · branch · time -->
+  <!-- Band 1: identity — ticket chip (doubles as the tracking control) ·
+       repo · branch · time. The dot is the whole status story: green pulse =
+       accruing, grey = not. Hover morphs to the action only when one exists
+       (Live → Pause, manual pause → Resume). -->
   <div class="r-l1">
-    <span class="c-key" [class.none]="!session.task">{{ session.task || '—' }}</span>
+    <button *ngIf="session.task && trackingAction; else staticKey"
+            type="button"
+            class="c-key act"
+            [class.will-pause]="trackingAction === 'pause'"
+            [disabled]="actionPending"
+            [attr.aria-label]="trackingActionTitle"
+            (click)="onTrackingClick()">
+      <span class="face state"><span class="k-dot" [class.on]="isAccruing"></span>{{ session.task }}</span>
+      <span class="face action" [class.resume]="trackingAction === 'resume'" aria-hidden="true">
+        <svg *ngIf="trackingAction === 'pause'" class="k-ico" viewBox="0 0 10 10">
+          <rect x="1.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
+          <rect x="6.2" y="0.5" width="2.6" height="9" rx="0.6"></rect>
+        </svg>
+        <svg *ngIf="trackingAction === 'resume'" class="k-ico" viewBox="0 0 10 10">
+          <path d="M1.5 0.6 L9 5 L1.5 9.4 Z"></path>
+        </svg>
+        {{ trackingAction === 'pause' ? 'Pause' : 'Resume' }}
+      </span>
+    </button>
+    <ng-template #staticKey>
+      <span class="c-key" [class.none]="!session.task">
+        <span class="k-dot" *ngIf="session.task" [class.on]="isAccruing"></span>{{ session.task || '—' }}
+      </span>
+    </ng-template>
     <span class="c-nm"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>
 
     <span class="time-anchor">
@@ -37,15 +63,8 @@
     </span>
   </div>
 
-  <!-- Band 2: status badge (unchanged pill) · commits · churn · mode picker -->
+  <!-- Band 2: commits · churn · mode picker (status lives in the chip's dot) -->
   <div class="r-l2">
-    <app-status-badge
-      [statusClass]="statusClass"
-      [label]="statusLabel"
-      [action]="trackingAction"
-      [pending]="actionPending"
-      (act)="onTrackingClick()" />
-
     <span class="c-stats">
       <svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
     </span>

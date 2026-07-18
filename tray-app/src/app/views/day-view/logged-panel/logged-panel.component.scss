@@ -1,3 +1,5 @@
+@use 'glass';
+
 // History feed — no panel chrome: the day view's scroll carries the rows,
 // material is coded by the border (logged = thin solid frame + 5px gap).
 :host {
@@ -56,16 +58,28 @@
   align-items: center;
 }
 
+// Ticket chip — logged species: the same tinted-glass capsule as the session
+// and suggestion chips, in mauve.
 .c-key {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
   color: #cba6f7;
   font-weight: 600;
-  background: rgba(203, 166, 247, 0.12);
-  padding: 1px 7px;
-  border-radius: 4px;
+  padding: 0 7px;
+  border-radius: 7px;
   white-space: nowrap;
   justify-self: start;
+  background: linear-gradient(180deg, rgba(203, 166, 247, 0.16), rgba(203, 166, 247, 0.05));
+  border: 1px solid rgba(203, 166, 247, 0.22);
+  @include glass.glass-rim(rgba(203, 166, 247, 0.35));
 
-  &.no-title { color: #9a8ec4; background: rgba(203, 166, 247, 0.07); }
+  &.no-title {
+    color: #9a8ec4;
+    background: linear-gradient(180deg, rgba(203, 166, 247, 0.1), rgba(203, 166, 247, 0.03));
+    border-color: rgba(203, 166, 247, 0.14);
+  }
 }
 
 // Name — a long tail fades out instead of a hard ellipsis cut; the mask only

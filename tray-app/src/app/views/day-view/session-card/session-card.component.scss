@@ -1,3 +1,5 @@
+@use 'glass';
+
 :host {
   display: block;
 }
@@ -79,27 +81,33 @@
   font-size: 11px;
 }
 
-// Band 2's first column may exceed 74px (wide badge faces like Switched /
-// Resume) — max-content lets it push instead of overlapping the stats.
 .r-l2 {
   display: grid;
-  grid-template-columns: minmax(74px, max-content) minmax(0, 1fr) minmax(48px, max-content);
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
   align-items: center;
-  height: 20px; // fits the 18px capsules with 1px air
+  height: 20px; // fits the 18px mode capsule with 1px air
   margin-top: 1px;
 }
 
-// Ticket from the branch — green chip: chip colour = the entry's life stage
-// (green tracked → mauve logged).
+// Ticket chip — the session's identity AND its tracking control, in tinted
+// green glass (green = tracked). The dot is the whole status: green pulse =
+// accruing, grey = not. The actionable variant crossfades to Pause / Resume.
 .c-key {
   justify-self: start;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 7px 0 5px;
+  border-radius: 7px;
   color: #a6e3a1;
   font-weight: 600;
-  background: rgba(166, 227, 161, 0.12);
-  padding: 1px 7px;
-  border-radius: 4px;
+  font-size: 11px;
   white-space: nowrap;
+  background: linear-gradient(180deg, rgba(166, 227, 161, 0.16), rgba(166, 227, 161, 0.05));
+  border: 1px solid rgba(166, 227, 161, 0.22);
+  @include glass.glass-rim(rgba(166, 227, 161, 0.35));
 
   // Branch without a ticket — dashed neutral placeholder, no new colours.
   &.none {
@@ -107,7 +115,71 @@
     background: transparent;
     border: 1px dashed #45475a;
     padding: 0 8px;
+
+    &::before { content: none; }
   }
+}
+
+.k-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6c7086;
+  margin-right: 5px;
+  flex-shrink: 0;
+
+  &.on {
+    background: #a6e3a1;
+    animation: status-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+// Actionable chip (Live → Pause, manual pause → Resume): both faces stack in
+// one grid cell so the capsule is sized to the wider face — content
+// crossfades on hover with no layout shift (the status-badge mechanic).
+.c-key.act {
+  display: inline-grid;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+  .face {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    transition: opacity 0.15s ease;
+  }
+  .action {
+    opacity: 0;
+    gap: 4px;
+  }
+
+  .k-ico {
+    width: 8px;
+    height: 8px;
+    fill: currentColor;
+    flex-shrink: 0;
+  }
+
+  &:hover:not(:disabled) {
+    .state { opacity: 0; }
+    .action { opacity: 1; }
+  }
+
+  // Pause reads as "stop the green": the whole capsule shifts to red glass.
+  &.will-pause:hover:not(:disabled) {
+    color: #f38ba8;
+    background: linear-gradient(180deg, rgba(243, 139, 168, 0.16), rgba(243, 139, 168, 0.05));
+    border-color: rgba(243, 139, 168, 0.28);
+  }
+
+  &:disabled { cursor: default; opacity: 0.6; }
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%      { opacity: 0.5; transform: scale(0.7); }
 }
 
 // repo · branch in the name slot: bold repo, dim branch; a long tail fades out
@@ -157,14 +229,10 @@
 }
 
 // ─── Band 2 slots ───────────────────────────────────────────────────────────
-// Status badge (its own component, untouched) sits in the first column.
-app-status-badge {
-  justify-self: start;
-}
-
-// Commits · churn in the description slot — commit glyph + counts in half-tone,
-// like the session-born rows in Logged.
+// Commits · churn under the chip — commit glyph + counts in half-tone, like
+// the session-born rows in Logged. Spans the key + name columns.
 .c-stats {
+  grid-column: 1 / 3;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -316,17 +384,13 @@ app-mode-dropdown {
     transition: width 0.5s ease, background-color 0.5s ease;
   }
 
-  // Always-on (Nonstop) — never drains; a slow glassy shimmer reads "wired to
-  // power". Neutral on purpose: teal belongs to suggestions now.
+  // Always-on (Nonstop) — never drains; the mode's old signature gradient
+  // (teal → sky → lavender) drifts along the edge: "wired to power",
+  // unmistakably not a frozen grey and not the suggestions' flat teal.
   .fill.shimmer {
-    background: linear-gradient(
-      90deg,
-      rgba(205, 214, 244, 0.35) 0%,
-      rgba(205, 214, 244, 0.9) 50%,
-      rgba(205, 214, 244, 0.35) 100%
-    );
-    background-size: 200% 100%;
-    animation: edge-shimmer 3s linear infinite;
+    background: linear-gradient(120deg, #94e2d5, #74c7ec, #89b4fa, #94e2d5);
+    background-size: 300% 100%;
+    animation: nonstop-flow 7s linear infinite;
   }
 
   // Custom tooltip (replaces the native title) — shown on hovering the edge.
@@ -356,9 +420,9 @@ app-mode-dropdown {
   }
 }
 
-@keyframes edge-shimmer {
-  0%   { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
+@keyframes nonstop-flow {
+  0%   { background-position: 0 0; }
+  100% { background-position: 300% 0; }
 }
 
 // One quiet pass along the rim, then a long rest. Only layer 1 moves (the

@@ -1,3 +1,5 @@
+@use 'glass';
+
 :host {
   display: block;
 }
@@ -149,20 +151,27 @@
 }
 
 // Ticket chip in the suggestion species' own colour — it turns mauve only
-// after acceptance, when the entry materializes in the history.
+// after acceptance, when the entry materializes in the history. Same
+// tinted-glass capsule as its session/logged siblings, but quieter: an offer
+// isn't material yet.
 .chip {
   justify-self: start;
-  color: rgba(148, 226, 213, 0.6);
-  background: rgba(148, 226, 213, 0.07);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  color: rgba(148, 226, 213, 0.65);
   font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 4px;
+  padding: 0 7px;
+  border-radius: 7px;
   white-space: nowrap;
 
   // Learned ticket (resolver hit) — a static teal badge, not a control;
   // accepting is ✓ / dblclick.
   &.key {
-    border: 1px solid transparent;
+    background: linear-gradient(180deg, rgba(148, 226, 213, 0.12), rgba(148, 226, 213, 0.04));
+    border: 1px solid rgba(148, 226, 213, 0.18);
+    @include glass.glass-rim(rgba(148, 226, 213, 0.28));
   }
 
   // No ticket resolved yet — a dashed neutral placeholder; clicking it is
