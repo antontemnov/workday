@@ -510,3 +510,59 @@
   color: #6c7086;
   text-align: center;
 }
+
+// ─── Muted suggestion series (under the Calendar rows) ───────────────────
+
+.muted-none {
+  font-size: 11px;
+  color: #565973;
+}
+
+.muted-list {
+  margin: 2px 0 6px;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  background: rgba(17, 17, 27, 0.4);
+  padding: 4px 6px;
+}
+
+.muted-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 3px;
+  font-size: 11px;
+
+  .m-title {
+    color: #bac2de;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-until {
+    color: #6c7086;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .m-unmute {
+    background: none;
+    border: none;
+    padding: 0 3px;
+    color: #6c7086;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover { color: #f38ba8; }
+    &:disabled { color: #45475a; cursor: default; }
+  }
+}
+
+.muted-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 3px 2px;
+  border-top: 1px solid #313244;
+  margin-top: 2px;
+}

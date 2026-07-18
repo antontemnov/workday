@@ -179,17 +179,21 @@ export interface SuggestionAcceptResponse {
   readonly day: SuggestionsResponse;
 }
 
-// Muted series surface (CLI-only; no tray UI by design).
+// Muted series surface (the Settings panel + CLI). Title is the snapshot
+// taken at mute time, falling back to the calendar cache, null otherwise.
+export interface MutedSuggestionSeries {
+  readonly uid: string;
+  readonly mutedAt: string;
+  readonly until: string | null;  // null → forever
+  readonly title: string | null;
+}
+
 export interface SuggestionsMutedResponse {
-  readonly muted: readonly {
-    readonly uid: string;
-    readonly mutedAt: string;
-    readonly title: string | null;
-  }[];
+  readonly muted: readonly MutedSuggestionSeries[];
 }
 
 export interface SuggestionUnmuteResponse {
-  readonly uid: string;
+  readonly uids: readonly string[];
 }
 
 export interface SensitivityResponse {

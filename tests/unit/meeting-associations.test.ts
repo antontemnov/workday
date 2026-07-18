@@ -2,7 +2,7 @@
  * Unit tests for the meeting→ticket learning memory: titleKey normalization,
  * the four resolver outcomes (uid / unanimous title / conflicting title /
  * nothing), learning side effects (accept, edit, the description deviation
- * rule), the dismiss-streak → mute pipeline, and load-time pruning.
+ * rule), manual mute (timed / forever), and load-time pruning.
  *
  * Run: npx tsx tests/unit/meeting-associations.test.ts
  * Exit code: 0 = all pass, 1 = any fail
@@ -14,15 +14,15 @@ import {
   learnFromAccept,
   learnFromEdit,
   loadMeetingAssociations,
+  muteSeries,
   normalizeTitleKey,
   pruneMeetingAssociations,
-  registerDismiss,
   resolveSuggestion,
+  unmuteAllSeries,
   unmuteSeries,
   type MeetingAssociation,
   type MeetingAssociations,
 } from '../../src/core/meeting-associations.js';
-import { MEETING_MUTE_THRESHOLD } from '../../src/core/constants.js';
 
 let passed = 0;
 let failed = 0;
@@ -187,37 +187,47 @@ test('edit recreates a lost association from the entry', () => {
 });
 
 console.log('');
-console.log('dismiss streak → mute → unmute');
+console.log('manual mute → unmute');
 
-test('the streak accumulates and mutes at the threshold', () => {
-  for (let i = 1; i < MEETING_MUTE_THRESHOLD; i++) {
-    const r = registerDismiss('m1', NOW + i);
-    assert.equal(r.muted, false, `dismiss #${i} must not mute`);
-    assert.equal(r.streak, i);
-  }
-  const last = registerDismiss('m1', NOW + MEETING_MUTE_THRESHOLD);
-  assert.equal(last.muted, true);
-  const all = loadMeetingAssociations(NOW);
-  assert.ok(all.muted['m1']);
-  assert.equal(all.streaks['m1'], undefined);
+const DAY_MS = 86_400_000;
+
+test('timed mute stores until + title snapshot and expires on load', () => {
+  muteSeries({ uid: 'm1', days: 7, title: 'Daily standup', nowMs: NOW });
+  const m = loadMeetingAssociations(NOW).muted['m1'];
+  assert.ok(m);
+  assert.equal(m.title, 'Daily standup');
+  assert.equal(m.until, new Date(NOW + 7 * DAY_MS).toISOString());
+  assert.ok(loadMeetingAssociations(NOW + 7 * DAY_MS - 1000).muted['m1'], 'still muted just before until');
+  assert.equal(loadMeetingAssociations(NOW + 7 * DAY_MS + 1000).muted['m1'], undefined, 'expired after until');
 });
 
-test('accept resets the streak (consecutive means without an accept between)', () => {
-  registerDismiss('m2', NOW);
-  registerDismiss('m2', NOW + 1);
-  learnFromAccept({ uid: 'm2', title: 'Standup', isPrivate: false, task: 'ATL-1', activity: 'Other', description: 'Standup', nowMs: NOW + 2 });
-  assert.equal(loadMeetingAssociations(NOW).streaks['m2'], undefined);
-  const r = registerDismiss('m2', NOW + 3);
-  assert.equal(r.streak, 1);
+test('mute without days is forever', () => {
+  muteSeries({ uid: 'm2', title: 'Retro', nowMs: NOW });
+  const m = loadMeetingAssociations(NOW + 365 * DAY_MS).muted['m2'];
+  assert.ok(m);
+  assert.equal(m.until, undefined);
 });
 
-test('dismissing an already-muted series is a no-op; unmute releases it', () => {
-  for (let i = 0; i < MEETING_MUTE_THRESHOLD; i++) registerDismiss('m3', NOW + i);
-  const repeat = registerDismiss('m3', NOW + 100);
-  assert.equal(repeat.muted, true);
-  assert.equal(unmuteSeries('m3'), true);
-  assert.equal(loadMeetingAssociations(NOW).muted['m3'], undefined);
-  assert.equal(unmuteSeries('m3'), false);
+test('re-mute replaces the window (last-write-wins)', () => {
+  muteSeries({ uid: 'm3', days: 7, nowMs: NOW });
+  muteSeries({ uid: 'm3', nowMs: NOW + 1000 });
+  assert.equal(loadMeetingAssociations(NOW).muted['m3'].until, undefined);
+});
+
+test('unmute releases the series; a second call is a no-op', () => {
+  muteSeries({ uid: 'm4', nowMs: NOW });
+  assert.equal(unmuteSeries('m4'), true);
+  assert.equal(loadMeetingAssociations(NOW).muted['m4'], undefined);
+  assert.equal(unmuteSeries('m4'), false);
+});
+
+test('unmuteAllSeries clears every mute and returns the released uids', () => {
+  muteSeries({ uid: 'm5', days: 30, nowMs: NOW });
+  muteSeries({ uid: 'm6', nowMs: NOW });
+  const released = unmuteAllSeries();
+  assert.ok(released.includes('m5') && released.includes('m6'));
+  assert.deepEqual(loadMeetingAssociations(NOW).muted, {});
+  assert.deepEqual(unmuteAllSeries(), []);
 });
 
 console.log('');
@@ -232,15 +242,17 @@ test('idle series expire after the retention window; fresh ones survive', () => 
   assert.deepEqual(Object.keys(pruned.series), ['fresh']);
 });
 
-test('streaks of muted series are dropped; mutes never expire', () => {
+test('expired mutes drop; future and forever mutes survive', () => {
   const all: MeetingAssociations = {
     series: {},
-    muted: { 'dead': { mutedAt: '2025-01-01T10:00:00.000Z' } },
-    streaks: { 'dead': 3, 'alive': 2 },
+    muted: {
+      'expired': { mutedAt: '2026-07-01T10:00:00.000Z', until: '2026-07-08T10:00:00.000Z' },
+      'future': { mutedAt: '2026-07-17T10:00:00.000Z', until: '2026-08-17T10:00:00.000Z' },
+      'forever': { mutedAt: '2025-01-01T10:00:00.000Z' },
+    },
   };
   const pruned = pruneMeetingAssociations(all, NOW);
-  assert.deepEqual(pruned.streaks, { 'alive': 2 });
-  assert.ok(pruned.muted['dead']);
+  assert.deepEqual(Object.keys(pruned.muted).sort(), ['forever', 'future']);
 });
 
 // ─── Summary ─────────────────────────────────────────────────────────────

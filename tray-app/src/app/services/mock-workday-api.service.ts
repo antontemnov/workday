@@ -52,6 +52,7 @@ import {
   SuggestionAcceptResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
+  MutedSuggestionSeries,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -147,6 +148,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       ongoing: false, isPrivate: true, source: 'meeting' },
   ];
   private readonly mockDismissed = new Set<string>();
+  private mockMuted: MutedSuggestionSeries[] = [];
 
   private buildToday(): TodayResponse {
     return {
@@ -683,6 +685,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       s.date === date
       && !(s.isPrivate && this.mockCalendar.hidePrivate)
       && !this.mockDismissed.has(`${s.uid}:${s.date}`)
+      && !this.mockMuted.some(m => m.uid === s.uid)
       && !this.mockManualEntries.some(e => e.sourceRef === `meeting:${s.uid}:${s.date}`));
     return {
       date, state: SuggestionsDayState.Active, suggestions,
@@ -694,12 +697,37 @@ export class MockWorkdayApiService extends WorkdayApiService {
     };
   }
 
+  async muteSuggestion(uid: string, date: string, days?: number): Promise<ApiResponse<SuggestionsResponse>> {
+    await delay(150);
+    const meeting = this.mockMeetings.find(s => s.uid === uid);
+    if (!meeting) return { ok: false, error: 'Meeting not found in the calendar cache' };
+    this.mockMuted = [
+      ...this.mockMuted.filter(m => m.uid !== uid),
+      {
+        uid,
+        mutedAt: new Date().toISOString(),
+        until: days ? new Date(Date.now() + days * 86_400_000).toISOString() : null,
+        title: meeting.title,
+      },
+    ];
+    return { ok: true, data: this.suggestionsDay(date) };
+  }
+
   async getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>> {
-    return { ok: true, data: { muted: [] } };
+    return { ok: true, data: { muted: [...this.mockMuted] } };
   }
 
   async unmuteSuggestion(uid: string): Promise<ApiResponse<SuggestionUnmuteResponse>> {
-    return { ok: true, data: { uid } };
+    await delay(150);
+    this.mockMuted = this.mockMuted.filter(m => m.uid !== uid);
+    return { ok: true, data: { uids: [uid] } };
+  }
+
+  async unmuteAllSuggestions(): Promise<ApiResponse<SuggestionUnmuteResponse>> {
+    await delay(150);
+    const uids = this.mockMuted.map(m => m.uid);
+    this.mockMuted = [];
+    return { ok: true, data: { uids } };
   }
 
   async getSettings(): Promise<ApiResponse<SettingsResponse>> {

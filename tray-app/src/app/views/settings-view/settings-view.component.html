@@ -356,6 +356,31 @@
           <div class="toggle" [class.on]="hidePrivateOn" (click)="toggleHidePrivate()"></div>
         </div>
       </div>
+
+      <!-- Muted series — manual mutes made from the suggestion context menu.
+           Collapsed to a count; expand to release one (✕) or all. -->
+      <div class="opt-row" *ngIf="calendarBlockVisible">
+        <div class="left">
+          <span class="name">Muted series</span>
+          <span class="hint">Right-click a suggestion in Day view to mute it.</span>
+        </div>
+        <div class="right">
+          <button class="btn small" *ngIf="mutedList.length; else noMuted" (click)="toggleMutedOpen()">
+            {{ mutedList.length }} muted {{ mutedOpen ? '▴' : '▾' }}
+          </button>
+          <ng-template #noMuted><span class="muted-none">none</span></ng-template>
+        </div>
+      </div>
+      <div class="muted-list" *ngIf="calendarBlockVisible && mutedOpen && mutedList.length">
+        <div class="muted-row" *ngFor="let m of mutedList">
+          <span class="m-title">{{ m.title || m.uid }}</span>
+          <span class="m-until">{{ mutedUntilLabel(m) }}</span>
+          <button class="m-unmute" [disabled]="mutedBusy" (click)="unmuteOne(m)">✕</button>
+        </div>
+        <div class="muted-actions">
+          <button class="btn small ghost" [disabled]="mutedBusy" (click)="unmuteAll()">Unmute all</button>
+        </div>
+      </div>
     </div>
   </ng-container>
 

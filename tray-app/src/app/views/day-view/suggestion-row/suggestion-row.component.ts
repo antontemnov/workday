@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityType, DEVELOPMENT_ACTIVITY, ManualEntryInput, Suggestion } from '../../../models/workday.models';
 import { activityOptions } from '../activity.util';
+import { openCtxMenu } from '../ctx-menu.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 
 // Mirrors the daemon's accept default (DEFAULT_MANUAL_ACTIVITY).
@@ -58,6 +59,8 @@ export class SuggestionRowComponent implements OnChanges {
   // Inline form submit — the parent turns it into the daemon accept.
   @Output() acceptSubmitted = new EventEmitter<SuggestionAcceptEvent>();
   @Output() dismissed = new EventEmitter<void>();
+  // Context-menu mute: days to mute the whole series for, null = forever.
+  @Output() muteSubmitted = new EventEmitter<number | null>();
 
   editing = false;
   editTask = '';
@@ -110,6 +113,30 @@ export class SuggestionRowComponent implements OnChanges {
   dismiss(): void {
     if (this.actionPending) return;
     this.dismissed.emit();
+  }
+
+  // Right-click: the full action set (logged-row parity), mute picks its
+  // window in a second menu at the same spot.
+  onContextMenu(ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (this.editing || this.actionPending) return;
+    const x = ev.clientX;
+    const y = ev.clientY;
+    openCtxMenu(x, y, [
+      { icon: '✓', label: 'Accept', action: () => this.accept() },
+      { icon: '✕', label: 'Dismiss', action: () => this.dismiss() },
+      { icon: '⏸', label: 'Mute series…', action: () => this.openMuteMenu(x, y) },
+    ]);
+  }
+
+  private openMuteMenu(x: number, y: number): void {
+    openCtxMenu(x, y, [
+      { icon: '', label: 'For a week', action: () => this.muteSubmitted.emit(7) },
+      { icon: '', label: 'For a month', action: () => this.muteSubmitted.emit(30) },
+      { icon: '', label: 'For 3 months', action: () => this.muteSubmitted.emit(90) },
+      { icon: '∞', label: 'Forever', action: () => this.muteSubmitted.emit(null) },
+    ]);
   }
 
   private openEdit(task: string, activity?: string, description?: string): void {

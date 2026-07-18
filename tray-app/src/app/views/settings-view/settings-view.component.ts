@@ -3,8 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
 import {
-  ActivityType, CalendarFeedStatus, ProjectRef, SensitivityLevel, SettingsConfigSubset,
-  SettingsResponse, TrackingConfig,
+  ActivityType, CalendarFeedStatus, MutedSuggestionSeries, ProjectRef, SensitivityLevel,
+  SettingsConfigSubset, SettingsResponse, TrackingConfig,
 } from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
@@ -94,6 +94,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     // Activity catalog for the scope picker — cheap, served from the daemon's
     // work-attributes cache.
     void this.loadActivityCatalog();
+    void this.refreshMuted();
   }
 
   private async loadActivityCatalog(): Promise<void> {
@@ -567,6 +568,55 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
 
   get hidePrivateOn(): boolean {
     return this.settings?.config.calendar?.hidePrivate === true;
+  }
+
+  // ─── Muted suggestion series (manual mutes, see suggestion-row menu) ────
+
+  mutedList: readonly MutedSuggestionSeries[] = [];
+  mutedOpen = false;
+  mutedBusy = false;
+
+  private async refreshMuted(): Promise<void> {
+    const res = await this.api.getMutedSuggestions();
+    if (res.ok && res.data) {
+      this.mutedList = res.data.muted;
+      if (this.mutedList.length === 0) this.mutedOpen = false;
+    }
+  }
+
+  toggleMutedOpen(): void {
+    this.mutedOpen = !this.mutedOpen;
+    // The list is fetched once on init — an expand re-pulls so it never
+    // shows a stale snapshot after mutes made while Settings sat open.
+    if (this.mutedOpen) void this.refreshMuted();
+  }
+
+  mutedUntilLabel(m: MutedSuggestionSeries): string {
+    return m.until ? `till ${m.until.slice(0, 10)}` : 'forever';
+  }
+
+  async unmuteOne(m: MutedSuggestionSeries): Promise<void> {
+    if (this.mutedBusy) return;
+    this.mutedBusy = true;
+    try {
+      const res = await this.api.unmuteSuggestion(m.uid);
+      if (!res.ok) this.setIndicator('error', res.error ?? 'Failed to unmute');
+    } finally {
+      this.mutedBusy = false;
+    }
+    await this.refreshMuted();
+  }
+
+  async unmuteAll(): Promise<void> {
+    if (this.mutedBusy) return;
+    this.mutedBusy = true;
+    try {
+      const res = await this.api.unmuteAllSuggestions();
+      if (!res.ok) this.setIndicator('error', res.error ?? 'Failed to unmute');
+    } finally {
+      this.mutedBusy = false;
+    }
+    await this.refreshMuted();
   }
 
   toggleHidePrivate(): void {

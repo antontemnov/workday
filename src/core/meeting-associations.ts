@@ -11,7 +11,6 @@ import { getDataDir } from './config.js';
 import {
   MEETING_ASSOCIATIONS_FILE,
   MEETING_ASSOCIATION_RETENTION_DAYS,
-  MEETING_MUTE_THRESHOLD,
   TMP_EXTENSION,
 } from './constants.js';
 import type { SuggestionCandidate, SuggestionResolved } from './types.js';
@@ -27,17 +26,22 @@ export interface MeetingAssociation {
   readonly lastUsedAt: string;    // refreshed by accept/edit; drives prune and candidate order
 }
 
+// Manual mute — the only way a series goes quiet. `until` absent = forever.
+// `title` is snapshotted at mute time so the Settings list can name the
+// series after the instance leaves the calendar cache window.
+export interface MutedSeries {
+  readonly mutedAt: string;
+  readonly until?: string;
+  readonly title?: string;
+}
+
 export interface MeetingAssociations {
   readonly series: Record<string, MeetingAssociation>;
-  readonly muted: Record<string, { readonly mutedAt: string }>;
-  // Consecutive dismissed instances per series; reset by accept, promoted to
-  // muted at MEETING_MUTE_THRESHOLD. Lives outside `series` because streaks
-  // mostly belong to series the user never accepted.
-  readonly streaks: Record<string, number>;
+  readonly muted: Record<string, MutedSeries>;
 }
 
 export function emptyMeetingAssociations(): MeetingAssociations {
-  return { series: {}, muted: {}, streaks: {} };
+  return { series: {}, muted: {} };
 }
 
 /** lowercase → Unicode letters only (digits/dates/emoji/punctuation drop out)
@@ -48,20 +52,20 @@ export function normalizeTitleKey(title: string): string {
   return [...new Set(tokens)].sort().join(' ');
 }
 
-/** Pure prune — exported for tests. Idle series entries expire; streaks of
- *  muted series are dropped (the mute already happened); mutes are a manual
- *  handbrake and never expire. */
+/** Pure prune — exported for tests. Idle series entries expire; timed mutes
+ *  drop once `until` passes (forever-mutes stay). */
 export function pruneMeetingAssociations(all: MeetingAssociations, nowMs: number): MeetingAssociations {
   const cutoff = new Date(nowMs - MEETING_ASSOCIATION_RETENTION_DAYS * DAY_MS).toISOString();
   const series: Record<string, MeetingAssociation> = {};
   for (const [uid, assoc] of Object.entries(all.series)) {
     if (assoc.lastUsedAt >= cutoff) series[uid] = assoc;
   }
-  const streaks: Record<string, number> = {};
-  for (const [uid, count] of Object.entries(all.streaks)) {
-    if (!all.muted[uid]) streaks[uid] = count;
+  const nowIso = new Date(nowMs).toISOString();
+  const muted: Record<string, MutedSeries> = {};
+  for (const [uid, m] of Object.entries(all.muted)) {
+    if (!m.until || m.until > nowIso) muted[uid] = m;
   }
-  return { series, muted: all.muted, streaks };
+  return { series, muted };
 }
 
 /** Load + prune in memory; the file compacts on the next write. */
@@ -72,7 +76,6 @@ export function loadMeetingAssociations(nowMs: number = Date.now()): MeetingAsso
       return pruneMeetingAssociations({
         series: parsed.series ?? {},
         muted: parsed.muted ?? {},
-        streaks: parsed.streaks ?? {},
       }, nowMs);
     }
   } catch { /* missing/corrupt → empty */ }
@@ -138,7 +141,7 @@ export interface LearnAcceptInput {
 }
 
 /** Accept side effect: upsert the association (last-write-wins, no
- *  refcounting), reset the dismiss streak. */
+ *  refcounting). */
 export function learnFromAccept(input: LearnAcceptInput): MeetingAssociation {
   const nowMs = input.nowMs ?? Date.now();
   const all = loadMeetingAssociations(nowMs);
@@ -151,9 +154,7 @@ export function learnFromAccept(input: LearnAcceptInput): MeetingAssociation {
     uses: (all.series[input.uid]?.uses ?? 0) + 1,
     lastUsedAt: new Date(nowMs).toISOString(),
   };
-  const streaks = { ...all.streaks };
-  delete streaks[input.uid];
-  writeAssociations({ series: { ...all.series, [input.uid]: assoc }, muted: all.muted, streaks });
+  writeAssociations({ ...all, series: { ...all.series, [input.uid]: assoc } });
   return assoc;
 }
 
@@ -190,34 +191,28 @@ export function learnFromEdit(input: LearnEditInput): void {
   writeAssociations({ ...all, series: { ...all.series, [input.uid]: assoc } });
 }
 
-export interface DismissLearnResult {
-  readonly muted: boolean;
-  readonly streak: number;
+export interface MuteSeriesInput {
+  readonly uid: string;
+  readonly days?: number;   // absent → forever
+  readonly title?: string;  // snapshot for the Settings list
+  readonly nowMs?: number;
 }
 
-/** Dismiss side effect: bump the consecutive-dismiss streak, mute the series
- *  at the threshold. The caller skips this for pushed days and for repeated
- *  dismisses of the same instance. */
-export function registerDismiss(uid: string, nowMs: number = Date.now()): DismissLearnResult {
+/** Manual mute — replaces any prior mute of the same series (last-write-wins,
+ *  so re-muting extends or shortens the window). */
+export function muteSeries(input: MuteSeriesInput): MutedSeries {
+  const nowMs = input.nowMs ?? Date.now();
   const all = loadMeetingAssociations(nowMs);
-  if (all.muted[uid]) return { muted: true, streak: 0 };
-  const streak = (all.streaks[uid] ?? 0) + 1;
-  if (streak >= MEETING_MUTE_THRESHOLD) {
-    const streaks = { ...all.streaks };
-    delete streaks[uid];
-    writeAssociations({
-      series: all.series,
-      muted: { ...all.muted, [uid]: { mutedAt: new Date(nowMs).toISOString() } },
-      streaks,
-    });
-    return { muted: true, streak };
-  }
-  writeAssociations({ ...all, streaks: { ...all.streaks, [uid]: streak } });
-  return { muted: false, streak };
+  const entry: MutedSeries = {
+    mutedAt: new Date(nowMs).toISOString(),
+    ...(input.days ? { until: new Date(nowMs + input.days * DAY_MS).toISOString() } : {}),
+    ...(input.title ? { title: input.title } : {}),
+  };
+  writeAssociations({ ...all, muted: { ...all.muted, [input.uid]: entry } });
+  return entry;
 }
 
-/** Manual handbrake release (CLI-only surface). Returns false when the
- *  series wasn't muted. */
+/** Returns false when the series wasn't muted. */
 export function unmuteSeries(uid: string): boolean {
   const all = loadMeetingAssociations();
   if (!all.muted[uid]) return false;
@@ -225,6 +220,14 @@ export function unmuteSeries(uid: string): boolean {
   delete muted[uid];
   writeAssociations({ ...all, muted });
   return true;
+}
+
+/** The Settings "unmute all" — clears every mute, returns the released uids. */
+export function unmuteAllSeries(): string[] {
+  const all = loadMeetingAssociations();
+  const uids = Object.keys(all.muted);
+  if (uids.length > 0) writeAssociations({ ...all, muted: {} });
+  return uids;
 }
 
 function learnedDescription(description: string, title: string): string | undefined {

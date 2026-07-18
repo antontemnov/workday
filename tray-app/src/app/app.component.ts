@@ -518,6 +518,14 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
+  async submitSuggestionMute(e: { uid: string; date: string; days: number | null }): Promise<void> {
+    await this.runAction(async () => {
+      const res = await this.api.muteSuggestion(e.uid, e.date, e.days ?? undefined);
+      if (res.ok && res.data) this.suggestionsDay = res.data;
+      return res;
+    });
+  }
+
   // Deferred DELETE — the panel already played the undo window; a failure
   // surfaces as the usual toast and the row comes back with the refresh.
   async submitEntryDelete(target: string): Promise<void> {

@@ -324,12 +324,20 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post<SuggestionsResponse>('/api/suggestions/dismiss', { uid, date });
   }
 
+  override async muteSuggestion(uid: string, date: string, days?: number): Promise<ApiResponse<SuggestionsResponse>> {
+    return this.post<SuggestionsResponse>('/api/suggestions/mute', { uid, date, ...(days ? { days } : {}) });
+  }
+
   override async getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>> {
     return this.get<SuggestionsMutedResponse>('/api/suggestions/muted');
   }
 
   override async unmuteSuggestion(uid: string): Promise<ApiResponse<SuggestionUnmuteResponse>> {
     return this.post<SuggestionUnmuteResponse>('/api/suggestions/unmute', { uid });
+  }
+
+  override async unmuteAllSuggestions(): Promise<ApiResponse<SuggestionUnmuteResponse>> {
+    return this.post<SuggestionUnmuteResponse>('/api/suggestions/unmute', { all: true });
   }
 
   override async getSettings(): Promise<ApiResponse<SettingsResponse>> {

@@ -48,7 +48,8 @@
     [picked]="pickFor(g)"
     (pickRequested)="openCloudForAccept(g)"
     (acceptSubmitted)="onSuggestionAccept(g, $event)"
-    (dismissed)="onSuggestionDismiss(g)" />
+    (dismissed)="onSuggestionDismiss(g)"
+    (muteSubmitted)="onSuggestionMute(g, $event)" />
 
   <!-- Radar only when the whole day is empty — otherwise the history speaks -->
   <div class="waiting" *ngIf="dayEmpty">

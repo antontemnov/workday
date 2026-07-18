@@ -1428,6 +1428,7 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   console.log('');
   console.log('Accept:  workday suggestions accept <#N> [--task <KEY>] [--minutes N] [--desc "..."] [--activity X]  (resolved rows accept without --task)');
   console.log('Dismiss: workday suggestions dismiss <#N>');
+  console.log('Mute:    workday suggestions mute <#N> [--days N]  (no --days = forever)');
 }
 
 /** Resolve `#N` against the day's current list; a raw uid passes through. */
@@ -1495,6 +1496,29 @@ async function handleSuggestions(args: string[]): Promise<void> {
     return;
   }
 
+  if (sub === 'mute') {
+    const rest = args.slice(1);
+    const target = rest[0];
+    if (!target) {
+      console.log('Usage: workday suggestions mute <#N|uid> [--days N] [--date D]   (no --days = forever)');
+      return;
+    }
+    let days: number | undefined;
+    const daysStr = parseArgValue(rest, '--days');
+    if (daysStr !== null) {
+      days = parseInt(daysStr, 10);
+      if (isNaN(days) || days <= 0) { console.log('Days must be positive'); return; }
+    }
+    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'));
+    if (!resolved) return;
+    const payload: Record<string, unknown> = { ...resolved };
+    if (days !== undefined) payload.days = days;
+    const result = await apiPost<SuggestionsResponse>('/api/suggestions/mute', payload);
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    console.log(`Muted ${days ? `for ${days} day${days === 1 ? '' : 's'}` : 'forever'}. Pending suggestions left: ${result.data.suggestions.length}`);
+    return;
+  }
+
   if (sub === 'muted') {
     const result = await apiGet<SuggestionsMutedResponse>('/api/suggestions/muted');
     if (!result.ok || !result.data) { console.log(result.error); return; }
@@ -1502,30 +1526,34 @@ async function handleSuggestions(args: string[]): Promise<void> {
       console.log('No muted series.');
       return;
     }
-    console.log('Muted series (10 consecutive dismissals):');
+    console.log('Muted series:');
     for (const m of result.data.muted) {
-      console.log(`  ${m.title ?? '(not in the calendar cache)'}  muted ${m.mutedAt.slice(0, 10)}`);
+      const till = m.until ? `till ${m.until.slice(0, 10)}` : 'forever';
+      console.log(`  ${m.title ?? '(unknown meeting)'}  ${till} · muted ${m.mutedAt.slice(0, 10)}`);
       console.log(`    uid: ${m.uid}`);
     }
     console.log('');
-    console.log('Unmute: workday suggestions unmute <uid>');
+    console.log('Unmute: workday suggestions unmute <uid|--all>');
     return;
   }
 
   if (sub === 'unmute') {
-    const uid = args[1];
-    if (!uid) {
-      console.log('Usage: workday suggestions unmute <uid>   (uids: workday suggestions muted)');
+    const target = args[1];
+    if (!target) {
+      console.log('Usage: workday suggestions unmute <uid|--all>   (uids: workday suggestions muted)');
       return;
     }
-    const result = await apiPost<SuggestionUnmuteResponse>('/api/suggestions/unmute', { uid });
+    const payload = target === '--all' ? { all: true } : { uid: target };
+    const result = await apiPost<SuggestionUnmuteResponse>('/api/suggestions/unmute', payload);
     if (!result.ok || !result.data) { console.log(result.error); return; }
-    console.log('Unmuted — the series suggests again.');
+    console.log(target === '--all'
+      ? `Unmuted ${result.data.uids.length} series.`
+      : 'Unmuted — the series suggests again.');
     return;
   }
 
   if (sub !== undefined && sub !== '--date') {
-    console.log('Usage: workday suggestions [--date D] | accept <#N|uid> [--task <KEY>] ... | dismiss <#N|uid> | muted | unmute <uid>');
+    console.log('Usage: workday suggestions [--date D] | accept <#N|uid> [--task <KEY>] ... | dismiss <#N|uid> | mute <#N|uid> [--days N] | muted | unmute <uid|--all>');
     return;
   }
 
@@ -1688,8 +1716,9 @@ Usage:
   workday suggestions [--date D]                       Pending meeting suggestions for a day (→ learned ticket)
   workday suggestions accept <#N|uid> [--task <KEY>]   Log a suggested meeting (--minutes/--desc/--activity/--date)
   workday suggestions dismiss <#N|uid> [--date D]      Dismiss a suggestion (per uid+date, permanent)
-  workday suggestions muted                            Series muted by 10 consecutive dismissals
-  workday suggestions unmute <uid>                     Release a muted series
+  workday suggestions mute <#N|uid> [--days N]         Mute a meeting series (no --days = forever)
+  workday suggestions muted                            Manually muted series
+  workday suggestions unmute <uid|--all>               Release muted series
 
 Target: session index (#1, #2) or session id (hex)`);
 }

@@ -56,8 +56,9 @@ workday calendar refresh               Re-fetch the calendar feed now
 workday suggestions [--date D]         Pending meeting suggestions for a day (→ learned ticket)
 workday suggestions accept <#N|uid>    Log a suggested meeting (--task optional once learned)
 workday suggestions dismiss <#N|uid>   Dismiss a suggestion (permanent per meeting+day)
-workday suggestions muted              Series muted by 10 consecutive dismissals
-workday suggestions unmute <uid>       Release a muted series
+workday suggestions mute <#N|uid>      Mute a meeting series (--days N, default forever)
+workday suggestions muted              Manually muted series
+workday suggestions unmute <uid|--all> Release muted series
 workday daemon                         Run in foreground (live dashboard)
 ```
 
@@ -135,8 +136,9 @@ the next instance of the series prefills the same ticket, activity and — when
 you typed a custom one — description. A recreated series (new UID, same
 normalized title) resolves by title; when the title maps to *different*
 tickets the suggestion carries the conflicting candidates instead of guessing.
-Ten consecutive dismissals mute a series (`workday suggestions muted` /
-`unmute` to manage).
+A noisy series can be muted for a week, a month, or forever — right-click the
+suggestion in the tray (or `workday suggestions mute`); muted series are
+listed under Settings → Calendar and in `workday suggestions muted`.
 
 Config can also live next to `package.json` for local development — the daemon checks there first before falling back to `~/.workday/`.
 

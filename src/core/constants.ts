@@ -149,8 +149,6 @@ export const MEETING_ASSOCIATIONS_FILE = 'meeting-associations.json';
 /** Associations idle this long are pruned on load (~6 months — must survive
  *  quarterly meetings plus a vacation; the calendar cache window is separate) */
 export const MEETING_ASSOCIATION_RETENTION_DAYS = 183;
-/** Consecutive dismissed instances that mute a series (reset by accept) */
-export const MEETING_MUTE_THRESHOLD = 10;
 
 // ─── Notifications (desktop toasts) ──────────────────────────────────────
 export const NOTIFICATIONS_STATE_FILE = 'notifications-state.json';

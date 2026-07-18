@@ -55,13 +55,14 @@ import {
   TEST_NOTIFICATION_MAX_MINUTES,
 } from './core/constants.js';
 import { deriveSuggestions, meetingSourceRef, parseMeetingSourceRef } from './core/suggestions.js';
-import { dismissSuggestionKey, loadSuggestionsState, suggestionKey } from './core/suggestions-state.js';
+import { dismissSuggestionKey, loadSuggestionsState } from './core/suggestions-state.js';
 import {
   learnFromAccept,
   learnFromEdit,
   loadMeetingAssociations,
-  registerDismiss,
+  muteSeries,
   resolveSuggestion,
+  unmuteAllSeries,
   unmuteSeries,
 } from './core/meeting-associations.js';
 import type { NotificationCenter } from './core/notification-center.js';
@@ -387,6 +388,10 @@ export class HttpServer {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, this.handleSuggestionDismiss(body));
       }
+      if (method === 'POST' && path === '/api/suggestions/mute') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleSuggestionMute(body));
+      }
       if (method === 'GET' && path === '/api/suggestions/muted') {
         return this.sendJson(res, 200, this.handleSuggestionsMuted());
       }
@@ -559,12 +564,28 @@ export class HttpServer {
     if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
     const exists = this.deps.calendarCollector.getInstances().some(i => i.uid === uid && i.date === date);
     if (!exists) return { ok: false, error: 'Meeting not found in the calendar cache' };
-    // The mute streak counts distinct instances on live days only: a repeat
-    // dismiss of the same key and dismisses on pushed days don't spin it.
-    const repeat = loadSuggestionsState().dismissed[suggestionKey(uid, date)] != null;
-    const pushed = this.getLogForDate(date)?.pushedAt != null;
-    if (!repeat && !pushed) registerDismiss(uid);
     dismissSuggestionKey(uid, date);
+    return { ok: true, data: this.computeSuggestions(date) };
+  }
+
+  /** Manual series mute (context menu / CLI). `days` absent → forever. */
+  private handleSuggestionMute(body: Record<string, unknown>): ApiResponse<SuggestionsResponse> {
+    const uid = typeof body.uid === 'string' ? body.uid : '';
+    const date = typeof body.date === 'string' ? body.date : '';
+    if (!uid) return { ok: false, error: 'Missing uid' };
+    if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
+    let days: number | undefined;
+    if (body.days !== undefined) {
+      if (typeof body.days !== 'number' || !Number.isInteger(body.days) || body.days <= 0) {
+        return { ok: false, error: 'days must be a positive integer' };
+      }
+      days = body.days;
+    }
+    const instances = this.deps.calendarCollector.getInstances();
+    const instance = instances.find(i => i.uid === uid && i.date === date)
+      ?? instances.find(i => i.uid === uid);
+    if (!instance) return { ok: false, error: 'Meeting not found in the calendar cache' };
+    muteSeries({ uid, days, title: instance.title });
     return { ok: true, data: this.computeSuggestions(date) };
   }
 
@@ -574,17 +595,19 @@ export class HttpServer {
       .map(([uid, m]) => ({
         uid,
         mutedAt: m.mutedAt,
-        title: instances.find(i => i.uid === uid)?.title ?? null,
+        until: m.until ?? null,
+        title: m.title ?? instances.find(i => i.uid === uid)?.title ?? null,
       }))
       .sort((a, b) => a.mutedAt.localeCompare(b.mutedAt));
     return { ok: true, data: { muted } };
   }
 
   private handleSuggestionUnmute(body: Record<string, unknown>): ApiResponse<SuggestionUnmuteResponse> {
+    if (body.all === true) return { ok: true, data: { uids: unmuteAllSeries() } };
     const uid = typeof body.uid === 'string' ? body.uid : '';
     if (!uid) return { ok: false, error: 'Missing uid' };
     if (!unmuteSeries(uid)) return { ok: false, error: 'Series is not muted' };
-    return { ok: true, data: { uid } };
+    return { ok: true, data: { uids: [uid] } };
   }
 
   private handleToday(): ApiResponse<TodayResponse> {

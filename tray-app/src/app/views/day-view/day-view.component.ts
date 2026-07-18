@@ -65,6 +65,7 @@ export class DayViewComponent implements OnChanges {
   @Output() settingsRequested = new EventEmitter<void>();
   @Output() suggestionAcceptSubmitted = new EventEmitter<SuggestionAcceptRequest>();
   @Output() suggestionDismissSubmitted = new EventEmitter<{ uid: string; date: string }>();
+  @Output() suggestionMuteSubmitted = new EventEmitter<{ uid: string; date: string; days: number | null }>();
 
   @ViewChild('dayHead')
   private dayHeadRef?: ElementRef<HTMLElement>;
@@ -185,6 +186,10 @@ export class DayViewComponent implements OnChanges {
 
   onSuggestionDismiss(s: Suggestion): void {
     this.suggestionDismissSubmitted.emit({ uid: s.uid, date: s.date });
+  }
+
+  onSuggestionMute(s: Suggestion, days: number | null): void {
+    this.suggestionMuteSubmitted.emit({ uid: s.uid, date: s.date, days });
   }
 
   trackBySuggestion(_i: number, s: Suggestion): string {

@@ -131,9 +131,12 @@ export abstract class WorkdayApiService {
   abstract getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>>;
   abstract acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>>;
   abstract dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>>;
-  // Muted series (10 consecutive dismissals) — CLI parity mirrors, no tray UI.
+  // Manual series mute (suggestion context menu) — days absent → forever.
+  // Muted series feed the Settings→Calendar panel; unmute releases them.
+  abstract muteSuggestion(uid: string, date: string, days?: number): Promise<ApiResponse<SuggestionsResponse>>;
   abstract getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>>;
   abstract unmuteSuggestion(uid: string): Promise<ApiResponse<SuggestionUnmuteResponse>>;
+  abstract unmuteAllSuggestions(): Promise<ApiResponse<SuggestionUnmuteResponse>>;
 
   // Settings view — config + secrets metadata. Token values are write-only.
   abstract getSettings(): Promise<ApiResponse<SettingsResponse>>;
