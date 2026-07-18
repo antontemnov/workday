@@ -89,12 +89,13 @@
   backdrop-filter: blur(14px) saturate(1.6) brightness(1.05);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   // The glass has NO bottom boundary: the whole bar — tint, frost, washes —
-  // dissolves over its last 10px (all inside the bottom padding, text is
-  // higher). No edge, no seam, nothing for the first row to "stick" to;
-  // records melt into the frost as they slide under. The zero gap below is
-  // by design — height stays compact, separation comes from the melt.
-  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 10px), transparent);
-          mask-image: linear-gradient(180deg, #000 calc(100% - 10px), transparent);
+  // dissolves over its last 13px (mostly inside the bottom padding; the
+  // baseline sits ~14px up, so text keeps full ink). No edge, no seam,
+  // nothing for the first row to "stick" to; records melt into the frost as
+  // they slide under. The zero gap below is by design — height stays
+  // compact, separation comes from the melt.
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 13px), transparent);
+          mask-image: linear-gradient(180deg, #000 calc(100% - 13px), transparent);
   font-variant-numeric: tabular-nums;
   user-select: none;
 
