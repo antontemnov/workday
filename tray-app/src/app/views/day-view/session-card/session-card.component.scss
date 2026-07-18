@@ -17,8 +17,9 @@
   padding: 3px 8px 4px;
   margin-bottom: 8px;
   font-variant-numeric: tabular-nums;
-  // Visible so the mode dropdown's menu can overflow the card; the stamina edge
-  // rounds its own bottom corners (below) instead of relying on card clipping.
+  // Visible so the add-time popover and the edge tooltip can overflow the card;
+  // the stamina edge rounds its own bottom corners (below) instead of relying
+  // on card clipping.
   overflow: visible;
 
   // Tracked highlight — a glass rim: a 1px catch-light ring hugging the
@@ -54,25 +55,23 @@
     animation: rim-sweep 11s ease-in-out infinite;
   }
 
-  // Paused: fade only the data (time/stats). The status badge must stay
-  // prominent and the mode picker manages its own disabled state.
+  // Paused: fade only the data (time/stats).
   &.paused .c-dur,
   &.paused .c-stats {
     opacity: 0.75;
   }
 
-  // While the mode menu or add-time popover is open, lift the whole card above
-  // its siblings so the overflowing layer isn't painted under the next card.
-  &.menu-open,
+  // While the add-time popover is open, lift the whole card above its siblings
+  // so the overflowing layer isn't painted under the next card.
   &.pop-open {
     z-index: 30;
   }
 }
 
 // ─── Two bands on the shared Logged grid ────────────────────────────────────
-// Band 1: ticket chip | repo · branch | time. Band 2: status badge | commits ·
-// churn | mode picker. Same column template as the Logged rows, so the day
-// view reads as one table.
+// Band 1: ticket chip | repo · branch | time. Band 2: commits · churn (mode
+// moved to the right-click menu). Same column template as the Logged rows, so
+// the day view reads as one table.
 .r-l1 {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
@@ -87,7 +86,7 @@
   grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
   align-items: center;
-  height: 20px; // fits the 18px mode capsule with 1px air
+  height: 20px; // held so the card matches the feed rows' uniform height
   margin-top: 1px;
 }
 
@@ -381,10 +380,6 @@
   .plus, .minus { color: #7f849c; }
 }
 
-app-mode-dropdown {
-  justify-self: end;
-}
-
 // ─── Add-time popover (anchored to the time slot) ────────────────────────────
 .add-pop-backdrop {
   position: fixed;
@@ -472,7 +467,7 @@ app-mode-dropdown {
 }
 
 // ─── Stamina edge ───────────────────────────────────────────────────────────
-// The card no longer clips (overflow visible for the dropdown), so the strip
+// The card doesn't clip (overflow visible for the popovers), so the strip
 // rounds its own bottom corners — but a 3px-tall element can't render a 6px
 // radius (CSS scales overlapping radii down to ~3px, and the fill pokes past
 // the border curve). Hence .edge-clip: a taller invisible layer whose honest

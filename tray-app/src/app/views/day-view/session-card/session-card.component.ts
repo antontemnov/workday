@@ -1,9 +1,9 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../models/workday.models';
-import { ModeDropdownComponent } from './mode-dropdown/mode-dropdown.component';
 import { DurationFieldComponent } from '../duration-field/duration-field.component';
 import { parseDurationToMinutes } from '../duration-field/duration.util';
+import { openCtxMenu } from '../ctx-menu.util';
 
 interface SpeedPillOption {
   readonly key: SensitivityLevel;
@@ -32,7 +32,7 @@ type TrackingAction = 'pause' | 'resume';
 @Component({
   selector: 'app-session-card',
   standalone: true,
-  imports: [CommonModule, ModeDropdownComponent, DurationFieldComponent],
+  imports: [CommonModule, DurationFieldComponent],
   templateUrl: './session-card.component.html',
   styleUrl: './session-card.component.scss',
 })
@@ -44,10 +44,6 @@ export class SessionCardComponent {
   // Re-uses the existing pill channel: 'pause' → pause API, a level → sensitivity API.
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
-
-  // True while the mode dropdown is open — lets the card lift its z-index so the
-  // menu can overflow the card without a sibling card clipping it.
-  menuOpen = false;
 
   // Add-time popover (anchored to the time chip). Default 30m; attemptedAdd
   // flags the duration red only after a failed submit.
@@ -224,6 +220,47 @@ export class SessionCardComponent {
       // the daemon closes the open manual pause as a side-effect of setSensitivity.
       this.pillSelected.emit({ session: this.session, pill: this.session.sensitivity });
     }
+  }
+
+  // ─── Mode context menu (right-click) ───────────────────────────────────
+  // Replaces the inline dropdown: the card's rare per-session action now lives
+  // in the same two-stage popover the suggestion / logged rows use. Stage 1
+  // carries only Mode; stage 2 is the sensitivity picker (Back + the levels).
+
+  onContextMenu(ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (this.actionPending || this.addPopoverOpen) return;
+    this.openMainMenu(ev.clientX, ev.clientY);
+  }
+
+  private openMainMenu(x: number, y: number): void {
+    // The active mode rides along as a dimmed right-aligned hint, so it reads
+    // without opening the sub-menu. Manual pause freezes the scale, so Mode
+    // states the fact (dimmed + "paused") rather than offering a no-op — the
+    // same "disabled fact" language as the logged rows.
+    const current = this.speedPills.find(o => o.key === this.session.sensitivity)?.label ?? '—';
+    openCtxMenu(x, y, [
+      this.isManualPaused
+        ? { icon: '⊙', label: 'Mode', hint: `${current} · paused`, disabled: true,
+            title: 'Resume the session to change its mode', action: (): void => {} }
+        : { icon: '⊙', label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
+    ]);
+  }
+
+  private openModeMenu(x: number, y: number): void {
+    openCtxMenu(x, y, [
+      { label: '← Back', action: () => this.openMainMenu(x, y) },
+      { separator: true },
+      ...this.speedPills.map(o => ({
+        // Reserve the icon gutter on every row (space when unselected) so the
+        // ✓ on the active mode keeps the labels aligned.
+        icon: o.key === this.session.sensitivity ? '✓' : ' ',
+        label: o.label,
+        title: o.title,
+        action: (): void => this.onSpeedClick(o.key),
+      })),
+    ]);
   }
 
   // ─── Add-time popover ──────────────────────────────────────────────────

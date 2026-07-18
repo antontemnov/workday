@@ -1,8 +1,8 @@
 <div class="card"
      [class.paused]="isPaused"
      [class.frozen]="isAutoPaused"
-     [class.menu-open]="menuOpen"
      [class.pop-open]="addPopoverOpen"
+     (contextmenu)="onContextMenu($event)"
      [style.--st-glint]="stateGlint"
      [style.--st-glint-soft]="stateGlintSoft"
      [style.--st-sweep]="stateSweep"
@@ -87,18 +87,12 @@
     </span>
   </div>
 
-  <!-- Band 2: commits · churn · mode picker (status lives in the chip's dot) -->
+  <!-- Band 2: commits · churn (status lives in the chip's dot; mode moved to
+       the right-click menu) -->
   <div class="r-l2">
     <span class="c-stats">
       <svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
     </span>
-
-    <app-mode-dropdown
-      [options]="speedPills"
-      [value]="session.sensitivity"
-      [disabled]="isManualPaused || actionPending"
-      (selected)="onSpeedClick($event)"
-      (openChange)="menuOpen = $event" />
   </div>
 
   <!-- Stamina = bottom edge: length + colour encode the level; hover shows a tip -->

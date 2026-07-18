@@ -7,6 +7,10 @@ export interface CtxMenuItem {
   // Omitted/empty → the label starts at the menu edge (no icon gutter).
   readonly icon?: string;
   readonly label: string;
+  // Right-aligned, dimmed secondary text — the row's current value shown
+  // inline (native-menu idiom), e.g. the active mode next to a "Mode" row, so
+  // it reads without opening the sub-menu.
+  readonly hint?: string;
   readonly danger?: boolean;
   // Rendered dimmed and inert — states a fact ("In favorites") rather than
   // hiding the entry, so the mechanic stays discoverable.
@@ -53,6 +57,12 @@ export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]
       el.appendChild(ic);
     }
     el.appendChild(document.createTextNode(item.label));
+    if (item.hint) {
+      const hn = document.createElement('span');
+      hn.className = 'ci-hint';
+      hn.textContent = item.hint;
+      el.appendChild(hn);
+    }
     if (!item.disabled) {
       el.addEventListener('click', () => { closeCtxMenu(); item.action(); });
     }
