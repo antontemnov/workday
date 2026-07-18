@@ -56,6 +56,7 @@ html:has(body.toast-window), body.toast-window {
     cursor: pointer;
 
     .ci-ic { width: 12px; text-align: center; color: #6c7086; font-size: 10.5px; }
+    .ci-ic svg { display: block; margin: 0 auto; }
 
     // Current value pushed to the right edge, dimmer than the label — the row
     // states what it's set to without opening its sub-menu.

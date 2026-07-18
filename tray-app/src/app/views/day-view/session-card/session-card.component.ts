@@ -14,6 +14,9 @@ interface SpeedPillOption {
 
 type TrackingAction = 'pause' | 'resume';
 
+// Speedometer for the Mode row — the sensitivity scale IS a speed dial.
+const MODE_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M3.03 9.47 A4.2 4.2 0 1 1 8.97 9.47"/><line x1="6" y1="6.5" x2="8.4" y2="3.9"/><circle cx="6" cy="6.5" r="0.9" fill="currentColor" stroke="none"/></svg>';
+
 /**
  * Single open-session card — one grid, two bands, the ticket medallion
  * spanning both (the card keeps the feed rows' uniform height):
@@ -249,12 +252,10 @@ export class SessionCardComponent {
     // same "disabled fact" language as the logged rows.
     const current = this.speedPills.find(o => o.key === this.session.sensitivity)?.label ?? '—';
     openCtxMenu(x, y, [
-      // The gear carries U+FE0E (text presentation) — bare U+2699 may render
-      // as a colour emoji in some webviews.
       this.isManualPaused
-        ? { icon: '⚙︎', label: 'Mode', hint: `${current} · paused`, disabled: true,
+        ? { icon: MODE_ICON, label: 'Mode', hint: `${current} · paused`, disabled: true,
             title: 'Resume the session to change its mode', action: (): void => {} }
-        : { icon: '⚙︎', label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
+        : { icon: MODE_ICON, label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
       { icon: '⧉', label: 'Copy branch', action: (): void => this.copyBranch() },
     ]);
   }

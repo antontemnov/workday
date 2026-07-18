@@ -5,6 +5,9 @@
 
 export interface CtxMenuItem {
   // Omitted/empty → the label starts at the menu edge (no icon gutter).
+  // A string starting with '<svg' renders as inline markup (crisp on
+  // fractional DPI; stroke="currentColor" follows the item states) — anything
+  // else is a text glyph.
   readonly icon?: string;
   readonly label: string;
   // Right-aligned, dimmed secondary text — the row's current value shown
@@ -53,7 +56,8 @@ export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]
     if (item.icon) {
       const ic = document.createElement('span');
       ic.className = 'ci-ic';
-      ic.textContent = item.icon;
+      if (item.icon.startsWith('<svg')) ic.innerHTML = item.icon;
+      else ic.textContent = item.icon;
       el.appendChild(ic);
     }
     el.appendChild(document.createTextNode(item.label));
