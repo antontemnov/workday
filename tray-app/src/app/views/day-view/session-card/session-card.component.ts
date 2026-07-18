@@ -15,12 +15,12 @@ interface SpeedPillOption {
 type TrackingAction = 'pause' | 'resume';
 
 /**
- * Single open-session card on the shared two-band grid (74px | 1fr | 48px+,
- * same as the Logged rows):
- *   band 1 — green ticket chip that doubles as the tracking control (dot:
- *            green pulse = accruing, grey = not; hover morphs to Pause /
- *            Resume where an action exists) · repo · branch · time (+manual)
- *   band 2 — commits · churn · mode dropdown
+ * Single open-session card — one grid, two bands, the ticket medallion
+ * spanning both (the card keeps the feed rows' uniform height):
+ *   medallion — the tracking control (lamp: green = accruing, grey = not;
+ *               hover morphs to Pause / Resume where an action exists)
+ *   band 1 — Jira ticket name (branch until the summary is cached) · time
+ *   band 2 — repo · commits · churn
  * Stamina stays the card's bottom edge; the tracked highlight is a glass
  * rim — a faint catch-light on the border tinted by the same state. Any
  * paused card drops its colour halo entirely: tracking is binary here.
@@ -40,6 +40,8 @@ export class SessionCardComponent {
   @Input({ required: true }) session!: SessionDetail;
   @Input() actionPending = false;
   @Input() speedPills: readonly SpeedPillOption[] = [];
+  // Jira summaries from the day payload (task key → name, cached by the daemon).
+  @Input() issueSummaries: Readonly<Record<string, string>> = {};
 
   // Re-uses the existing pill channel: 'pause' → pause API, a level → sensitivity API.
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
@@ -55,6 +57,12 @@ export class SessionCardComponent {
 
   get repoName(): string {
     return this.session.repo.split('/').pop() ?? this.session.repo;
+  }
+
+  // Ticket name for the name slot; the branch stands in (dimmed) until the
+  // daemon backfills the summary.
+  get ticketName(): string | null {
+    return this.session.task ? this.issueSummaries[this.session.task] ?? null : null;
   }
 
   // ─── Tracking status — binary on purpose ───────────────────────────────

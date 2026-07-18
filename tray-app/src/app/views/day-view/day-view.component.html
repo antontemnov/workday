@@ -47,6 +47,7 @@
     *ngFor="let s of openSessions"
     [session]="s"
     [actionPending]="actionPending"
+    [issueSummaries]="issueSummaries"
     [speedPills]="sensitivityPills"
     (pillSelected)="pillSelected.emit($event)"
     (addTimeSubmitted)="addTimeSubmitted.emit($event)" />

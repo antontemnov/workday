@@ -9,10 +9,10 @@
 // voice only on hover.
 .sug2 {
   padding: 3px 8px 4px;
-  // Stays hollow (no fill) on purpose — an offer isn't material yet; only the
-  // border firms up to match the feed's separation rhythm.
+  // Stays hollow (no fill, no glass) on purpose — an offer isn't material
+  // yet; only the border firms up to match the feed's separation rhythm.
   border: 1px dashed rgba(148, 226, 213, 0.22);
-  border-radius: 7px;
+  border-radius: 9px; // the glass slabs' radius — one rhythm down the feed
   margin-bottom: 8px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;

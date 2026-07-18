@@ -4,16 +4,11 @@
   display: block;
 }
 
-// Card material — shared with the feed rows: a whisper of fill over the page
-// plus a firmer border and an 8px gap, so neighbouring records read as
-// separate bodies instead of one merged sheet.
+// Card material — a floating glass slab (shared with the logged rows): the
+// ::after body blurs the aurora behind the feed, the rim and the stamina edge
+// say "this one is alive".
 .card {
-  position: relative;
-  background: rgba(205, 214, 244, 0.025);
-  border: 1px solid rgba(205, 214, 244, 0.12);
-  border-radius: 7px;
-  // Same skeleton as the history rows — the feed is one uniform stack; only
-  // the rim and the stamina edge say "this one is alive".
+  @include glass.glass-card;
   padding: 3px 8px 4px;
   margin-bottom: 8px;
   font-variant-numeric: tabular-nums;
@@ -68,26 +63,20 @@
   }
 }
 
-// ─── Two bands on the shared Logged grid ────────────────────────────────────
-// Band 1: ticket chip | repo · branch | time. Band 2: commits · churn (mode
-// moved to the right-click menu). Same column template as the Logged rows, so
-// the day view reads as one table.
-.r-l1 {
+// ─── One grid, two bands — the medallion key spans both ─────────────────────
+// Band 1: ticket medallion | Jira name | time. Band 2: repo · commits · churn
+// under the name. Same column rhythm as the Logged rows, but the key column
+// stretches under the medallion (it is wider than the shared 74px) — the name
+// gives way instead of being overlapped. Row heights 17+1+20 keep the card at
+// the feed's uniform height; the 30px medallion floats centred across both.
+.g2 {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
-  gap: 8px;
+  grid-template-columns: minmax(74px, max-content) minmax(0, 1fr) minmax(48px, max-content);
+  grid-template-rows: 17px 20px;
+  column-gap: 8px;
+  row-gap: 1px;
   align-items: center;
-  height: 17px;
   font-size: 11px;
-}
-
-.r-l2 {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
-  gap: 8px;
-  align-items: center;
-  height: 20px; // held so the card matches the feed rows' uniform height
-  margin-top: 1px;
 }
 
 // Ticket chip — the session's identity AND its tracking control. Neutral
@@ -95,18 +84,20 @@
 // accrues, green light spills from the lamp into the capsule; when the lamp
 // is out the glass goes cold and dark. The key text never changes or moves.
 .c-key {
+  grid-row: 1 / 3;
+  align-self: center;
   justify-self: start;
   display: inline-flex;
   align-items: center;
-  height: 17px;
-  padding: 0 7px 0 5px;
-  border-radius: 7px;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 11.5px;
   white-space: nowrap;
   transition: color 0.2s ease;
-  // Lamp centre: 5px left padding + half the 9px indicator box.
-  --lx: 9.5px;
+  // Lamp centre: 8px left padding + half the 9px indicator box.
+  --lx: 12.5px;
   @include glass.glass-candy((205 214 244), (228 233 250), #8b90ab);
   // Unlit by default (covers .off) — quiet neutral dye; the lamp's light in
   // .lit is what wakes the glass.
@@ -162,7 +153,9 @@
       radial-gradient(95% 115% at 104% 120%, rgba(120, 165, 240, 0.22), transparent 58%),
       radial-gradient(80% 100% at -6% 118%, rgba(125, 168, 240, 0.18), transparent 52%),
       linear-gradient(180deg, rgba(95, 145, 225, 0.18), rgba(10, 18, 48, 0.62));
-    background-size: 100% 100%, auto, auto, auto, auto;
+    // cover, not stretch: the 80×17 frost sheet crops on the 30px medallion,
+    // so the dendrites keep their shape instead of smearing vertically.
+    background-size: cover, auto, auto, auto, auto;
     background-repeat: no-repeat;
     box-shadow:
       inset 0 0 9px rgba(130, 172, 242, 0.3),
@@ -323,24 +316,30 @@
   &:disabled { cursor: default; opacity: 0.6; }
 }
 
-// repo · branch in the name slot: bold repo, dim branch; a long tail fades out
-// instead of a hard ellipsis cut (same mask as the Logged rows' name).
+// Jira name in the name slot — the same slot every feed row gives its ticket
+// name; a long tail fades out instead of a hard ellipsis cut. Until the
+// daemon backfills the summary, the branch stands in, dimmed.
 .c-nm {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  color: #cdd6f4;
+  font-weight: 600;
   cursor: default;
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
           mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
 
-  .repo { font-weight: 600; color: #cdd6f4; }
-  .br   { color: #6c7086; }
+  &.branch { color: #6c7086; font-weight: 400; }
 }
 
 // ─── Time — band 1's right column, the same slot as every row's time ────────
 // A bare bold number like the Logged rows'; still a button — click opens the
 // add-time popover, the dotted underline keeps the old chip's affordance.
 .time-anchor {
+  grid-column: 3;
+  grid-row: 1;
   position: relative;
   display: inline-flex;
   justify-self: end;
@@ -370,10 +369,11 @@
 }
 
 // ─── Band 2 slots ───────────────────────────────────────────────────────────
-// Commits · churn under the chip — commit glyph + counts in half-tone, like
-// the session-born rows in Logged. Spans the key + name columns.
+// repo · commits · churn under the name — the session's origin line, in the
+// half-tone of the session-born rows in Logged.
 .c-stats {
-  grid-column: 1 / 3;
+  grid-column: 2 / 4;
+  grid-row: 2;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -385,6 +385,7 @@
 
   svg { flex-shrink: 0; opacity: 0.7; }
 
+  .repo  { color: #a6adc8; font-weight: 600; }
   .csep  { color: #45475a; }
   .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
   .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
@@ -484,10 +485,10 @@
 
 // ─── Stamina edge ───────────────────────────────────────────────────────────
 // The card doesn't clip (overflow visible for the popovers), so the strip
-// rounds its own bottom corners — but a 3px-tall element can't render a 6px
+// rounds its own bottom corners — but a 3px-tall element can't render an 8px
 // radius (CSS scales overlapping radii down to ~3px, and the fill pokes past
 // the border curve). Hence .edge-clip: a taller invisible layer whose honest
-// 6px corners (concentric: card's 7px minus the 1px border) clip the track and
+// 8px corners (concentric: card's 9px minus the 1px border) clip the track and
 // fill exactly along the border curve. .edge itself stays the 3px hover strip
 // and tooltip anchor — no overflow:hidden on it, the tip sits above.
 .edge {
@@ -503,7 +504,7 @@
     right: 0;
     bottom: 0;
     height: 14px;
-    border-radius: 0 0 6px 6px;
+    border-radius: 0 0 8px 8px;
     overflow: hidden;
     pointer-events: none;
 

@@ -16,17 +16,14 @@
 // cells for controls and frames the time in place: display geometry == edit
 // geometry, the row height never changes and neighbours never shift.
 .log-row2 {
+  // Same glass slab as the session cards — materialized records share one
+  // body; the 8px gap keeps them from merging into one sheet. State washes
+  // (fresh/editing/deleted) lay their tint over $card-body in ::after.
+  @include glass.glass-card;
   padding: 3px 8px 4px;
-  // Same material as the session cards: faint fill + firmer border + 8px gap
-  // keep the records from merging into one sheet.
-  background: rgba(205, 214, 244, 0.025);
-  border: 1px solid rgba(205, 214, 244, 0.12);
-  border-radius: 7px;
   margin-bottom: 8px;
-  position: relative;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  transition: background 0.4s ease;
 
   // No hover fill: records are data, not buttons — only the corner actions
   // wake up on hover (opacity below).
@@ -211,14 +208,16 @@
 
 .log-row2.fresh {
   animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1);
-  background: rgba(203, 166, 247, 0.08);
+
+  &::after { background: linear-gradient(rgba(203, 166, 247, 0.08), rgba(203, 166, 247, 0.08)), glass.$card-body; }
 }
 
 // Batch / instant static rows fly in with a brief mauve accent. `backwards`
 // holds the pre-animation state through the staggered animation-delay.
 .log-row2.pop {
   animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1) backwards;
-  background: rgba(203, 166, 247, 0.08);
+
+  &::after { background: linear-gradient(rgba(203, 166, 247, 0.08), rgba(203, 166, 247, 0.08)), glass.$card-body; }
 }
 
 // An accepted suggestion's row is NOT a new thing — it slides down from the
@@ -230,7 +229,7 @@
 // Edit: the active row is marked by fill only (no rails anywhere in the
 // system); band 1 stays put with the name dimmed, time edits in its slot.
 .log-row2.editing {
-  background: rgba(203, 166, 247, 0.08);
+  &::after { background: linear-gradient(rgba(203, 166, 247, 0.08), rgba(203, 166, 247, 0.08)), glass.$card-body; }
 
   .c-nm { color: #8f96b3; }
 }
@@ -238,7 +237,7 @@
 // Delete: instant with undo — the totals already rolled back, the row stays
 // in place struck-through with a burning ↩ in the time slot for ~3s.
 .log-row2.deleted {
-  background: rgba(243, 139, 168, 0.04);
+  &::after { background: linear-gradient(rgba(243, 139, 168, 0.04), rgba(243, 139, 168, 0.04)), glass.$card-body; }
 
   .c-key, .c-nm, .c-type, .c-ds {
     opacity: 0.38;

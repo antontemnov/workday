@@ -7,11 +7,12 @@
      [style.--st-glint-soft]="stateGlintSoft"
      [style.--st-sweep]="stateSweep"
      [style.--st-sweep-soft]="stateSweepSoft">
-  <!-- Band 1: identity — ticket chip (doubles as the tracking control) ·
-       repo · branch · time. The dot is the whole status story: green pulse =
-       accruing, grey = not. Hover morphs to the action only when one exists
-       (Live → Pause, manual pause → Resume). -->
-  <div class="r-l1">
+  <!-- One grid, two bands. The ticket medallion (doubles as the tracking
+       control) spans both rows; the dot is the whole status story: green
+       lamp = accruing, grey = not. Hover morphs to the action only when one
+       exists (Live → Pause, manual pause → Resume). Band 1: Jira name ·
+       time. Band 2: repo · commits · churn. -->
+  <div class="g2">
     <button *ngIf="session.task && trackingAction; else staticKey"
             type="button"
             class="c-key act"
@@ -58,7 +59,7 @@
         </span><span class="k-txt">{{ session.task || '—' }}</span>
       </span>
     </ng-template>
-    <span class="c-nm"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>
+    <span class="c-nm" [class.branch]="!ticketName">{{ ticketName || session.branch }}</span>
 
     <span class="time-anchor">
       <button class="c-dur"
@@ -85,13 +86,9 @@
         </div>
       </div>
     </span>
-  </div>
 
-  <!-- Band 2: commits · churn (status lives in the chip's dot; mode moved to
-       the right-click menu) -->
-  <div class="r-l2">
     <span class="c-stats">
-      <svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
+      <b class="repo">{{ repoName }}</b><span class="csep">·</span><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
     </span>
   </div>
 
