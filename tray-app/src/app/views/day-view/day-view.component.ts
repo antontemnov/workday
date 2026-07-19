@@ -231,9 +231,10 @@ export class DayViewComponent implements OnChanges {
 
   // The picker opens where the ladder started: right under the asking row.
   // The panel's height depends on its content (candidates, favorites), so the
-  // bottom clamp waits a tick for the render and measures the real box — if
-  // it runs off the view, the panel lifts just enough (menu-style), never
-  // above the sticky header.
+  // bottom check waits a tick for the render and measures the real box — if
+  // it runs off the view, the panel flips ABOVE the row (menu at a screen
+  // edge), keeping the sharp anchor row visible below it; only when neither
+  // side fits does it just clamp to the view, never above the sticky header.
   openCloudForAccept(s: Suggestion, from?: DOMRect): void {
     if (this.actionPending) return;
     this.acceptTarget = s;
@@ -247,7 +248,10 @@ export class DayViewComponent implements OnChanges {
         const cloud = this.cloudRef?.nativeElement;
         if (!cloud || !this.cloudOpen) return;
         const maxTop = host.height - cloud.offsetHeight - 8;
-        if (anchor > maxTop) this.overlayTop = Math.max(headTop, maxTop);
+        if (anchor <= maxTop) return;
+        const above = from.top - host.top - cloud.offsetHeight - 2;
+        this.overlayTop = Math.max(headTop, above >= headTop ? above : maxTop);
+        if (above >= headTop) this.cloudOrigin = '24px 100%';
       });
     } else {
       this.overlayTop = headTop;
