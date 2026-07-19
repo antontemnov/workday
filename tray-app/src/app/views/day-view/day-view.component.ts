@@ -1,5 +1,5 @@
 import {
-  Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild,
+  Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionCardComponent } from './session-card/session-card.component';
@@ -37,7 +37,7 @@ interface SensitivityPillOption {
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
-export class DayViewComponent implements OnChanges {
+export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() data: TodayResponse | null = null;
   @Input() loading = false;
   @Input() error: string | null = null;
@@ -89,7 +89,11 @@ export class DayViewComponent implements OnChanges {
   // same instant as the panel Σ while a draft stepper spins.
   liveDiffMinutes = 0;
 
-  public constructor(private hostEl: ElementRef<HTMLElement>) {}
+  public constructor(private hostEl: ElementRef<HTMLElement>, private zone: NgZone) {}
+
+  ngOnDestroy(): void {
+    this.cloudResize?.disconnect();
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['data']) this.checkDayFlash();
@@ -230,39 +234,72 @@ export class DayViewComponent implements OnChanges {
   }
 
   // The picker opens where the ladder started: right under the asking row.
-  // The panel's height depends on its content (candidates, favorites), so the
-  // bottom check waits a tick for the render and measures the real box — if
-  // it runs off the view, the panel flips ABOVE the row (menu at a screen
-  // edge), keeping the sharp anchor row visible below it; only when neither
-  // side fits does it just clamp to the view, never above the sticky header.
+  // The panel is ALIVE in height (candidates render, the Jira zone appears
+  // as the filter is typed), so placement can't be a one-shot measure — a
+  // ResizeObserver re-runs it on every panel growth while the picker is open.
   openCloudForAccept(s: Suggestion, from?: DOMRect): void {
     if (this.actionPending) return;
     this.acceptTarget = s;
-    const headTop = this.headHeight() + 6;
     if (from) {
+      this.acceptAnchor = from;
       const host = this.hostEl.nativeElement.getBoundingClientRect();
-      const anchor = from.bottom - host.top + 2;
-      this.overlayTop = anchor;
+      this.overlayTop = from.bottom - host.top + 2;
       this.cloudOrigin = '24px 0';
-      setTimeout(() => {
-        const cloud = this.cloudRef?.nativeElement;
-        if (!cloud || !this.cloudOpen) return;
-        const maxTop = host.height - cloud.offsetHeight - 8;
-        if (anchor <= maxTop) return;
-        const above = from.top - host.top - cloud.offsetHeight - 2;
-        this.overlayTop = Math.max(headTop, above >= headTop ? above : maxTop);
-        if (above >= headTop) this.cloudOrigin = '24px 100%';
-      });
+      setTimeout(() => this.watchCloudSize());
     } else {
-      this.overlayTop = headTop;
+      this.acceptAnchor = null;
+      this.overlayTop = this.headHeight() + 6;
       this.cloudOrigin = null;
     }
     this.cloudOpen = true;
   }
 
+  private acceptAnchor: DOMRect | null = null;
+  private cloudResize?: ResizeObserver;
+
+  private watchCloudSize(): void {
+    this.cloudResize?.disconnect();
+    const cloud = this.cloudRef?.nativeElement;
+    if (!cloud || !this.cloudOpen || !this.acceptAnchor) return;
+    this.placeCloud(cloud);
+    // The observer fires outside the Angular zone — re-enter for the binding.
+    this.cloudResize = new ResizeObserver(() => this.zone.run(() => {
+      const el = this.cloudRef?.nativeElement;
+      if (el && this.cloudOpen && this.acceptAnchor) this.placeCloud(el);
+    }));
+    this.cloudResize.observe(cloud);
+  }
+
+  // Under the row while it fits; flips ABOVE the row otherwise (menu at a
+  // screen edge — the sharp anchor row stays visible below, and further
+  // growth pushes the top edge up, not the bottom onto the row); when
+  // neither side fits, just clamp inside the view below the sticky header.
+  private placeCloud(cloud: HTMLElement): void {
+    const from = this.acceptAnchor!;
+    const host = this.hostEl.nativeElement.getBoundingClientRect();
+    const headTop = this.headHeight() + 6;
+    const h = cloud.offsetHeight;
+    const anchor = from.bottom - host.top + 2;
+    if (anchor + h <= host.height - 8) {
+      this.overlayTop = anchor;
+      this.cloudOrigin = '24px 0';
+      return;
+    }
+    const above = from.top - host.top - h - 2;
+    if (above >= headTop) {
+      this.overlayTop = above;
+      this.cloudOrigin = '24px 100%';
+    } else {
+      this.overlayTop = Math.max(headTop, host.height - h - 8);
+    }
+  }
+
   closeCloud(): void {
     this.cloudOpen = false;
     this.acceptTarget = null;
+    this.acceptAnchor = null;
+    this.cloudResize?.disconnect();
+    this.cloudResize = undefined;
   }
 
   pickFor(s: Suggestion): SuggestionPick | null {
