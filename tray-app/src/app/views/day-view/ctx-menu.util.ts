@@ -5,8 +5,15 @@
 
 export interface CtxMenuItem {
   // Omitted/empty → the label starts at the menu edge (no icon gutter).
+  // A string starting with '<svg' renders as inline markup (crisp on
+  // fractional DPI; stroke="currentColor" follows the item states) — anything
+  // else is a text glyph.
   readonly icon?: string;
   readonly label: string;
+  // Right-aligned, dimmed secondary text — the row's current value shown
+  // inline (native-menu idiom), e.g. the active mode next to a "Mode" row, so
+  // it reads without opening the sub-menu.
+  readonly hint?: string;
   readonly danger?: boolean;
   // Rendered dimmed and inert — states a fact ("In favorites") rather than
   // hiding the entry, so the mechanic stays discoverable.
@@ -49,10 +56,17 @@ export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]
     if (item.icon) {
       const ic = document.createElement('span');
       ic.className = 'ci-ic';
-      ic.textContent = item.icon;
+      if (item.icon.startsWith('<svg')) ic.innerHTML = item.icon;
+      else ic.textContent = item.icon;
       el.appendChild(ic);
     }
     el.appendChild(document.createTextNode(item.label));
+    if (item.hint) {
+      const hn = document.createElement('span');
+      hn.className = 'ci-hint';
+      hn.textContent = item.hint;
+      el.appendChild(hn);
+    }
     if (!item.disabled) {
       el.addEventListener('click', () => { closeCtxMenu(); item.action(); });
     }

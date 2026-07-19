@@ -12,6 +12,19 @@
   </div>
 </div>
 
+<!-- Displacement map for the day header's bottom edge (lab-2 liquid stage):
+     R/G channels = x/y offsets, #808000 = neutral. The ramp goes BELOW
+     neutral (G→64): the edge samples from inside the glass, stretching
+     content on its way out — never previewing what still sits under the
+     header, which would paint a stripe and eat the gap to the first row. -->
+<svg class="fx-defs" aria-hidden="true">
+  <filter id="dayheadLens" x="-10%" y="-100%" width="120%" height="300%" color-interpolation-filters="sRGB">
+    <feImage href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='10'><linearGradient id='y' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23808000'/><stop offset='1' stop-color='%23804000'/></linearGradient><rect width='40' height='10' fill='url(%23y)'/></svg>"
+      x="0" y="0" width="2000" height="10" preserveAspectRatio="none" result="m"/>
+    <feDisplacementMap in="SourceGraphic" in2="m" scale="14" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
 <!-- The feed: sticky day header, then live sessions → (suggestions slot,
      epoch 4) → history newest-first. One scroll, no sections. -->
 <div class="content" *ngIf="data && !error">
@@ -34,19 +47,21 @@
     *ngFor="let s of openSessions"
     [session]="s"
     [actionPending]="actionPending"
+    [issueSummaries]="issueSummaries"
     [speedPills]="sensitivityPills"
     (pillSelected)="pillSelected.emit($event)"
     (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
 
-  <!-- Suggested — teal offers under the live cards; never counted anywhere -->
+  <!-- Suggested — graphite blueprint offers under the live cards; never counted anywhere -->
   <app-suggestion-row
     *ngFor="let g of suggestions; trackBy: trackBySuggestion"
+    [class.cloud-anchor]="isCloudAnchor(g)"
     [suggestion]="g"
     [actionPending]="actionPending"
     [activityTypes]="activityTypes"
     [activityAllowed]="activityAllowed"
     [picked]="pickFor(g)"
-    (pickRequested)="openCloudForAccept(g)"
+    (pickRequested)="openCloudForAccept(g, $event)"
     (acceptSubmitted)="onSuggestionAccept(g, $event)"
     (dismissed)="onSuggestionDismiss(g)"
     (muteSubmitted)="onSuggestionMute(g, $event)" />
@@ -95,6 +110,7 @@
   [issueSummaries]="suggestionSummaries"
   (acceptPicked)="onAcceptPicked($event)"
   [style.top.px]="overlayTop"
+  [style.transform-origin]="cloudOrigin"
   (chipPicked)="onChipPicked($event)"
   (formSubmitted)="onFormSubmitted($event)"
   (batchSubmitted)="onBatchSubmitted($event)"

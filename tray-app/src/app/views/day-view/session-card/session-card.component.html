@@ -1,13 +1,65 @@
 <div class="card"
      [class.paused]="isPaused"
-     [class.menu-open]="menuOpen"
+     [class.frozen]="isAutoPaused"
      [class.pop-open]="addPopoverOpen"
+     (contextmenu)="onContextMenu($event)"
      [style.--st-glint]="stateGlint"
-     [style.--st-glint-soft]="stateGlintSoft">
-  <!-- Band 1: identity — ticket chip · repo · branch · time -->
-  <div class="r-l1">
-    <span class="c-key" [class.none]="!session.task">{{ session.task || '—' }}</span>
-    <span class="c-nm"><b class="repo">{{ repoName }}</b><span class="br"> · {{ session.branch }}</span></span>
+     [style.--st-glint-soft]="stateGlintSoft"
+     [style.--st-sweep]="stateSweep"
+     [style.--st-sweep-soft]="stateSweepSoft">
+  <!-- One grid, two bands. The ticket medallion (doubles as the tracking
+       control) spans both rows; the dot is the whole status story: green
+       lamp = accruing, grey = not. Hover morphs to the action only when one
+       exists (Live → Pause, manual pause → Resume). Band 1: Jira name ·
+       time. Band 2: repo · commits · churn. -->
+  <div class="g2">
+    <button *ngIf="session.task && trackingAction; else staticKey"
+            type="button"
+            class="c-key act"
+            [class.lit]="isAccruing"
+            [class.frozen]="isAutoPaused"
+            [class.off]="!isAccruing && !isAutoPaused"
+            [class.will-pause]="trackingAction === 'pause'"
+            [class.will-resume]="trackingAction === 'resume'"
+            [disabled]="actionPending"
+            [attr.aria-label]="trackingActionTitle"
+            (click)="onTrackingClick()">
+      <!-- The indicator swaps glyphs inside a fixed box — the key text never
+           moves: ● running / ⏸ user-paused / ■ system-stopped; hover reveals
+           the action glyph in place. -->
+      <span class="k-ind" aria-hidden="true">
+        <span class="k-lamp" *ngIf="isAccruing"></span>
+        <svg class="k-hold" *ngIf="isManualPaused" viewBox="0 0 10 10">
+          <rect x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect>
+          <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
+        </svg>
+        <span class="k-stop" *ngIf="!isAccruing && !isManualPaused"></span>
+        <svg class="k-act-ico" *ngIf="trackingAction === 'pause'" viewBox="0 0 10 10">
+          <rect x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect>
+          <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
+        </svg>
+        <svg class="k-act-ico" *ngIf="trackingAction === 'resume'" viewBox="0 0 10 10">
+          <path d="M2 1 L9 5 L2 9 Z"></path>
+        </svg>
+      </span><span class="k-txt">{{ session.task }}</span>
+    </button>
+    <ng-template #staticKey>
+      <span class="c-key"
+            [class.lit]="session.task && isAccruing"
+            [class.frozen]="session.task && isAutoPaused"
+            [class.off]="session.task && !isAccruing && !isAutoPaused"
+            [class.none]="!session.task">
+        <span class="k-ind" *ngIf="session.task" aria-hidden="true">
+          <span class="k-lamp" *ngIf="isAccruing"></span>
+          <svg class="k-hold" *ngIf="isManualPaused" viewBox="0 0 10 10">
+            <rect x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect>
+            <rect x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect>
+          </svg>
+          <span class="k-stop" *ngIf="!isAccruing && !isManualPaused"></span>
+        </span><span class="k-txt">{{ session.task || '—' }}</span>
+      </span>
+    </ng-template>
+    <span class="c-nm" [class.branch]="!ticketName">{{ ticketName || session.branch }}</span>
 
     <span class="time-anchor">
       <button class="c-dur"
@@ -34,27 +86,10 @@
         </div>
       </div>
     </span>
-  </div>
-
-  <!-- Band 2: status badge (unchanged pill) · commits · churn · mode picker -->
-  <div class="r-l2">
-    <app-status-badge
-      [statusClass]="statusClass"
-      [label]="statusLabel"
-      [action]="trackingAction"
-      [pending]="actionPending"
-      (act)="onTrackingClick()" />
 
     <span class="c-stats">
-      <svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
+      <b class="repo">{{ repoName }}</b><span class="csep">·</span><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="commits">{{ session.evidence.commits }}</span><span class="csep">·</span><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b>
     </span>
-
-    <app-mode-dropdown
-      [options]="speedPills"
-      [value]="session.sensitivity"
-      [disabled]="isManualPaused || actionPending"
-      (selected)="onSpeedClick($event)"
-      (openChange)="menuOpen = $event" />
   </div>
 
   <!-- Stamina = bottom edge: length + colour encode the level; hover shows a tip -->

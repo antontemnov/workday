@@ -25,22 +25,25 @@ export interface SuggestionAcceptEvent {
 }
 
 /**
- * Suggested row — a teal offer on the shared two-band grid, deliberately
- * muted so it clearly reads as NOT logged time (full voice on hover):
- *   band 1 — ticket chip: the learned resolution's key (teal), or a dashed
- *            "task?" when the resolver has nothing · title (live dot while
- *            ongoing) · planned minutes
- *   band 2 — when ("09:30–10:00", or "live · till 10:00" from DTSTART;
- *            review rows: the checkout moment) · origin spark (meeting /
- *            review) · ✓ accept / ✕ dismiss
- * Accept mirrors the logged rows' edit: dblclick (or ✓) morphs the SAME row
- * into the inline form — activity · description · Log, with the time slot
- * swapping to a frameless duration input (minutes are editable only here).
- * Unresolved rows first open the log cloud purely to pick the ticket;
- * the pick comes back via [picked] and opens the form. ✕ dismisses through
- * the daemon (permanent per uid+date). Review rows (title = the colleague's
- * branch) are always resolved and carry no Mute — there is no series.
- * Suggested time never joins any totals.
+ * Suggested row — a graphite blueprint on the shared two-band grid: dashed
+ * contour + faint hatch, colourless body. The only colour is the amber
+ * candidate signal (star in the badge + Log…) — it clearly reads as NOT
+ * logged time:
+ *   band 1 — ticket badge: the learned resolution's key on unlit grey candy
+ *            with a lit amber star, or a dashed "task?" with a smouldering
+ *            one when the resolver has nothing · title · planned minutes
+ *   band 2 — when ("09:30–10:00"; ongoing: "15:00→live" — the calendar
+ *            guarantees only the start; review rows: the checkout moment)
+ *            · origin (meeting / review) · Deny link / Log… candy
+ * Accept mirrors the logged rows' edit: dblclick (or Log…) morphs the SAME
+ * row into the inline form — activity · description · Log, with the time
+ * slot swapping to a frameless duration input (minutes are editable only
+ * here). Unresolved rows have no Log… — the "task?" chip is the single
+ * entry: it opens the log cloud purely to pick the ticket; the pick comes
+ * back via [picked] and opens the form. Deny dismisses through the daemon
+ * (permanent per uid+date). Review rows (title = the colleague's branch)
+ * are always resolved and carry no Mute — there is no series. Suggested
+ * time never joins any totals.
  */
 @Component({
   selector: 'app-suggestion-row',
@@ -57,8 +60,9 @@ export class SuggestionRowComponent implements OnChanges {
   // Ticket picked for this row in the cloud's accept-picker.
   @Input() picked: SuggestionPick | null = null;
 
-  // Unresolved accept: the parent opens the log cloud as a ticket picker.
-  @Output() pickRequested = new EventEmitter<void>();
+  // Unresolved accept: the parent opens the log cloud as a ticket picker,
+  // anchored under this row (the picker opens where the ladder started).
+  @Output() pickRequested = new EventEmitter<DOMRect>();
   // Inline form submit — the parent turns it into the daemon accept.
   @Output() acceptSubmitted = new EventEmitter<SuggestionAcceptEvent>();
   @Output() dismissed = new EventEmitter<void>();
@@ -98,20 +102,29 @@ export class SuggestionRowComponent implements OnChanges {
     return `${m}m`;
   }
 
+  // Ongoing meetings render "start→live" in the template — the planned end
+  // is not a fact yet, so it never shows while the meeting runs.
+  get liveNow(): boolean {
+    return this.suggestion.ongoing && this.suggestion.source !== 'review';
+  }
+
+  get startHm(): string {
+    return this.formatHm(this.suggestion.start);
+  }
+
   get whenLabel(): string {
     const s = this.suggestion;
     if (s.source === 'review') return this.formatHm(s.start);  // the checkout moment
-    if (s.ongoing) return `live · till ${this.formatHm(s.end)}`;
     return `${this.formatHm(s.start)}–${this.formatHm(s.end)}`;
   }
 
-  // ✓ / dblclick: resolved rows morph into the form right away, unresolved
-  // ones go pick a ticket first.
+  // Log… / dblclick: resolved rows morph into the form right away,
+  // unresolved ones go pick a ticket first.
   accept(): void {
     if (this.actionPending || this.editing) return;
     const r = this.suggestion.resolved;
     if (r) this.openEdit(r.task, r.activity, r.description);
-    else this.pickRequested.emit();
+    else this.pickRequested.emit(this.host.nativeElement.getBoundingClientRect());
   }
 
   dismiss(): void {
@@ -132,11 +145,15 @@ export class SuggestionRowComponent implements OnChanges {
 
   private openMainMenu(x: number, y: number): void {
     openCtxMenu(x, y, [
+      // The ladder speaks honestly here too: only a resolved row can promise
+      // the form (Log…); an unresolved one offers step 1 — picking the ticket.
       ...(this.suggestion.resolved
-        ? [{ icon: '✎', label: 'Edit', action: (): void => this.accept() }]
-        : []),
-      { icon: '✓', label: 'Accept', action: () => this.accept() },
-      { icon: '✕', label: 'Dismiss', action: () => this.dismiss() },
+        ? [
+            { icon: '✎', label: 'Edit', action: (): void => this.accept() },
+            { icon: '✓', label: 'Log…', action: (): void => this.accept() },
+          ]
+        : [{ icon: '⌕', label: 'Pick ticket…', action: (): void => this.accept() }]),
+      { icon: '✕', label: 'Deny', action: () => this.dismiss() },
       // Review rows have no series to mute — dismiss closes the day.
       ...(this.suggestion.source === 'review'
         ? []

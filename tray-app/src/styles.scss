@@ -56,6 +56,11 @@ html:has(body.toast-window), body.toast-window {
     cursor: pointer;
 
     .ci-ic { width: 12px; text-align: center; color: #6c7086; font-size: 10.5px; }
+    .ci-ic svg { display: block; margin: 0 auto; }
+
+    // Current value pushed to the right edge, dimmer than the label — the row
+    // states what it's set to without opening its sub-menu.
+    .ci-hint { margin-left: auto; padding-left: 16px; color: #6c7086; }
 
     &:hover { background: #313244; color: #cdd6f4; }
 
@@ -69,6 +74,7 @@ html:has(body.toast-window), body.toast-window {
       color: #585b70;
       cursor: default;
       .ci-ic { color: #45475a; }
+      .ci-hint { color: #45475a; }
       &:hover { background: none; color: #585b70; }
     }
   }

@@ -1,27 +1,28 @@
+@use 'glass';
+
 :host {
   display: block;
 }
 
-// Card material — shared with the feed rows: a whisper of fill over the page
-// plus a firmer border and an 8px gap, so neighbouring records read as
-// separate bodies instead of one merged sheet.
+// Card material — a floating glass slab (shared with the logged rows): the
+// ::after body blurs the aurora behind the feed, the rim and the stamina edge
+// say "this one is alive".
 .card {
-  position: relative;
-  background: rgba(205, 214, 244, 0.025);
-  border: 1px solid rgba(205, 214, 244, 0.12);
-  border-radius: 7px;
-  padding: 9px 11px 11px;
+  @include glass.glass-card;
+  padding: 3px 8px 4px;
   margin-bottom: 8px;
   font-variant-numeric: tabular-nums;
-  // Visible so the mode dropdown's menu can overflow the card; the stamina edge
-  // rounds its own bottom corners (below) instead of relying on card clipping.
+  // Visible so the add-time popover and the edge tooltip can overflow the card;
+  // the stamina edge rounds its own bottom corners (below) instead of relying
+  // on card clipping.
   overflow: visible;
 
   // Tracked highlight — a glass rim: a 1px catch-light ring hugging the
   // border, brightest at the top and gone by mid-height, tinted by the same
   // state the stamina edge shows (plain glass when the edge is empty).
   // Barely-there by design. The mask carves the painted ring out of the
-  // pseudo so the card fill stays untouched.
+  // pseudo so the card fill stays untouched. Layer 1 is the living glint —
+  // a narrow band that sweeps the ring once per cycle (position-only motion).
   &::before {
     content: '';
     position: absolute;
@@ -29,92 +30,316 @@
     border-radius: inherit;
     padding: 1px;
     background:
+      linear-gradient(100deg, transparent 42%, var(--st-sweep, var(--st-glint, transparent)) 50%, transparent 58%),
+      linear-gradient(100deg, transparent 28%, var(--st-sweep-soft, transparent) 50%, transparent 72%),
       linear-gradient(178deg, var(--st-glint, transparent), transparent 46%),
       linear-gradient(358deg, var(--st-glint-soft, transparent), transparent 22%);
+    background-size: 240% 100%, 240% 100%, 100% 100%, 100% 100%;
+    background-position: -20% 0, -20% 0, 0 0, 0 0;
+    background-repeat: no-repeat;
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            mask-composite: exclude;
+    mask-composite: exclude;
     pointer-events: none;
   }
 
-  // Paused: fade only the data (time/stats). The status badge must stay
-  // prominent and the mode picker manages its own disabled state.
+  // The glint travels only while the session is actually accruing — a paused
+  // card is still glass.
+  &:not(.paused)::before {
+    animation: rim-sweep 11s ease-in-out infinite;
+  }
+
+  // Paused: fade only the data (time/stats).
   &.paused .c-dur,
   &.paused .c-stats {
     opacity: 0.75;
   }
 
-  // While the mode menu or add-time popover is open, lift the whole card above
-  // its siblings so the overflowing layer isn't painted under the next card.
-  &.menu-open,
+  // While the add-time popover is open, lift the whole card above its siblings
+  // so the overflowing layer isn't painted under the next card.
   &.pop-open {
     z-index: 30;
   }
 }
 
-// ─── Two bands on the shared Logged grid ────────────────────────────────────
-// Band 1: ticket chip | repo · branch | time. Band 2: status badge | commits ·
-// churn | mode picker. Same column template as the Logged rows, so the day
-// view reads as one table.
-.r-l1 {
+// ─── One grid, two bands — the medallion key spans both ─────────────────────
+// Band 1: ticket medallion | Jira name | time. Band 2: repo · commits · churn
+// under the name. Same column rhythm as the Logged rows, but the key column
+// stretches under the medallion (it is wider than the shared 74px) — the name
+// gives way instead of being overlapped. Row heights 17+1+20 keep the card at
+// the feed's uniform height; the 30px medallion floats centred across both.
+.g2 {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
-  gap: 8px;
+  grid-template-columns: minmax(74px, max-content) minmax(0, 1fr) minmax(48px, max-content);
+  grid-template-rows: 17px 20px;
+  column-gap: 8px;
+  row-gap: 1px;
   align-items: center;
-  height: 18px;
   font-size: 11px;
 }
 
-// Band 2's first column may exceed 74px (wide badge faces like Switched /
-// Resume) — max-content lets it push instead of overlapping the stats.
-.r-l2 {
-  display: grid;
-  grid-template-columns: minmax(74px, max-content) minmax(0, 1fr) minmax(48px, max-content);
-  gap: 8px;
-  align-items: center;
-  height: 22px; // fits the badge and the mode dropdown without growing the card
-  margin-top: 5px;
-}
-
-// Ticket from the branch — green chip: chip colour = the entry's life stage
-// (green tracked → mauve logged).
+// Ticket chip — the session's identity AND its tracking control. Neutral
+// convex glass that the indicator lamp illuminates from within: while time
+// accrues, green light spills from the lamp into the capsule; when the lamp
+// is out the glass goes cold and dark. The key text never changes or moves.
 .c-key {
+  grid-row: 1 / 3;
+  align-self: center;
   justify-self: start;
-  color: #a6e3a1;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
   font-weight: 600;
-  background: rgba(166, 227, 161, 0.12);
-  padding: 1px 7px;
-  border-radius: 4px;
+  font-size: 11px;
   white-space: nowrap;
+  transition: color 0.2s ease;
+  // Lamp centre: 7px left padding + half the 9px indicator box.
+  --lx: 11.5px;
+  @include glass.glass-candy((205 214 244), (228 233 250), #8b90ab);
+  // Unlit by default (covers .off) — quiet neutral dye; the lamp's light in
+  // .lit is what wakes the glass.
+  --m1: 0.08;
+  --m2: 0.03;
+  --m3: 0.06;
+  --eg: 0.12;
+  --ec: 0.14;
+  --pool: 0.1;
+
+  // Lit: the lamp is a light source — a hot halo around the indicator, a
+  // wash over the left half, and a bright rim segment where the ring passes
+  // the lamp. Everything reads --lc/--rc, so will-pause floods the same
+  // layers red by swapping two vars.
+  &.lit {
+    --c: 166 227 161;
+    --ci: 214 245 208;
+    --ink: #cdd6f4;
+    --lc: 166 227 161;
+    --m1: 0.14;
+    --m2: 0.05;
+    --m3: 0.1;
+    --eg: 0.22;
+    --ec: 0.3;
+    --pool: 0.22;
+    background:
+      radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.38), rgb(var(--lc) / 0.1) 11px, transparent 24px),
+      radial-gradient(70px 30px at 14px 58%, rgb(var(--lc) / 0.15), transparent 78%),
+      glass.$candy-body;
+
+    &::before {
+      background:
+        radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.7), rgb(var(--lc) / 0.28) 12px, transparent 30px),
+        glass.$candy-rim;
+    }
+  }
+
+  // System-stopped (idle / switched / away) — frosted-over glass: clearly
+  // blue, with hoarfrost feathers (inline SVG dendrites) creeping in from
+  // every edge, crystal specks, a frost haze hugging the rim and a cold aura
+  // around the capsule. The key text sits BEHIND the ice — murky and softly
+  // blurred, still legible. The ■ says "stopped"; the frost says "by itself,
+  // from the cold".
+  &.frozen {
+    color: #8aa4d0;
+    // Dendrites are third-order fractals: stem → forked branch → fine tick
+    // (three stroke weights), plus uneven frost patches (radial-gradient
+    // ellipses) and micro-clusters of specks — hoarfrost grows in patches,
+    // not evenly.
+    background:
+      url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 17' preserveAspectRatio='none'><defs><radialGradient id='fp'><stop offset='0' stop-color='%23bcd6f8' stop-opacity='0.26'/><stop offset='0.65' stop-color='%23bcd6f8' stop-opacity='0.09'/><stop offset='1' stop-color='%23bcd6f8' stop-opacity='0'/></radialGradient></defs><ellipse cx='8' cy='3' rx='11' ry='4.8' fill='url(%23fp)'/><ellipse cx='74' cy='4' rx='9.5' ry='4.2' fill='url(%23fp)'/><ellipse cx='78' cy='12.5' rx='7' ry='4' fill='url(%23fp)'/><ellipse cx='15' cy='15.5' rx='9' ry='3.6' fill='url(%23fp)'/><ellipse cx='46' cy='1.2' rx='7' ry='2.6' fill='url(%23fp)' opacity='0.7'/><g fill='none' stroke='%23a9c9f2' stroke-linecap='round'><g stroke-width='0.55' opacity='0.75'><path d='M0 2 Q6 3.6 14 3.3'/><path d='M80 2.8 Q73 4.4 66 3.5'/></g><g stroke-width='0.5' opacity='0.7'><path d='M1.8 2.5 L2.6 1.2 L3.7 0.6 M2.6 1.2 L3.3 1.8'/><path d='M4 3 L5 1.6 L6.3 1.1 M5 1.6 L5.8 2.1'/><path d='M6.6 3.2 L7.6 2 L8.9 1.5 M7.6 2 L8.3 2.5'/><path d='M9.4 3.3 L10.3 2.2 L11.4 1.9 M10.3 2.2 L10.9 2.7'/><path d='M2.8 2.8 L3.6 4.3 L4.7 5.1 M3.6 4.3 L4.3 3.9'/><path d='M5.4 3.1 L6.2 4.6 L7.1 5.3 M6.2 4.6 L6.9 4.2'/><path d='M8.2 3.3 L8.9 4.6 L9.8 5.2 M8.9 4.6 L9.5 4.1'/><path d='M78.2 3.4 L77.2 1.9 L76 1.3 M77.2 1.9 L76.4 2.4'/><path d='M75.8 4 L74.6 2.6 L73.4 2.2 M74.6 2.6 L73.9 3.2'/><path d='M73 4.2 L72 2.9 L70.9 2.6 M72 2.9 L71.3 3.5'/><path d='M77 3.8 L76.2 5.4 L75.2 6 M76.2 5.4 L75.5 4.9'/><path d='M74.2 4.2 L73.4 5.7 L72.4 6.2 M73.4 5.7 L72.8 5.2'/></g><g stroke-width='0.35' opacity='0.8'><path d='M3.7 0.6 L4.5 0.3 M3.15 0.9 L3.55 0.35'/><path d='M6.3 1.1 L7.1 0.8 M5.6 1.35 L6 0.75'/><path d='M8.9 1.5 L9.7 1.25 M8.2 1.75 L8.6 1.15'/><path d='M11.4 1.9 L12.2 1.7'/><path d='M4.7 5.1 L5.5 5.5 M4.1 4.7 L4.5 5.4'/><path d='M7.1 5.3 L7.9 5.6'/><path d='M3.3 1.8 L3.95 2.25'/><path d='M5.8 2.1 L6.45 2.45'/><path d='M76 1.3 L75.1 1 M76.55 1.55 L76.1 0.9'/><path d='M73.4 2.2 L72.5 2 M74 2.3 L73.6 1.65'/><path d='M70.9 2.6 L70 2.5'/><path d='M75.2 6 L74.35 6.35'/><path d='M76.4 2.4 L75.75 2.85'/><path d='M73.9 3.2 L73.25 3.6'/></g><g stroke-width='0.5' opacity='0.55'><path d='M0 8.2 Q3.4 8.8 6.4 11.6'/><path d='M1.4 8.5 L2.2 7.2 L3.2 6.7 M2.2 7.2 L2.9 7.7'/><path d='M2.9 9.3 L4.1 8.5 L5.2 8.4 M4.1 8.5 L4.6 9.2'/><path d='M4.5 10.4 L5.6 9.7 M4.5 10.4 L5 11.4'/><path d='M2 9 L2.5 10.5 L3.3 11.3'/></g><g stroke-width='0.35' opacity='0.6'><path d='M3.2 6.7 L3.9 6.35 M2.55 6.9 L2.3 6.25'/><path d='M5.2 8.4 L5.9 8.3'/><path d='M3.3 11.3 L4 11.7'/></g><g stroke-width='0.5' opacity='0.45'><path d='M32 0 Q32.8 2.2 35 3.6'/><path d='M32.3 1 L31.2 1.8 L30.4 2.6 M31.2 1.8 L30.5 1.2'/><path d='M33.2 2.5 L32.4 3.5 M33.2 2.5 L34 3.3'/></g><g stroke-width='0.35' opacity='0.5'><path d='M30.4 2.6 L29.8 3.2 M30.8 2.2 L30.2 1.9'/></g><g stroke-width='0.5' opacity='0.4'><path d='M46 0 Q47.2 1.9 49.5 2.5'/><path d='M46.7 1.1 L45.8 1.9 M46.7 1.1 L47.4 2'/></g><g stroke-width='0.5' opacity='0.55'><path d='M80 8.2 Q76.6 8.8 74 10.8'/><path d='M78.5 8.5 L77.6 7.2 L76.5 6.8 M77.6 7.2 L76.9 7.8'/><path d='M76.9 9.3 L75.7 8.6 M76.9 9.3 L76.2 10.2'/></g><g stroke-width='0.35' opacity='0.6'><path d='M76.5 6.8 L75.8 6.5 M77.1 7 L76.9 6.35'/><path d='M76.2 10.2 L75.6 10.75'/></g><g stroke-width='0.5' opacity='0.5'><path d='M80 13.3 Q75 12.7 70.3 14.9'/><path d='M77.7 12.9 L76.9 14.4 L75.9 15 M76.9 14.4 L76.2 13.9'/><path d='M74.8 13.3 L74 14.8 M74.8 13.3 L74.1 12.7'/><path d='M72.4 13.9 L71.8 15.3'/></g><g stroke-width='0.35' opacity='0.55'><path d='M75.9 15 L75.1 15.35 M76.35 14.7 L76 15.4'/><path d='M74.1 12.7 L73.5 12.3'/></g><g stroke-width='0.5' opacity='0.5'><path d='M12 17 Q14.5 14.3 18.2 13.5'/><path d='M13.5 15.6 L12.4 14.6 L11.6 13.7 M12.4 14.6 L13 13.9'/><path d='M15.2 14.5 L14.6 13.1 M15.2 14.5 L16 13.8'/><path d='M16.8 13.9 L16.4 12.5 L15.7 11.7'/></g><g stroke-width='0.35' opacity='0.55'><path d='M11.6 13.7 L11 13.1 M12 14.15 L11.35 14.35'/><path d='M15.7 11.7 L15.1 11.2 M16.6 12.2 L17.2 11.8'/><path d='M14.6 13.1 L14.1 12.55'/></g><g stroke-width='0.5' opacity='0.45'><path d='M0 13.6 Q2.2 14.2 4 16'/><path d='M1.3 13.9 L2 12.7 M1.3 13.9 L0.7 12.9'/><path d='M2.6 14.9 L3.5 14.1'/></g><g stroke-width='0.5' opacity='0.4'><path d='M44 17 Q45.4 15 48 14.3'/><path d='M44.9 15.8 L44 14.8 M44.9 15.8 L45.7 15'/><path d='M46.5 14.8 L46 13.5'/></g></g><g fill='%23bcd6f8'><circle cx='12.5' cy='5.8' r='0.45' opacity='0.6'/><circle cx='13.8' cy='6.8' r='0.3' opacity='0.5'/><circle cx='11.4' cy='7' r='0.25' opacity='0.45'/><circle cx='20' cy='2.6' r='0.4' opacity='0.5'/><circle cx='26' cy='13' r='0.45' opacity='0.45'/><circle cx='36' cy='5.8' r='0.4' opacity='0.45'/><circle cx='40' cy='2.4' r='0.35' opacity='0.5'/><circle cx='50' cy='13.8' r='0.4' opacity='0.4'/><circle cx='55' cy='3.2' r='0.45' opacity='0.55'/><circle cx='58' cy='8.4' r='0.35' opacity='0.4'/><circle cx='70.6' cy='6' r='0.4' opacity='0.55'/><circle cx='71.8' cy='7.1' r='0.3' opacity='0.45'/><circle cx='69.4' cy='7.4' r='0.25' opacity='0.4'/><circle cx='63' cy='13.4' r='0.4' opacity='0.4'/><circle cx='28' cy='14.6' r='0.3' opacity='0.4'/><circle cx='27' cy='12' r='0.25' opacity='0.35'/><circle cx='24' cy='8' r='0.3' opacity='0.35'/></g></svg>"),
+      radial-gradient(120% 110% at 50% -40%, rgba(140, 180, 245, 0.3), transparent 62%),
+      radial-gradient(95% 115% at 104% 120%, rgba(120, 165, 240, 0.22), transparent 58%),
+      radial-gradient(80% 100% at -6% 118%, rgba(125, 168, 240, 0.18), transparent 52%),
+      linear-gradient(180deg, rgba(95, 145, 225, 0.18), rgba(10, 18, 48, 0.62));
+    // cover, not stretch: the 80×17 frost sheet crops on the 30px medallion,
+    // so the dendrites keep their shape instead of smearing vertically.
+    background-size: cover, auto, auto, auto, auto;
+    background-repeat: no-repeat;
+    box-shadow:
+      inset 0 0 9px rgba(130, 172, 242, 0.3),
+      inset 0 1px 0 rgba(180, 210, 250, 0.24),
+      inset 0 -1px 1px rgba(5, 9, 24, 0.4),
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 0 8px rgba(110, 160, 240, 0.18);
+
+    // Frost-toned ring; fixed colours — no light ever floods a frozen chip.
+    &::before {
+      background: conic-gradient(from 0deg,
+        rgba(175, 208, 250, 0.45) 0deg,
+        rgba(150, 190, 245, 0.12) 48deg,
+        rgba(150, 190, 245, 0.22) 100deg,
+        rgba(255, 255, 255, 0.35) 135deg,
+        rgba(150, 190, 245, 0.18) 195deg,
+        rgba(150, 190, 245, 0.08) 228deg,
+        rgba(150, 190, 245, 0.25) 275deg,
+        rgba(255, 255, 255, 0.52) 316deg,
+        rgba(175, 208, 250, 0.45) 360deg);
+    }
+
+    // No front blik: the ice sheet IS the front surface here.
+    &::after { content: none; }
+
+    // The key behind the ice: murky, softly blurred, a frost sheen around
+    // the letters — legible, but clearly frozen over.
+    .k-txt {
+      color: rgba(150, 180, 230, 0.66);
+      filter: blur(0.35px);
+      text-shadow: 0 0 3px rgba(165, 200, 250, 0.45);
+    }
+
+    .k-stop {
+      background: #8fb0e6;
+      box-shadow: 0 0 3px rgba(130, 170, 235, 0.6);
+    }
+  }
+
+  // .off (lamp out by the user's hand) is the base look above: unlit neutral
+  // glass, a steady grey ⏸ waiting for its ▶.
 
   // Branch without a ticket — dashed neutral placeholder, no new colours.
   &.none {
     color: #6c7086;
+    text-shadow: none;
     background: transparent;
     border: 1px dashed #45475a;
+    box-shadow: none;
     padding: 0 8px;
+
+    &::before { content: none; }
+    &::after { content: none; }
   }
 }
 
-// repo · branch in the name slot: bold repo, dim branch; a long tail fades out
-// instead of a hard ellipsis cut (same mask as the Logged rows' name).
+// Indicator — a fixed 9px box; glyphs swap inside it, the key never shifts.
+// ● steady green lamp = accruing (the rim sweep is the moving part, the lamp
+// just glows), ■ grey = stopped; hover reveals ⏸ / ▶ in the same box.
+.k-ind {
+  position: relative;
+  // The crisp foreground plane — above the front-surface blik (::after, z2),
+  // exactly how the frozen chip layers its ■ over the ice.
+  z-index: 3;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  flex-shrink: 0;
+
+  > * {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    transition: opacity 0.15s ease;
+  }
+}
+
+// The lamp wears the light's colour (--lc) — it blushes red for the beat the
+// hover swap takes to fade it out behind the ⏸.
+.k-lamp {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(var(--lc));
+  box-shadow: 0 0 4px rgb(var(--lc) / 0.9), 0 0 9px rgb(var(--lc) / 0.5), 0 0 16px rgb(var(--lc) / 0.25);
+}
+
+.k-stop {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: #9399b2;
+}
+
+// Static ⏸ — the user's own pause, held until their ▶.
+.k-hold {
+  width: 8px;
+  height: 8px;
+  fill: #9399b2;
+}
+
+.k-act-ico {
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+}
+
+// Actionable chip (Live → Pause, manual pause → Resume): only the indicator
+// glyph and the light react to hover.
+.c-key.act {
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    .k-lamp, .k-stop, .k-hold { opacity: 0; }
+    .k-act-ico { opacity: 1; }
+  }
+
+  // Pause: the lamp turns red and the red light takes over everything that
+  // reads it — the halo, the wash, the WHOLE ring (--rc), while the white
+  // specular peaks stay white. Two vars do all the work; the halo only grows
+  // a touch hotter.
+  &.will-pause {
+    .k-act-ico { fill: #f38ba8; }
+
+    &:hover:not(:disabled) {
+      --lc: 243 139 168;
+      --rc: 243 139 168;
+      background:
+        radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.44), rgb(var(--lc) / 0.15) 12px, transparent 27px),
+        radial-gradient(80px 32px at 16px 58%, rgb(var(--lc) / 0.19), transparent 80%),
+        glass.$candy-body;
+    }
+  }
+
+  // Resume: green light previews in the cold glass — the lamp relights, the
+  // ring goes green, the dye stays quiet until the click actually resumes.
+  &.will-resume {
+    .k-act-ico { fill: #a6e3a1; }
+
+    &:hover:not(:disabled) {
+      --lc: 166 227 161;
+      --rc: 166 227 161;
+      --ink: #cdd6f4;
+      background:
+        radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.38), rgb(var(--lc) / 0.1) 11px, transparent 24px),
+        radial-gradient(70px 30px at 14px 58%, rgb(var(--lc) / 0.15), transparent 78%),
+        glass.$candy-body;
+
+      &::before {
+        background:
+          radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.7), rgb(var(--lc) / 0.28) 12px, transparent 30px),
+          glass.$candy-rim;
+      }
+    }
+  }
+
+  &:disabled { cursor: default; opacity: 0.6; }
+}
+
+// Jira name in the name slot — the same slot every feed row gives its ticket
+// name; a long tail fades out instead of a hard ellipsis cut. Until the
+// daemon backfills the summary, the branch stands in, dimmed.
 .c-nm {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  color: #cdd6f4;
+  font-weight: 600;
   cursor: default;
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
           mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
 
-  .repo { font-weight: 600; color: #cdd6f4; }
-  .br   { color: #6c7086; }
+  &.branch { color: #6c7086; font-weight: 400; }
 }
 
 // ─── Time — band 1's right column, the same slot as every row's time ────────
 // A bare bold number like the Logged rows'; still a button — click opens the
 // add-time popover, the dotted underline keeps the old chip's affordance.
 .time-anchor {
+  grid-column: 3;
+  grid-row: 1;
   position: relative;
   display: inline-flex;
   justify-self: end;
@@ -144,14 +369,11 @@
 }
 
 // ─── Band 2 slots ───────────────────────────────────────────────────────────
-// Status badge (its own component, untouched) sits in the first column.
-app-status-badge {
-  justify-self: start;
-}
-
-// Commits · churn in the description slot — commit glyph + counts in half-tone,
-// like the session-born rows in Logged.
+// repo · commits · churn under the name — the session's origin line, in the
+// half-tone of the session-born rows in Logged.
 .c-stats {
+  grid-column: 2 / 4;
+  grid-row: 2;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -163,13 +385,16 @@ app-status-badge {
 
   svg { flex-shrink: 0; opacity: 0.7; }
 
+  .repo  { color: #a6adc8; font-weight: 600; }
   .csep  { color: #45475a; }
   .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
   .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
 }
 
-app-mode-dropdown {
-  justify-self: end;
+// A frozen card's diff numbers go cold too — the signs keep the meaning,
+// colour belongs to living sessions.
+.card.frozen .c-stats {
+  .plus, .minus { color: #7f849c; }
 }
 
 // ─── Add-time popover (anchored to the time slot) ────────────────────────────
@@ -259,11 +484,11 @@ app-mode-dropdown {
 }
 
 // ─── Stamina edge ───────────────────────────────────────────────────────────
-// The card no longer clips (overflow visible for the dropdown), so the strip
-// rounds its own bottom corners — but a 3px-tall element can't render a 6px
+// The card doesn't clip (overflow visible for the popovers), so the strip
+// rounds its own bottom corners — but a 3px-tall element can't render an 8px
 // radius (CSS scales overlapping radii down to ~3px, and the fill pokes past
 // the border curve). Hence .edge-clip: a taller invisible layer whose honest
-// 6px corners (concentric: card's 7px minus the 1px border) clip the track and
+// 8px corners (concentric: card's 9px minus the 1px border) clip the track and
 // fill exactly along the border curve. .edge itself stays the 3px hover strip
 // and tooltip anchor — no overflow:hidden on it, the tip sits above.
 .edge {
@@ -279,7 +504,7 @@ app-mode-dropdown {
     right: 0;
     bottom: 0;
     height: 14px;
-    border-radius: 0 0 6px 6px;
+    border-radius: 0 0 8px 8px;
     overflow: hidden;
     pointer-events: none;
 
@@ -303,16 +528,13 @@ app-mode-dropdown {
     transition: width 0.5s ease, background-color 0.5s ease;
   }
 
-  // Always-on (Nonstop) — never drains; a slow teal shimmer reads "wired to power".
+  // Always-on (Nonstop) — never drains; the mode's old signature gradient
+  // (teal → sky → lavender) drifts along the edge: "wired to power",
+  // unmistakably not a frozen grey.
   .fill.shimmer {
-    background: linear-gradient(
-      90deg,
-      rgba(148, 226, 213, 0.4) 0%,
-      rgba(148, 226, 213, 0.95) 50%,
-      rgba(148, 226, 213, 0.4) 100%
-    );
-    background-size: 200% 100%;
-    animation: edge-shimmer 3s linear infinite;
+    background: linear-gradient(120deg, #94e2d5, #74c7ec, #89b4fa, #94e2d5);
+    background-size: 300% 100%;
+    animation: nonstop-flow 7s linear infinite;
   }
 
   // Custom tooltip (replaces the native title) — shown on hovering the edge.
@@ -342,7 +564,22 @@ app-mode-dropdown {
   }
 }
 
-@keyframes edge-shimmer {
-  0%   { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
+@keyframes nonstop-flow {
+  0%   { background-position: 0 0; }
+  100% { background-position: 300% 0; }
+}
+
+// Two waves per cycle: the strong glint passes first, then its echo — a
+// wider, dimmer post-wave — flows slowly along the same path, then rest.
+// Layers: [strong sweep, soft echo, static glint, static counter-glint].
+@keyframes rim-sweep {
+  0%   { background-position: 120% 0, 120% 0, 0 0, 0 0; }
+  8%   { background-position: 76% 0, 120% 0, 0 0, 0 0; }
+  24%  { background-position: -20% 0, 98% 0, 0 0, 0 0; }
+  68%  { background-position: -20% 0, -20% 0, 0 0, 0 0; }
+  100% { background-position: -20% 0, -20% 0, 0 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card::before { animation: none !important; }
 }

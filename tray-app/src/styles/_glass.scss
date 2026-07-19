@@ -1,0 +1,130 @@
+// Glass material — the tray's one surface language. Dark glass, not white
+// frost: near-invisible fills, a 1px catch-light on the border, colour only
+// where it carries meaning (green = tracked, teal = suggested, mauve = logged).
+
+// ─── Candy capsule (design-preview/glass-badge-lab-6, stage E3) ─────────────
+// Dyed-in-the-mass glass with real depth. Volume comes from plane order, the
+// frozen chip's trick: indicator in front (z3) → front-surface blik in ::after
+// (z2) → key text sunk into the mass (muted ink + in-hue scatter) → dyed body.
+// The ring IS the border (no CSS border): a conic with two white specular
+// peaks that never re-tint, and colour arcs on --rc so a state can flood the
+// whole ring (will-pause red). Dye densities are vars — a variant quietens
+// the glass by lowering them, never by redrawing layers.
+
+// Body: broad dome wash + bottom-right counter-glint + dyed mass. The
+// discrete blik is NOT here — it lives on the front surface (::after).
+$candy-body:
+  radial-gradient(95% 150% at 30% -25%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02) 50%, transparent 72%),
+  radial-gradient(45% 55% at 78% 108%, rgba(255, 255, 255, 0.08), transparent 65%),
+  linear-gradient(180deg,
+    rgb(var(--c) / var(--m1)),
+    rgb(var(--c) / var(--m2)) 55%,
+    rgb(var(--c) / var(--m3)));
+
+// Ring: key light at 316°, counter-glint at 135° (white, surface reflection);
+// everything else is the glass edge seen on end — --rc tinted.
+$candy-rim:
+  conic-gradient(from 0deg,
+    rgb(var(--rc) / 0.4) 0deg,
+    rgb(var(--rc) / 0.08) 48deg,
+    rgb(var(--rc) / 0.2) 100deg,
+    rgba(255, 255, 255, 0.34) 135deg,
+    rgb(var(--rc) / 0.16) 195deg,
+    rgb(var(--rc) / 0.05) 228deg,
+    rgb(var(--rc) / 0.22) 275deg,
+    rgba(255, 255, 255, 0.5) 316deg,
+    rgb(var(--rc) / 0.4) 360deg);
+
+// $c / $ci are space-separated RGB triplets (dye + its lightened exit
+// caustic), $ink the text colour the mass mutes to 82%.
+@mixin glass-candy($c, $ci, $ink) {
+  --c: #{$c};
+  --ci: #{$ci};
+  --ink: #{$ink};
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c) / 0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background: $candy-body;
+  // Insets: top catch-light, interior thickness at the bottom, cylinder
+  // shading on the capsule ends, hue-dense edges, exit caustic. Outer: lift
+  // off the card + a coloured pool the dye casts beneath.
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c) / var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci) / var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c) / var(--pool));
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: $candy-rim;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  // The glass front: the discrete blik sits OVER the letters (z2; the
+  // indicator rides above it at z3, the static text stays below).
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    z-index: 2;
+    background:
+      radial-gradient(50% 56% at 27% 4%, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.04) 48%, transparent 72%),
+      radial-gradient(30% 34% at 77% 98%, rgba(255, 255, 255, 0.07), transparent 65%);
+    pointer-events: none;
+  }
+}
+
+// ─── Feed-record glass ──────────────────────────────────────────────────────
+// Materialized records (live sessions, logged rows) are translucent slabs
+// refracting the aurora behind the feed; offers stay hollow dashed outlines.
+// The body lives in ::after at z:-1 — backdrop-filter on the row itself would
+// make it a containing block for fixed descendants (the add-time popover's
+// backdrop) and clip them to the card; isolation keeps the negative-z pseudo
+// inside the element's own context. $card-body's base tint is a gradient so a
+// state can lay its wash on top and keep the same stack underneath.
+$card-body:
+  linear-gradient(115deg, rgba(255, 255, 255, 0.035), transparent 40%, rgba(255, 255, 255, 0.02) 70%, transparent 88%),
+  linear-gradient(rgba(30, 30, 46, 0.38), rgba(30, 30, 46, 0.38));
+
+@mixin glass-card {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid rgba(205, 214, 244, 0.1);
+  border-radius: 9px;
+  box-shadow: 0 3px 10px -4px rgba(0, 0, 0, 0.55);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: $card-body;
+    backdrop-filter: blur(9px) saturate(1.5);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+    transition: background 0.4s ease;
+    pointer-events: none;
+  }
+}

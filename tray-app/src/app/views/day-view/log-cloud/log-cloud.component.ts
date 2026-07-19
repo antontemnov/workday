@@ -543,8 +543,9 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     }, 140);
   }
 
-  // Learned-ticket conflict of the accepted meeting — teal chips above the
-  // favorites; picking one resolves the ambiguity (and teaches the uid).
+  // Learned-ticket conflict of the accepted meeting — grey amber-starred
+  // chips above the favorites; picking one resolves the ambiguity (and
+  // teaches the uid).
   get acceptCandidates(): readonly SuggestionCandidate[] {
     return this.acceptTarget?.candidates ?? [];
   }

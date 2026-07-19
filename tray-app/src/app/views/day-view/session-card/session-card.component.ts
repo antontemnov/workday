@@ -1,10 +1,9 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../models/workday.models';
-import { ModeDropdownComponent } from './mode-dropdown/mode-dropdown.component';
-import { StatusBadgeComponent } from './status-badge/status-badge.component';
 import { DurationFieldComponent } from '../duration-field/duration-field.component';
 import { parseDurationToMinutes } from '../duration-field/duration.util';
+import { openCtxMenu } from '../ctx-menu.util';
 
 interface SpeedPillOption {
   readonly key: SensitivityLevel;
@@ -15,15 +14,19 @@ interface SpeedPillOption {
 
 type TrackingAction = 'pause' | 'resume';
 
+// Speedometer for the Mode row — the sensitivity scale IS a speed dial.
+const MODE_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M3.03 9.47 A4.2 4.2 0 1 1 8.97 9.47"/><line x1="6" y1="6.5" x2="8.4" y2="3.9"/><circle cx="6" cy="6.5" r="0.9" fill="currentColor" stroke="none"/></svg>';
+
 /**
- * Single open-session card on the shared two-band grid (74px | 1fr | 48px+,
- * same as the Logged rows):
- *   band 1 — green ticket chip (from the branch) · repo · branch ·
- *            clickable time (+manual)
- *   band 2 — status badge (Pause/Resume built into the badge for
- *            Live/manual-paused) · commits · churn · mode dropdown
+ * Single open-session card — one grid, two bands, the ticket medallion
+ * spanning both (the card keeps the feed rows' uniform height):
+ *   medallion — the tracking control (lamp: green = accruing, grey = not;
+ *               hover morphs to Pause / Resume where an action exists)
+ *   band 1 — Jira ticket name (branch until the summary is cached) · time
+ *   band 2 — repo · commits · churn
  * Stamina stays the card's bottom edge; the tracked highlight is a glass
- * rim — a faint catch-light on the border tinted by the same state.
+ * rim — a faint catch-light on the border tinted by the same state. Any
+ * paused card drops its colour halo entirely: tracking is binary here.
  *
  * Mostly a projection of one SessionDetail; the only local state is the
  * anchored Add-time popover (open flag + duration text), like the mode
@@ -32,7 +35,7 @@ type TrackingAction = 'pause' | 'resume';
 @Component({
   selector: 'app-session-card',
   standalone: true,
-  imports: [CommonModule, ModeDropdownComponent, StatusBadgeComponent, DurationFieldComponent],
+  imports: [CommonModule, DurationFieldComponent],
   templateUrl: './session-card.component.html',
   styleUrl: './session-card.component.scss',
 })
@@ -40,14 +43,12 @@ export class SessionCardComponent {
   @Input({ required: true }) session!: SessionDetail;
   @Input() actionPending = false;
   @Input() speedPills: readonly SpeedPillOption[] = [];
+  // Jira summaries from the day payload (task key → name, cached by the daemon).
+  @Input() issueSummaries: Readonly<Record<string, string>> = {};
 
   // Re-uses the existing pill channel: 'pause' → pause API, a level → sensitivity API.
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
-
-  // True while the mode dropdown is open — lets the card lift its z-index so the
-  // menu can overflow the card without a sibling card clipping it.
-  menuOpen = false;
 
   // Add-time popover (anchored to the time chip). Default 30m; attemptedAdd
   // flags the duration red only after a failed submit.
@@ -61,32 +62,25 @@ export class SessionCardComponent {
     return this.session.repo.split('/').pop() ?? this.session.repo;
   }
 
-  // ─── Status badge ──────────────────────────────────────────────────────
-
-  get statusClass(): string {
-    const s = this.session;
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'status-idle';
-        case 'superseded':   return 'status-switched';
-        case 'teams_away':   return 'status-away';
-        default:             return 'status-paused';
-      }
-    }
-    return s.state === 'active' ? 'status-live' : 'status-pending';
+  // Ticket name for the name slot; the branch stands in (dimmed) until the
+  // daemon backfills the summary.
+  get ticketName(): string | null {
+    return this.session.task ? this.issueSummaries[this.session.task] ?? null : null;
   }
 
-  get statusLabel(): string {
-    const s = this.session;
-    if (s.paused) {
-      switch ((s.pauseSource ?? '').toLowerCase()) {
-        case 'idle_timeout': return 'Idle';
-        case 'superseded':   return 'Switched';
-        case 'teams_away':   return 'Away';
-        default:             return 'Paused';
-      }
-    }
-    return s.state === 'active' ? 'Live' : 'Pending';
+  // ─── Tracking status — binary on purpose ───────────────────────────────
+  // The chip's dot answers the only question that matters: is time accruing
+  // right now? The why of a pause (idle / switched / away / manual) stays out
+  // of the UI — the daemon knows, the user doesn't need to.
+
+  get isAccruing(): boolean {
+    return !this.session.paused && this.session.state === 'active';
+  }
+
+  // System-stopped (idle / superseded / away): the cold, frozen-glass chip.
+  // A manual pause is warmer — the user holds it, ⏸ waits for their ▶.
+  get isAutoPaused(): boolean {
+    return this.session.paused && (this.session.pauseSource ?? '').toLowerCase() !== 'manual';
   }
 
   // ─── Tracking action (Pause / Resume) ──────────────────────────────────
@@ -100,6 +94,10 @@ export class SessionCardComponent {
       return (s.pauseSource ?? '').toLowerCase() === 'manual' ? 'resume' : null;
     }
     return s.state === 'active' ? 'pause' : null;
+  }
+
+  get trackingActionTitle(): string {
+    return this.trackingAction === 'pause' ? 'Pause this session' : 'Resume this session';
   }
 
   // ─── Sensitivity scale ─────────────────────────────────────────────────
@@ -133,7 +131,9 @@ export class SessionCardComponent {
   }
 
   get staminaColor(): string {
-    if (this.isManualPaused) return '#45475a'; // frozen — drain is suspended
+    // Binary halo: any card that isn't accruing shows a grey gauge — the
+    // colour (and the rim's tint) belongs to running tracking only.
+    if (!this.isAccruing) return '#45475a';
     const n = this.session.normalizedScore;
     if (n >= 0.6) return '#a6e3a1';
     if (n >= 0.3) return '#f9e2af';
@@ -147,18 +147,40 @@ export class SessionCardComponent {
   }
 
   // Tracked highlight — the glass rim's catch-light follows the edge fill:
-  // stamina colour while stamina is non-zero, teal for Nonstop, plain glass
-  // (neutral) when the edge is frozen or empty. The pair is
-  // [top catch-light, bottom counter-glint] — same hue, a third the voice.
-  private get glintPair(): readonly [string, string] {
-    if (this.isAlwaysOn) return ['rgba(148, 226, 213, 0.35)', 'rgba(148, 226, 213, 0.12)'];
-    const n = this.session.normalizedScore;
-    if (this.isNonstopPaused || this.isManualPaused || n <= 0) {
-      return ['rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)'];
+  // stamina colour while accruing, an electric sky-blue for Nonstop, plain
+  // glass (neutral) the moment tracking stops. The quad is
+  // [top catch-light, bottom counter-glint, strong sweep, soft post-wave] —
+  // same hue family; the strong sweep speaks loudest, its echo whispers.
+  private get glintPair(): readonly [string, string, string, string] {
+    if (this.isAlwaysOn) {
+      return [
+        'rgba(116, 199, 236, 0.4)', 'rgba(137, 180, 250, 0.14)',
+        'rgba(137, 180, 250, 0.8)', 'rgba(148, 226, 213, 0.32)',
+      ];
     }
-    if (n >= 0.6) return ['rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)'];
-    if (n >= 0.3) return ['rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)'];
-    return ['rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)'];
+    const n = this.session.normalizedScore;
+    if (!this.isAccruing || n <= 0) {
+      return [
+        'rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)',
+        'rgba(205, 214, 244, 0.3)', 'rgba(205, 214, 244, 0.12)',
+      ];
+    }
+    if (n >= 0.6) {
+      return [
+        'rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)',
+        'rgba(166, 227, 161, 0.8)', 'rgba(166, 227, 161, 0.3)',
+      ];
+    }
+    if (n >= 0.3) {
+      return [
+        'rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)',
+        'rgba(249, 226, 175, 0.75)', 'rgba(249, 226, 175, 0.28)',
+      ];
+    }
+    return [
+      'rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)',
+      'rgba(243, 139, 168, 0.75)', 'rgba(243, 139, 168, 0.28)',
+    ];
   }
 
   get stateGlint(): string {
@@ -167,6 +189,14 @@ export class SessionCardComponent {
 
   get stateGlintSoft(): string {
     return this.glintPair[1];
+  }
+
+  get stateSweep(): string {
+    return this.glintPair[2];
+  }
+
+  get stateSweepSoft(): string {
+    return this.glintPair[3];
   }
 
   // ─── Time ──────────────────────────────────────────────────────────────
@@ -201,6 +231,71 @@ export class SessionCardComponent {
       // the daemon closes the open manual pause as a side-effect of setSensitivity.
       this.pillSelected.emit({ session: this.session, pill: this.session.sensitivity });
     }
+  }
+
+  // ─── Mode context menu (right-click) ───────────────────────────────────
+  // Replaces the inline dropdown: the card's rare per-session action now lives
+  // in the same two-stage popover the suggestion / logged rows use. Stage 1
+  // carries only Mode; stage 2 is the sensitivity picker (Back + the levels).
+
+  onContextMenu(ev: MouseEvent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (this.actionPending || this.addPopoverOpen) return;
+    this.openMainMenu(ev.clientX, ev.clientY);
+  }
+
+  private openMainMenu(x: number, y: number): void {
+    // The active mode rides along as a dimmed right-aligned hint, so it reads
+    // without opening the sub-menu. Manual pause freezes the scale, so Mode
+    // states the fact (dimmed + "paused") rather than offering a no-op — the
+    // same "disabled fact" language as the logged rows.
+    const current = this.speedPills.find(o => o.key === this.session.sensitivity)?.label ?? '—';
+    openCtxMenu(x, y, [
+      this.isManualPaused
+        ? { icon: MODE_ICON, label: 'Mode', hint: `${current} · paused`, disabled: true,
+            title: 'Resume the session to change its mode', action: (): void => {} }
+        : { icon: MODE_ICON, label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
+      { icon: '⧉', label: 'Copy branch', action: (): void => this.copyBranch() },
+    ]);
+  }
+
+  // The branch left the card face (the name slot shows the Jira summary), so
+  // the menu is where it lives now.
+  private copyBranch(): void {
+    const text = this.session.branch;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => this.copyBranchFallback(text));
+    } else {
+      this.copyBranchFallback(text);
+    }
+  }
+
+  // execCommand path for webviews without the async clipboard.
+  private copyBranchFallback(text: string): void {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+
+  private openModeMenu(x: number, y: number): void {
+    openCtxMenu(x, y, [
+      { label: '← Back', action: () => this.openMainMenu(x, y) },
+      { separator: true },
+      ...this.speedPills.map(o => ({
+        // Reserve the icon gutter on every row (space when unselected) so the
+        // ✓ on the active mode keeps the labels aligned.
+        icon: o.key === this.session.sensitivity ? '✓' : ' ',
+        label: o.label,
+        title: o.title,
+        action: (): void => this.onSpeedClick(o.key),
+      })),
+    ]);
   }
 
   // ─── Add-time popover ──────────────────────────────────────────────────

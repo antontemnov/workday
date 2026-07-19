@@ -1,3 +1,5 @@
+@use 'glass';
+
 :host {
   display: flex;
   flex-direction: column;
@@ -6,6 +8,14 @@
   min-height: 0;
   // Anchor for the cloud / composer overlays that float above the panel.
   position: relative;
+  // Ambient aurora — barely-there colour fields in the three section hues,
+  // pinned to the view (only the feed scrolls). This is what the glass
+  // refracts: translucent cards and the blurred day header pick it up, so
+  // surfaces read as material instead of flat panels.
+  background:
+    radial-gradient(420px 300px at 88% -60px, rgba(203, 166, 247, 0.07), transparent 65%),
+    radial-gradient(560px 400px at -80px 38%, rgba(148, 226, 213, 0.05), transparent 65%),
+    radial-gradient(480px 360px at 112% 82%, rgba(166, 227, 161, 0.055), transparent 65%);
 }
 
 // Content (scrollable; the dock below stays pinned)
@@ -64,10 +74,54 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 13px 2px 11px;
-  background: #1e1e2e;
+  // Full-bleed: cancel the feed's side padding so records can't slip past
+  // the glass at the edges (the padding folds back into the bar).
+  margin: 0 -12px;
+  padding: 13px 14px 11px;
+  // Matte liquid glass: a deep frost body — the blur is what keeps it matte —
+  // with faint iridescent washes (white sheen, mauve/teal drifts) riding on
+  // the dark base instead of a flat tint.
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012) 30%, transparent 46%, rgba(255, 255, 255, 0.03) 68%, transparent 84%),
+    radial-gradient(60% 160% at 86% -30%, rgba(203, 166, 247, 0.07), transparent 65%),
+    radial-gradient(55% 110% at 6% 30%, rgba(148, 226, 213, 0.05), transparent 58%),
+    rgba(30, 30, 46, 0.62);
+  backdrop-filter: blur(14px) saturate(1.6) brightness(1.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  // The glass has NO bottom boundary: the whole bar — tint, frost, washes —
+  // dissolves over its last 13px (mostly inside the bottom padding; the
+  // baseline sits ~14px up, so text keeps full ink). No edge, no seam,
+  // nothing for the first row to "stick" to; records melt into the frost as
+  // they slide under. The zero gap below is by design — height stays
+  // compact, separation comes from the melt.
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 13px), transparent);
+          mask-image: linear-gradient(180deg, #000 calc(100% - 13px), transparent);
   font-variant-numeric: tabular-nums;
   user-select: none;
+
+  // Lens band on the bottom edge: pure displacement, no light lift — any
+  // uniform brightness here reads as a stripe (the 5.8 lesson). At rest the
+  // band redraws the matte over itself and disappears; it only shows as a
+  // stretch on content actually crossing the edge.
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 10px;
+    backdrop-filter: url(#dayheadLens);
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 70%);
+            mask-image: linear-gradient(180deg, transparent, #000 70%);
+    pointer-events: none;
+  }
+}
+
+// Filter defs live in the DOM but never on screen.
+.fx-defs {
+  position: fixed;
+  width: 0;
+  height: 0;
 }
 
 .day-date {
@@ -80,29 +134,28 @@
 }
 
 // ＋Log — the entry point (the panel's ghost row died with the panel); opens
-// the log cloud right below the header. A glass capsule: neutral translucent
-// fill, a drop of mauve in the frame, the same rim catch-light as the cards.
+// the log cloud right below the header. The same mauve candy capsule as the
+// logged keys, sized to hold its own next to the session medallions (22px —
+// still under the Day total's 18px numerals); hover thickens the dye,
+// nothing moves.
 .g-btn {
   margin-left: auto;
   align-self: center;
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  height: 22px;
   font-family: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  color: #cba6f7;
-  border: 1px solid rgba(203, 166, 247, 0.24);
-  background: linear-gradient(180deg, rgba(205, 214, 244, 0.09), rgba(205, 214, 244, 0.025));
   border-radius: 999px;
-  padding: 3px 11px;
+  padding: 0 12px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  @include glass.glass-candy((203 166 247), (228 205 252), #cba6f7);
 
   svg {
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
     flex-shrink: 0;
 
     path {
@@ -113,23 +166,10 @@
     }
   }
 
-  // Rim catch-light — the cards' mask trick on the capsule.
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(178deg, rgba(205, 214, 244, 0.4), transparent 58%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-
   &:hover:not(:disabled) {
-    background: linear-gradient(180deg, rgba(205, 214, 244, 0.13), rgba(205, 214, 244, 0.05));
+    --m1: 0.2;
+    --m2: 0.09;
+    --m3: 0.15;
   }
 
   &:disabled { opacity: 0.4; cursor: default; }

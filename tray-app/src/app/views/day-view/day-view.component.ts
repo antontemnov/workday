@@ -1,5 +1,5 @@
 import {
-  Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild,
+  Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionCardComponent } from './session-card/session-card.component';
@@ -37,7 +37,7 @@ interface SensitivityPillOption {
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
-export class DayViewComponent implements OnChanges {
+export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() data: TodayResponse | null = null;
   @Input() loading = false;
   @Input() error: string | null = null;
@@ -76,6 +76,9 @@ export class DayViewComponent implements OnChanges {
   @ViewChild(LoggedPanelComponent, { read: ElementRef })
   private historyRef?: ElementRef<HTMLElement>;
 
+  @ViewChild(LogCloudComponent, { read: ElementRef })
+  private cloudRef?: ElementRef<HTMLElement>;
+
   // Mauve flash on the Day total when the logged share changes — server data
   // and local live diffs (draft stepper ticks) both count.
   dayFlash = false;
@@ -85,6 +88,12 @@ export class DayViewComponent implements OnChanges {
   // Uncommitted/unconfirmed panel minutes — keeps the Day total moving in the
   // same instant as the panel Σ while a draft stepper spins.
   liveDiffMinutes = 0;
+
+  public constructor(private hostEl: ElementRef<HTMLElement>, private zone: NgZone) {}
+
+  ngOnDestroy(): void {
+    this.cloudResize?.disconnect();
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['data']) this.checkDayFlash();
@@ -183,7 +192,7 @@ export class DayViewComponent implements OnChanges {
     this.entryEditSubmitted.emit({ target: e.id, patch: e.patch });
   }
 
-  // ─── Suggestions (teal rows between the live cards and the history) ─────
+  // ─── Suggestions (graphite blueprint rows between the live cards and the history) ─────
 
   onSuggestionDismiss(s: Suggestion): void {
     this.suggestionDismissSubmitted.emit({ uid: s.uid, date: s.date });
@@ -200,8 +209,11 @@ export class DayViewComponent implements OnChanges {
   // ─── Log cloud ─────────────────────────────────────────────────────────
 
   cloudOpen = false;
-  // The cloud hangs just below the sticky day header; measured at open time.
+  // The cloud hangs just below the sticky day header (＋Log), or under the
+  // asking suggestion row (accept picker); measured at open time.
   overlayTop = 0;
+  // Accept picker morphs out of its row's left edge, not the ＋Log corner.
+  cloudOrigin: string | null = null;
 
   // Non-null → the cloud is a pure ticket picker for an unresolved meeting
   // suggestion: a pick closes the cloud and flows back into the row, which
@@ -216,24 +228,103 @@ export class DayViewComponent implements OnChanges {
   openCloud(): void {
     if (this.actionPending) return;
     this.acceptTarget = null;
+    this.cloudOrigin = null;
     this.overlayTop = this.headHeight() + 6;
     this.cloudOpen = true;
   }
 
-  openCloudForAccept(s: Suggestion): void {
+  // The picker opens where the ladder started: right under the asking row.
+  // The panel is ALIVE in height (candidates render, the Jira zone appears
+  // as the filter is typed), so placement can't be a one-shot measure — a
+  // ResizeObserver re-runs it on every panel growth while the picker is open.
+  openCloudForAccept(s: Suggestion, from?: DOMRect): void {
     if (this.actionPending) return;
     this.acceptTarget = s;
-    this.overlayTop = this.headHeight() + 6;
+    if (from) {
+      this.acceptAnchor = from;
+      this.cloudSide = 'below';
+      const host = this.hostEl.nativeElement.getBoundingClientRect();
+      this.overlayTop = from.bottom - host.top + 2;
+      this.cloudOrigin = '24px 0';
+      setTimeout(() => this.watchCloudSize());
+    } else {
+      this.acceptAnchor = null;
+      this.overlayTop = this.headHeight() + 6;
+      this.cloudOrigin = null;
+    }
     this.cloudOpen = true;
+  }
+
+  private acceptAnchor: DOMRect | null = null;
+  private cloudSide: 'below' | 'above' = 'below';
+  private cloudResize?: ResizeObserver;
+
+  private watchCloudSize(): void {
+    this.cloudResize?.disconnect();
+    const cloud = this.cloudRef?.nativeElement;
+    if (!cloud || !this.cloudOpen || !this.acceptAnchor) return;
+    this.placeCloud(cloud);
+    // The observer fires outside the Angular zone — re-enter for the binding.
+    this.cloudResize = new ResizeObserver(() => this.zone.run(() => {
+      const el = this.cloudRef?.nativeElement;
+      if (el && this.cloudOpen && this.acceptAnchor) this.placeCloud(el);
+    }));
+    this.cloudResize.observe(cloud);
+  }
+
+  // Under the row while it fits; flips ABOVE the row otherwise (menu at a
+  // screen edge — the sharp anchor row stays visible below, and further
+  // growth pushes the top edge up, not the bottom onto the row); when
+  // neither side fits, just clamp inside the view below the sticky header.
+  // The side is STICKY per open: Jira result sets shrink and grow with
+  // every filter keystroke, and a stateless choice would bounce the panel
+  // across the row — once above, it stays above until the picker closes.
+  private placeCloud(cloud: HTMLElement): void {
+    const from = this.acceptAnchor!;
+    const host = this.hostEl.nativeElement.getBoundingClientRect();
+    const headTop = this.headHeight() + 6;
+    const h = cloud.offsetHeight;
+    const anchor = from.bottom - host.top + 2;
+
+    if (this.cloudSide === 'below'
+        && anchor + h > host.height - 8
+        && from.top - host.top - h - 2 >= headTop) {
+      this.cloudSide = 'above';
+    }
+
+    if (this.cloudSide === 'above') {
+      // Bottom pinned to the row; a panel too tall for the slot spills past
+      // it — the only honest option left.
+      this.overlayTop = Math.max(headTop, from.top - host.top - h - 2);
+      this.cloudOrigin = '24px 100%';
+      return;
+    }
+    this.overlayTop = anchor + h <= host.height - 8
+      ? anchor
+      : Math.max(headTop, host.height - h - 8); // tiny-window fallback
+    this.cloudOrigin = '24px 0';
   }
 
   closeCloud(): void {
     this.cloudOpen = false;
     this.acceptTarget = null;
+    this.acceptAnchor = null;
+    this.cloudResize?.disconnect();
+    this.cloudResize = undefined;
   }
 
   pickFor(s: Suggestion): SuggestionPick | null {
     return this.suggestionPick?.key === `${s.uid}:${s.date}` ? this.suggestionPick.pick : null;
+  }
+
+  // The row the picker opened for stays sharp above the cloud backdrop —
+  // its offer IS the context of the choice. Keyed (not by reference): polls
+  // swap the objects while the cloud is open.
+  isCloudAnchor(s: Suggestion): boolean {
+    return this.cloudOpen
+      && this.acceptTarget !== null
+      && this.acceptTarget.uid === s.uid
+      && this.acceptTarget.date === s.date;
   }
 
   onAcceptPicked(pick: SuggestionPick): void {

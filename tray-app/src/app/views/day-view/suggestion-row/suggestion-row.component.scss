@@ -1,28 +1,40 @@
+@use 'glass';
+
 :host {
   display: block;
 }
 
-// Deliberately unsure colours — this is NOT logged time yet, and the dashed
-// border is the feed's "not materialized" material. The offer speaks at full
-// voice only on hover.
+// While the accept picker is open for this row it rises above the cloud
+// backdrop (same z as the panel, DOM order keeps the panel on top) and
+// stays sharp — the offer is the context of the choice. Pointer-events
+// fall through: a click on the row is a click past the picker (dismiss).
+:host(.cloud-anchor) {
+  position: relative;
+  z-index: 31;
+  pointer-events: none;
+}
+
+// Blueprint material — an offer is a drawing of a record, not the record:
+// dashed contour + faint diagonal hatch on a colourless graphite body.
+// Colour = matter in the feed (green session, mauve log); a candidate has
+// no matter yet, so its only colour is the amber signal pair — the star in
+// the badge («пришло предложение») and Log… («залогируй»).
 .sug2 {
   padding: 3px 8px 4px;
-  // Stays hollow (no fill) on purpose — an offer isn't material yet; only the
-  // border firms up to match the feed's separation rhythm.
-  border: 1px dashed rgba(148, 226, 213, 0.22);
-  border-radius: 7px;
+  border: 1px dashed rgba(205, 214, 244, 0.18);
+  border-radius: 9px; // the glass slabs' radius — one rhythm down the feed
   margin-bottom: 8px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  background:
+    linear-gradient(115deg, rgba(205, 214, 244, 0.03), transparent 45%),
+    repeating-linear-gradient(-45deg, rgba(205, 214, 244, 0.035) 0 1px, transparent 1px 8px);
+  transition: border-color 0.15s ease;
 
   &:hover {
-    background: rgba(148, 226, 213, 0.04);
-    border-style: solid;
+    border-color: rgba(205, 214, 244, 0.3);
 
     .s-title { color: #a6adc8; }
-    .s-src .spark { color: #94e2d5; }
-    .btn.ok:not(:disabled), .btn.no:not(:disabled) { opacity: 1; }
   }
 }
 
@@ -54,11 +66,10 @@
   align-items: center;
 }
 
-// Inline accept form — 1:1 the logged row's edit band, teal accents (this is
-// still suggested time until Log lands it).
+// Inline accept form — 1:1 the logged row's edit band; the contour firms up
+// solid while the offer is being materialized, the hatch stays underneath.
 .editing {
   border-style: solid;
-  background: rgba(148, 226, 213, 0.04);
 }
 
 .rf {
@@ -81,7 +92,7 @@
     height: 20px;
     outline: none;
 
-    &:focus { border-color: #94e2d5; }
+    &:focus { border-color: rgba(249, 226, 175, 0.5); }
   }
 
   .le-act {
@@ -100,10 +111,10 @@
     &::placeholder { color: #4b4d63; }
 
     &.need {
-      border-color: rgba(148, 226, 213, 0.65);
+      border-color: rgba(249, 226, 175, 0.6);
       animation: need-pulse 1.6s ease-in-out infinite;
 
-      &::placeholder { color: rgba(148, 226, 213, 0.55); }
+      &::placeholder { color: rgba(249, 226, 175, 0.5); }
     }
   }
 
@@ -121,20 +132,22 @@
     &:hover { color: #a6adc8; }
   }
 
+  // The true accept — same amber candy as the row's Log…, one size up to
+  // match the form's 20px controls.
   .le-save {
+    @include glass.glass-candy((249 226 175), (252 243 222), #f9e2af);
     flex-shrink: 0;
-    background: #94e2d5;
-    color: #1e1e2e;
-    border: none;
-    border-radius: 5px;
+    height: 20px;
+    padding: 0 10px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
     font-family: inherit;
     font-size: 10px;
     font-weight: 700;
-    padding: 0 10px;
-    height: 20px;
     cursor: pointer;
 
-    &:hover:not(:disabled) { background: #7fd6c6; }
+    &:hover:not(:disabled) { --m1: 0.2; --m2: 0.09; --m3: 0.15; }
     &:disabled { opacity: 0.35; cursor: default; }
   }
 }
@@ -144,44 +157,88 @@
 }
 
 @keyframes need-pulse {
-  0%, 100% { border-color: rgba(148, 226, 213, 0.65); }
-  50%      { border-color: rgba(148, 226, 213, 0.25); }
+  0%, 100% { border-color: rgba(249, 226, 175, 0.6); }
+  50%      { border-color: rgba(249, 226, 175, 0.22); }
 }
 
-// Ticket chip in the suggestion species' own colour — it turns mauve only
-// after acceptance, when the entry materializes in the history.
+// Ticket badge. Resolved: the session badges' candy with the light switched
+// off — low dye densities, muted ink — so it cannot read as already-logged;
+// the lit amber star in the indicator slot carries the signal instead.
 .chip {
   justify-self: start;
-  color: rgba(148, 226, 213, 0.6);
-  background: rgba(148, 226, 213, 0.07);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
   font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 4px;
+  padding: 0 7px;
+  border-radius: 7px;
   white-space: nowrap;
 
-  // Learned ticket (resolver hit) — a static teal badge, not a control;
-  // accepting is ✓ / dblclick.
   &.key {
-    border: 1px solid transparent;
+    @include glass.glass-candy((205 214 244), (228 233 250), #8b90ab);
+    --m1: 0.08;
+    --m2: 0.03;
+    --m3: 0.06;
+    --eg: 0.12;
+    --ec: 0.14;
+    --pool: 0.1;
   }
 
-  // No ticket resolved yet — a dashed neutral placeholder; clicking it is
-  // the "pick a ticket" affordance (opens the accept flow, same as ✓).
+  // No ticket resolved yet — a dashed neutral placeholder with a smouldering
+  // star; clicking it is the ONLY entry into the accept ladder (pick the
+  // ticket first, the form follows).
   &.ask {
     font: inherit;
     color: #6c7086;
     background: transparent;
     border: 1px dashed #45475a;
-    padding: 0 8px;
+    padding: 0 8px 0 6px;
     font-weight: 400;
     cursor: pointer;
     transition: color 0.15s ease, border-color 0.15s ease;
 
     &:hover:not(:disabled) {
-      color: rgba(148, 226, 213, 0.75);
-      border-color: rgba(148, 226, 213, 0.45);
+      color: #a6adc8;
+      border-color: #565973;
     }
   }
+}
+
+// Indicator slot inside the badge (session-lamp parity), riding above the
+// candy's front blik.
+.k-ind {
+  position: relative;
+  z-index: 3;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  flex-shrink: 0;
+
+  .k-spark {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+  }
+}
+
+// The amber candidate star: lit on resolved rows, smouldering (dim + slow
+// opacity breathing, compositor-only) while the ticket is unknown.
+.k-spark {
+  display: block;
+  color: #f9e2af;
+  filter: drop-shadow(0 0 3px rgba(249, 226, 175, 0.75)) drop-shadow(0 0 6px rgba(249, 226, 175, 0.3));
+
+  &.dim {
+    color: rgba(249, 226, 175, 0.55);
+    filter: drop-shadow(0 0 1px rgba(249, 226, 175, 0.3));
+    animation: spark-tw 4s ease-in-out infinite;
+  }
+}
+
+@keyframes spark-tw {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 
 // Title — a long tail fades out, same mask as the history rows' name.
@@ -201,7 +258,7 @@
 // (the logged-edit rule).
 .s-dur {
   justify-self: end;
-  color: rgba(148, 226, 213, 0.55);
+  color: #7f849c;
   font-weight: 700;
   white-space: nowrap;
   padding: 0 5px;
@@ -212,7 +269,7 @@
     width: 64px;
     height: 17px;
     background: transparent;
-    color: #94e2d5;
+    color: #f9e2af;
     font-family: inherit;
     font-size: 11px;
     text-align: right;
@@ -220,18 +277,10 @@
   }
 }
 
-// Static teal dot — the meeting is happening right now (born at DTSTART).
-.live-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  margin-right: 6px;
-  margin-bottom: 1px;
-  background: #94e2d5;
-  box-shadow: 0 0 5px rgba(148, 226, 213, 0.8);
-}
-
+// When. Ongoing meetings: the calendar guarantees the start, the end is
+// only a plan — so the slot shows "15:00→live", compressed (no spaces)
+// to hold the fixed 74px column; the arrow and word sit a halftone
+// lighter than the base time ink.
 .s-when {
   min-width: 0;
   overflow: hidden;
@@ -239,63 +288,63 @@
   color: #565973;
   font-size: 10.5px;
 
-  &.live { color: rgba(148, 226, 213, 0.75); }
+  .ar {
+    color: #7f849c;
+    margin: 0 2px;
+  }
+
+  .lv { color: #7f849c; }
 }
 
-// Origin marker rhymes with the session-born rows: their commit glyph says
-// "tracking made this", the teal spark says "the tracker offers this".
+// Origin — a plain word (meeting / review); the star signal lives in the
+// badge now, the source line stays quiet.
 .s-src {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   color: #565973;
   font-size: 10px;
-
-  .spark {
-    flex-shrink: 0;
-    color: rgba(148, 226, 213, 0.5);
-    transition: color 0.15s ease;
-  }
 }
 
 .s-act {
   justify-self: end;
   display: flex;
-  gap: 5px;
+  align-items: center;
+  gap: 8px;
 }
 
-.btn {
-  width: 24px;
+// Deny — a bare link whisper, red only when aimed at.
+.lnk-deny {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: #565973;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.15s ease;
+
+  &:hover:not(:disabled) { color: #f38ba8; }
+  &:disabled { opacity: 0.35; cursor: default; }
+}
+
+// Log… — ＋Log's junior sibling in candidate amber; the ellipsis honestly
+// promises the form. Hover raises the dye density, nothing moves.
+.btn-log {
+  @include glass.glass-candy((249 226 175), (252 243 222), #f9e2af);
   height: 18px;
+  padding: 0 9px;
+  border-radius: 7px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  border: 1px solid #313244;
-  background: #11111b;
-  padding: 0;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
 
-  svg { display: block; }
-
-  &.ok {
-    border-color: rgba(148, 226, 213, 0.25);
-    opacity: 0.75;
-    cursor: pointer;
-
-    &:hover:not(:disabled) { background: rgba(148, 226, 213, 0.1); }
-  }
-
-  &.no {
-    opacity: 0.75;
-    cursor: pointer;
-
-    &:hover:not(:disabled) { background: rgba(243, 139, 168, 0.1); }
-  }
-
-  &:disabled { opacity: 0.35; cursor: default; }
+  &:hover:not(:disabled) { --m1: 0.2; --m2: 0.09; --m3: 0.15; }
+  &:disabled { opacity: 0.5; cursor: default; }
 }

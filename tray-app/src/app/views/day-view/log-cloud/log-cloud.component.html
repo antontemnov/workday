@@ -25,7 +25,8 @@
 <div class="cloud-body">
   <div class="cloud-chips">
     <!-- Learned-ticket conflict (accept mode) — the same meeting title was
-         logged to different tickets before; teal species, pick to resolve. -->
+         logged to different tickets before; grey candidate chips with the
+         amber star, pick to resolve. -->
     <ng-container *ngIf="isAcceptMode && acceptCandidates.length > 0">
       <span class="row-label sugg">✦ previously logged as</span>
       <!-- Key + Jira summary; the learned activity silently prefills the form
@@ -35,7 +36,7 @@
             *ngFor="let c of acceptCandidates; let i = index"
             [style.animation-delay]="chipDelay(i)"
             (click)="pickCandidate(c)">
-        <span class="f-spark">✦</span>
+        <svg class="f-spark" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg>
         <span class="f-task">{{ c.task }}</span>
         <span class="f-name" *ngIf="candidateName(c)">{{ candidateName(c) }}</span>
       </span>
