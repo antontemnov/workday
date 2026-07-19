@@ -242,6 +242,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     this.acceptTarget = s;
     if (from) {
       this.acceptAnchor = from;
+      this.cloudSide = 'below';
       const host = this.hostEl.nativeElement.getBoundingClientRect();
       this.overlayTop = from.bottom - host.top + 2;
       this.cloudOrigin = '24px 0';
@@ -255,6 +256,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   }
 
   private acceptAnchor: DOMRect | null = null;
+  private cloudSide: 'below' | 'above' = 'below';
   private cloudResize?: ResizeObserver;
 
   private watchCloudSize(): void {
@@ -274,24 +276,33 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // screen edge — the sharp anchor row stays visible below, and further
   // growth pushes the top edge up, not the bottom onto the row); when
   // neither side fits, just clamp inside the view below the sticky header.
+  // The side is STICKY per open: Jira result sets shrink and grow with
+  // every filter keystroke, and a stateless choice would bounce the panel
+  // across the row — once above, it stays above until the picker closes.
   private placeCloud(cloud: HTMLElement): void {
     const from = this.acceptAnchor!;
     const host = this.hostEl.nativeElement.getBoundingClientRect();
     const headTop = this.headHeight() + 6;
     const h = cloud.offsetHeight;
     const anchor = from.bottom - host.top + 2;
-    if (anchor + h <= host.height - 8) {
-      this.overlayTop = anchor;
-      this.cloudOrigin = '24px 0';
+
+    if (this.cloudSide === 'below'
+        && anchor + h > host.height - 8
+        && from.top - host.top - h - 2 >= headTop) {
+      this.cloudSide = 'above';
+    }
+
+    if (this.cloudSide === 'above') {
+      // Bottom pinned to the row; a panel too tall for the slot spills past
+      // it — the only honest option left.
+      this.overlayTop = Math.max(headTop, from.top - host.top - h - 2);
+      this.cloudOrigin = '24px 100%';
       return;
     }
-    const above = from.top - host.top - h - 2;
-    if (above >= headTop) {
-      this.overlayTop = above;
-      this.cloudOrigin = '24px 100%';
-    } else {
-      this.overlayTop = Math.max(headTop, host.height - h - 8);
-    }
+    this.overlayTop = anchor + h <= host.height - 8
+      ? anchor
+      : Math.max(headTop, host.height - h - 8); // tiny-window fallback
+    this.cloudOrigin = '24px 0';
   }
 
   closeCloud(): void {
