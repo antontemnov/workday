@@ -265,6 +265,16 @@ export class DayViewComponent implements OnChanges {
     return this.suggestionPick?.key === `${s.uid}:${s.date}` ? this.suggestionPick.pick : null;
   }
 
+  // The row the picker opened for stays sharp above the cloud backdrop —
+  // its offer IS the context of the choice. Keyed (not by reference): polls
+  // swap the objects while the cloud is open.
+  isCloudAnchor(s: Suggestion): boolean {
+    return this.cloudOpen
+      && this.acceptTarget !== null
+      && this.acceptTarget.uid === s.uid
+      && this.acceptTarget.date === s.date;
+  }
+
   onAcceptPicked(pick: SuggestionPick): void {
     const target = this.acceptTarget;
     this.closeCloud();

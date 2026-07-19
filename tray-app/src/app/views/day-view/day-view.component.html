@@ -55,6 +55,7 @@
   <!-- Suggested — graphite blueprint offers under the live cards; never counted anywhere -->
   <app-suggestion-row
     *ngFor="let g of suggestions; trackBy: trackBySuggestion"
+    [class.cloud-anchor]="isCloudAnchor(g)"
     [suggestion]="g"
     [actionPending]="actionPending"
     [activityTypes]="activityTypes"

@@ -4,6 +4,16 @@
   display: block;
 }
 
+// While the accept picker is open for this row it rises above the cloud
+// backdrop (same z as the panel, DOM order keeps the panel on top) and
+// stays sharp — the offer is the context of the choice. Pointer-events
+// fall through: a click on the row is a click past the picker (dismiss).
+:host(.cloud-anchor) {
+  position: relative;
+  z-index: 31;
+  pointer-events: none;
+}
+
 // Blueprint material — an offer is a drawing of a record, not the record:
 // dashed contour + faint diagonal hatch on a colourless graphite body.
 // Colour = matter in the feed (green session, mauve log); a candidate has
