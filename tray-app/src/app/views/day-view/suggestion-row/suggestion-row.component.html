@@ -1,4 +1,4 @@
-<div class="sug2" [class.editing]="editing" (dblclick)="accept()" (contextmenu)="onContextMenu($event)">
+<div class="sug2" [class.editing]="editing" [class.denying]="denying" (dblclick)="accept()" (contextmenu)="onContextMenu($event)">
   <div class="r-l1">
     <!-- The amber star IS the candidate signal, living in the badge's
          indicator slot (session-lamp parity): lit on resolved, smouldering

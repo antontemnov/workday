@@ -36,6 +36,26 @@
 
     .s-title { color: #a6adc8; }
   }
+
+  // The collapse below animates max-height, which only interpolates from a
+  // real value — `none → 0` snaps (the logged rows' lesson, logged-panel:31).
+  &:not(.denying) { max-height: 48px; }
+}
+
+// Deny: collapse and leave — the offer exits the feed exactly like a logged
+// row under delete (logged-panel .log-row2.removing). max-height covers both
+// bands; the transition mirrors the logged timing.
+.sug2.denying {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease, margin 0.22s ease;
 }
 
 // The same two bands on the shared grid as every feed record.

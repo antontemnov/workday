@@ -1,4 +1,4 @@
-import { Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityType, DEVELOPMENT_ACTIVITY, ManualEntryInput, Suggestion } from '../../../models/workday.models';
@@ -8,6 +8,10 @@ import { DurationInputDirective } from '../duration-field/duration-input.directi
 
 // Mirrors the daemon's accept default (DEFAULT_MANUAL_ACTIVITY).
 const ACCEPT_ACTIVITY = 'Other';
+
+// Deny collapses the row before it reports up — same gesture as a logged
+// row's delete (logged-panel REMOVE_ANIM_MS). Keep the two in step.
+const DENY_ANIM_MS = 240;
 
 // A ticket chosen in the log cloud's accept-picker — flows back into the row
 // and opens its inline form. A fresh object per pick (reference change is the
@@ -52,7 +56,7 @@ export interface SuggestionAcceptEvent {
   templateUrl: './suggestion-row.component.html',
   styleUrl: './suggestion-row.component.scss',
 })
-export class SuggestionRowComponent implements OnChanges {
+export class SuggestionRowComponent implements OnChanges, OnDestroy {
   @Input({ required: true }) suggestion!: Suggestion;
   @Input() actionPending = false;
   @Input() activityTypes: readonly ActivityType[] = [];
@@ -74,6 +78,9 @@ export class SuggestionRowComponent implements OnChanges {
   editMinutes = 0;
   editActivity = '';
   editDescription = '';
+  // Row is collapsing after a Deny — held until the parent's refresh drops it.
+  denying = false;
+  private denyTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor(private host: ElementRef<HTMLElement>) {}
 
@@ -89,6 +96,16 @@ export class SuggestionRowComponent implements OnChanges {
     const pick = changes['picked'];
     if (pick && !pick.firstChange && this.picked) {
       this.openEdit(this.picked.task, this.picked.activity);
+    }
+  }
+
+  ngOnDestroy(): void {
+    // Torn down mid-collapse (tab switch): the Deny was the user's intent, so
+    // commit it now instead of dropping it — mirrors the logged delete.
+    if (this.denyTimer) {
+      clearTimeout(this.denyTimer);
+      this.denyTimer = null;
+      this.dismissed.emit();
     }
   }
 
@@ -121,15 +138,19 @@ export class SuggestionRowComponent implements OnChanges {
   // Log… / dblclick: resolved rows morph into the form right away,
   // unresolved ones go pick a ticket first.
   accept(): void {
-    if (this.actionPending || this.editing) return;
+    if (this.actionPending || this.editing || this.denying) return;
     const r = this.suggestion.resolved;
     if (r) this.openEdit(r.task, r.activity, r.description);
     else this.pickRequested.emit(this.host.nativeElement.getBoundingClientRect());
   }
 
+  // Deny: collapse the row, then report up — the offer leaves the feed the
+  // same way a logged row does under delete. The daemon dismiss (and the
+  // refresh that removes the row for good) fire once the collapse is done.
   dismiss(): void {
-    if (this.actionPending) return;
-    this.dismissed.emit();
+    if (this.actionPending || this.denying) return;
+    this.denying = true;
+    this.denyTimer = setTimeout(() => this.dismissed.emit(), DENY_ANIM_MS);
   }
 
   // Right-click: the full action set (logged-row parity), mute picks its
@@ -139,7 +160,7 @@ export class SuggestionRowComponent implements OnChanges {
   onContextMenu(ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
-    if (this.editing || this.actionPending) return;
+    if (this.editing || this.actionPending || this.denying) return;
     this.openMainMenu(ev.clientX, ev.clientY);
   }
 
