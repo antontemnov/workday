@@ -2,6 +2,7 @@ import { Component, HostListener, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WorkdayApiService } from './services/workday-api.service';
 import { NotificationDeliveryService } from './services/notification-delivery.service';
 import {
@@ -54,6 +55,10 @@ interface WeekdayNavCell {
 export class AppComponent implements OnInit, OnDestroy {
   // ─── View routing (signal-style state via plain field for now) ─────────
   activeView: ActiveView = 'day';
+
+  // Custom titlebar: the header's close glyph exists only inside the Tauri
+  // webview — browser dev mode has no window to close.
+  readonly isTauri: boolean = '__TAURI_INTERNALS__' in window;
 
   // ─── Data / lifecycle state ────────────────────────────────────────────
   data: TodayResponse | null = null;
@@ -314,6 +319,15 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     this.loading = false;
     this.syncTrayStatus();
+  }
+
+  // Header close glyph → CloseRequested → Rust hides to tray, never exits.
+  async winClose(): Promise<void> {
+    try {
+      await getCurrentWindow().close();
+    } catch {
+      // Outside Tauri webview — nothing to close.
+    }
   }
 
   // ─── View switching ─────────────────────────────────────────────────────

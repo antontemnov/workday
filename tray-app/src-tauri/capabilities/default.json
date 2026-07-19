@@ -5,6 +5,9 @@
   "windows": ["main", "toast"],
   "permissions": [
     "core:default",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:deny-internal-toggle-maximize",
     "shell:allow-spawn",
     "shell:allow-stdin-write",
     "shell:allow-kill",

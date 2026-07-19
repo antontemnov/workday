@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>custom titlebar lab — merged header + window controls</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    background: #11111b;
+    color: #d4d4d4;
+    font-size: 12px;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  h1 { font-size: 13px; color: #cdd6f4; font-weight: 700; }
+  .sub { color: #6c7086; font-size: 11px; max-width: 560px; text-align: center; line-height: 1.5; }
+
+  /* ── lab controls ─────────────────────────────────────────────── */
+  .controls {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    background: #181825;
+    border: 1px solid #26263a;
+    border-radius: 8px;
+    padding: 12px 18px;
+  }
+  .ctl-group { display: flex; flex-direction: column; gap: 6px; }
+  .ctl-group > .ctl-title { color: #6c7086; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .ctl-group label { display: flex; align-items: center; gap: 6px; color: #9399b2; cursor: pointer; font-size: 11px; }
+  .ctl-group label:hover { color: #cdd6f4; }
+  .ctl-group input { accent-color: #f9e2af; }
+
+  /* ── window mock ──────────────────────────────────────────────── */
+  .win {
+    width: 500px;
+    background: #1e1e2e;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(205,214,244,0.07);
+    user-select: none;
+  }
+
+  /* header: weekday-grid · spacer · view-switcher · [divider] win-controls */
+  .header {
+    display: flex;
+    align-items: center;
+    padding: 0 0 0 12px;
+    height: 32px;
+    background: #181825;
+    border-bottom: 1px solid #26263a;
+    position: relative;
+  }
+  .win.h29 .header { height: 29px; }
+
+  .weekday-grid { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; margin-left: -5px; }
+  .weekday-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
+  .wd-letter {
+    display: inline-flex; align-items: flex-end; justify-content: center;
+    width: 16px; height: 13px; border-radius: 4px; padding-bottom: 1px;
+    font-size: 10px; font-weight: 600; line-height: 1; color: #3a3b50;
+  }
+  .wd-dot { width: 3px; height: 3px; border-radius: 50%; background: transparent; }
+  .weekday-cell.worked .wd-letter { color: #9399b2; background: rgba(147,153,178,0.10); }
+  .weekday-cell.today  .wd-letter { color: #cdd6f4; }
+  .weekday-cell.today  .wd-dot   { background: #f9e2af; }
+
+  .view-switcher { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; position: relative; z-index: 2; }
+  /* active tab = bright icon only, no amber dot — icons sit on one baseline
+     with the close button */
+  .view-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: none; color: #585b70; cursor: pointer; padding: 0;
+    transition: color 0.15s ease;
+  }
+  .view-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .view-btn:hover:not(.active) { color: #9399b2; }
+  .view-btn.active { color: #cdd6f4; }
+
+  /* ── window controls ─────────────────────────────────────────── */
+  .wc-divider {
+    width: 1px; height: 14px; background: #26263a;
+    margin: 0 6px 0 12px; flex-shrink: 0;
+  }
+  .win-controls { display: inline-flex; align-self: stretch; position: relative; z-index: 2; }
+  .wc-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; align-self: stretch;
+    background: transparent; border: none; color: #585b70; cursor: pointer; padding: 0;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .wc-btn svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1.3; stroke-linecap: round; }
+  .wc-btn:hover { color: #cdd6f4; background: rgba(205,214,244,0.06); }
+  .wc-btn.wc-close:hover { color: #f38ba8; background: rgba(243,139,168,0.13); }
+  .wc-btn.forced-hover { color: #cdd6f4; background: rgba(205,214,244,0.06); }
+  .wc-btn.wc-close.forced-hover { color: #f38ba8; background: rgba(243,139,168,0.13); }
+
+  /* windows-standard style variant */
+  .win.style-winstd .wc-divider { display: none; }
+  .win.style-winstd .wc-btn { width: 44px; }
+  .win.style-winstd .wc-btn:hover { color: #cdd6f4; background: rgba(255,255,255,0.08); }
+  .win.style-winstd .wc-btn.wc-close:hover { color: #ffffff; background: #e81123; }
+  .win.style-winstd .wc-btn.forced-hover { color: #cdd6f4; background: rgba(255,255,255,0.08); }
+  .win.style-winstd .wc-btn.wc-close.forced-hover { color: #ffffff; background: #e81123; }
+
+  /* button-set variants */
+  .win.set-a .wc-max { display: none; }
+  .win.set-c .wc-max, .win.set-c .wc-min { display: none; }
+
+  /* ── layout variants ─────────────────────────────────────────── */
+  /* base order: weekday-grid(1) · view-switcher(2, ml:auto) · divider(3) · controls(4) */
+  .weekday-grid { order: 1; }
+  .view-switcher { order: 2; }
+  .wc-divider { order: 3; }
+  .win-controls { order: 4; }
+
+  /* B: меню слева · дни по центру */
+  .win.layout-b .view-switcher { order: 1; margin-left: 0; }
+  .win.layout-b .weekday-grid { order: 2; margin-left: auto; margin-right: auto; }
+
+  /* C: меню слева · дни справа (перед кнопкой окна) */
+  .win.layout-c .view-switcher { order: 1; margin-left: 0; }
+  .win.layout-c .weekday-grid { order: 2; margin-left: auto; }
+
+  /* ── drag-zone overlay ───────────────────────────────────────── */
+  .drag-overlay {
+    position: absolute; inset: 0; pointer-events: none; display: none;
+    background: repeating-linear-gradient(45deg,
+      rgba(249,226,175,0.10) 0 4px, transparent 4px 8px);
+    outline: 1px dashed rgba(249,226,175,0.35);
+    outline-offset: -1px;
+  }
+  /* interactive zones punched out of the overlay (visual only) */
+  .drag-hole {
+    position: absolute; top: 0; bottom: 0; display: none;
+    background: #181825;
+    border-bottom: 1px solid #26263a;
+  }
+  .win.show-drag .drag-overlay { display: block; }
+  .win.show-drag .drag-hole { display: block; }
+
+  /* ── body mock (day view hint) ───────────────────────────────── */
+  .day-head {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 10px 12px 8px;
+  }
+  .dh-date { color: #cdd6f4; font-size: 13px; font-weight: 700; }
+  .dh-sub  { color: #6c7086; font-size: 11px; }
+  .dh-log {
+    margin-left: auto; color: #f9e2af; border: 1px solid rgba(249,226,175,0.35);
+    border-radius: 10px; padding: 1px 9px 2px; font-size: 11px; cursor: pointer;
+  }
+  .mock-rows { padding: 0 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .mock-row { height: 26px; border-radius: 5px; background: rgba(147,153,178,0.05); }
+  .mock-row.short { width: 72%; }
+
+  .cap { color: #45475a; font-size: 10px; margin-top: -14px; }
+
+  /* hover-states strip */
+  .states { display: flex; gap: 18px; align-items: center; }
+  .states .chip {
+    display: flex; align-items: center; gap: 8px;
+    background: #181825; border: 1px solid #26263a; border-radius: 6px;
+    padding: 6px 10px;
+  }
+  .states .lbl { color: #6c7086; font-size: 10px; }
+  .states .mini { display: inline-flex; height: 32px; background: #181825; }
+</style>
+</head>
+<body>
+
+<h1>custom titlebar — слитая полоса: app-header + window controls</h1>
+<div class="sub">
+  Нативный Windows-титлбар уходит; кнопка закрытия встраивается в правый край
+  app-хедера (закрытие = в трей). Иконки вкладок без янтарной точки — одна базовая
+  линия с крестиком. Штриховка = drag-зона (тащится окно).
+</div>
+
+<div class="controls">
+  <div class="ctl-group">
+    <div class="ctl-title">Раскладка</div>
+    <label><input type="radio" name="layout" value="a" checked> дни слева · меню справа (тек.)</label>
+    <label><input type="radio" name="layout" value="b"> меню слева · дни по центру</label>
+    <label><input type="radio" name="layout" value="c"> меню слева · дни справа</label>
+  </div>
+  <div class="ctl-group">
+    <div class="ctl-title">Набор кнопок</div>
+    <label><input type="radio" name="set" value="a"> A — свернуть + закрыть</label>
+    <label><input type="radio" name="set" value="b"> B — min + max + close</label>
+    <label><input type="radio" name="set" value="c" checked> C — только закрыть ✓</label>
+  </div>
+  <div class="ctl-group">
+    <div class="ctl-title">Стиль кнопок</div>
+    <label><input type="radio" name="style" value="tone" checked> минимал в тон ✓</label>
+    <label><input type="radio" name="style" value="winstd"> Windows-стандарт 44px</label>
+  </div>
+  <div class="ctl-group">
+    <div class="ctl-title">Высота полосы</div>
+    <label><input type="radio" name="h" value="32"> 32px</label>
+    <label><input type="radio" name="h" value="29" checked> 29px ✓</label>
+  </div>
+  <div class="ctl-group">
+    <div class="ctl-title">Отладка</div>
+    <label><input type="checkbox" id="dragToggle"> показать drag-зону</label>
+  </div>
+</div>
+
+<div class="win set-c h29" id="winMock">
+  <header class="header" id="hdr">
+    <div class="drag-overlay"></div>
+    <div class="weekday-grid">
+      <span class="weekday-cell worked"><span class="wd-letter">M</span><span class="wd-dot"></span></span>
+      <span class="weekday-cell worked"><span class="wd-letter">T</span><span class="wd-dot"></span></span>
+      <span class="weekday-cell worked"><span class="wd-letter">W</span><span class="wd-dot"></span></span>
+      <span class="weekday-cell worked"><span class="wd-letter">T</span><span class="wd-dot"></span></span>
+      <span class="weekday-cell worked"><span class="wd-letter">F</span><span class="wd-dot"></span></span>
+      <span class="weekday-cell today"><span class="wd-letter">S</span><span class="wd-dot"></span></span>
+      <span class="weekday-cell"><span class="wd-letter">S</span><span class="wd-dot"></span></span>
+    </div>
+    <div class="view-switcher" id="vsw">
+      <button class="view-btn active" title="Day">
+        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+      </button>
+      <button class="view-btn" title="Timesheets">
+        <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+      </button>
+      <button class="view-btn" title="Settings">
+        <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+      </button>
+    </div>
+    <span class="wc-divider"></span>
+    <div class="win-controls" id="wc">
+      <button class="wc-btn wc-min" title="Minimize to tray">
+        <svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg>
+      </button>
+      <button class="wc-btn wc-max" title="Maximize">
+        <svg viewBox="0 0 10 10"><rect x="1.4" y="1.4" width="7.2" height="7.2" rx="1"/></svg>
+      </button>
+      <button class="wc-btn wc-close" title="Close to tray">
+        <svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg>
+      </button>
+    </div>
+    <div class="drag-hole" id="holeVsw"></div>
+    <div class="drag-hole" id="holeWc"></div>
+  </header>
+
+  <div class="day-head">
+    <span class="dh-date">19 July 2026</span>
+    <span class="dh-sub">Saturday</span>
+    <span class="dh-log">＋ Log</span>
+  </div>
+  <div class="mock-rows">
+    <div class="mock-row"></div>
+    <div class="mock-row short"></div>
+    <div class="mock-row"></div>
+  </div>
+</div>
+<div class="cap">окно 500px · ярус 1 (нативный) удалён · weekday-полоска и пустое место = drag</div>
+
+<div class="states">
+  <div class="chip">
+    <span class="lbl">hover min</span>
+    <span class="mini"><button class="wc-btn forced-hover"><svg viewBox="0 0 10 10" width="10" height="10" style="stroke:currentColor;fill:none;stroke-width:1.3;stroke-linecap:round"><path d="M1 5.5h8"/></svg></button></span>
+  </div>
+  <div class="chip">
+    <span class="lbl">hover close (тон)</span>
+    <span class="mini"><button class="wc-btn wc-close forced-hover"><svg viewBox="0 0 10 10" width="10" height="10" style="stroke:currentColor;fill:none;stroke-width:1.3;stroke-linecap:round"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></button></span>
+  </div>
+  <div class="chip" style="position:relative">
+    <span class="lbl">hover close (win-std)</span>
+    <span class="mini" style="width:44px"><button class="wc-btn wc-close forced-hover" style="width:44px;color:#fff;background:#e81123"><svg viewBox="0 0 10 10" width="10" height="10" style="stroke:currentColor;fill:none;stroke-width:1.3;stroke-linecap:round"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></button></span>
+  </div>
+</div>
+
+<script>
+  const win = document.getElementById('winMock');
+  const hdr = document.getElementById('hdr');
+
+  function apply() {
+    const set = document.querySelector('input[name="set"]:checked').value;
+    const style = document.querySelector('input[name="style"]:checked').value;
+    const h = document.querySelector('input[name="h"]:checked').value;
+    const layout = document.querySelector('input[name="layout"]:checked').value;
+    win.classList.toggle('layout-b', layout === 'b');
+    win.classList.toggle('layout-c', layout === 'c');
+    win.classList.toggle('set-a', set === 'a');
+    win.classList.toggle('set-b', set === 'b');
+    win.classList.toggle('set-c', set === 'c');
+    win.classList.toggle('style-winstd', style === 'winstd');
+    win.classList.toggle('h29', h === '29');
+    win.classList.toggle('show-drag', document.getElementById('dragToggle').checked);
+    positionHoles();
+  }
+
+  // Punch visual holes in the drag overlay over interactive zones
+  // (view-switcher and win-controls stay clickable, not draggable).
+  function positionHoles() {
+    const base = hdr.getBoundingClientRect();
+    for (const [el, hole] of [
+      [document.getElementById('vsw'), document.getElementById('holeVsw')],
+      [document.getElementById('wc'),  document.getElementById('holeWc')],
+    ]) {
+      const r = el.getBoundingClientRect();
+      hole.style.left = (r.left - base.left - 4) + 'px';
+      hole.style.width = (r.width + (hole.id === 'holeWc' ? 4 : 8)) + 'px';
+    }
+  }
+
+  document.querySelectorAll('.controls input').forEach(i => i.addEventListener('change', apply));
+  window.addEventListener('resize', positionHoles);
+  apply();
+</script>
+</body>
+</html>
