@@ -60,7 +60,7 @@
     [activityTypes]="activityTypes"
     [activityAllowed]="activityAllowed"
     [picked]="pickFor(g)"
-    (pickRequested)="openCloudForAccept(g)"
+    (pickRequested)="openCloudForAccept(g, $event)"
     (acceptSubmitted)="onSuggestionAccept(g, $event)"
     (dismissed)="onSuggestionDismiss(g)"
     (muteSubmitted)="onSuggestionMute(g, $event)" />
@@ -109,6 +109,7 @@
   [issueSummaries]="suggestionSummaries"
   (acceptPicked)="onAcceptPicked($event)"
   [style.top.px]="overlayTop"
+  [style.transform-origin]="cloudOrigin"
   (chipPicked)="onChipPicked($event)"
   (formSubmitted)="onFormSubmitted($event)"
   (batchSubmitted)="onBatchSubmitted($event)"

@@ -60,8 +60,9 @@ export class SuggestionRowComponent implements OnChanges {
   // Ticket picked for this row in the cloud's accept-picker.
   @Input() picked: SuggestionPick | null = null;
 
-  // Unresolved accept: the parent opens the log cloud as a ticket picker.
-  @Output() pickRequested = new EventEmitter<void>();
+  // Unresolved accept: the parent opens the log cloud as a ticket picker,
+  // anchored under this row (the picker opens where the ladder started).
+  @Output() pickRequested = new EventEmitter<DOMRect>();
   // Inline form submit — the parent turns it into the daemon accept.
   @Output() acceptSubmitted = new EventEmitter<SuggestionAcceptEvent>();
   @Output() dismissed = new EventEmitter<void>();
@@ -123,7 +124,7 @@ export class SuggestionRowComponent implements OnChanges {
     if (this.actionPending || this.editing) return;
     const r = this.suggestion.resolved;
     if (r) this.openEdit(r.task, r.activity, r.description);
-    else this.pickRequested.emit();
+    else this.pickRequested.emit(this.host.nativeElement.getBoundingClientRect());
   }
 
   dismiss(): void {

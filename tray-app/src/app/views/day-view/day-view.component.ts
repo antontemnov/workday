@@ -76,6 +76,9 @@ export class DayViewComponent implements OnChanges {
   @ViewChild(LoggedPanelComponent, { read: ElementRef })
   private historyRef?: ElementRef<HTMLElement>;
 
+  @ViewChild(LogCloudComponent, { read: ElementRef })
+  private cloudRef?: ElementRef<HTMLElement>;
+
   // Mauve flash on the Day total when the logged share changes — server data
   // and local live diffs (draft stepper ticks) both count.
   dayFlash = false;
@@ -85,6 +88,8 @@ export class DayViewComponent implements OnChanges {
   // Uncommitted/unconfirmed panel minutes — keeps the Day total moving in the
   // same instant as the panel Σ while a draft stepper spins.
   liveDiffMinutes = 0;
+
+  public constructor(private hostEl: ElementRef<HTMLElement>) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['data']) this.checkDayFlash();
@@ -200,8 +205,11 @@ export class DayViewComponent implements OnChanges {
   // ─── Log cloud ─────────────────────────────────────────────────────────
 
   cloudOpen = false;
-  // The cloud hangs just below the sticky day header; measured at open time.
+  // The cloud hangs just below the sticky day header (＋Log), or under the
+  // asking suggestion row (accept picker); measured at open time.
   overlayTop = 0;
+  // Accept picker morphs out of its row's left edge, not the ＋Log corner.
+  cloudOrigin: string | null = null;
 
   // Non-null → the cloud is a pure ticket picker for an unresolved meeting
   // suggestion: a pick closes the cloud and flows back into the row, which
@@ -216,14 +224,35 @@ export class DayViewComponent implements OnChanges {
   openCloud(): void {
     if (this.actionPending) return;
     this.acceptTarget = null;
+    this.cloudOrigin = null;
     this.overlayTop = this.headHeight() + 6;
     this.cloudOpen = true;
   }
 
-  openCloudForAccept(s: Suggestion): void {
+  // The picker opens where the ladder started: right under the asking row.
+  // The panel's height depends on its content (candidates, favorites), so the
+  // bottom clamp waits a tick for the render and measures the real box — if
+  // it runs off the view, the panel lifts just enough (menu-style), never
+  // above the sticky header.
+  openCloudForAccept(s: Suggestion, from?: DOMRect): void {
     if (this.actionPending) return;
     this.acceptTarget = s;
-    this.overlayTop = this.headHeight() + 6;
+    const headTop = this.headHeight() + 6;
+    if (from) {
+      const host = this.hostEl.nativeElement.getBoundingClientRect();
+      const anchor = from.bottom - host.top + 2;
+      this.overlayTop = anchor;
+      this.cloudOrigin = '24px 0';
+      setTimeout(() => {
+        const cloud = this.cloudRef?.nativeElement;
+        if (!cloud || !this.cloudOpen) return;
+        const maxTop = host.height - cloud.offsetHeight - 8;
+        if (anchor > maxTop) this.overlayTop = Math.max(headTop, maxTop);
+      });
+    } else {
+      this.overlayTop = headTop;
+      this.cloudOrigin = null;
+    }
     this.cloudOpen = true;
   }
 
