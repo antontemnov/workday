@@ -35,16 +35,6 @@ interface SensitivityPillOption {
   readonly title: string;
 }
 
-// One weekday cell resolved to a concrete date in the current week.
-interface WeekdayNavCell {
-  readonly letter: string;
-  readonly full: string;
-  readonly weekend: boolean;
-  readonly date: string;       // YYYY-MM-DD for this weekday in the current week
-  readonly isToday: boolean;
-  readonly worked: boolean;    // has saved data → highlighted (display-only)
-}
-
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -120,11 +110,6 @@ export class AppComponent implements OnInit, OnDestroy {
   // Toast actions land here: the toast window asks Rust to show main on a view.
   private unlistenNavigate: UnlistenFn | null = null;
 
-  // Worked-day dots on the week strip (display-only, no navigation).
-  private todayDate: string | null = null;
-  private availableDates: string[] = [];
-  private navLoaded = false;
-
   // Tracks daemon reachability across polls. Flips false on any failed call
   // (daemon down, mid-life self-update, apiVersion mismatch) so the next
   // success is recognized as a reconnect → re-pull activity types.
@@ -152,7 +137,6 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.watchAppUpdates();
     void this.watchNavigateEvents();
     this.notifications.start();
-    void this.refreshAvailableDates();
     void this.refreshActivityTypes();
     void this.refreshFavorites();
     this.refresh();
@@ -252,14 +236,6 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async refreshAvailableDates(): Promise<void> {
-    const res = await this.api.getDays();
-    if (res.ok && res.data) {
-      this.availableDates = [...res.data.dates];
-      this.navLoaded = true;
-    }
-  }
-
   // Activity options rarely change — fetch once on load (cached daemon-side).
   private async refreshActivityTypes(): Promise<void> {
     const res = await this.api.getActivityTypes();
@@ -306,13 +282,6 @@ export class AppComponent implements OnInit, OnDestroy {
         void this.refreshActivityTypes();
         void this.refreshFavorites();
       }
-      this.todayDate = res.data.date;
-      if (res.data.sessions.length > 0 && !this.availableDates.includes(res.data.date)) {
-        this.availableDates = [res.data.date, ...this.availableDates].sort().reverse();
-      }
-      if (!this.navLoaded) {
-        void this.refreshAvailableDates();
-      }
     } else {
       this.error = res.error ?? 'Unknown error';
       this.daemonWasReachable = false;
@@ -327,6 +296,17 @@ export class AppComponent implements OnInit, OnDestroy {
       await getCurrentWindow().close();
     } catch {
       // Outside Tauri webview — nothing to close.
+    }
+  }
+
+  // Minimize = straight to tray: direct hide() skips the native minimize
+  // round-trip (no taskbar flicker) and matches what the Resized handler
+  // would do anyway.
+  async winMinimize(): Promise<void> {
+    try {
+      await getCurrentWindow().hide();
+    } catch {
+      // Outside Tauri webview — nothing to hide.
     }
   }
 
@@ -356,46 +336,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  // ─── Header: weekday strip + date display ──────────────────────────────
-
-  /** Full weekday label — shown as the tooltip on the day-grid cell. */
-  get dayWeekdayLabel(): string {
-    const date = this.data?.date ?? this.computeLocalToday();
-    const [y, m, d] = date.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en', { weekday: 'long' });
-  }
-
-  /** Week-day grid (Mon..Sun). */
-  readonly weekdayCells: ReadonlyArray<{ letter: string; full: string; idx: number; weekend: boolean }> = [
-    { letter: 'M', full: 'Monday',    idx: 1, weekend: false },
-    { letter: 'T', full: 'Tuesday',   idx: 2, weekend: false },
-    { letter: 'W', full: 'Wednesday', idx: 3, weekend: false },
-    { letter: 'T', full: 'Thursday',  idx: 4, weekend: false },
-    { letter: 'F', full: 'Friday',    idx: 5, weekend: false },
-    { letter: 'S', full: 'Saturday',  idx: 6, weekend: true  },
-    { letter: 'S', full: 'Sunday',    idx: 0, weekend: true  },
-  ];
-
-  /** Mon..Sun of the current week — worked days highlighted, display-only. */
-  get weekdayNav(): readonly WeekdayNavCell[] {
-    const today = this.todayDate ?? this.computeLocalToday();
-    const monday = this.mondayOf(today);
-    return this.weekdayCells.map((c, i) => {
-      const date = this.addDays(monday, i);
-      return {
-        letter: c.letter,
-        full: c.full,
-        weekend: c.weekend,
-        date,
-        isToday: date === today,
-        worked: this.availableDates.includes(date),
-      };
-    });
-  }
-
-  trackByWeekday(_i: number, c: WeekdayNavCell): string {
-    return c.date;
-  }
+  // ─── Header: date display ──────────────────────────────────────────────
 
   get formattedDate(): string {
     const date = this.data?.date ?? this.computeLocalToday();
@@ -407,22 +348,6 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private computeLocalToday(): string {
     return this.toIso(new Date());
-  }
-
-  // Monday of the week containing dateStr (week runs Mon..Sun to match the grid).
-  private mondayOf(dateStr: string): string {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const dt = new Date(y, m - 1, d);
-    const dow = dt.getDay();                    // 0=Sun..6=Sat
-    dt.setDate(dt.getDate() + (dow === 0 ? -6 : 1 - dow));
-    return this.toIso(dt);
-  }
-
-  private addDays(dateStr: string, n: number): string {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const dt = new Date(y, m - 1, d);
-    dt.setDate(dt.getDate() + n);
-    return this.toIso(dt);
   }
 
   private toIso(dt: Date): string {
@@ -595,9 +520,8 @@ export class AppComponent implements OnInit, OnDestroy {
       setTimeout(() => {
         void this.watchdogTick().finally(() => { this.daemonStarting = false; });
         void this.refresh();
-        void this.refreshAvailableDates();
       }, 2000);
-      setTimeout(() => { void this.refresh(); void this.refreshAvailableDates(); }, 5000);
+      setTimeout(() => { void this.refresh(); }, 5000);
     } catch (e: unknown) {
       this.showToast(e instanceof Error ? e.message : 'Failed to start daemon');
       this.daemonStarting = false;

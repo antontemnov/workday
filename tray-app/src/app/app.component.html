@@ -1,8 +1,7 @@
 <div class="app">
   <!-- Nav row doubles as the window titlebar (decorations:false): view-switcher
-       (left) · weekday-grid (center) · window close (right). Empty space and
-       the display-only weekday strip drag the window; Tauri's drag script
-       checks e.target itself, so every weekday span carries the attribute. -->
+       (left) · empty drag space · minimize + close (right). Both window
+       buttons hide to tray via the existing Rust handlers. -->
   <header class="header" data-tauri-drag-region>
     <div class="view-switcher">
       <button class="view-btn"
@@ -33,29 +32,22 @@
         </svg>
       </button>
     </div>
-    <div class="weekday-grid"
-         *ngIf="data"
-         data-tauri-drag-region
-         [title]="dayWeekdayLabel + ' · ' + data.dayType">
-      <span class="weekday-cell"
-            *ngFor="let c of weekdayNav; trackBy: trackByWeekday"
-            data-tauri-drag-region
-            [class.today]="c.isToday"
-            [class.worked]="c.worked && !c.isToday"
-            [attr.aria-current]="c.isToday ? 'date' : null"
-            [title]="c.full">
-        <span class="wd-letter" data-tauri-drag-region>{{ c.letter }}</span>
-        <span class="wd-dot" data-tauri-drag-region></span>
-      </span>
+    <div class="win-controls" *ngIf="isTauri">
+      <button class="wc-btn"
+              (click)="winMinimize()"
+              aria-label="Minimize to tray">
+        <svg viewBox="0 0 10 10">
+          <path d="M1 5.5h8"/>
+        </svg>
+      </button>
+      <button class="wc-btn wc-close"
+              (click)="winClose()"
+              aria-label="Close to tray">
+        <svg viewBox="0 0 10 10">
+          <path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/>
+        </svg>
+      </button>
     </div>
-    <button class="win-close"
-            *ngIf="isTauri"
-            (click)="winClose()"
-            aria-label="Close to tray">
-      <svg viewBox="0 0 10 10">
-        <path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/>
-      </svg>
-    </button>
   </header>
 
   <!-- App self-update banner: a background check found a new tray version.
