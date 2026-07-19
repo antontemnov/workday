@@ -3,11 +3,12 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Instant;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconEvent,
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
     AppHandle,
     Emitter,
     Manager,
@@ -24,6 +25,13 @@ use tray_icon::TrayStatus;
 /// listening yet when the launch check fires, so the frontend also pulls this
 /// once on init via get_pending_app_update.
 static PENDING_APP_UPDATE: Mutex<Option<String>> = Mutex::new(None);
+
+/// When the main window last lost focus. A left-click on the tray icon
+/// activates the shell's tray window, so the main window may already read as
+/// unfocused by the time we handle the click. Treating a just-lost focus as
+/// "was in front" lets the toggle hide a foreground window instead of only
+/// re-focusing it.
+static LAST_MAIN_BLUR: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// How often the running tray re-checks for its own updates. The old
 /// launch-only check meant a tray that lives for weeks never updated.
@@ -355,7 +363,7 @@ pub fn run() {
                 }
             });
 
-            // Hide window on startup — tray-only until double-click
+            // Hide window on startup — tray-only until the tray icon is clicked
             let window = app.get_webview_window("main").unwrap();
             window.hide().unwrap();
 
@@ -384,31 +392,65 @@ pub fn run() {
                     app_handle.exit(0);
                 } else if event.id() == "show" {
                     let _ = menu_window.show();
+                    let _ = menu_window.unminimize();
                     let _ = menu_window.set_focus();
                 }
             });
 
-            // Tray: double-click → show/hide window
+            // Tray: single left-click toggles the window Telegram-style.
+            // Hidden → show; visible but behind another window → bring to
+            // front; visible and in front → hide. Only the button-up edge
+            // fires (Windows emits both down and up, which would double-toggle).
             let window_clone = window.clone();
             tray.on_tray_icon_event(move |_tray, event| {
-                if let TrayIconEvent::DoubleClick { .. } = event {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
                     let w = &window_clone;
-                    if w.is_visible().unwrap_or(false) {
-                        let _ = w.hide();
-                    } else {
+                    if !w.is_visible().unwrap_or(false) {
                         let _ = w.show();
+                        let _ = w.unminimize();
                         let _ = w.set_focus();
+                    } else {
+                        let focused = w.is_focused().unwrap_or(false);
+                        let last_blur = *LAST_MAIN_BLUR.lock().unwrap();
+                        let recently_focused = last_blur
+                            .map(|t| t.elapsed() < std::time::Duration::from_millis(250))
+                            .unwrap_or(false);
+                        if focused || recently_focused {
+                            let _ = w.hide();
+                        } else {
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
                     }
                 }
             });
 
-            // Close to tray instead of quitting
-            let window_for_close = window.clone();
-            window.on_window_event(move |event| {
-                if let WindowEvent::CloseRequested { api, .. } = event {
+            // Close and minimize both retreat to the tray, never to the
+            // taskbar. There is no dedicated minimize event, so we catch the
+            // resize into a minimized state and hide instead (unminimize first
+            // so the next show restores a normal-sized window). Focus loss is
+            // timestamped for the tray-click toggle above.
+            let window_for_event = window.clone();
+            window.on_window_event(move |event| match event {
+                WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    let _ = window_for_close.hide();
+                    let _ = window_for_event.hide();
                 }
+                WindowEvent::Resized(_) => {
+                    if window_for_event.is_minimized().unwrap_or(false) {
+                        let _ = window_for_event.unminimize();
+                        let _ = window_for_event.hide();
+                    }
+                }
+                WindowEvent::Focused(false) => {
+                    *LAST_MAIN_BLUR.lock().unwrap() = Some(Instant::now());
+                }
+                _ => {}
             });
 
             Ok(())
