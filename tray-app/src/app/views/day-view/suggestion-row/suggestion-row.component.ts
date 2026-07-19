@@ -154,9 +154,7 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
   }
 
   // Right-click: the full action set (logged-row parity), mute picks its
-  // window in a second menu at the same spot. Edit mirrors dblclick, which
-  // opens the inline form directly only on resolved rows — unresolved ones
-  // route through the ticket picker, so they get no Edit entry.
+  // window in a second menu at the same spot.
   onContextMenu(ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
@@ -167,12 +165,10 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
   private openMainMenu(x: number, y: number): void {
     openCtxMenu(x, y, [
       // The ladder speaks honestly here too: only a resolved row can promise
-      // the form (Log…); an unresolved one offers step 1 — picking the ticket.
+      // the form (Log…, = dblclick); an unresolved one offers step 1 —
+      // picking the ticket.
       ...(this.suggestion.resolved
-        ? [
-            { icon: '✎', label: 'Edit', action: (): void => this.accept() },
-            { icon: '✓', label: 'Log…', action: (): void => this.accept() },
-          ]
+        ? [{ icon: '✓', label: 'Log…', action: (): void => this.accept() }]
         : [{ icon: '⌕', label: 'Pick ticket…', action: (): void => this.accept() }]),
       { icon: '✕', label: 'Deny', action: () => this.dismiss() },
       // Review rows have no series to mute — dismiss closes the day.
