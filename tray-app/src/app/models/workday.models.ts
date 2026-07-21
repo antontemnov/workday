@@ -217,6 +217,18 @@ export interface SessionDeleteResponse {
   readonly repo: string;
   readonly task: string | null;
   readonly effectiveDurationMs: number;
+  readonly date: string;                 // day the session lived on (YYYY-MM-DD)
+  readonly dayFileDeleted: boolean;
+  readonly dayWasPushed: boolean;
+}
+
+// Whole tracked block of a ticket removed: sessions + session-born entries.
+export interface TaskDeleteResponse {
+  readonly task: string;
+  readonly date: string;
+  readonly deletedSessions: number;
+  readonly deletedEntries: number;
+  readonly removedMs: number;            // observed session time + manual adds
   readonly dayFileDeleted: boolean;
   readonly dayWasPushed: boolean;
 }

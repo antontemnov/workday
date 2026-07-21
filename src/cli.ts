@@ -30,7 +30,7 @@ import {
   resolveUiDayStart,
   computeTotalManualEntryMs,
 } from './core/daily-log.js';
-import { addEntryOnDate, editEntryOnDate, deleteEntryOnDate } from './core/day-edit.js';
+import { addEntryOnDate, editEntryOnDate, deleteEntryOnDate, deleteSessionOnDate, deleteTaskOnDate } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
 import { recordEntryDeletion } from './push/push-log.js';
@@ -43,6 +43,7 @@ import type {
   StopResponse,
   SensitivityResponse,
   SessionDeleteResponse,
+  TaskDeleteResponse,
   SessionDetail,
   SessionSummary,
   TaskDayReport,
@@ -401,31 +402,53 @@ async function handleSessionDelete(args: string[]): Promise<void> {
 }
 
 function handleSessionDeleteOffline(date: string, target: string): void {
-  const log = readDailyLog(date);
-  if (!log) {
-    console.log(`No data for ${date}`);
+  try {
+    const { deleted, dayFileDeleted, dayWasPushed } = deleteSessionOnDate(date, target);
+    console.log(`Deleted session ${deleted.id} on ${date} — ${deleted.repo} (${deleted.task ?? '—'}), ${formatDuration(computeEffectiveDuration(deleted))} observed`);
+    if (dayFileDeleted) console.log('Day had no other facts — file removed.');
+    if (dayWasPushed) console.log('Day was already pushed — run `workday tempo --push` to re-sync.');
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+// ─── Task delete (whole tracked block) ────────────────────────────────────
+
+async function handleTaskDelete(args: string[]): Promise<void> {
+  // workday task-delete <KEY> [--date YYYY-MM-DD]
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const task = cmdArgs[0];
+  if (!task) {
+    console.log('Usage: workday task-delete <KEY> [--date YYYY-MM-DD]');
     return;
   }
 
-  const session = resolveSessionTarget(log, target);
-  if (!session) {
-    console.log(`Session not found: ${target}`);
+  if (date) {
+    try {
+      const { sessions, entries, dayFileDeleted, dayWasPushed } = deleteTaskOnDate(date, task);
+      const observedMs = sessions.reduce((sum, s) => sum + computeEffectiveDuration(s), 0);
+      console.log(`Deleted ${task} on ${date} — ${sessions.length} session(s) (${formatDuration(observedMs)} observed), ${entries.length} manual add(s)`);
+      if (dayFileDeleted) console.log('Day had no other facts — file removed.');
+      if (dayWasPushed) console.log('Day was already pushed — run `workday tempo --push` to re-sync.');
+    } catch (err) {
+      console.log(err instanceof Error ? err.message : String(err));
+    }
     return;
   }
 
-  const wasPushed = !!log.pushedAt;
-  log.sessions = log.sessions.filter(s => s !== session);
-  console.log(`Deleted session ${session.id} on ${date} — ${session.repo} (${session.task ?? '—'}), ${formatDuration(computeEffectiveDuration(session))} observed`);
-
-  if (isEmptyDayLog(log)) {
-    deleteDailyLog(date);
-    console.log('Day had no other facts — file removed.');
-    return;
-  }
-
-  if (log.status !== DayStatus.Draft) log.status = DayStatus.Draft;
-  writeDailyLog(log);
-  if (wasPushed) console.log('Day was already pushed — run `workday tempo --push` to re-sync.');
+  const result = await apiPost<TaskDeleteResponse>('/api/task/delete', { task });
+  if (!result.ok) { console.log(result.error); return; }
+  const d = result.data!;
+  console.log(`Deleted ${d.task} — ${d.deletedSessions} session(s), ${d.deletedEntries} manual add(s), ${formatDuration(d.removedMs)} total`);
+  if (d.dayFileDeleted) console.log('Day had no other facts — file removed.');
+  if (d.dayWasPushed) console.log('Day was already pushed — run `workday tempo --push` to re-sync.');
 }
 
 // ─── Manual entries ──────────────────────────────────────────────────────
@@ -1603,6 +1626,9 @@ async function main(): Promise<void> {
     case 'session-delete':
       await handleSessionDelete(args.slice(1));
       break;
+    case 'task-delete':
+      await handleTaskDelete(args.slice(1));
+      break;
     case 'day':
       await handleDay(args.slice(1));
       break;
@@ -1690,6 +1716,7 @@ Usage:
   workday sensitivity <level>             Set global default (low|normal|patient|always_on)
   workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
+  workday task-delete <KEY> [--date DATE]              Delete a ticket's tracked block (sessions + manual adds)
   workday log <task> <min> ["<desc>"] [--activity T]   Log manual time (today; desc optional for Development)
   workday log <task> <min> ["<desc>"] --date DATE      Log manual time (past day)
   workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry

@@ -479,6 +479,14 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.runAction(() => this.api.deleteManualEntry(target));
   }
 
+  async submitSessionDelete(target: string): Promise<void> {
+    await this.runAction(() => this.api.deleteSession(target));
+  }
+
+  async submitTaskDelete(task: string): Promise<void> {
+    await this.runAction(() => this.api.deleteTask(task));
+  }
+
   // ─── Favorites (context-menu management) ───────────────────────────────
 
   async submitFavoriteAdd(input: FavoriteInput): Promise<void> {

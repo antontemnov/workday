@@ -19,6 +19,8 @@ import {
   addSessionEntryOnDate,
   editEntryOnDate,
   deleteEntryOnDate,
+  deleteSessionOnDate,
+  deleteTaskOnDate,
 } from '../../src/core/day-edit.js';
 import { ClosedBy, DayStatus, SensitivityLevel, SessionState } from '../../src/core/types.js';
 import type { AppConfig, Session } from '../../src/core/types.js';
@@ -154,6 +156,79 @@ test('addSessionEntryOnDate rejects a session without a task', () => {
 test('mutations on a missing day throw "No data"', () => {
   assert.throws(() => editEntryOnDate('2026-05-20', '#1', { minutes: 10 }, config), /No data for 2026-05-20/);
   assert.throws(() => deleteEntryOnDate('2026-05-21', '#1'), /No data for 2026-05-21/);
+});
+
+console.log('');
+console.log('Day edit — session & task deletes');
+
+test('deleteSessionOnDate removes the session, keeps its session-born adds', () => {
+  const date = '2026-05-10';
+  const log = createEmptyLog(date, config);
+  log.sessions.push(makeSession('ATL-9'));
+  writeDailyLog(log);
+  addSessionEntryOnDate(date, 'sess-1', 25, config);
+
+  const result = deleteSessionOnDate(date, '#1');
+  assert.equal(result.deleted.id, 'sess-1');
+  assert.equal(result.dayFileDeleted, false);
+  const disk = readDailyLog(date)!;
+  assert.equal(disk.sessions.length, 0);
+  // manual time is user intent — it survives the machine record's deletion
+  assert.equal(disk.manualEntries.length, 1);
+  assert.equal(disk.manualEntries[0].sourceSessionId, 'sess-1');
+});
+
+test('deleteSessionOnDate removes the file with the last fact', () => {
+  const date = '2026-05-11';
+  const log = createEmptyLog(date, config);
+  log.sessions.push(makeSession('ATL-9'));
+  writeDailyLog(log);
+
+  const result = deleteSessionOnDate(date, 'sess-1');
+  assert.equal(result.dayFileDeleted, true);
+  assert.equal(existsSync(getDailyLogPath(date)), false);
+});
+
+test('deleteSessionOnDate keeps a pushed day file and unseals to Draft', () => {
+  const date = '2026-05-12';
+  const log = createEmptyLog(date, config);
+  log.sessions.push(makeSession('ATL-9'));
+  log.status = DayStatus.Pushed;
+  log.pushedAt = '2026-05-12T18:00:00.000Z';
+  writeDailyLog(log);
+
+  const result = deleteSessionOnDate(date, 'sess-1');
+  assert.equal(result.dayFileDeleted, false);
+  assert.equal(result.dayWasPushed, true);
+  const disk = readDailyLog(date)!;
+  assert.equal(disk.sessions.length, 0);
+  assert.equal(disk.status, DayStatus.Draft);
+  assert.equal(disk.pushedAt, '2026-05-12T18:00:00.000Z');
+});
+
+test('deleteTaskOnDate removes the ticket block, standalone entries stay', () => {
+  const date = '2026-05-13';
+  const log = createEmptyLog(date, config);
+  log.sessions.push(makeSession('ATL-9'));
+  writeDailyLog(log);
+  addSessionEntryOnDate(date, 'sess-1', 25, config);
+  addEntryOnDate(date, { task: 'ATL-9', minutes: 30, description: 'Standup', activity: 'Meeting' }, config);
+
+  const result = deleteTaskOnDate(date, 'ATL-9');
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.dayFileDeleted, false);
+  const disk = readDailyLog(date)!;
+  assert.equal(disk.sessions.length, 0);
+  // the standalone entry is its own worklog — the block delete never touches it
+  assert.equal(disk.manualEntries.length, 1);
+  assert.equal(disk.manualEntries[0].description, 'Standup');
+});
+
+test('deleteTaskOnDate with no tracked time throws', () => {
+  const date = '2026-05-14';
+  addEntryOnDate(date, { task: 'ATL-9', minutes: 30, description: 'Standup', activity: 'Meeting' }, config);
+  assert.throws(() => deleteTaskOnDate(date, 'ATL-9'), /No tracked time for ATL-9/);
 });
 
 console.log('');

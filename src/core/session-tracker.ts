@@ -280,6 +280,42 @@ export class SessionTracker {
   }
 
   /**
+   * Delete a ticket's whole tracked block from today: every CLOSED session
+   * on the task plus its session-born ("+ Add time") entries. An open
+   * session stays — it is still being observed, and deleting it would only
+   * re-birth a candidate on the next tick. Standalone manual entries are
+   * separate worklogs and stay.
+   */
+  public deleteTask(task: string): { ok: boolean; error?: string; sessions?: readonly Session[]; entries?: readonly ManualEntry[]; dayFileDeleted?: boolean } {
+    const sessions = this.dailyLog.sessions.filter(s => s.task === task && s.closedBy !== null);
+    const entries = (this.dailyLog.manualEntries ?? []).filter(e => !!e.sourceSessionId && e.task === task);
+    if (sessions.length === 0 && entries.length === 0) {
+      return { ok: false, error: `No tracked time for ${task} today` };
+    }
+
+    this.dailyLog.sessions = this.dailyLog.sessions.filter(s => !(s.task === task && s.closedBy !== null));
+    if (this.dailyLog.manualEntries) {
+      this.dailyLog.manualEntries = this.dailyLog.manualEntries.filter(e => !(e.sourceSessionId && e.task === task));
+    }
+    for (const s of sessions) this.onSessionClosed?.(s.id);
+
+    if (this.dailyLog.sessions.length === 0
+      && (this.dailyLog.manualEntries ?? []).length === 0
+      && (this.dailyLog.reviewCheckouts ?? []).length === 0
+      && !this.dailyLog.pushedAt) {
+      deleteDailyLog(this.dailyLog.date);
+      this.loadedFromDisk = false; // day de-materializes back into a draft
+      return { ok: true, sessions, entries, dayFileDeleted: true };
+    }
+
+    if (this.dailyLog.status !== DayStatus.Draft) {
+      this.dailyLog.status = DayStatus.Draft; // pushed day edited → re-sync on next push
+    }
+    this.flush();
+    return { ok: true, sessions, entries, dayFileDeleted: false };
+  }
+
+  /**
    * "+ Add time" on a session card: a session-born manual entry. Task comes
    * from the session, activity is Development, no description by design.
    */

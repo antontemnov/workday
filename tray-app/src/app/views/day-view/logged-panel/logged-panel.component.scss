@@ -434,10 +434,23 @@
 // in the shared right column. The delete lives in the node itself — hover
 // morphs ⊕ into ✕; while the undo window burns, ↩ takes the phrase's place,
 // then the line collapses.
-.ses-row.man {
+// Delete states shared by both breakdown kinds (session line and manual
+// add): struck endpoints, dimmed node, collapse on removing.
+.ses-row {
   overflow: hidden;
   transition: opacity 0.16s ease, transform 0.2s ease,
               height 0.22s ease, margin 0.22s ease, padding 0.22s ease;
+
+  &.deleted {
+    .rng, .sdur, .s-com, .csep, .plus, .minus { opacity: 0.38; text-decoration: line-through; }
+    .m-act svg { opacity: 0.28; }
+    // With the stats spans swapped for the undo, auto-flow would drift the
+    // duration left — pin it to its column.
+    .sdur { grid-column: 7; grid-row: 1; }
+  }
+}
+
+.ses-row.man {
 
   // Everything explicitly placed: the phrase's span covers cols 3–7, which
   // would otherwise push auto-flowed neighbours into a phantom second row.
@@ -458,11 +471,6 @@
   }
 
   .sdur { grid-column: 7; grid-row: 1; }
-
-  &.deleted {
-    .rng, .sdur { opacity: 0.38; text-decoration: line-through; }
-    .m-act svg { opacity: 0.28; }
-  }
 }
 
 .m-act {
@@ -500,12 +508,21 @@
 }
 
 // Undo window over — the line collapses and leaves (entry-row precedent).
-.trk-detail.open .ses-row.man.removing {
+.trk-detail.open .ses-row.removing {
   opacity: 0;
   height: 0;
   margin-top: 0;
   padding-top: 0;
   border-top-width: 0;
+}
+
+// Whole-card delete: the group row is capped only while it burns, so the
+// removing collapse has a height to transition from (48px cap excludes .ses
+// rows — an open breakdown outgrows it).
+.log-row2.ses.deleted {
+  &:not(.removing) { max-height: 480px; }
+
+  .trk-detail { opacity: 0.38; }
 }
 
 .trk-detail .ses-row:first-child {

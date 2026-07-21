@@ -6,6 +6,7 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   SessionDeleteResponse,
+  TaskDeleteResponse,
   DaysResponse,
   MonthResponse,
   SettingsResponse,
@@ -58,8 +59,12 @@ export abstract class WorkdayApiService {
   // "+ Add time" on a session card → session-born manual entry: the daemon
   // takes the task from the session, activity is Development, no description.
   abstract addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>>;
-  // Review-time cleanup: delete a junk session from the tracked day (no UI yet).
-  abstract deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>>;
+  // Review-time cleanup: delete a closed session. Optional date (YYYY-MM-DD)
+  // for past days (timesheets) — omitted = the currently-tracked day.
+  abstract deleteSession(target: string, date?: string): Promise<ApiResponse<SessionDeleteResponse>>;
+  // Delete a ticket's whole tracked block: closed sessions + session-born
+  // "+ Add time" entries. Standalone manual entries stay.
+  abstract deleteTask(task: string, date?: string): Promise<ApiResponse<TaskDeleteResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
   abstract startDaemon(): Promise<void>;
 

@@ -7,6 +7,7 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   SessionDeleteResponse,
+  TaskDeleteResponse,
   DaysResponse,
   MonthResponse,
   MonthDaySummary,
@@ -100,6 +101,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
       activity: 'Development', createdAt: this.iso(14, 40), sourceSessionId: 's1' },
   ];
   private mockEntrySeq = 6;
+  // Sessions "removed" via deleteSession/deleteTask — filtered out of getToday.
+  private mockDeletedSessionIds = new Set<string>();
 
   private readonly today = (() => {
     const d = new Date();
@@ -344,7 +347,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
   }
 
   async getToday(): Promise<ApiResponse<TodayResponse>> {
-    return { ok: true, data: this.buildToday() };
+    const day = this.buildToday();
+    return { ok: true, data: { ...day, sessions: day.sessions.filter(s => !this.mockDeletedSessionIds.has(s.id)) } };
   }
 
   async getDay(_date: string): Promise<ApiResponse<TodayResponse>> {
@@ -397,10 +401,27 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: this.toEntryResponse(entry) };
   }
 
-  async deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>> {
+  async deleteSession(target: string, _date?: string): Promise<ApiResponse<SessionDeleteResponse>> {
+    await delay(150);
+    this.mockDeletedSessionIds.add(target);
     return {
       ok: true,
       data: { id: target, repo: 'mock', task: null, effectiveDurationMs: 0,
+              date: this.today, dayFileDeleted: false, dayWasPushed: false },
+    };
+  }
+
+  async deleteTask(task: string, _date?: string): Promise<ApiResponse<TaskDeleteResponse>> {
+    await delay(150);
+    for (const s of this.buildToday().sessions) {
+      if (s.task === task && s.closedBy) this.mockDeletedSessionIds.add(s.id);
+    }
+    const entries = this.mockManualEntries.filter(e => e.sourceSessionId && e.task === task);
+    this.mockManualEntries = this.mockManualEntries.filter(e => !(e.sourceSessionId && e.task === task));
+    return {
+      ok: true,
+      data: { task, date: this.today, deletedSessions: 0, deletedEntries: entries.length,
+              removedMs: entries.reduce((sum, e) => sum + e.minutes, 0) * 60_000,
               dayFileDeleted: false, dayWasPushed: false },
     };
   }

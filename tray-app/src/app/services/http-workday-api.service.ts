@@ -10,6 +10,7 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   SessionDeleteResponse,
+  TaskDeleteResponse,
   DaysResponse,
   EXPECTED_API_VERSION,
   MonthResponse,
@@ -184,8 +185,12 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/manual-entry', { sourceSessionId: sessionId, minutes });
   }
 
-  override async deleteSession(target: string): Promise<ApiResponse<SessionDeleteResponse>> {
-    return this.post('/api/session/delete', { target });
+  override async deleteSession(target: string, date?: string): Promise<ApiResponse<SessionDeleteResponse>> {
+    return this.post('/api/session/delete', date ? { target, date } : { target });
+  }
+
+  override async deleteTask(task: string, date?: string): Promise<ApiResponse<TaskDeleteResponse>> {
+    return this.post('/api/task/delete', date ? { task, date } : { task });
   }
 
   override async stop(): Promise<ApiResponse<unknown>> {

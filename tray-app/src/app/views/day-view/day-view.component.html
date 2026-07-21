@@ -99,6 +99,8 @@
     [arriveFrom]="suggestionArrive"
     (patchCommitted)="onPanelPatch($event)"
     (deleteCommitted)="entryDeleteSubmitted.emit($event)"
+    (sessionDeleteCommitted)="sessionDeleteSubmitted.emit($event)"
+    (taskDeleteCommitted)="taskDeleteSubmitted.emit($event)"
     (favoriteAdded)="favoriteAddSubmitted.emit($event)"
     (liveDiffChanged)="onLiveDiff($event)" />
 </div>

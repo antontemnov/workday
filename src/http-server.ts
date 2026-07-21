@@ -22,6 +22,8 @@ import {
   addSessionEntryOnDate,
   editEntryOnDate,
   deleteEntryOnDate,
+  deleteSessionOnDate,
+  deleteTaskOnDate,
 } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import {
@@ -82,6 +84,7 @@ import type {
   StopResponse,
   SensitivityResponse,
   SessionDeleteResponse,
+  TaskDeleteResponse,
   ManualEntry,
   ManualEntryResponse,
   ManualEntryDeleteResponse,
@@ -277,6 +280,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/session/delete') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, this.handleSessionDelete(body));
+      }
+      if (method === 'POST' && path === '/api/task/delete') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleTaskDelete(body));
       }
       if (method === 'POST' && path === '/api/manual-entry') {
         const body = await this.readBody(req);
@@ -766,6 +773,28 @@ export class HttpServer {
   private handleSessionDelete(body: Record<string, unknown>): ApiResponse<SessionDeleteResponse> {
     const target = typeof body.target === 'string' ? body.target : '';
     if (!target) return { ok: false, error: 'Missing target (session index or id)' };
+    const parsed = this.resolveEditDate(body);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+
+    if (parsed.date) {
+      try {
+        const { deleted, dayFileDeleted, dayWasPushed } = deleteSessionOnDate(parsed.date, target);
+        return {
+          ok: true,
+          data: {
+            id: deleted.id,
+            repo: deleted.repo,
+            task: deleted.task,
+            effectiveDurationMs: computeEffectiveDuration(deleted),
+            date: parsed.date,
+            dayFileDeleted,
+            dayWasPushed,
+          },
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
 
     const tracker = this.deps.sessionTracker;
     const wasPushed = tracker.getDailyLog().pushedAt !== null;
@@ -782,6 +811,54 @@ export class HttpServer {
         repo: s.repo,
         task: s.task,
         effectiveDurationMs: computeEffectiveDuration(s),
+        date: tracker.getDailyLog().date,
+        dayFileDeleted: result.dayFileDeleted ?? false,
+        dayWasPushed: wasPushed,
+      },
+    };
+  }
+
+  private handleTaskDelete(body: Record<string, unknown>): ApiResponse<TaskDeleteResponse> {
+    const task = typeof body.task === 'string' ? body.task.trim() : '';
+    if (!task) return { ok: false, error: 'Missing task' };
+    const parsed = this.resolveEditDate(body);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+
+    const removedMs = (sessions: readonly Session[], entries: readonly ManualEntry[]): number =>
+      sessions.reduce((sum, s) => sum + computeEffectiveDuration(s), 0)
+      + entries.reduce((sum, e) => sum + e.minutes, 0) * MS_PER_MINUTE;
+
+    if (parsed.date) {
+      try {
+        const { sessions, entries, dayFileDeleted, dayWasPushed } = deleteTaskOnDate(parsed.date, task);
+        return {
+          ok: true,
+          data: {
+            task, date: parsed.date,
+            deletedSessions: sessions.length,
+            deletedEntries: entries.length,
+            removedMs: removedMs(sessions, entries),
+            dayFileDeleted, dayWasPushed,
+          },
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    const tracker = this.deps.sessionTracker;
+    const wasPushed = tracker.getDailyLog().pushedAt !== null;
+    const result = tracker.deleteTask(task);
+    if (!result.ok || !result.sessions || !result.entries) {
+      return { ok: false, error: result.error };
+    }
+    return {
+      ok: true,
+      data: {
+        task, date: tracker.getDailyLog().date,
+        deletedSessions: result.sessions.length,
+        deletedEntries: result.entries.length,
+        removedMs: removedMs(result.sessions, result.entries),
         dayFileDeleted: result.dayFileDeleted ?? false,
         dayWasPushed: wasPushed,
       },

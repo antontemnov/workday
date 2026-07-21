@@ -95,6 +95,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Fired when the undo window closes — the entry is gone for the user; the
   // parent sends the actual DELETE (undo never re-creates server-side).
   @Output() deleteCommitted = new EventEmitter<string>();
+  // Same contract for a closed session (id) and a whole ticket block (task).
+  @Output() sessionDeleteCommitted = new EventEmitter<string>();
+  @Output() taskDeleteCommitted = new EventEmitter<string>();
   @Output() favoriteAdded = new EventEmitter<FavoriteInput>();
   // Uncommitted + unconfirmed local minutes vs the server data — the parent
   // adds it to the Day total so it moves together with the feed.
@@ -128,6 +131,20 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   removingIds = new Set<string>();
   private hiddenIds = new Set<string>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // Same three-stage pipeline for closed sessions (keyed by session id)...
+  private sesDeleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  sesRemovingIds = new Set<string>();
+  private sesHiddenIds = new Set<string>();
+  private sesRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // ...and for whole ticket blocks (keyed by task): one undo per card.
+  private taskDeleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  removingTasks = new Set<string>();
+  private hiddenTasks = new Set<string>();
+  private taskRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // A card emptied by deleting its last breakdown line: the husk keeps the
+  // feed slot while it folds shut (its rows are already committed deletes).
+  private foldingCards = new Map<string, { group: TrackedGroup; at: string }>();
 
   // Pop pipeline: new static rows (batch / instant) fly in once, staggered.
   // The fresh draft has its own row-in and is skipped.
@@ -172,6 +189,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       if (this.editingId !== null && !this.entries.some(e => e.id === this.editingId)) {
         this.editingId = null; // the edited entry is gone (external change)
       }
+    }
+    if (changes['entries'] || changes['closedSessions']) {
+      this.reconcileTrackedDeletes();
       this.recomputeLive();
     }
   }
@@ -185,9 +205,21 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.deleteCommitted.emit(id);
     }
     this.deleteTimers.clear();
+    for (const [id, timer] of this.sesDeleteTimers) {
+      clearTimeout(timer);
+      this.sessionDeleteCommitted.emit(id);
+    }
+    this.sesDeleteTimers.clear();
+    for (const [task, timer] of this.taskDeleteTimers) {
+      clearTimeout(timer);
+      this.commitTaskDelete(task);
+    }
+    this.taskDeleteTimers.clear();
     if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
     this.pendingTimers.forEach(t => clearTimeout(t));
     this.removeTimers.forEach(t => clearTimeout(t));
+    this.sesRemoveTimers.forEach(t => clearTimeout(t));
+    this.taskRemoveTimers.forEach(t => clearTimeout(t));
     this.popTimers.forEach(t => clearTimeout(t));
   }
 
@@ -272,6 +304,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     for (const group of this.trackedGroups) {
       items.push({ kind: 'group', group, at: this.groupAt(group) });
     }
+    // Folding husks hold their old slot until the collapse finishes.
+    for (const [task, f] of this.foldingCards) {
+      if (!items.some(it => it.kind === 'group' && it.group.task === task)) {
+        items.push({ kind: 'group', group: f.group, at: f.at });
+      }
+    }
     return items.sort((a, b) => b.at.localeCompare(a.at));
   }
 
@@ -293,10 +331,33 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.deleteTimers.has(id) || this.removingIds.has(id) || this.hiddenIds.has(id);
   }
 
+  private sesGone(id: string): boolean {
+    return this.sesDeleteTimers.has(id) || this.sesRemovingIds.has(id) || this.sesHiddenIds.has(id);
+  }
+
+  private taskGone(task: string): boolean {
+    return this.taskDeleteTimers.has(task) || this.removingTasks.has(task) || this.hiddenTasks.has(task);
+  }
+
+  // Pending tracked deletes leave the Day total the moment their undo window
+  // opens: gone sessions' observed time, plus — for a whole-card delete —
+  // the card's session-born adds the entry pipeline isn't already counting.
+  private get goneTrackedMinutes(): number {
+    let ms = 0;
+    for (const s of this.closedSessions) {
+      if (this.sesGone(s.id) || this.taskGone(s.task ?? '—')) ms += s.effectiveDurationMs;
+    }
+    let minutes = ms / 60_000;
+    for (const e of this.entries) {
+      if (e.sourceSessionId && this.taskGone(e.task) && !this.isGoneLocally(e.id)) minutes += e.minutes;
+    }
+    return minutes;
+  }
+
   // Keep the parent's live diff current: local overrides move the Day total
   // in the same instant; confirming refreshes settle the diff back to 0.
   private recomputeLive(): void {
-    const diff = this.displayedSumMinutes - this.rawSumMinutes;
+    const diff = this.displayedSumMinutes - this.rawSumMinutes - this.goneTrackedMinutes;
     if (diff !== this.lastEmittedDiff) {
       this.lastEmittedDiff = diff;
       this.liveDiffChanged.emit(diff);
@@ -420,6 +481,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.removeTimers.delete(id);
       this.hiddenIds.add(id);
       this.deleteCommitted.emit(id);
+      const e = this.entries.find(x => x.id === id);
+      if (e?.sourceSessionId) this.maybeFoldEmptiedCard(e.task);
     }, REMOVE_ANIM_MS));
   }
 
@@ -434,6 +497,38 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       if (!alive.has(id)) {
         clearTimeout(timer);
         this.deleteTimers.delete(id);
+      }
+    }
+  }
+
+  // Same catch-up for the session and card pipelines: a session id gone from
+  // the data (our DELETE landed, or an external change) drops its local
+  // state; a task with no closed session and no session-born add left is a
+  // finished card delete.
+  private reconcileTrackedDeletes(): void {
+    const aliveSes = new Set(this.closedSessions.map(s => s.id));
+    for (const id of [...this.sesHiddenIds]) {
+      if (!aliveSes.has(id)) this.sesHiddenIds.delete(id);
+    }
+    for (const [id, timer] of [...this.sesDeleteTimers]) {
+      if (!aliveSes.has(id)) {
+        clearTimeout(timer);
+        this.sesDeleteTimers.delete(id);
+      }
+    }
+
+    const aliveTasks = new Set<string>();
+    for (const s of this.closedSessions) aliveTasks.add(s.task ?? '—');
+    for (const e of this.entries) {
+      if (e.sourceSessionId) aliveTasks.add(e.task);
+    }
+    for (const task of [...this.hiddenTasks]) {
+      if (!aliveTasks.has(task)) this.hiddenTasks.delete(task);
+    }
+    for (const [task, timer] of [...this.taskDeleteTimers]) {
+      if (!aliveTasks.has(task)) {
+        clearTimeout(timer);
+        this.taskDeleteTimers.delete(task);
       }
     }
   }
@@ -578,9 +673,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       if (!b) { b = { sessions: [], manual: [] }; byTask.set(task, b); }
       return b;
     };
-    for (const s of this.closedSessions) bucketOf(s.task ?? '—').sessions.push(s);
+    for (const s of this.closedSessions) {
+      const task = s.task ?? '—';
+      if (this.hiddenTasks.has(task) || this.sesHiddenIds.has(s.id)) continue;
+      bucketOf(task).sessions.push(s);
+    }
     for (const e of this.entries) {
-      if (!e.sourceSessionId || this.hiddenIds.has(e.id)) continue;
+      if (!e.sourceSessionId || this.hiddenIds.has(e.id) || this.hiddenTasks.has(e.task)) continue;
       bucketOf(e.task).manual.push(e);
     }
     const groups: TrackedGroup[] = [];
@@ -596,7 +695,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       b.sessions.sort((x, y) => x.startedAt.localeCompare(y.startedAt));
       groups.push({
         task,
-        totalMs: b.sessions.reduce((sum, s) => sum + s.effectiveDurationMs, 0) + manualMs,
+        totalMs: b.sessions.reduce(
+          (sum, s) => sum + (this.sesGone(s.id) ? 0 : s.effectiveDurationMs), 0) + manualMs,
         manualMs,
         sessions: b.sessions,
         items,
@@ -626,11 +726,140 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   onTrackedContextMenu(g: TrackedGroup, ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
-    openCtxMenu(ev.clientX, ev.clientY, [{
-      icon: '⤢',
-      label: this.isExpanded(g) ? 'Hide details' : 'Show details',
-      action: () => this.toggleTracked(g),
-    }]);
+    if (this.taskDeleted(g) || this.foldingCards.has(g.task)) return;
+    openCtxMenu(ev.clientX, ev.clientY, [
+      {
+        icon: '⤢',
+        label: this.isExpanded(g) ? 'Hide details' : 'Show details',
+        action: () => this.toggleTracked(g),
+      },
+      { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(g) },
+    ]);
+  }
+
+  // ─── Tracked deletes (session row ✕ / whole card) — entry-row undo twin ──
+
+  sessionDeleted(s: SessionDetail): boolean {
+    return this.sesDeleteTimers.has(s.id) || this.sesRemovingIds.has(s.id);
+  }
+
+  deleteSessionRow(s: SessionDetail, ev: MouseEvent): void {
+    ev.stopPropagation();
+    if (this.sessionDeleted(s)) return;
+    this.sesDeleteTimers.set(s.id, setTimeout(() => this.startSessionRemove(s.id), UNDO_WINDOW_MS));
+    this.recomputeLive();
+  }
+
+  undoSessionDelete(s: SessionDetail, ev: MouseEvent): void {
+    ev.stopPropagation();
+    const timer = this.sesDeleteTimers.get(s.id);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.sesDeleteTimers.delete(s.id);
+    this.recomputeLive();
+  }
+
+  private startSessionRemove(id: string): void {
+    this.sesDeleteTimers.delete(id);
+    this.sesRemovingIds.add(id);
+    this.sesRemoveTimers.set(id, setTimeout(() => {
+      this.sesRemovingIds.delete(id);
+      this.sesRemoveTimers.delete(id);
+      this.sesHiddenIds.add(id);
+      this.sessionDeleteCommitted.emit(id);
+      const s = this.closedSessions.find(x => x.id === id);
+      if (s) this.maybeFoldEmptiedCard(s.task ?? '—');
+    }, REMOVE_ANIM_MS));
+  }
+
+  taskDeleted(g: TrackedGroup): boolean {
+    return this.taskDeleteTimers.has(g.task) || this.removingTasks.has(g.task);
+  }
+
+  private deleteTaskCard(g: TrackedGroup): void {
+    if (this.taskDeleted(g)) return;
+    this.taskDeleteTimers.set(g.task, setTimeout(() => this.startTaskRemove(g.task), UNDO_WINDOW_MS));
+    this.recomputeLive();
+  }
+
+  undoTaskDelete(g: TrackedGroup, ev: MouseEvent): void {
+    ev.stopPropagation();
+    const timer = this.taskDeleteTimers.get(g.task);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.taskDeleteTimers.delete(g.task);
+    this.recomputeLive();
+  }
+
+  private startTaskRemove(task: string): void {
+    this.taskDeleteTimers.delete(task);
+    this.removingTasks.add(task);
+    this.taskRemoveTimers.set(task, setTimeout(() => {
+      this.removingTasks.delete(task);
+      this.taskRemoveTimers.delete(task);
+      this.hiddenTasks.add(task);
+      this.commitTaskDelete(task);
+    }, REMOVE_ANIM_MS));
+  }
+
+  // Deleting the last breakdown line leaves an empty card: it follows its
+  // content out — after the row's own collapse the husk folds shut, exactly
+  // like a ctx-menu card delete (the rows' deletes are already committed,
+  // so the fold is purely visual).
+  private maybeFoldEmptiedCard(task: string): void {
+    if (this.foldingCards.has(task) || this.taskGone(task)) return;
+    const hasSession = this.closedSessions.some(s => (s.task ?? '—') === task && !this.sesHiddenIds.has(s.id));
+    const hasAdd = this.entries.some(e => !!e.sourceSessionId && e.task === task && !this.hiddenIds.has(e.id));
+    if (hasSession || hasAdd) return;
+
+    // The husk keeps the group's old feed slot (newest raw row of the task —
+    // hidden rows included, they ARE the slot).
+    const ats = [
+      ...this.closedSessions.filter(s => (s.task ?? '—') === task).map(s => s.lastSeenAt),
+      ...this.entries.filter(e => !!e.sourceSessionId && e.task === task).map(e => e.createdAt),
+    ].sort();
+    this.foldingCards.set(task, {
+      group: { task, totalMs: 0, manualMs: 0, sessions: [], items: [] },
+      at: ats[ats.length - 1] ?? '',
+    });
+
+    // Measured inline fold: trackBy keeps the DOM element, so the collapse
+    // starts from its real height (a fixed CSS cap would eat the animation).
+    const el = this.cardEl(task);
+    if (el) {
+      el.style.overflow = 'hidden';
+      el.style.maxHeight = `${el.offsetHeight}px`;
+      void el.offsetHeight;
+      el.style.transition = 'max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease, margin 0.22s ease';
+      el.style.maxHeight = '0';
+      el.style.opacity = '0';
+      el.style.paddingTop = '0';
+      el.style.paddingBottom = '0';
+      el.style.marginBottom = '0';
+    }
+    this.taskRemoveTimers.set(task, setTimeout(() => {
+      this.taskRemoveTimers.delete(task);
+      this.foldingCards.delete(task);
+      this.cardEl(task)?.removeAttribute('style'); // insurance for a reused element
+    }, REMOVE_ANIM_MS));
+  }
+
+  private cardEl(task: string): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(
+      `.log-row2.ses[data-task="${CSS.escape(task)}"]`);
+  }
+
+  // The taskless card has no ticket key to address on the daemon — its
+  // delete is the sum of its sessions' deletes (it can't carry manual adds:
+  // "+ Add time" requires a task).
+  private commitTaskDelete(task: string): void {
+    if (task !== '—') {
+      this.taskDeleteCommitted.emit(task);
+      return;
+    }
+    for (const s of this.closedSessions) {
+      if ((s.task ?? '—') === '—') this.sessionDeleteCommitted.emit(s.id);
+    }
   }
 
   sessionInterval(s: SessionDetail): string {

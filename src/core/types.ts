@@ -798,9 +798,21 @@ export interface SessionDeleteResponse {
   readonly repo: string;
   readonly task: string | null;
   readonly effectiveDurationMs: number;
+  readonly date: string;                 // day the session lived on (YYYY-MM-DD)
   // Day lost its last confirmed fact — the file was removed (storage invariant).
   readonly dayFileDeleted: boolean;
   // Day was already pushed to Tempo — the next push re-syncs the remote.
+  readonly dayWasPushed: boolean;
+}
+
+// Whole tracked block of a ticket removed: sessions + session-born entries.
+export interface TaskDeleteResponse {
+  readonly task: string;
+  readonly date: string;
+  readonly deletedSessions: number;
+  readonly deletedEntries: number;
+  readonly removedMs: number;            // observed session time + manual adds
+  readonly dayFileDeleted: boolean;
   readonly dayWasPushed: boolean;
 }
 
