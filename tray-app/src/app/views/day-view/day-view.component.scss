@@ -124,9 +124,25 @@
   height: 0;
 }
 
+// Weekday — the bar's upper storey. Absolute, so the flex row never sees it:
+// the height of the row is set by the ＋Log capsule (22px) and the total, and
+// above the date's capitals there is already idle space to sit in. Left edge
+// shares the header's padding, so both storeys start on one vertical.
+.day-week {
+  position: absolute;
+  left: 14px;
+  top: 8px;
+  line-height: 1;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #6c7086;
+}
+
 .day-date {
   margin: 0;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.2px;
   line-height: 1.2;
@@ -182,11 +198,17 @@
   // swaps can't tremble it.
   text-align: right;
   margin-left: 4px;
-  font-size: 18px;
+  font-size: 16.5px;
   font-weight: 700;
-  line-height: 1.2;
   color: #cdd6f4;
   transition: color 0.3s ease;
+  // The total is the tallest text, so its ascent sets where the whole baseline
+  // group sits. Shrinking it by font-size alone would lift the date and eat the
+  // gap to the weekday above. The box is pinned instead: the px leading puts the
+  // ascent back at the 18px value, the negative margin gives the box its old
+  // 21.6px back. The row cannot tell the number got smaller.
+  line-height: 23.2px;
+  margin-bottom: -1.6px;
 
   &.flash { color: #cba6f7; }
 }

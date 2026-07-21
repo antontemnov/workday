@@ -339,11 +339,19 @@ export class AppComponent implements OnInit, OnDestroy {
   // ─── Header: date display ──────────────────────────────────────────────
 
   get formattedDate(): string {
-    const date = this.data?.date ?? this.computeLocalToday();
-    const [y, m, d] = date.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
+    return this.headerDate().toLocaleDateString('en-GB', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
+  }
+
+  get formattedWeekday(): string {
+    return this.headerDate().toLocaleDateString('en-GB', { weekday: 'long' });
+  }
+
+  private headerDate(): Date {
+    const date = this.data?.date ?? this.computeLocalToday();
+    const [y, m, d] = date.split('-').map(Number);
+    return new Date(y, m - 1, d);
   }
 
   private computeLocalToday(): string {

@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>B1 надстрочник — центровка</title>
+<style>
+  :root {
+    --text:#cdd6f4; --subtext1:#bac2de; --subtext0:#a6adc8;
+    --quiet:#6c7086; --dim:#585b70; --mauve:#cba6f7;
+    /* стартовые значения пульта */
+    --fh:20px; --gap:3px; --fs:9px; --ls:2.2px; --ink:#6c7086;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a12; color:var(--text);
+         font-family:'Cascadia Code','SF Mono','Consolas',monospace; font-size:12px;
+         padding:24px 20px 70px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+
+  .page-title { font-size:13px; color:var(--subtext0); }
+  .page-title b { color:var(--text); }
+  .page-sub { font-size:10.5px; color:var(--quiet); max-width:560px; text-align:center; line-height:1.6; }
+
+  .switch { display:flex; align-items:center; gap:7px; font-size:10px; color:var(--subtext0);
+            cursor:pointer; user-select:none; margin-bottom:2px; }
+  .switch input { accent-color:var(--mauve); cursor:pointer; }
+
+  .band { width:500px; margin-top:14px; display:flex; align-items:center; gap:8px; }
+  .band-t { font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--subtext0); }
+  .band-l { flex:1; height:1px; background:#1c1c2c; }
+
+  .v { width:500px; }
+  .v-head { display:flex; align-items:baseline; gap:7px; margin:0 2px 5px; }
+  .v-id { font-size:10.5px; font-weight:700; color:var(--subtext1); letter-spacing:.4px; }
+  .v-name { font-size:10.5px; color:var(--quiet); flex:1; }
+  .tag { font-size:9.5px; font-weight:700; color:#4d5069; letter-spacing:.4px; }
+  .note { margin:5px 4px 0; font-size:10px; color:#565973; line-height:1.55; }
+  .note b { color:#7f849c; font-weight:700; }
+
+  /* Приборная строка: измеренные расхождения */
+  .metrics { display:flex; gap:14px; margin:6px 4px 0; font-size:9.5px; letter-spacing:.2px; }
+  .metrics span { color:#4d5069; }
+  .metrics b { font-weight:700; }
+  .ok   { color:#a6e3a1 !important; }
+  .bad  { color:#f38ba8 !important; }
+
+  .frame { border:1px solid #23233a; border-radius:10px; overflow:hidden; }
+  .scene {
+    padding:0 12px 12px;
+    background:
+      radial-gradient(300px 210px at 78% 2%, rgba(203,166,247,.085), transparent 62%),
+      radial-gradient(460px 340px at 2% 34%, rgba(148,226,213,.1), transparent 62%),
+      radial-gradient(420px 320px at 98% 74%, rgba(166,227,161,.1), transparent 62%),
+      radial-gradient(300px 240px at 34% 102%, rgba(137,180,250,.08), transparent 62%),
+      #0d0d16;
+  }
+
+  .day-head {
+    position:relative; display:flex; align-items:baseline; gap:8px;
+    margin:0 -12px; padding:13px 14px 11px;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,.05), rgba(255,255,255,.012) 30%, transparent 46%, rgba(255,255,255,.03) 68%, transparent 84%),
+      radial-gradient(60% 160% at 86% -30%, rgba(203,166,247,.07), transparent 65%),
+      radial-gradient(55% 110% at 6% 30%, rgba(148,226,213,.05), transparent 58%),
+      rgba(30,30,46,.62);
+    backdrop-filter:blur(14px) saturate(1.6) brightness(1.05);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+    -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 13px), transparent);
+            mask-image:linear-gradient(180deg,#000 calc(100% - 13px), transparent);
+    font-variant-numeric:tabular-nums; user-select:none;
+  }
+  .day-head::after {
+    content:''; position:absolute; left:0; right:0; bottom:0; height:10px;
+    backdrop-filter:url(#dayheadLens);
+    -webkit-mask-image:linear-gradient(180deg, transparent, #000 70%);
+            mask-image:linear-gradient(180deg, transparent, #000 70%);
+    pointer-events:none;
+  }
+
+  .day-date { font-size:15px; font-weight:600; letter-spacing:.2px; line-height:1.2; color:var(--text); white-space:nowrap; }
+  .day-total { margin-left:4px; font-size:18px; font-weight:700; line-height:1.2; color:var(--text); }
+
+  .candy {
+    --c:203 166 247; --ci:228 205 252; --ink:#cba6f7; --rc:var(--c);
+    --m1:.14; --m2:.05; --m3:.1; --eg:.22; --ec:.3; --pool:.22;
+    position:relative; border:none;
+    color:color-mix(in srgb, var(--ink) 82%, transparent);
+    text-shadow:0 0 3px rgb(var(--c)/.42), 0 1px 1px rgba(0,0,0,.25);
+    background:
+      radial-gradient(95% 150% at 30% -25%, rgba(255,255,255,.12), rgba(255,255,255,.02) 50%, transparent 72%),
+      radial-gradient(45% 55% at 78% 108%, rgba(255,255,255,.08), transparent 65%),
+      linear-gradient(180deg, rgb(var(--c)/var(--m1)), rgb(var(--c)/var(--m2)) 55%, rgb(var(--c)/var(--m3)));
+    box-shadow:
+      inset 0 1px 1px rgba(255,255,255,.2), inset 0 -4px 6px -4px rgba(4,6,16,.42),
+      inset 7px 0 9px -7px rgba(4,6,16,.55), inset -7px 0 9px -7px rgba(4,6,16,.55),
+      inset 0 0 6px -1px rgb(var(--c)/var(--eg)), inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+      0 2px 5px -1px rgba(0,0,0,.45), 0 5px 14px -5px rgba(0,0,0,.4), 0 3px 9px -3px rgb(var(--c)/var(--pool));
+  }
+  .candy::before {
+    content:''; position:absolute; inset:0; border-radius:inherit; padding:1px;
+    background:conic-gradient(from 0deg,
+      rgb(var(--rc)/.4) 0deg, rgb(var(--rc)/.08) 48deg, rgb(var(--rc)/.2) 100deg,
+      rgba(255,255,255,.34) 135deg, rgb(var(--rc)/.16) 195deg, rgb(var(--rc)/.05) 228deg,
+      rgb(var(--rc)/.22) 275deg, rgba(255,255,255,.5) 316deg, rgb(var(--rc)/.4) 360deg);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite:exclude; pointer-events:none;
+  }
+  .candy::after {
+    content:''; position:absolute; inset:0; border-radius:inherit; z-index:2;
+    background:
+      radial-gradient(50% 56% at 27% 4%, rgba(255,255,255,.24), rgba(255,255,255,.04) 48%, transparent 72%),
+      radial-gradient(30% 34% at 77% 98%, rgba(255,255,255,.07), transparent 65%);
+    pointer-events:none;
+  }
+
+  .g-btn {
+    margin-left:auto; align-self:center; display:inline-flex; align-items:center; gap:5px;
+    height:22px; font-family:inherit; font-size:11px; font-weight:700;
+    border-radius:999px; padding:0 12px; cursor:pointer;
+  }
+  .g-btn svg { width:10px; height:10px; flex-shrink:0; }
+  .g-btn svg path { fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
+
+  .row2 {
+    position:relative; isolation:isolate;
+    border:1px solid rgba(205,214,244,.1); border-radius:9px;
+    box-shadow:0 3px 10px -4px rgba(0,0,0,.55);
+    padding:3px 8px 4px; margin-bottom:8px; font-size:11px; font-variant-numeric:tabular-nums;
+  }
+  .row2:last-child { margin-bottom:0; }
+  .row2::after {
+    content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,.035), transparent 40%, rgba(255,255,255,.02) 70%, transparent 88%),
+      linear-gradient(rgba(30,30,46,.38), rgba(30,30,46,.38));
+    backdrop-filter:blur(9px) saturate(1.5);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.055);
+  }
+  .r-l1 { display:grid; grid-template-columns:74px minmax(0,1fr) minmax(48px,max-content); gap:8px; align-items:center; height:17px; }
+  .r-l2 { display:grid; grid-template-columns:74px minmax(0,1fr); gap:8px; align-items:center; height:20px; margin-top:1px; }
+  .c-key { display:inline-flex; align-items:center; height:17px; font-weight:600; padding:0 7px; border-radius:7px; white-space:nowrap; justify-self:start; font-size:11px; }
+  .c-nm { min-width:0; overflow:hidden; white-space:nowrap; color:var(--subtext1); }
+  .c-dur { color:var(--text); font-weight:700; text-align:right; justify-self:end; }
+  .c-type { color:#939ab6; font-size:10px; font-weight:700; }
+  .c-ds { color:#7f849c; font-style:italic; font-size:10.5px; overflow:hidden; white-space:nowrap; }
+
+  /* ═══ Надстрочник ═══════════════════════════════════════════════════ */
+
+  .wd-brow { font-size:9px; font-weight:700; letter-spacing:2.2px; color:var(--quiet); line-height:1; }
+
+  /* ✗ как в первом макете: блок из двух строк — центруется целиком,
+     дата уезжает вниз относительно суммы */
+  .day-head.broken { align-items:center; padding:10px 14px 10px; }
+  .day-head.broken .date-block { display:inline-flex; flex-direction:column; align-items:flex-start; }
+  .day-head.broken .wd-brow { margin-bottom:3px; }
+
+  /* ✓ строка заморожена: надстрочник выведен из потока и висит во лбу.
+     Флекс-строка = дата · капсула · сумма, ровно как без дня недели. */
+  .day-head.locked { align-items:baseline; padding:22px 14px 11px; }
+  .day-head.locked .date-block { position:relative; }
+  .day-head.locked .wd-brow { position:absolute; left:0; bottom:100%; margin-bottom:4px; white-space:nowrap; }
+
+  .day-head.locked.tight { padding-top:18px; }
+
+  /* Кадр под живую настройку — все размеры на переменных */
+  .day-head.locked.tune { padding-top:var(--fh); }
+  .day-head.locked.tune .wd-brow {
+    margin-bottom:var(--gap); font-size:var(--fs); letter-spacing:var(--ls); color:var(--ink);
+  }
+
+  /* Настройка самой надписи */
+  .wd-brow.quiet  { font-size:8.5px; letter-spacing:3.2px; color:var(--dim); }
+  .wd-brow.sentence { font-size:10px; letter-spacing:.2px; text-transform:none; font-weight:500; }
+
+  /* ═══ Направляющие (только лаборатория) ════════════════════════════ */
+  .guide { position:absolute; pointer-events:none; opacity:0; transition:opacity .12s; }
+  body.guides .guide { opacity:1; }
+  .guide.base-date  { left:0; right:0; height:1px; background:rgba(148,226,213,.85); }
+  .guide.base-total { left:0; right:0; height:1px; background:rgba(243,139,168,.8); }
+  .guide.mid-btn    { left:0; right:0; height:1px;
+                      background:repeating-linear-gradient(90deg, rgba(203,166,247,.85) 0 4px, transparent 4px 8px); }
+  /* Пульт живой настройки */
+  .tuner { width:500px; display:grid; grid-template-columns:auto 1fr auto; gap:7px 10px;
+           align-items:center; padding:11px 13px; border:1px solid #23233a; border-radius:9px;
+           background:#0f0f1a; font-size:10px; color:var(--quiet); }
+  .tuner label { white-space:nowrap; }
+  .tuner input[type=range] { width:100%; accent-color:var(--mauve); height:14px; }
+  .tuner output { font-weight:700; color:var(--subtext1); min-width:52px; text-align:right; font-variant-numeric:tabular-nums; }
+  .tuner .sum { grid-column:1/-1; margin-top:3px; padding-top:8px; border-top:1px solid #1c1c2c;
+                display:flex; justify-content:space-between; font-size:10px; }
+  .tuner .sum b { color:var(--subtext1); font-weight:700; }
+  .tuner .sum code { color:#7f849c; font-family:inherit; }
+
+  .g-key { display:flex; gap:16px; font-size:9.5px; color:#4d5069; margin:0 4px; }
+  .g-key i { font-style:normal; display:inline-flex; align-items:center; gap:5px; }
+  .g-key u { text-decoration:none; width:14px; height:2px; display:inline-block; border-radius:1px; }
+
+  .fx-defs { position:fixed; width:0; height:0; }
+</style>
+</head>
+<body>
+
+<svg class="fx-defs" aria-hidden="true">
+  <filter id="dayheadLens" x="-10%" y="-100%" width="120%" height="300%" color-interpolation-filters="sRGB">
+    <feImage href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='10'><linearGradient id='y' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23808000'/><stop offset='1' stop-color='%23804000'/></linearGradient><rect width='40' height='10' fill='url(%23y)'/></svg>"
+      x="0" y="0" width="2000" height="10" preserveAspectRatio="none" result="m"/>
+    <feDisplacementMap in="SourceGraphic" in2="m" scale="14" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<div class="page-title"><b>B1 · надстрочник</b> — починка центровки</div>
+<div class="page-sub">
+  Надстрочник не должен участвовать в раскладке строки. Он выводится из потока и висит
+  во лбу шапки — дата, капсула и сумма остаются там же, где были без дня недели.
+  Цифры под каждым кадром измерены в браузере.
+</div>
+
+<label class="switch"><input type="checkbox" id="g"> показать направляющие</label>
+<div class="g-key">
+  <i><u style="background:rgba(148,226,213,.85)"></u>базовая линия даты</i>
+  <i><u style="background:rgba(243,139,168,.8)"></u>базовая линия суммы</i>
+  <i><u style="background:rgba(203,166,247,.85)"></u>центр капсулы</i>
+</div>
+
+<!-- ═══════════ КОНТРОЛЬ ═══════════ -->
+<div class="band"><span class="band-t">эталон</span><span class="band-l"></span></div>
+
+<div class="v" id="control">
+  <div class="v-head"><span class="v-id">0</span><span class="v-name">шапка без дня недели</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head">
+      <h1 class="day-date">21 July 2026</h1>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4821</span><span class="c-nm">Timesheet drawer polish</span><span class="c-dur">1h 45m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+  </div></div>
+  <div class="metrics" data-metrics></div>
+  <p class="note">Отсюда берутся эталонные величины: базовые линии даты и суммы совпадают, капсула центруется по этой же строке.</p>
+</div>
+
+<!-- ═══════════ ЧТО СЛОМАНО ═══════════ -->
+<div class="band"><span class="band-t">что сломано</span><span class="band-l"></span></div>
+
+<div class="v">
+  <div class="v-head"><span class="v-id">B1</span><span class="v-name">как в первом макете — блок из двух строк</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head broken">
+      <div class="date-block">
+        <span class="wd-brow">TUESDAY</span>
+        <h1 class="day-date">21 July 2026</h1>
+      </div>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4821</span><span class="c-nm">Timesheet drawer polish</span><span class="c-dur">1h 45m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+  </div></div>
+  <div class="metrics" data-metrics></div>
+  <p class="note">Надстрочник стоит в потоке, поэтому блок даты стал вдвое выше и капсула с суммой центруются <b>по всему блоку</b>, а не по строке даты. Дата уезжает вниз — это и видно глазом.</p>
+</div>
+
+<!-- ═══════════ ПОЧИНКА ═══════════ -->
+<div class="band"><span class="band-t">починка</span><span class="band-l"></span></div>
+
+<div class="v">
+  <div class="v-head"><span class="v-id">B1a</span><span class="v-name">строка заморожена, лоб просторный</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head locked">
+      <div class="date-block">
+        <span class="wd-brow">TUESDAY</span>
+        <h1 class="day-date">21 July 2026</h1>
+      </div>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4821</span><span class="c-nm">Timesheet drawer polish</span><span class="c-dur">1h 45m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4790</span><span class="c-nm">Calendar feed retries</span><span class="c-dur">3h 35m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+  </div></div>
+  <div class="metrics" data-metrics></div>
+  <p class="note">Надстрочник выведен из потока и висит над строкой во лбу. Флекс-строка снова состоит из трёх участников — дата · капсула · сумма — и все метрики совпадают с эталоном. <b>Шапка растёт только вверх</b>, ни один элемент не сдвинулся. Цена — 9px высоты; над надписью остаётся 12px воздуха.</p>
+</div>
+
+<div class="v">
+  <div class="v-head"><span class="v-id">B1b</span><span class="v-name">то же, но лоб тесный</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head locked tight">
+      <div class="date-block">
+        <span class="wd-brow">TUESDAY</span>
+        <h1 class="day-date">21 July 2026</h1>
+      </div>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4821</span><span class="c-nm">Timesheet drawer polish</span><span class="c-dur">1h 45m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4790</span><span class="c-nm">Calendar feed retries</span><span class="c-dur">3h 35m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+  </div></div>
+  <div class="metrics" data-metrics></div>
+  <p class="note">Та же механика, лоб урезан до 8px — цена падает с 9px до 5px. Смотреть, не липнет ли капитель к верхней кромке стекла: там идёт светлая внутренняя подсветка, и надпись может начать её касаться.</p>
+</div>
+
+<!-- ═══════════ ЖИВАЯ НАСТРОЙКА ═══════════ -->
+<div class="band"><span class="band-t">покрутить вживую</span><span class="band-l"></span></div>
+
+<div class="tuner">
+  <label>лоб</label>
+  <input type="range" id="t-fh" min="14" max="26" step="1" value="20">
+  <output id="o-fh"></output>
+
+  <label>зазор</label>
+  <input type="range" id="t-gap" min="1" max="8" step="1" value="3">
+  <output id="o-gap"></output>
+
+  <label>кегль</label>
+  <input type="range" id="t-fs" min="7.5" max="11" step="0.5" value="9">
+  <output id="o-fs"></output>
+
+  <label>разрядка</label>
+  <input type="range" id="t-ls" min="0" max="4" step="0.2" value="2.2">
+  <output id="o-ls"></output>
+
+  <label>чернила</label>
+  <input type="range" id="t-ink" min="0" max="3" step="1" value="1">
+  <output id="o-ink"></output>
+
+  <div class="sum">
+    <span>высота шапки <b id="o-h">—</b> · эталон 46px</span>
+    <code id="o-css">—</code>
+  </div>
+</div>
+
+<div class="v" id="tune">
+  <div class="v-head"><span class="v-id">★</span><span class="v-name">строка заморожена, размеры с пульта</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head locked tune">
+      <div class="date-block">
+        <span class="wd-brow">TUESDAY</span>
+        <h1 class="day-date">21 July 2026</h1>
+      </div>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4821</span><span class="c-nm">Timesheet drawer polish</span><span class="c-dur">1h 45m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+    <div class="row2">
+      <div class="r-l1"><span class="c-key candy">ATL-4790</span><span class="c-nm">Calendar feed retries</span><span class="c-dur">3h 35m</span></div>
+      <div class="r-l2"><span class="c-type">Development</span><span class="c-ds">—</span></div>
+    </div>
+  </div></div>
+  <div class="metrics" data-metrics></div>
+  <p class="note">Центровка держится на любых значениях — надстрочник вне потока, крутится только лоб. Готовые числа снизу справа можно отдать мне как есть.</p>
+</div>
+
+<!-- ═══════════ НАСТРОЙКА НАДПИСИ ═══════════ -->
+<div class="band"><span class="band-t">сама надпись</span><span class="band-l"></span></div>
+
+<div class="v">
+  <div class="v-head"><span class="v-id">T1</span><span class="v-name">капитель 9px · разрядка 2.2 · quiet</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head locked">
+      <div class="date-block">
+        <span class="wd-brow">TUESDAY</span>
+        <h1 class="day-date">21 July 2026</h1>
+      </div>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+  </div></div>
+  <p class="note">Исходная настройка: читается сразу, но и заметна сразу.</p>
+</div>
+
+<div class="v">
+  <div class="v-head"><span class="v-id">T2</span><span class="v-name">капитель 8.5px · разрядка 3.2 · dim</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head locked">
+      <div class="date-block">
+        <span class="wd-brow quiet">TUESDAY</span>
+        <h1 class="day-date">21 July 2026</h1>
+      </div>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+  </div></div>
+  <p class="note">Шире разрядка, темнее чернила — надпись отходит на второй план и работает как маркировка листа, а не как заголовок.</p>
+</div>
+
+<div class="v">
+  <div class="v-head"><span class="v-id">T3</span><span class="v-name">без капители · 10px строчными</span><span class="tag" data-h></span></div>
+  <div class="frame"><div class="scene">
+    <div class="day-head locked">
+      <div class="date-block">
+        <span class="wd-brow sentence">Tuesday</span>
+        <h1 class="day-date">21 July 2026</h1>
+      </div>
+      <button class="g-btn candy"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+      <span class="day-total">5h 20m</span>
+    </div>
+  </div></div>
+  <p class="note">Обычное слово вместо маркировки: теплее и человечнее, но теряет разницу в фактуре с датой — две строки начинают выглядеть однородно.</p>
+</div>
+
+<script>
+  // ── Направляющие и замеры ────────────────────────────────────────────
+  // Базовую линию берём честно: нулевой inline-block с vertical-align:baseline
+  // садится верхней кромкой ровно на baseline строки.
+  function baselineOf(el) {
+    const probe = document.createElement('span');
+    probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+    el.appendChild(probe);
+    const y = probe.getBoundingClientRect().top;
+    probe.remove();
+    return y;
+  }
+
+  const fmt = n => (n > 0 ? '+' : '') + n.toFixed(1) + 'px';
+  const cls = d => Math.abs(d) < 0.5 ? 'ok' : 'bad';
+  let ref = null;
+
+  function measure(v) {
+    const head  = v.querySelector('.day-head');
+    const date  = v.querySelector('.day-date');
+    const total = v.querySelector('.day-total');
+    const btn   = v.querySelector('.g-btn');
+    const hTag  = v.querySelector('[data-h]');
+    if (hTag) hTag.textContent = head.offsetHeight + 'px';
+    if (!total) return;
+
+    const hRect = head.getBoundingClientRect();
+    const bDate = baselineOf(date), bTotal = baselineOf(total);
+    const bRect = btn.getBoundingClientRect();
+    const mBtn  = bRect.top + bRect.height / 2;
+
+    head.querySelectorAll('.guide').forEach(g => g.remove());
+    [['base-date', bDate], ['base-total', bTotal], ['mid-btn', mBtn]].forEach(([c, y]) => {
+      const d = document.createElement('div');
+      d.className = 'guide ' + c;
+      d.style.top = (y - hRect.top) + 'px';
+      head.appendChild(d);
+    });
+
+    v._m = { dt: bDate - bTotal, bt: mBtn - bTotal };
+
+    const box = v.querySelector('[data-metrics]');
+    if (!box || !ref) return;
+    const dDate = v._m.dt - ref.dt, dBtn = v._m.bt - ref.bt;
+    box.innerHTML =
+      '<span>дата ↔ сумма <b class="' + cls(dDate) + '">' + fmt(dDate) + '</b></span>' +
+      '<span>капсула ↔ сумма <b class="' + cls(dBtn) + '">' + fmt(dBtn) + '</b></span>' +
+      '<span>относительно эталона</span>';
+  }
+
+  const frames = [...document.querySelectorAll('.v')];
+  frames.forEach(measure);                       // первый проход — собрать эталон
+  ref = document.querySelector('#control')._m;
+  frames.forEach(measure);                       // второй — расставить цифры
+
+  document.getElementById('g').addEventListener('change', e => {
+    document.body.classList.toggle('guides', e.target.checked);
+  });
+
+  // ── Пульт ────────────────────────────────────────────────────────────
+  const INKS = [
+    ['#585b70', 'dim'], ['#6c7086', 'quiet'], ['#7f849c', 'светлее'], ['#a6adc8', 'subtext0'],
+  ];
+  const root = document.documentElement;
+  const tuneV = document.getElementById('tune');
+  const ctl = {
+    fh:  [document.getElementById('t-fh'),  document.getElementById('o-fh')],
+    gap: [document.getElementById('t-gap'), document.getElementById('o-gap')],
+    fs:  [document.getElementById('t-fs'),  document.getElementById('o-fs')],
+    ls:  [document.getElementById('t-ls'),  document.getElementById('o-ls')],
+    ink: [document.getElementById('t-ink'), document.getElementById('o-ink')],
+  };
+
+  function apply() {
+    const fh = +ctl.fh[0].value, gap = +ctl.gap[0].value;
+    const fs = +ctl.fs[0].value, ls = +ctl.ls[0].value;
+    const ink = INKS[+ctl.ink[0].value];
+
+    root.style.setProperty('--fh',  fh + 'px');
+    root.style.setProperty('--gap', gap + 'px');
+    root.style.setProperty('--fs',  fs + 'px');
+    root.style.setProperty('--ls',  ls + 'px');
+    root.style.setProperty('--ink', ink[0]);
+
+    ctl.fh[1].textContent  = fh + 'px';
+    ctl.gap[1].textContent = gap + 'px';
+    ctl.fs[1].textContent  = fs + 'px';
+    ctl.ls[1].textContent  = ls + 'px';
+    ctl.ink[1].textContent = ink[1];
+
+    measure(tuneV);
+    const h = tuneV.querySelector('.day-head').offsetHeight;
+    document.getElementById('o-h').textContent = h + 'px (+' + (h - 46) + ')';
+    document.getElementById('o-css').textContent =
+      'лоб ' + fh + ' · зазор ' + gap + ' · ' + fs + '/' + ls + ' · ' + ink[0];
+  }
+
+  Object.values(ctl).forEach(([input]) => input.addEventListener('input', apply));
+  apply();
+</script>
+
+</body>
+</html>

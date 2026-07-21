@@ -42,6 +42,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() loading = false;
   @Input() error: string | null = null;
   @Input() dateLabel = '';
+  @Input() weekdayLabel = '';
   @Input() actionPending = false;
   @Input() daemonUserStopped = false;
   @Input() sensitivityPills: readonly SensitivityPillOption[] = [];

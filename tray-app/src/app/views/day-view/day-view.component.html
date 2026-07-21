@@ -29,6 +29,9 @@
      epoch 4) → history newest-first. One scroll, no sections. -->
 <div class="content" *ngIf="data && !error">
   <div class="day-head" #dayHead>
+    <!-- Weekday rides above the date, out of flow: the flex row keeps its
+         three participants (date · ＋Log · total) and the bar its height. -->
+    <span class="day-week">{{ weekdayLabel }}</span>
     <h1 class="day-date">{{ dateLabel }}</h1>
     <button class="g-btn"
             (click)="openCloud()"
