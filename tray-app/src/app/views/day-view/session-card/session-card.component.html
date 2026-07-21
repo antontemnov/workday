@@ -21,6 +21,8 @@
             [class.off]="!isAccruing && !isAutoPaused"
             [class.will-pause]="trackingAction === 'pause'"
             [class.will-resume]="trackingAction === 'resume'"
+            [style.--heat]="heat"
+            [style.--heat-lite]="heatLite"
             [disabled]="actionPending"
             [attr.aria-label]="trackingActionTitle"
             (click)="onTrackingClick()">
@@ -48,7 +50,9 @@
             [class.lit]="session.task && isAccruing"
             [class.frozen]="session.task && isAutoPaused"
             [class.off]="session.task && !isAccruing && !isAutoPaused"
-            [class.none]="!session.task">
+            [class.none]="!session.task"
+            [style.--heat]="heat"
+            [style.--heat-lite]="heatLite">
         <span class="k-ind" *ngIf="session.task" aria-hidden="true">
           <span class="k-lamp" *ngIf="isAccruing"></span>
           <svg class="k-hold" *ngIf="isManualPaused" viewBox="0 0 10 10">
@@ -92,12 +96,12 @@
     </span>
   </div>
 
-  <!-- Stamina = bottom edge: length + colour encode the level; hover shows a tip -->
+  <!-- Stamina = bottom edge: length + temperature encode the level; hover shows a tip -->
   <div class="edge">
     <span class="edge-clip">
       <span class="fill"
             [class.shimmer]="isAlwaysOn"
-            [style.width.%]="isNonstopPaused ? 0 : (isAlwaysOn ? 100 : staminaPercent)"
+            [style.width.%]="edgePercent"
             [style.background]="isAlwaysOn ? null : staminaColor"></span>
     </span>
     <span class="edge-tip" *ngIf="!isNonstopPaused">{{ staminaTooltip }}</span>

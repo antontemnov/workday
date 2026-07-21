@@ -4,6 +4,7 @@ import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../model
 import { DurationFieldComponent } from '../duration-field/duration-field.component';
 import { parseDurationToMinutes } from '../duration-field/duration.util';
 import { openCtxMenu } from '../ctx-menu.util';
+import { staminaHeat, staminaHeatLite } from './stamina-heat.util';
 
 interface SpeedPillOption {
   readonly key: SensitivityLevel;
@@ -130,14 +131,30 @@ export class SessionCardComponent {
     return Math.round(Math.max(0, Math.min(1, this.session.normalizedScore)) * 100);
   }
 
+  // Temperature of this session — the edge fill, the medallion's dye and lamp,
+  // and the rim glints all read it. Score → colour lives in stamina-heat.util:
+  // white-hot at the top, cooling into the frozen badge's own frost at zero.
+  get heat(): string {
+    return staminaHeat(this.session.normalizedScore);
+  }
+
+  get heatLite(): string {
+    return staminaHeatLite(this.session.normalizedScore);
+  }
+
+  // A frozen card empties its edge: the ice badge already tells that story, and
+  // a leftover stub of colour under it would argue with it.
+  get edgePercent(): number {
+    if (this.isNonstopPaused || this.isAutoPaused) return 0;
+    if (this.isAlwaysOn) return 100;
+    return this.staminaPercent;
+  }
+
   get staminaColor(): string {
     // Binary halo: any card that isn't accruing shows a grey gauge — the
     // colour (and the rim's tint) belongs to running tracking only.
     if (!this.isAccruing) return '#45475a';
-    const n = this.session.normalizedScore;
-    if (n >= 0.6) return '#a6e3a1';
-    if (n >= 0.3) return '#f9e2af';
-    return '#f38ba8';
+    return `rgb(${this.heat})`;
   }
 
   get staminaTooltip(): string {
@@ -158,28 +175,16 @@ export class SessionCardComponent {
         'rgba(137, 180, 250, 0.8)', 'rgba(148, 226, 213, 0.32)',
       ];
     }
-    const n = this.session.normalizedScore;
-    if (!this.isAccruing || n <= 0) {
+    if (!this.isAccruing || this.session.normalizedScore <= 0) {
       return [
         'rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)',
         'rgba(205, 214, 244, 0.3)', 'rgba(205, 214, 244, 0.12)',
       ];
     }
-    if (n >= 0.6) {
-      return [
-        'rgba(166, 227, 161, 0.4)', 'rgba(166, 227, 161, 0.13)',
-        'rgba(166, 227, 161, 0.8)', 'rgba(166, 227, 161, 0.3)',
-      ];
-    }
-    if (n >= 0.3) {
-      return [
-        'rgba(249, 226, 175, 0.36)', 'rgba(249, 226, 175, 0.12)',
-        'rgba(249, 226, 175, 0.75)', 'rgba(249, 226, 175, 0.28)',
-      ];
-    }
+    const heat = this.heat;
     return [
-      'rgba(243, 139, 168, 0.34)', 'rgba(243, 139, 168, 0.11)',
-      'rgba(243, 139, 168, 0.75)', 'rgba(243, 139, 168, 0.28)',
+      `rgb(${heat} / 0.4)`, `rgb(${heat} / 0.13)`,
+      `rgb(${heat} / 0.8)`, `rgb(${heat} / 0.3)`,
     ];
   }
 

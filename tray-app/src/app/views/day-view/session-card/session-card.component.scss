@@ -110,13 +110,14 @@
 
   // Lit: the lamp is a light source — a hot halo around the indicator, a
   // wash over the left half, and a bright rim segment where the ring passes
-  // the lamp. Everything reads --lc/--rc, so will-pause floods the same
-  // layers red by swapping two vars.
+  // the lamp. The dye and the light are the session's temperature (--heat,
+  // set per card), so the capsule cools together with the stamina edge and
+  // ends up next door to the frost the frozen chip is made of.
   &.lit {
-    --c: 166 227 161;
-    --ci: 214 245 208;
+    --c: var(--heat, 205 214 244);
+    --ci: var(--heat-lite, 228 233 250);
     --ink: #cdd6f4;
-    --lc: 166 227 161;
+    --lc: var(--heat, 205 214 244);
     --m1: 0.14;
     --m2: 0.05;
     --m3: 0.1;
@@ -274,31 +275,64 @@
     .k-act-ico { opacity: 1; }
   }
 
-  // Pause: the lamp turns red and the red light takes over everything that
-  // reads it — the halo, the wash, the WHOLE ring (--rc), while the white
-  // specular peaks stay white. Two vars do all the work; the halo only grows
-  // a touch hotter.
+  // Pause: the light goes out. The capsule doesn't darken — it EMPTIES: the
+  // dye thins to nothing and the whole candy volume (dark cylinder ends, floor
+  // shadow, caustic, coloured pool) is dropped, since that volume is what read
+  // as blackness. What's left is a thin contour, a stilled blik and the card
+  // showing through — and the ⏸ burning red inside it, the way an exit sign
+  // holds a room nobody lit. Red is free for this: the heat ramp never uses it.
   &.will-pause {
     .k-act-ico { fill: #f38ba8; }
 
     &:hover:not(:disabled) {
-      --lc: 243 139 168;
-      --rc: 243 139 168;
+      --c: 205 214 244;
+      --ci: 228 233 250;
+      --rc: 205 214 244;
+      --m1: 0.04;
+      --m2: 0.014;
+      --m3: 0.025;
       background:
-        radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.44), rgb(var(--lc) / 0.15) 12px, transparent 27px),
-        radial-gradient(80px 32px at 16px 58%, rgb(var(--lc) / 0.19), transparent 80%),
-        glass.$candy-body;
+        radial-gradient(circle at var(--lx) 50%, rgba(243, 139, 168, 0.19), rgba(243, 139, 168, 0.05) 13px, transparent 26px),
+        radial-gradient(95% 150% at 30% -25%, rgba(255, 255, 255, 0.069), transparent 66%),
+        linear-gradient(180deg, rgb(var(--c) / var(--m1)), rgb(var(--c) / var(--m2)) 55%, rgb(var(--c) / var(--m3)));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.104),
+        0 1px 3px -1px rgba(0, 0, 0, 0.2);
+
+      &::before {
+        background: conic-gradient(from 0deg,
+          rgb(var(--rc) / 0.184) 0deg,
+          rgb(var(--rc) / 0.035) 48deg,
+          rgb(var(--rc) / 0.092) 100deg,
+          rgba(255, 255, 255, 0.196) 135deg,
+          rgb(var(--rc) / 0.069) 195deg,
+          rgb(var(--rc) / 0.023) 228deg,
+          rgb(var(--rc) / 0.104) 275deg,
+          rgba(255, 255, 255, 0.3) 316deg,
+          rgb(var(--rc) / 0.184) 360deg);
+      }
+
+      // The front blik stills along with the glass.
+      &::after {
+        background: radial-gradient(50% 56% at 27% 4%, rgba(255, 255, 255, 0.092), transparent 68%);
+      }
+
+      .k-txt { color: rgba(147, 153, 176, 0.62); text-shadow: none; }
+      .k-act-ico {
+        filter: drop-shadow(0 0 2.5px rgba(243, 139, 168, 0.95)) drop-shadow(0 0 6px rgba(243, 139, 168, 0.5));
+      }
     }
   }
 
-  // Resume: green light previews in the cold glass — the lamp relights, the
-  // ring goes green, the dye stays quiet until the click actually resumes.
+  // Resume: the light previews in the cold glass at the session's own
+  // temperature — the lamp relights, the ring takes the same hue, the dye
+  // stays quiet until the click actually resumes.
   &.will-resume {
-    .k-act-ico { fill: #a6e3a1; }
+    .k-act-ico { fill: rgb(var(--heat, 205 214 244)); }
 
     &:hover:not(:disabled) {
-      --lc: 166 227 161;
-      --rc: 166 227 161;
+      --lc: var(--heat, 205 214 244);
+      --rc: var(--heat, 205 214 244);
       --ink: #cdd6f4;
       background:
         radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.38), rgb(var(--lc) / 0.1) 11px, transparent 24px),
