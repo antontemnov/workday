@@ -64,9 +64,6 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   autoStartWithOs = true;
   private autostartBusy = false;
 
-  // Visual-only toggle (no backend yet — kept disabled in template)
-  notifyOnIdle = false;
-
   // Daemon update flow (the "Check updates" button)
   updateState: UpdateState = 'idle';
   updateLabel = '';
