@@ -8,26 +8,14 @@
   min-height: 0;
   // Anchor for the cloud / composer overlays that float above the panel.
   position: relative;
-  // Ambient aurora — barely-there colour fields, pinned to the view (only the
-  // feed scrolls). This is what the glass refracts: translucent cards and the
-  // blurred day header pick it up, so surfaces read as material instead of
-  // flat panels.
-  //
-  // The fields sit INSIDE the frame, not beyond it: centred off-canvas they
-  // left the middle of the window on bare base — a near-black hole right under
-  // the feed. Mauve carries a smaller, weaker core than its siblings because
-  // it is the one whose centre fully entered the frame; at the shared dose it
-  // read as a spotlight in the corner rather than ambient light.
-  //
-  // The base belongs to this view, not to .app: Settings and Timesheets build
-  // their panels from #11111b/#181825, which are recessed against #1e1e2e and
-  // would flip to raised on a deeper ground.
+  // Ambient aurora — barely-there colour fields in the three section hues,
+  // pinned to the view (only the feed scrolls). This is what the glass
+  // refracts: translucent cards and the blurred day header pick it up, so
+  // surfaces read as material instead of flat panels.
   background:
-    radial-gradient(300px 210px at 78% 2%, rgba(203, 166, 247, 0.085), transparent 62%),
-    radial-gradient(460px 340px at 2% 34%, rgba(148, 226, 213, 0.1), transparent 62%),
-    radial-gradient(420px 320px at 98% 74%, rgba(166, 227, 161, 0.1), transparent 62%),
-    radial-gradient(300px 240px at 34% 102%, rgba(137, 180, 250, 0.08), transparent 62%),
-    #0d0d16;
+    radial-gradient(420px 300px at 88% -60px, rgba(203, 166, 247, 0.07), transparent 65%),
+    radial-gradient(560px 400px at -80px 38%, rgba(148, 226, 213, 0.05), transparent 65%),
+    radial-gradient(480px 360px at 112% 82%, rgba(166, 227, 161, 0.055), transparent 65%);
 }
 
 // Content (scrollable; the dock below stays pinned)
@@ -259,9 +247,7 @@
   position: absolute;
   inset: 0;
   z-index: 30;
-  // Tuned to the view's base: the old rgba(12,12,20,.45) was nearly the base
-  // itself once the ground went deep, so it stopped dimming anything (÷1.04).
-  background: rgba(3, 3, 8, 0.5);
+  background: rgba(12, 12, 20, 0.45);
   backdrop-filter: blur(1.5px);
   opacity: 0;
   pointer-events: none;

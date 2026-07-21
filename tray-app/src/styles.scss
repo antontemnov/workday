@@ -6,9 +6,7 @@
 
 html, body {
   height: 100%;
-  // Matches the day view's base — it is the tab that opens first, so the
-  // pre-render frame must not flash a lighter ground.
-  background: #0d0d16;
+  background: #1e1e2e;
   overflow: hidden;
 }
 
