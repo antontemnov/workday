@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { GitTracker } from '../../src/collectors/git-tracker.js';
+import { GitClient } from '../../src/collectors/git-client.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
 import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import type { AppConfig, PollResult } from '../../src/core/types.js';
@@ -207,6 +208,44 @@ async function main(): Promise<void> {
     const ev = evidence();
     assert.equal(ev.commits, 3, `commits = ${ev.commits}`);
     assert.ok(ev.linesAdded >= 300, `linesAdded = ${ev.linesAdded}, expected >= 300`);
+  });
+
+  // ── Checkout racing the batch ──────────────────────────────────────────
+  // The batch reads the branch name first and the evidence diff last. A
+  // checkout in between pairs the old branch name with the new branch's
+  // worktree, so everything separating the two branches lands on the task
+  // the developer just left.
+  git('add .'); // the rewrite-in-place above is still uncommitted
+  git('commit -m "ATL-1 generated module rewrite"');
+  git('checkout master');
+  writeFileSync(join(REPO, 'release.txt'), 'release\n'.repeat(4000));
+  git('add .');
+  git('commit -m "unrelated release work"');
+  git('checkout atemnov/ATL-1-feature');
+  await tick(); // settle back on the feature branch
+
+  const settled = { ...evidence() };
+
+  const client = (gitTracker as unknown as { gitClient: GitClient }).gitClient;
+  const realFetch = client.fetchRepoState.bind(client);
+  client.fetchRepoState = async (repoPath: string, baseSha?: string) => {
+    git('checkout master'); // the checkout lands mid-batch
+    const raw = await realFetch(repoPath, baseSha);
+    return { ...raw, branch: 'atemnov/ATL-1-feature' }; // name read before it
+  };
+  const racedTick = await tick();
+  client.fetchRepoState = realFetch;
+  git('checkout atemnov/ATL-1-feature');
+
+  check('a tick whose branch changed mid-batch is dropped', () => {
+    assert.equal(racedTick, undefined, 'the repo must be skipped entirely');
+  });
+
+  check('cross-branch diff never reaches the session evidence', () => {
+    const ev = evidence();
+    assert.equal(ev.linesAdded, settled.linesAdded,
+      `linesAdded = ${ev.linesAdded}, expected ${settled.linesAdded} (used to explode by +4000)`);
+    assert.equal(ev.commits, settled.commits, `commits = ${ev.commits}`);
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

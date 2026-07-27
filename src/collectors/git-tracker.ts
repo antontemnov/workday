@@ -133,6 +133,14 @@ export class GitTracker {
       return null;
     }
 
+    // A checkout mid-batch pairs the old branch name with the new branch's
+    // diff — the evidence would land on the task the developer just left,
+    // inflated by everything that separates the two branches. Drop the tick;
+    // the next one measures a settled worktree.
+    if (raw.branchAfter !== raw.branch) {
+      return null;
+    }
+
     // Branch filter: only track developer's branches
     const task = extractTask(
       raw.branch,

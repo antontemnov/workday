@@ -509,6 +509,9 @@ export interface RawGitOutput {
   // Populated only when baseSha is passed to GitClient.fetchRepoState().
   readonly diffSinceBase?: string;
   readonly commitsSinceBase?: string;
+  // Branch re-read after the batch finished. Differs from `branch` when a
+  // checkout raced the batch — the tick then mixes two branches and is dropped.
+  readonly branchAfter: string;
 }
 
 /**

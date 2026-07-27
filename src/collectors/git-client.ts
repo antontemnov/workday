@@ -19,7 +19,8 @@ export class GitClient {
 
   /**
    * Execute batched git command for a single repo.
-   * Always: branch name, current HEAD SHA, working-tree diff, untracked status, reflog.
+   * Always: branch name, current HEAD SHA, working-tree diff, untracked status,
+   * reflog, and the branch name again as the last section (see branchAfter).
    * When baseSha is provided: also a diff and commit count vs that base — used
    * for PR-equivalent evidence stats on the open session. The caller passes the
    * fresh merge-base with the default branch here when available (rebase-stable),
@@ -60,6 +61,14 @@ export class GitClient {
         `git -C "${repoPath}" rev-list ${baseSha}..HEAD --count`,
       );
     }
+
+    // Branch is re-read last. A checkout landing between the first command and
+    // the diff tail makes one batch describe two branches at once — old branch
+    // name, new working tree. The caller drops such a tick.
+    parts.push(
+      `echo ${GIT_BATCH_SEPARATOR}`,
+      `git -C "${repoPath}" rev-parse --abbrev-ref HEAD`,
+    );
 
     const cmd = parts.join(' && ');
 
@@ -255,6 +264,7 @@ export class GitClient {
     let idx = 6; // fixed: branch, head, diff, status, reflog, untracked
     const diffSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
     const commitsSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
+    const branchAfter = (sections[idx++] ?? '').trim();
 
     return {
       branch: (sections[0] ?? '').trim(),
@@ -265,6 +275,7 @@ export class GitClient {
       untrackedFiles: (sections[5] ?? '').trim(),
       diffSinceBase,
       commitsSinceBase,
+      branchAfter,
     };
   }
 }
