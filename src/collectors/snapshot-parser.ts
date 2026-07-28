@@ -45,11 +45,14 @@ export class SnapshotParser {
    * - a file leaving counts its last known size (revert / re-anchor);
    * - a flat file whose content hash changed counts IN_PLACE_CHURN_LINES.
    *
-   * Returns null delta (hasDynamics=false) if previous is null (first tick after start).
+   * Returns null delta (hasDynamics=false) if previous is null (first tick after start)
+   * or the branch changed — churn maps are anchored per branch (evidence diff vs
+   * merge-base), so a cross-branch comparison would count the union of both diffs
+   * as activity and a bare checkout would birth a session.
    */
   public static computeDelta(previous: GitSnapshot | null, current: GitSnapshot): GitDelta {
-    if (previous === null) {
-      // First tick = baseline, no dynamics
+    if (previous === null || previous.branch !== current.branch) {
+      // Baseline tick, no dynamics
       return { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 };
     }
 

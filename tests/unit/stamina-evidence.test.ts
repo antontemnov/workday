@@ -316,12 +316,12 @@ test('mixed sensitivities: Patient and Normal compete on equal terms', () => {
 
 console.log('\nChurn magnitude (per-file deltas + content hashes + untracked)');
 
-function churnSnap(files: Record<string, [number, number, string | null]>): GitSnapshot {
+function churnSnap(files: Record<string, [number, number, string | null]>, branch = 'b'): GitSnapshot {
   const churnFiles = new Map<string, ChurnFile>(
     Object.entries(files).map(([p, [added, removed, hash]]) => [p, { added, removed, hash }]),
   );
   return {
-    branch: 'b',
+    branch,
     trackedLines: { added: 0, removed: 0 },
     trackedFileCount: 0,
     untrackedCount: 0,
@@ -365,6 +365,28 @@ test('a file leaving the diff counts its last size (revert / re-anchor)', () => 
   const cur = churnSnap({});
   const d = SnapshotParser.computeDelta(prev, cur);
   assert.equal(d.magnitude, 30);
+});
+
+test('branch change is a baseline tick — checkout must not birth a session', () => {
+  // Churn maps are anchored to each branch's merge-base diff: after a
+  // checkout the file sets differ wholesale and would sum into a huge
+  // phantom magnitude (the 2026-07-28 empty-session bug).
+  const prev = churnSnap({ 'a.ts': [40, 10, 'h1'], 'b.ts': [10, 0, null] }, 'ATL-1899');
+  const cur = churnSnap({ 'c.ts': [300, 5, 'h2'] }, 'ATL-8109');
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 0);
+  assert.equal(d.hasDynamics, false);
+  assert.equal(d.addedDelta, 0);
+  assert.equal(d.removedDelta, 0);
+  assert.equal(d.untrackedDelta, 0);
+});
+
+test('same branch after the guard still reports dynamics normally', () => {
+  const prev = churnSnap({ 'a.ts': [10, 0, null] }, 'ATL-8109');
+  const cur = churnSnap({ 'a.ts': [15, 0, null] }, 'ATL-8109');
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 5);
+  assert.equal(d.hasDynamics, true);
 });
 
 // ─── Evidence tracking ───────────────────────────────────────────────────

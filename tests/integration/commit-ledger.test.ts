@@ -266,7 +266,13 @@ async function main(): Promise<void> {
   writeFileSync(join(REPO, 'mixed.ts'), 'pre\n'.repeat(20));
   git('add .');
   git('commit -m "ATL-3 old base"', twoDaysAgo);
-  await tick(); // new session on ATL-3, seeds with the pre-session commit
+  await tick(); // baseline on the new branch — checkout alone is not activity
+
+  // Untracked scratch file = genuine activity that births the session while
+  // staying invisible to the evidence diff (evidence must seed at zero).
+  writeFileSync(join(REPO, 'scratch.txt'), 'wip\n');
+  await tick(); // session born, ledger seeds with the pre-session commit
+  rmSync(join(REPO, 'scratch.txt'));
 
   check('new task session seeds at zero', () => {
     const ev = evidence();
