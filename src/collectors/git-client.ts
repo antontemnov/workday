@@ -1,6 +1,7 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, isAbsolute } from 'node:path';
 import type { RawGitOutput, CommitMeta } from '../core/types.js';
 import { GIT_BATCH_SEPARATOR, GIT_MAX_BUFFER_BYTES } from '../core/constants.js';
 
@@ -91,6 +92,30 @@ export class GitClient {
 
       throw new Error(`Git command failed for ${repoPath}: ${message}`);
     }
+  }
+
+  /**
+   * True while git is rewriting the repo (checkout/rebase/merge in flight).
+   * git holds .git/index.lock for the whole worktree rewrite but updates HEAD
+   * only at the very end — so a mid-checkout tick reads the OLD branch name
+   * with the NEW branch's diff and no branch guard can catch it. Read-only
+   * git commands don't trip on the lock, hence this explicit probe.
+   * Resolves the gitdir indirection of linked worktrees (".git" as a file).
+   */
+  public static isRepoBusy(repoPath: string): boolean {
+    const dotGit = join(repoPath, '.git');
+    let gitDir = dotGit;
+    try {
+      const content = readFileSync(dotGit, 'utf8');
+      const match = content.match(/^gitdir:\s*(.+)\s*$/m);
+      if (!match) return false;
+      const target = match[1].trim();
+      gitDir = isAbsolute(target) ? target : join(repoPath, target);
+    } catch {
+      // EISDIR — plain repo, gitDir is the directory itself; ENOENT — not a repo
+      if (!existsSync(dotGit)) return false;
+    }
+    return existsSync(join(gitDir, 'index.lock'));
   }
 
   /**

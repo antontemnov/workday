@@ -116,6 +116,15 @@ export class GitTracker {
     ledgerQuery: LedgerQuery | null,
   ): Promise<PollResult | null> {
     const now = Date.now();
+
+    // Busy-guard (pre): git holds index.lock for the whole worktree rewrite
+    // while HEAD flips only at the end, so a mid-operation tick pairs the old
+    // branch name with the new branch's diff and slips past both branch
+    // guards. Never measure a repo in motion — skip the tick.
+    if (GitClient.isRepoBusy(repoPath)) {
+      return null;
+    }
+
     const defaultBranchRef = await this.resolveDefaultBranchRef(repoPath);
 
     // Evidence base: fresh merge-base with the default branch (rebase-stable
@@ -127,6 +136,14 @@ export class GitTracker {
     const evidenceBase = mergeBaseSha ?? baseSha ?? undefined;
 
     const raw = await this.gitClient.fetchRepoState(repoPath, evidenceBase);
+
+    // Busy-guard (post): an operation that started during the batch means the
+    // diff may already describe a half-rewritten worktree. Together with the
+    // branchAfter check below this closes the window: still rewriting → lock
+    // present here; finished rewriting → branchAfter reads the new branch.
+    if (GitClient.isRepoBusy(repoPath)) {
+      return null;
+    }
 
     // Detached HEAD shows as commit SHA (7-40 hex chars); skip to avoid disrupting sessions
     if (raw.branch === 'HEAD' || /^[0-9a-f]{7,40}$/.test(raw.branch)) {
