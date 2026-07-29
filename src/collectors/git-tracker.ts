@@ -39,6 +39,9 @@ export class GitTracker {
   private readonly gitClient: GitClient;
   private reflogParser: ReflogParser;
   private readonly repoStates: Map<string, RepoTracker> = new Map();
+  // Repos currently skipped by the busy-guard — edge-triggered logging only
+  // (a stale index.lock would otherwise warn every 30s forever).
+  private readonly busySkipCounts: Map<string, number> = new Map();
   // Resolved default-branch ref (e.g. "origin/master" or "master"). null = no
   // ref resolved → merge-base advancement disabled for this repo, evidence
   // falls back to per-session baseSha. `undefined` = not yet resolved.
@@ -122,7 +125,7 @@ export class GitTracker {
     // branch name with the new branch's diff and slips past both branch
     // guards. Never measure a repo in motion — skip the tick.
     if (GitClient.isRepoBusy(repoPath)) {
-      return null;
+      return this.recordBusySkip(repoPath);
     }
 
     const defaultBranchRef = await this.resolveDefaultBranchRef(repoPath);
@@ -142,7 +145,13 @@ export class GitTracker {
     // branchAfter check below this closes the window: still rewriting → lock
     // present here; finished rewriting → branchAfter reads the new branch.
     if (GitClient.isRepoBusy(repoPath)) {
-      return null;
+      return this.recordBusySkip(repoPath);
+    }
+
+    if (this.busySkipCounts.has(repoPath)) {
+      const skipped = this.busySkipCounts.get(repoPath)!;
+      this.busySkipCounts.delete(repoPath);
+      console.warn(`[GitTracker] ${basename(repoPath)}: repo settled, polling resumed (${skipped} tick(s) skipped)`);
     }
 
     // Detached HEAD shows as commit SHA (7-40 hex chars); skip to avoid disrupting sessions
@@ -268,6 +277,16 @@ export class GitTracker {
     };
   }
 
+
+  /** Count a busy-guard skip; warn on the first one only (stale-lock safety). */
+  private recordBusySkip(repoPath: string): null {
+    const count = (this.busySkipCounts.get(repoPath) ?? 0) + 1;
+    this.busySkipCounts.set(repoPath, count);
+    if (count === 1) {
+      console.warn(`[GitTracker] ${basename(repoPath)}: git busy (index.lock), tick skipped`);
+    }
+    return null;
+  }
 
   /**
    * Resolve the default-branch ref for a repo through the configured cascade.
