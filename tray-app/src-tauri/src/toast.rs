@@ -45,8 +45,10 @@ pub fn get_idle_ms() -> u64 {
 
 /// Queue a notification payload and make sure the toast window exists.
 /// The window stays hidden until its frontend reports ready.
+/// async is load-bearing: sync commands run on the main thread, and building
+/// a webview there deadlocks the whole app on Windows (wry#583).
 #[tauri::command]
-pub fn show_toast(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
+pub async fn show_toast(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
     *PENDING_TOAST.lock().unwrap() = Some(payload.clone());
 
     if let Some(window) = app.get_webview_window(TOAST_LABEL) {
