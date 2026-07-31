@@ -208,7 +208,10 @@
   // character count, so the gap to the Log capsule stays static and digit
   // swaps can't tremble it.
   text-align: right;
-  margin-left: 4px;
+  // The whole gap to the ＋Log capsule (flex gap + this) rides on the total,
+  // never on the header or the capsule: an empty day drops the span and the
+  // capsule keeps its own 14px to the edge.
+  margin-left: 9px;
   font-size: 17px;
   font-weight: 700;
   color: #cdd6f4;
