@@ -25,6 +25,9 @@ import {
   suggestionSourceRef,
 } from '../../models/workday.models';
 
+// Ordering bars for the Sort method row — longest to shortest.
+const SORT_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="2" y1="3" x2="10" y2="3"/><line x1="2" y1="6" x2="7.4" y2="6"/><line x1="2" y1="9" x2="4.8" y2="9"/></svg>';
+
 interface SensitivityPillOption {
   readonly key: SensitivityLevel;
   readonly label: string;
@@ -208,11 +211,35 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     const target = ev.target as HTMLElement | null;
     if (target?.closest('input, textarea, [contenteditable]')) return;
     ev.preventDefault();
-    const mark = (mode: FeedSortMode): string => this.feedSort === mode ? '✓' : ' ';
-    openCtxMenu(ev.clientX, ev.clientY, [
-      { header: 'Sort by' },
-      { icon: mark('recency'), label: 'Newest first', action: () => this.setFeedSort('recency') },
-      { icon: mark('sum'), label: 'Total time', action: () => this.setFeedSort('sum') },
+    this.openFeedMenu(ev.clientX, ev.clientY);
+  }
+
+  private sortModeLabel(mode: FeedSortMode): string {
+    return mode === 'sum' ? 'Total time' : 'Newest first';
+  }
+
+  // The session card's two-stage popover, 1:1: stage 1 carries the Sort
+  // method row with the active mode as a dimmed hint; stage 2 is the picker
+  // (Back + the modes, ✓ on the active one).
+  private openFeedMenu(x: number, y: number): void {
+    openCtxMenu(x, y, [
+      { icon: SORT_ICON, label: 'Sort method', hint: this.sortModeLabel(this.feedSort),
+        action: (): void => this.openSortMenu(x, y) },
+    ]);
+  }
+
+  private openSortMenu(x: number, y: number): void {
+    const modes: readonly FeedSortMode[] = ['recency', 'sum'];
+    openCtxMenu(x, y, [
+      { label: '← Back', action: (): void => this.openFeedMenu(x, y) },
+      { separator: true },
+      ...modes.map(mode => ({
+        // Reserve the icon gutter on every row (space when unselected) so the
+        // ✓ on the active mode keeps the labels aligned.
+        icon: mode === this.feedSort ? '✓' : ' ',
+        label: this.sortModeLabel(mode),
+        action: (): void => this.setFeedSort(mode),
+      })),
     ]);
   }
 
