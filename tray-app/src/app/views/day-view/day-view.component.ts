@@ -107,9 +107,16 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     if (changes['data']) this.checkDayFlash();
   }
 
+  // The panel recomputes its diff inside its own ngOnChanges — Angular is past
+  // the day head by then, so adopting it inline rewrites an already-checked
+  // binding (NG0100 in dev; in prod a Day total left stale until some later
+  // tick). The microtask lands it on the next tick, still inside the frame.
   onLiveDiff(minutes: number): void {
-    this.liveDiffMinutes = minutes;
-    this.checkDayFlash();
+    queueMicrotask(() => {
+      if (minutes === this.liveDiffMinutes) return;
+      this.liveDiffMinutes = minutes;
+      this.checkDayFlash();
+    });
   }
 
   private checkDayFlash(): void {
