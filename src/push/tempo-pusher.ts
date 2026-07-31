@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { loadConfig, loadSecrets } from '../core/config.js';
 import { readDailyLog, writeDailyLog } from '../core/daily-log.js';
-import { DayStatus, type AppConfig, type Secrets, type TaskDayReport, type PushPlanEntry, type PushResult, type PushResponse } from '../core/types.js';
+import { DayStatus, type AppConfig, type Secrets, type TaskDayReport, type PushLogEntry, type PushPlanEntry, type PushResult, type PushResponse } from '../core/types.js';
 import { buildReport, buildReportResponse, getDefaultFromDate, getDefaultToDate } from './report-builder.js';
 import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient } from './tempo-client.js';
@@ -24,7 +24,11 @@ export async function executePlan(
   tempoClient: TempoClient,
   accountId: string,
 ): Promise<PushResult> {
-  const pushLog = loadPushLog();
+  // Push-log deltas (null = drop key), applied to a fresh read right before
+  // the final save. Holding a full copy across the Tempo calls and saving it
+  // whole would resurrect keys dropped by a concurrent recordEntryDeletion —
+  // entry deletes run outside the push lock.
+  const pushLogDeltas = new Map<string, PushLogEntry | null>();
   const deletedWorklogIds = new Set<number>();
   let posted = 0;
   let updated = 0;
@@ -51,13 +55,13 @@ export async function executePlan(
             description: entry.description,
             activity: entry.activity,
           });
-          pushLog[key] = {
+          pushLogDeltas.set(key, {
             tempoWorklogId: result.tempoWorklogId,
             timeSpentSeconds: entry.targetSeconds,
             pushedAt: new Date().toISOString(),
             description: entry.description,
             activity: entry.activity,
-          };
+          });
           posted++;
           console.log(`  POST ${entry.date} ${entry.task} ${formatHours(entry.targetSeconds)}`);
         } catch (err) {
@@ -78,13 +82,13 @@ export async function executePlan(
             description: entry.description,
             activity: entry.activity,
           });
-          pushLog[key] = {
+          pushLogDeltas.set(key, {
             tempoWorklogId: result.tempoWorklogId,
             timeSpentSeconds: entry.targetSeconds,
             pushedAt: new Date().toISOString(),
             description: entry.description,
             activity: entry.activity,
-          };
+          });
           updated++;
           console.log(`  PUT  ${entry.date} ${entry.task} ${entry.detail}`);
         } catch (err) {
@@ -98,7 +102,7 @@ export async function executePlan(
         if (!entry.existingWorklogId) { failed++; break; }
         try {
           await tempoClient.deleteWorklog(entry.existingWorklogId);
-          delete pushLog[key];                       // stray ownership, if any
+          pushLogDeltas.set(key, null);              // stray ownership, if any
           deletedWorklogIds.add(entry.existingWorklogId);
           deleted++;
           console.log(`  DEL  ${entry.date} ${entry.task} ${formatHours(entry.targetSeconds)}`);
@@ -115,6 +119,15 @@ export async function executePlan(
     }
   }
 
+  // A key tombstoned mid-push was deleted locally while we were pushing it —
+  // re-adding ownership would let the stray pass claim the worklog and block
+  // the tombstone's delete forever once the day file is gone.
+  const pushLog = loadPushLog();
+  const tombstonedKeys = new Set(loadTombstones().map(t => pushLogKey(t.date, t.task, t.entryId)));
+  for (const [key, entry] of pushLogDeltas) {
+    if (entry === null) delete pushLog[key];
+    else if (!tombstonedKeys.has(key)) pushLog[key] = entry;
+  }
   savePushLog(pushLog);
   if (deletedWorklogIds.size > 0) {
     removeTombstonesByWorklogIds(deletedWorklogIds);

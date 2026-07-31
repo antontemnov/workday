@@ -173,5 +173,55 @@ await (async () => {
   });
 })();
 
+console.log('\nexecutePlan — concurrent entry deletion (delta re-apply)');
+
+await (async () => {
+  // Another process deletes pushed entry e1 while the push is in-flight.
+  // The final save must not resurrect its ownership key from a pre-push copy.
+  savePushLog({ [pushLogKey(DATE, TASK, 'e1')]: logEntry(100) });
+  saveTombstones([]);
+
+  const { client } = stubClient({
+    create: async () => {
+      recordEntryDeletion(DATE, TASK, 'e1');
+      return { tempoWorklogId: 500 };
+    },
+  });
+  await executePlan([{
+    date: DATE, task: TASK, targetSeconds: 3600,
+    action: 'create', detail: 'New (1.0h)', issueId: 1, kind: 'session',
+  }], client, 'acc');
+
+  test('mid-push deletion of an untouched key survives the final save', () => {
+    const log = loadPushLog();
+    assert.equal(log[pushLogKey(DATE, TASK, 'e1')], undefined);
+    assert.equal(log[pushLogKey(DATE, TASK)]?.tempoWorklogId, 500);
+    assert.equal(loadTombstones().length, 1);
+  });
+})();
+
+await (async () => {
+  // The entry being updated is itself deleted mid-push: the tombstone wins,
+  // ownership is not re-added (it would block the tombstone's delete pass).
+  savePushLog({ [pushLogKey(DATE, TASK, 'e2')]: logEntry(150) });
+  saveTombstones([]);
+
+  const { client } = stubClient({
+    update: async () => {
+      recordEntryDeletion(DATE, TASK, 'e2');
+      return { tempoWorklogId: 150 };
+    },
+  });
+  await executePlan([{
+    date: DATE, task: TASK, targetSeconds: 1800,
+    action: 'update', detail: 'x', issueId: 1, existingWorklogId: 150, kind: 'manual', entryId: 'e2',
+  }], client, 'acc');
+
+  test('deleted-while-updating entry: tombstone wins over the push upsert', () => {
+    assert.equal(loadPushLog()[pushLogKey(DATE, TASK, 'e2')], undefined);
+    assert.equal(loadTombstones()[0]?.tempoWorklogId, 150);
+  });
+})();
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

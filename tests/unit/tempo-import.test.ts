@@ -10,7 +10,7 @@ import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before 
 import assert from 'node:assert/strict';
 import { readDailyLog } from '../../src/core/daily-log.js';
 import { importFromSnapshot } from '../../src/push/tempo-import.js';
-import { loadPushLog, savePushLog, saveTombstones, pushLogKey } from '../../src/push/push-log.js';
+import { loadPushLog, savePushLog, loadTombstones, saveTombstones, pushLogKey, recordEntryDeletion } from '../../src/push/push-log.js';
 import { saveMonthSnapshot } from '../../src/push/tempo-snapshot.js';
 import { buildMonthResponse } from '../../src/push/month-report.js';
 import { MonthDayStatus, SensitivityLevel } from '../../src/core/types.js';
@@ -205,6 +205,30 @@ test('month report: adopted rows are manual and in parity, not foreign', () => {
   assert.equal(day.status, MonthDayStatus.Pending);  // parity, but never sealed by a push
   assert.deepEqual(day.drift, []);
   assert.equal(day.reportedSeconds, 3600 + 1800);
+});
+
+test('mid-import deletion of an unrelated key survives the per-entry save', () => {
+  savePushLog({ [pushLogKey('2026-06-03', 'ATL-1', 'zzz')]: { tempoWorklogId: 700, timeSpentSeconds: 900, pushedAt: '2026-06-03T10:00:00.000Z' } });
+  saveTombstones([]);
+
+  const snap: TempoMonthSnapshot = {
+    ...snapshot,
+    worklogs: [wl({ tempoWorklogId: 960, issueId: 1, startDate: TODAY, timeSpentSeconds: 600 })],
+  };
+  const r = importFromSnapshot(snap, {
+    config,
+    today: TODAY,
+    addEntryToday: (input): ManualEntry => {
+      recordEntryDeletion('2026-06-03', 'ATL-1', 'zzz'); // concurrent delete mid-import
+      return { id: 'race-entry', task: input.task, minutes: input.minutes, description: input.description, activity: input.activity, createdAt: new Date().toISOString() };
+    },
+  });
+  assert.equal(r.imported, 1);
+
+  const log = loadPushLog();
+  assert.equal(log[pushLogKey('2026-06-03', 'ATL-1', 'zzz')], undefined);
+  assert.equal(log[pushLogKey(TODAY, 'ATL-1', 'race-entry')]?.tempoWorklogId, 960);
+  assert.equal(loadTombstones().length, 1);
 });
 
 console.log('');

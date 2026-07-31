@@ -39,8 +39,7 @@ function importDescription(wl: TempoWorklog, task: string): string {
  */
 export function importFromSnapshot(snapshot: TempoMonthSnapshot, options: ImportOptions): Omit<TempoImportResponse, 'syncedAt'> {
   const { config, today } = options;
-  const pushLog = loadPushLog();
-  const ownedIds = new Set(Object.values(pushLog).map(e => e.tempoWorklogId));
+  const ownedIds = new Set(Object.values(loadPushLog()).map(e => e.tempoWorklogId));
   const tombstoneIds = new Set(loadTombstones().map(t => t.tempoWorklogId));
   const snapById = new Map(snapshot.worklogs.map(w => [w.tempoWorklogId, w]));
 
@@ -104,15 +103,18 @@ export function importFromSnapshot(snapshot: TempoMonthSnapshot, options: Import
 
     // Baseline = raw remote fields: the diff sees parity, remoteChanged sees
     // exactly what we adopted. Saved per entry — a mid-batch crash leaves an
-    // unowned twin that the next push re-adopts by content match.
-    pushLog[pushLogKey(wl.startDate, task, entry.id)] = {
+    // unowned twin that the next push re-adopts by content match. Fresh
+    // read-modify-write per save: a held copy would resurrect keys dropped by
+    // a concurrent recordEntryDeletion (entry deletes run outside the lock).
+    const freshLog = loadPushLog();
+    freshLog[pushLogKey(wl.startDate, task, entry.id)] = {
       tempoWorklogId: wl.tempoWorklogId,
       timeSpentSeconds: wl.timeSpentSeconds,
       pushedAt: new Date().toISOString(),
       ...(wl.description !== undefined ? { description: wl.description } : {}),
       ...(wl.activity !== undefined ? { activity: wl.activity } : {}),
     };
-    savePushLog(pushLog);
+    savePushLog(freshLog);
     items.push({ ...itemOf(wl, snapshot), task, entryId: entry.id });
   }
 
