@@ -22,9 +22,17 @@
   // The breakdown link's hairline — glass, not green: the trunk carries
   // structure, colour in the feed is taken by roles.
   --cn: rgba(205, 214, 244, 0.17);
+  transition: box-shadow 0.2s ease;
 
   &:last-child { margin-bottom: 0; }
   &.one { padding-bottom: 4px; }
+
+  // Mid-FLIP: the biggest rank jumper lifts off the glass for the flight —
+  // a deeper drop shadow over the cards it passes.
+  &.traveler {
+    z-index: 5;
+    box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.72), 0 3px 10px -4px rgba(0, 0, 0, 0.55);
+  }
 }
 
 // The lid (divider-lab variant B): the header stands on denser glass with the

@@ -27,7 +27,9 @@
 
 <!-- The feed: sticky day header, then live sessions → (suggestions slot,
      epoch 4) → history newest-first. One scroll, no sections. -->
-<div class="content" *ngIf="data && !error">
+<!-- Right-click on free content space (cards stop their own) — the window's
+     menu: feed sort method. -->
+<div class="content" *ngIf="data && !error" (contextmenu)="onFeedContextMenu($event)">
   <div class="day-head" #dayHead>
     <!-- Weekday rides above the date, out of flow: the flex row keeps its
          three participants (date · ＋Log · total) and the bar its height. -->
@@ -97,6 +99,7 @@
     [favorites]="favorites"
     [freshEntryId]="freshEntryId"
     [arriveFrom]="suggestionArrive"
+    [feedSort]="feedSort"
     (patchCommitted)="onPanelPatch($event)"
     (deleteCommitted)="entryDeleteSubmitted.emit($event)"
     (sessionDeleteCommitted)="sessionDeleteSubmitted.emit($event)"

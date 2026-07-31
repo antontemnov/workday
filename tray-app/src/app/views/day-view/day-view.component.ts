@@ -7,6 +7,8 @@ import { LoggedPanelComponent, type ArriveFrom } from './logged-panel/logged-pan
 import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
 import { SuggestionRowComponent, type SuggestionAcceptEvent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
+import { openCtxMenu } from './ctx-menu.util';
+import { FeedSortMode, loadFeedSort, persistFeedSort } from './feed-sort.util';
 import {
   SessionDetail,
   SensitivityLevel,
@@ -193,6 +195,31 @@ export class DayViewComponent implements OnChanges, OnDestroy {
 
   onPanelPatch(e: { id: string; patch: ManualEntryPatch }): void {
     this.entryEditSubmitted.emit({ target: e.id, patch: e.patch });
+  }
+
+  // ─── Feed sort — the window's own menu on free content space ────────────
+
+  // A tray-side display preference (localStorage): the daemon knows nothing
+  // about presentation. Default and fallback — newest first.
+  feedSort: FeedSortMode = loadFeedSort();
+
+  onFeedContextMenu(ev: MouseEvent): void {
+    // Text inputs keep the native copy/paste menu (app-level rule).
+    const target = ev.target as HTMLElement | null;
+    if (target?.closest('input, textarea, [contenteditable]')) return;
+    ev.preventDefault();
+    const mark = (mode: FeedSortMode): string => this.feedSort === mode ? '✓' : ' ';
+    openCtxMenu(ev.clientX, ev.clientY, [
+      { header: 'Sort by' },
+      { icon: mark('recency'), label: 'Newest first', action: () => this.setFeedSort('recency') },
+      { icon: mark('sum'), label: 'Total time', action: () => this.setFeedSort('sum') },
+    ]);
+  }
+
+  private setFeedSort(mode: FeedSortMode): void {
+    if (mode === this.feedSort) return;
+    this.feedSort = mode;
+    persistFeedSort(mode);
   }
 
   // ─── Suggestions (graphite blueprint rows between the live cards and the history) ─────

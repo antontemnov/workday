@@ -1,4 +1,4 @@
-import { Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -8,6 +8,7 @@ import {
 import { activityLabel, activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 import { openCtxMenu } from '../ctx-menu.util';
+import { FEED_SORT_DEFAULT, FeedSortMode } from '../feed-sort.util';
 
 const FRESH_WINDOW_MS = 4000;
 const STEP_MINUTES = 15;
@@ -24,6 +25,11 @@ const FAV_FEEDBACK_MS = 1200;
 // Batch / instant static rows fly in once with a staggered pop.
 const POP_ANIM_MS = 500;
 const POP_STAGGER_MS = 80;
+// Re-sorts run as a FLIP flight, never a teleport. The flight starts a beat
+// AFTER the row change that caused it (its collapse/pop reads first), the
+// biggest rank jumper lifts off the glass for the trip.
+const REORDER_DELAY_MS = 260;
+const REORDER_FLIGHT_MS = 440;
 
 // One ticket's day — the identity printed once over the worklog rows it
 // carries. Rows: observed Development (sessions + breakdown), the single
@@ -82,6 +88,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input() freshEntryId: string | null = null;
   // Latest suggestion accept — its entry arrives with a slide, not a pop.
   @Input() arriveFrom: ArriveFrom | null = null;
+  // Card order — a display preference owned by the day view (window menu).
+  @Input() feedSort: FeedSortMode = FEED_SORT_DEFAULT;
 
   @Output() patchCommitted = new EventEmitter<{ id: string; patch: ManualEntryPatch }>();
   // Fired when the undo window closes — the entry is gone for the user; the
@@ -95,7 +103,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // adds it to the Day total so it moves together with the feed.
   @Output() liveDiffChanged = new EventEmitter<number>();
 
-  public constructor(private host: ElementRef<HTMLElement>) {}
+  public constructor(private host: ElementRef<HTMLElement>, private cdr: ChangeDetectorRef) {}
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
@@ -156,6 +164,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   favDoneId: string | null = null;
   private favDoneTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // The card order actually shown. When the target order drifts away from it
+  // (a new fact bubbles a card, a delete drops one back, the sort mode
+  // changes), the cards FLY to their new spots instead of teleporting.
+  private displayOrder: string[] = [];
+  private reorderTimer: ReturnType<typeof setTimeout> | null = null;
+  private flipCleanTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
   private lastEmittedDiff = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -188,6 +203,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.reconcileTrackedDeletes();
       this.recomputeLive();
     }
+    // A sort-mode switch is a direct action — fly now, no row beat to wait
+    // for. A tick later: the flight measures rendered cards.
+    if (changes['feedSort'] && !changes['feedSort'].firstChange) {
+      setTimeout(() => this.playReorder(false));
+    }
   }
 
   ngOnDestroy(): void {
@@ -212,6 +232,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
     this.taskDeleteTimers.clear();
     if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
+    if (this.reorderTimer !== null) clearTimeout(this.reorderTimer);
     this.pendingTimers.forEach(t => clearTimeout(t));
     this.removeTimers.forEach(t => clearTimeout(t));
     this.sesRemoveTimers.forEach(t => clearTimeout(t));
@@ -295,10 +316,98 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // ─── Feed — ticket blocks, newest first ────────────────────────────────
 
-  // Every fact of the day lives in its ticket's block; the block stands on
-  // its newest fact and surfaces whole when something is added to it.
+  // Every fact of the day lives in its ticket's block. Cards render in
+  // displayOrder, not the target order: born cards insert straight at their
+  // spot, vanished cards drop out in place, but a SURVIVOR whose rank changed
+  // keeps its old position here — the deferred FLIP flight moves it.
   get feedBlocks(): readonly TicketBlock[] {
-    return this.buildBlocks().sort((a, b) => b.at.localeCompare(a.at));
+    const blocks = this.buildBlocks();
+    const target = this.sortTasks(blocks);
+    const present = new Set(target);
+    const rank = new Map(target.map((t, i) => [t, i]));
+    const merged = this.displayOrder.filter(t => present.has(t));
+    for (const t of target) {
+      if (merged.includes(t)) continue;
+      const r = rank.get(t) ?? 0;
+      let idx = merged.findIndex(k => (rank.get(k) ?? Infinity) > r);
+      if (idx < 0) idx = merged.length;
+      merged.splice(idx, 0, t);
+    }
+    this.displayOrder = merged;
+    if (merged.some((t, i) => t !== target[i])) this.scheduleReorder();
+    const index = new Map(merged.map((t, i) => [t, i]));
+    return blocks.sort((a, b) => (index.get(a.task) ?? 0) - (index.get(b.task) ?? 0));
+  }
+
+  // The target order by the active mode. Recency: the block stands on its
+  // newest fact. Sum: biggest day total first, recency breaks ties.
+  private sortTasks(blocks: readonly TicketBlock[]): string[] {
+    return [...blocks]
+      .sort((a, b) => this.feedSort === 'sum'
+        ? (b.totalMs - a.totalMs || b.at.localeCompare(a.at))
+        : b.at.localeCompare(a.at))
+      .map(b => b.task);
+  }
+
+  // ─── FLIP re-sort — cards fly to their new spots, never teleport ───────
+
+  private scheduleReorder(): void {
+    if (this.reorderTimer !== null) return;
+    this.reorderTimer = setTimeout(() => {
+      this.reorderTimer = null;
+      this.playReorder(true);
+    }, REORDER_DELAY_MS);
+  }
+
+  // Measure standing cards → apply the target order → translate each
+  // survivor from its old spot and release. The biggest rank jumper is the
+  // traveler: it lifts off the glass for the flight (a mode switch moves
+  // everyone — no single card to spotlight). Mid-fold cards are left alone;
+  // their collapse owns the element's inline styles.
+  private playReorder(withTraveler: boolean): void {
+    const target = this.sortTasks(this.buildBlocks());
+    if (this.displayOrder.length === target.length
+        && this.displayOrder.every((t, i) => t === target[i])) return;
+    const before = new Map<string, number>();
+    for (const c of this.host.nativeElement.querySelectorAll<HTMLElement>('.blk')) {
+      before.set(c.dataset['task'] ?? '', c.getBoundingClientRect().top);
+    }
+    const oldRank = new Map(this.displayOrder.map((t, i) => [t, i]));
+    let traveler = '';
+    let travelerJump = 0;
+    if (withTraveler) {
+      target.forEach((t, i) => {
+        const jump = Math.abs((oldRank.get(t) ?? i) - i);
+        if (jump > travelerJump) { travelerJump = jump; traveler = t; }
+      });
+    }
+    this.displayOrder = [...target];
+    this.cdr.detectChanges();
+    const moved: HTMLElement[] = [];
+    for (const c of this.host.nativeElement.querySelectorAll<HTMLElement>('.blk')) {
+      const task = c.dataset['task'] ?? '';
+      const was = before.get(task);
+      if (was === undefined) continue;
+      if (this.removingTasks.has(task) || this.foldingTasks.has(task)) continue;
+      const delta = was - c.getBoundingClientRect().top;
+      if (Math.abs(delta) < 1) continue;
+      const stale = this.flipCleanTimers.get(c);
+      if (stale !== undefined) clearTimeout(stale);
+      c.style.transition = 'none';
+      c.style.transform = `translateY(${delta}px)`;
+      c.classList.toggle('traveler', task === traveler);
+      moved.push(c);
+    }
+    if (moved.length === 0) return;
+    void this.host.nativeElement.offsetHeight; // reflow pins the start positions
+    for (const c of moved) {
+      c.style.transition = `transform ${REORDER_FLIGHT_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+      c.style.transform = '';
+      this.flipCleanTimers.set(c, setTimeout(() => {
+        c.style.transition = '';
+        c.classList.remove('traveler');
+      }, REORDER_FLIGHT_MS + 140));
+    }
   }
 
   private buildBlocks(): TicketBlock[] {

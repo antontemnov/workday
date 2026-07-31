@@ -27,7 +27,12 @@ export interface CtxMenuSeparator {
   readonly separator: true;
 }
 
-export type CtxMenuEntry = CtxMenuItem | CtxMenuSeparator;
+// Non-interactive section title above a group of options (e.g. "Sort by").
+export interface CtxMenuHeader {
+  readonly header: string;
+}
+
+export type CtxMenuEntry = CtxMenuItem | CtxMenuSeparator | CtxMenuHeader;
 
 let menuEl: HTMLElement | null = null;
 let removeListeners: (() => void) | null = null;
@@ -48,6 +53,13 @@ export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]
       const sep = document.createElement('div');
       sep.className = 'ctx-sep';
       menu.appendChild(sep);
+      continue;
+    }
+    if ('header' in item) {
+      const head = document.createElement('div');
+      head.className = 'ctx-head';
+      head.textContent = item.header;
+      menu.appendChild(head);
       continue;
     }
     const el = document.createElement('div');
