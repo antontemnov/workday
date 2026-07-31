@@ -400,9 +400,11 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return seconds > 0 ? fmtCompact(seconds) : null;
   }
 
-  // Approved period is sealed Tempo-side — nothing to push into it.
+  // A submitted period is out of our hands: APPROVED is sealed, IN_REVIEW is
+  // on the reviewer's desk — pushing into either is meaningless and risky.
   get pushHidden(): boolean {
-    return this.approval?.available === true && this.approval.statusKey === 'APPROVED';
+    return this.approval?.available === true
+      && (this.approval.statusKey === 'APPROVED' || this.approval.statusKey === 'IN_REVIEW');
   }
 
   async onPush(force = false): Promise<void> {
@@ -501,10 +503,11 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return `${row.date}|${t.entryId}`;
   }
 
-  // An APPROVED Tempo period is sealed — the push button is hidden, so local
-  // edits could never land; the whole month stays view-only.
+  // An APPROVED Tempo period is sealed — local edits could never land; the
+  // whole month stays view-only. IN_REVIEW only pauses pushing: preparing
+  // local fixes for a possible reject is legitimate.
   get editLocked(): boolean {
-    return this.pushHidden;
+    return this.approval?.available === true && this.approval.statusKey === 'APPROVED';
   }
 
   // Rows without an entryId (older daemon) degrade to read-only.

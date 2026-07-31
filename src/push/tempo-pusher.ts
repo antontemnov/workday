@@ -5,7 +5,7 @@ import { DayStatus, type AppConfig, type Secrets, type TaskDayReport, type PushP
 import { buildReport, buildReportResponse, getDefaultFromDate, getDefaultToDate } from './report-builder.js';
 import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient } from './tempo-client.js';
-import { invalidateApprovalCache } from './tempo-approvals.js';
+import { invalidateApprovalCache, resolveMonthApproval } from './tempo-approvals.js';
 import { loadPushLog, savePushLog, pushLogKey, loadTombstones, removeTombstonesByWorklogIds } from './push-log.js';
 import { acquirePushLock } from './push-lock.js';
 import { refreshSnapshotsInRange } from './tempo-snapshot.js';
@@ -170,6 +170,35 @@ interface RunPushOptions {
   readonly force?: boolean;
 }
 
+// A submitted timesheet is on the reviewer's desk — mutating worklogs under
+// review (or after approval) is never what the user meant.
+const APPROVAL_BLOCKED_STATUSES = new Set(['IN_REVIEW', 'APPROVED']);
+
+function* monthsInRange(from: string, to: string): Generator<{ year: number; month: number }> {
+  let year = Number(from.slice(0, 4));
+  let month = Number(from.slice(5, 7));
+  const endYear = Number(to.slice(0, 4));
+  const endMonth = Number(to.slice(5, 7));
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    yield { year, month };
+    month++;
+    if (month > 12) { month = 1; year++; }
+  }
+}
+
+/** Refuse commit pushes into IN_REVIEW/APPROVED months. Unavailable approval
+ *  (no scope, Tempo down) never blocks — the check is a live safety gate,
+ *  not a dependency. */
+async function assertRangePushable(from: string, to: string, secrets: Secrets): Promise<void> {
+  for (const { year, month } of monthsInRange(from, to)) {
+    const approval = await resolveMonthApproval(year, month, secrets, true);
+    if (approval.available && approval.statusKey && APPROVAL_BLOCKED_STATUSES.has(approval.statusKey)) {
+      const key = `${year}-${String(month).padStart(2, '0')}`;
+      throw new Error(`Timesheet ${key} is ${approval.statusKey} in Tempo — pushing is disabled until the reviewer releases it`);
+    }
+  }
+}
+
 /** Full push pipeline: build report → resolve Jira → fetch Tempo → plan → execute */
 export async function runPush(options: RunPushOptions): Promise<PushResponse> {
   // Dry runs are read-only. Commit pushes take the cross-process lock, so a
@@ -178,6 +207,7 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
   if (!options.commit) return runPushPipeline(options);
   const releaseLock = acquirePushLock('push');
   try {
+    await assertRangePushable(options.from, options.to, options.secrets);
     return await runPushPipeline(options);
   } finally {
     releaseLock();
