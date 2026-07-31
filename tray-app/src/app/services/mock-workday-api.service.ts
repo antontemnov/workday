@@ -99,8 +99,16 @@ export class MockWorkdayApiService extends WorkdayApiService {
     // births its own group card with a manual-only breakdown.
     { id: 'm5', task: 'ATL-6781', minutes: 45, description: '',
       activity: 'Development', createdAt: this.iso(14, 40), sourceSessionId: 's1' },
+    // Unnamed standalone Development (LOG-born, no sourceSessionId) — folds
+    // into the same "manual added" row as the session-born m4.
+    { id: 'm6', task: 'ATL-6712', minutes: 30, description: '',
+      activity: 'Development', createdAt: this.iso(16, 5) },
+    // Named entry on the tracked ticket — the canonical 4-row block:
+    // observed + manual added + Meeting + Code review.
+    { id: 'm7', task: 'ATL-6712', minutes: 30, description: 'sprint planning',
+      activity: 'Other', createdAt: this.iso(15, 30) },
   ];
-  private mockEntrySeq = 6;
+  private mockEntrySeq = 8;
   // Sessions "removed" via deleteSession/deleteTask — filtered out of getToday.
   private mockDeletedSessionIds = new Set<string>();
 

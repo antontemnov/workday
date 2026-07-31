@@ -25,29 +25,21 @@ const FAV_FEEDBACK_MS = 1200;
 const POP_ANIM_MS = 500;
 const POP_STAGGER_MS = 80;
 
-// One breakdown line of a merged card: a closed session at its close point,
-// or a session-born manual add at its createdAt.
-type GroupItem =
-  | { readonly kind: 'session'; readonly session: SessionDetail; readonly at: string }
-  | { readonly kind: 'manual'; readonly entry: ManualEntry; readonly at: string };
-
-// One ticket's session history — closed sessions plus session-born manual
-// adds folded into a single card, mirroring how the daemon folds both into
-// one Tempo worklog at push time. Read-only header; the chronological
-// breakdown (sessions and adds interleaved) expands inside the row.
-interface TrackedGroup {
-  readonly task: string;                      // ticket key, or '—' for taskless
-  readonly totalMs: number;                   // sessions + manual adds
-  readonly manualMs: number;                  // manual adds alone (band-2 note)
-  readonly sessions: readonly SessionDetail[];
-  readonly items: readonly GroupItem[];       // breakdown, oldest first
+// One ticket's day — the identity printed once over the worklog rows it
+// carries. Rows: observed Development (sessions + breakdown), the single
+// folded "manual added" row, then each described entry. All sums are
+// DISPLAY sums: a row in its undo window has already left them.
+interface TicketBlock {
+  readonly task: string;                        // ticket key, or '—' for taskless
+  readonly at: string;                          // newest fact — feed position
+  readonly sessions: readonly SessionDetail[];  // closed, oldest first
+  readonly folded: readonly ManualEntry[];      // unnamed adds behind one row
+  readonly named: readonly ManualEntry[];       // described entries, oldest first
+  readonly rowCount: number;
+  readonly totalMs: number;                     // header Σ
+  readonly trkMs: number;                       // observed row share
+  readonly foldedMinutes: number;               // manual added row share
 }
-
-// The feed interleaves manual entries and session-born groups newest-first;
-// `at` is the item's place in the day's chronology.
-type FeedItem =
-  | { readonly kind: 'entry'; readonly entry: ManualEntry; readonly at: string }
-  | { readonly kind: 'group'; readonly group: TrackedGroup; readonly at: string };
 
 // A suggestion accept in flight: the entry it creates (matched by the
 // meeting sourceRef) is not a NEW thing — the offer row became it. So on
@@ -60,14 +52,14 @@ export interface ArriveFrom {
 }
 
 /**
- * History feed of the day view — manual entries and session-born groups
- * interleaved newest-first, two-band rows on one shared grid. A just-logged
- * entry gets a ~4s draft window with a ±15m wheel on its time; double-click
- * swaps a row's second band for the inline edit controls. Every local change
- * (wheel ticks included) is reported to the parent as a live diff so the Day
- * total moves in the same instant; committed patches stay as optimistic
- * overrides until the daemon's data confirms them — no flicker between PATCH
- * and refresh.
+ * History feed of the day view — ticket blocks newest-first: one identity
+ * header (the lid) per ticket, worklog rows inside. Observed time is the top
+ * row with its session breakdown; unnamed manual time folds into a single
+ * "⊕ manual added" row; described entries keep their own rows with the
+ * usual edit/delete/favorite mechanics. Every local change is reported to
+ * the parent as a live diff so the Day total moves in the same instant;
+ * committed patches stay as optimistic overrides until the daemon's data
+ * confirms them — no flicker between PATCH and refresh.
  */
 @Component({
   selector: 'app-logged-panel',
@@ -137,14 +129,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   sesRemovingIds = new Set<string>();
   private sesHiddenIds = new Set<string>();
   private sesRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  // ...and for whole ticket blocks (keyed by task): one undo per card.
+  // ...and for whole ticket blocks (keyed by task): one undo per block.
   private taskDeleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   removingTasks = new Set<string>();
   private hiddenTasks = new Set<string>();
   private taskRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  // A card emptied by deleting its last breakdown line: the husk keeps the
-  // feed slot while it folds shut (its rows are already committed deletes).
-  private foldingCards = new Map<string, { group: TrackedGroup; at: string }>();
+  // Blocks mid whole-card fold: deleting the block's last content collapses
+  // the card in ONE motion (the ctx-menu delete's collapse) — the row's own
+  // collapse is suppressed and the commits ride the fold's timer.
+  foldingTasks = new Set<string>();
+  private foldPending = new Map<string, (() => void)[]>();
 
   // Pop pipeline: new static rows (batch / instant) fly in once, staggered.
   // The fresh draft has its own row-in and is skipped.
@@ -199,9 +193,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   ngOnDestroy(): void {
     this.freeze(); // don't lose a pending stepper diff on teardown
     // Deletes past their undo click are the user's intent — commit them now
-    // instead of silently resurrecting the rows on the next visit.
+    // instead of silently resurrecting the rows on the next visit. Committed
+    // ids go hidden so the block commits below can't re-emit them.
     for (const [id, timer] of this.deleteTimers) {
       clearTimeout(timer);
+      this.hiddenIds.add(id);
       this.deleteCommitted.emit(id);
     }
     this.deleteTimers.clear();
@@ -221,6 +217,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.sesRemoveTimers.forEach(t => clearTimeout(t));
     this.taskRemoveTimers.forEach(t => clearTimeout(t));
     this.popTimers.forEach(t => clearTimeout(t));
+    // Mid-fold commits must not be lost with their timer.
+    for (const commits of this.foldPending.values()) {
+      for (const c of commits) c();
+    }
+    this.foldPending.clear();
+    this.foldingTasks.clear();
   }
 
   // ─── Pop-in for new static rows (batch / instant) ──────────────────────
@@ -249,8 +251,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         this.playArrive(id, this.arriveFrom.top);
         continue;
       }
-      // Existing, draft, or session-born (renders inside a group, not as a row).
-      if (prev.has(id) || id === this.freshId || e.sourceSessionId) continue;
+      // Existing, draft, or foldable (merges into the manual added row).
+      if (prev.has(id) || id === this.freshId || this.isFoldable(e)) continue;
       this.poppingIds.add(id);
       this.popDelayMs.set(id, stagger);
       const total = stagger + POP_ANIM_MS;
@@ -278,7 +280,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.arrivingId = id;
     setTimeout(() => {
       const row = this.host.nativeElement.querySelector<HTMLElement>(
-        `.log-row2[data-eid="${CSS.escape(id)}"]`);
+        `.wl[data-eid="${CSS.escape(id)}"]`);
       if (!row) return;
       const delta = fromTop - row.getBoundingClientRect().top;
       if (Math.abs(delta) < 8) return; // bottom suggestion: same spot, no motion
@@ -291,30 +293,101 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     });
   }
 
-  // ─── Feed ──────────────────────────────────────────────────────────────
+  // ─── Feed — ticket blocks, newest first ────────────────────────────────
 
-  // Standalone manual entries and per-ticket session groups in one
-  // chronology, newest first: entries sit at their createdAt, a group at its
-  // newest breakdown item. Session-born adds live inside their ticket's
-  // group, not as rows of their own.
-  get feedItems(): readonly FeedItem[] {
-    const items: FeedItem[] = this.entries
-      .filter(e => !this.hiddenIds.has(e.id) && !e.sourceSessionId)
-      .map(e => ({ kind: 'entry' as const, entry: e, at: e.createdAt }));
-    for (const group of this.trackedGroups) {
-      items.push({ kind: 'group', group, at: this.groupAt(group) });
-    }
-    // Folding husks hold their old slot until the collapse finishes.
-    for (const [task, f] of this.foldingCards) {
-      if (!items.some(it => it.kind === 'group' && it.group.task === task)) {
-        items.push({ kind: 'group', group: f.group, at: f.at });
-      }
-    }
-    return items.sort((a, b) => b.at.localeCompare(a.at));
+  // Every fact of the day lives in its ticket's block; the block stands on
+  // its newest fact and surfaces whole when something is added to it.
+  get feedBlocks(): readonly TicketBlock[] {
+    return this.buildBlocks().sort((a, b) => b.at.localeCompare(a.at));
   }
 
-  trackByFeed(_i: number, it: FeedItem): string {
-    return it.kind === 'entry' ? `e:${it.entry.id}` : `g:${it.group.task}`;
+  private buildBlocks(): TicketBlock[] {
+    const byTask = new Map<string, { sessions: SessionDetail[]; folded: ManualEntry[]; named: ManualEntry[] }>();
+    const bucketOf = (task: string): { sessions: SessionDetail[]; folded: ManualEntry[]; named: ManualEntry[] } => {
+      let b = byTask.get(task);
+      if (!b) { b = { sessions: [], folded: [], named: [] }; byTask.set(task, b); }
+      return b;
+    };
+    for (const s of this.closedSessions) {
+      const task = s.task ?? '—';
+      if (this.hiddenTasks.has(task) || this.sesHiddenIds.has(s.id)) continue;
+      bucketOf(task).sessions.push(s);
+    }
+    for (const e of this.entries) {
+      if (this.hiddenIds.has(e.id) || this.hiddenTasks.has(e.task)) continue;
+      const b = bucketOf(e.task);
+      if (this.isFoldable(e)) b.folded.push(e);
+      else b.named.push(e);
+    }
+    const blocks: TicketBlock[] = [];
+    for (const [task, b] of byTask) {
+      b.sessions.sort((x, y) => x.startedAt.localeCompare(y.startedAt));
+      b.named.sort((x, y) => x.createdAt.localeCompare(y.createdAt));
+      const trkMs = b.sessions.reduce(
+        (sum, s) => sum + (this.sesGone(s.id) ? 0 : s.effectiveDurationMs), 0);
+      const foldedMinutes = b.folded.reduce(
+        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
+      const namedMinutes = b.named.reduce(
+        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
+      const at = [
+        ...b.sessions.map(s => s.lastSeenAt),
+        ...b.folded.map(e => e.createdAt),
+        ...b.named.map(e => e.createdAt),
+      ].sort().pop() ?? '';
+      blocks.push({
+        task,
+        at,
+        sessions: b.sessions,
+        folded: b.folded,
+        named: b.named,
+        rowCount: (b.sessions.length > 0 ? 1 : 0) + (b.folded.length > 0 ? 1 : 0) + b.named.length,
+        totalMs: trkMs + (foldedMinutes + namedMinutes) * 60_000,
+        trkMs,
+        foldedMinutes,
+      });
+    }
+    return blocks;
+  }
+
+  // The fold: unnamed manual time is one fact per ticket regardless of how
+  // many times it was poured in (＋Add time on the card, a bare Development
+  // pick in LOG). The evidence — or its absence — is the row's identity, so
+  // an entry with nothing to say joins the aggregate.
+  private isFoldable(e: ManualEntry): boolean {
+    return !!e.sourceSessionId
+      || (this.displayActivity(e) === DEVELOPMENT_ACTIVITY && this.displayDescription(e).trim() === '');
+  }
+
+  trackByBlock(_i: number, b: TicketBlock): string {
+    return `t:${b.task}`;
+  }
+
+  trackByEntry(_i: number, e: ManualEntry): string {
+    return e.id;
+  }
+
+  trackBySession(_i: number, s: SessionDetail): string {
+    return s.id;
+  }
+
+  // Σ is a sum only when there are parts: a one-row block keeps its number
+  // in the header alone, the row's time slot stays empty.
+  blockSum(b: TicketBlock): string {
+    return b.totalMs > 0 ? this.formatDurationHm(b.totalMs) : '';
+  }
+
+  trkDur(b: TicketBlock): string {
+    return b.rowCount >= 2 && b.trkMs > 0 ? this.formatDurationHm(b.trkMs) : '';
+  }
+
+  // Transient states (draft wheel, edit input, undo) always own the slot —
+  // the ≥2-rows rule only mutes the static print.
+  showEntryDur(b: TicketBlock, e: ManualEntry): boolean {
+    return b.rowCount >= 2 || this.isFresh(e) || this.editingId === e.id;
+  }
+
+  showFoldedDur(b: TicketBlock): boolean {
+    return b.rowCount >= 2 || this.foldedHasFresh(b);
   }
 
   private get rawSumMinutes(): number {
@@ -340,8 +413,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   // Pending tracked deletes leave the Day total the moment their undo window
-  // opens: gone sessions' observed time, plus — for a whole-card delete —
-  // the card's session-born adds the entry pipeline isn't already counting.
+  // opens: gone sessions' observed time, plus — for a whole-block delete —
+  // every entry of the block the entry pipeline isn't already counting.
   private get goneTrackedMinutes(): number {
     let ms = 0;
     for (const s of this.closedSessions) {
@@ -349,7 +422,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
     let minutes = ms / 60_000;
     for (const e of this.entries) {
-      if (e.sourceSessionId && this.taskGone(e.task) && !this.isGoneLocally(e.id)) minutes += e.minutes;
+      if (this.taskGone(e.task) && !this.isGoneLocally(e.id)) minutes += e.minutes;
     }
     return minutes;
   }
@@ -387,7 +460,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return !e.sourceSessionId && !this.isFresh(e);
   }
 
-  // Session-born entries can't be edited, but deleting them is legal.
   canDelete(e: ManualEntry): boolean {
     return !this.isFresh(e);
   }
@@ -397,7 +469,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   onRowContextMenu(e: ManualEntry, ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
-    if (this.editingId === e.id || this.isFresh(e) || this.isDeleted(e)) return;
+    if (this.editingId === e.id || this.isFresh(e) || this.isDeleted(e)
+        || this.taskDeleted(e.task)) return;
     const items = [
       ...(this.canEdit(e) ? [{ icon: '✎', label: 'Edit', action: () => this.onRowDblClick(e) }] : []),
       // Hidden only when structurally impossible (no description to name the
@@ -450,16 +523,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   private deleteEntry(e: ManualEntry): void {
     if (this.editingId === e.id) this.editingId = null;
+    // The block's last row: this IS the card's delete — same struck state,
+    // same header undo, same whole-card collapse.
+    if (!this.blockHasOtherContent(e)) {
+      this.deleteTaskCard(e.task);
+      return;
+    }
     this.deleteTimers.set(e.id, setTimeout(() => this.startRemove(e.id), UNDO_WINDOW_MS));
     this.recomputeLive();
-  }
-
-  // Delete of a session-born add lives in its breakdown line's ⊕ node —
-  // same undo pipeline as the standalone rows.
-  deleteManualEntry(e: ManualEntry, ev: MouseEvent): void {
-    ev.stopPropagation();
-    if (this.isDeleted(e)) return;
-    this.deleteEntry(e);
   }
 
   undoDelete(e: ManualEntry, ev: MouseEvent): void {
@@ -471,18 +542,82 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
+  // The manual added row folds several unnamed entries behind one glyph —
+  // its ⊕ IS the delete, and the whole aggregate burns on one undo window.
+  foldedDeleted(b: TicketBlock): boolean {
+    return b.folded.length > 0 && b.folded.every(e => this.isDeleted(e));
+  }
+
+  foldedRemoving(b: TicketBlock): boolean {
+    return b.folded.length > 0 && b.folded.every(e => this.removingIds.has(e.id));
+  }
+
+  deleteFolded(b: TicketBlock, ev: MouseEvent): void {
+    ev.stopPropagation();
+    const alive = b.folded.filter(e => !this.isDeleted(e));
+    if (alive.length === 0) return;
+    // The folded row as the block's last content — the card's delete.
+    if (!this.blockHasOtherContent(alive[0])) {
+      this.deleteTaskCard(b.task);
+      return;
+    }
+    for (const e of alive) this.deleteEntry(e);
+  }
+
+  undoFolded(b: TicketBlock, ev: MouseEvent): void {
+    ev.stopPropagation();
+    for (const e of b.folded) this.undoDelete(e, ev);
+  }
+
   // Undo window over: collapse the row, then send the DELETE. Undo past this
-  // point doesn't exist — the design keeps it purely client-side.
+  // point doesn't exist — the design keeps it purely client-side. The block's
+  // LAST content doesn't collapse as a row — the whole card folds with it.
   private startRemove(id: string): void {
     this.deleteTimers.delete(id);
     this.removingIds.add(id);
-    this.removeTimers.set(id, setTimeout(() => {
+    const commit = (): void => {
       this.removingIds.delete(id);
       this.removeTimers.delete(id);
       this.hiddenIds.add(id);
       this.deleteCommitted.emit(id);
-      const e = this.entries.find(x => x.id === id);
-      if (e?.sourceSessionId) this.maybeFoldEmptiedCard(e.task);
+    };
+    const e = this.entries.find(x => x.id === id);
+    if (e && !this.blockHasOtherContent(e)) {
+      this.foldCardThen(e.task, commit);
+      return;
+    }
+    this.removeTimers.set(id, setTimeout(commit, REMOVE_ANIM_MS));
+  }
+
+  // Anything else still occupying a row of the entry's block? Burning rows
+  // (undo still offered) count — the card must not fold under an undo.
+  // Another foldable entry shares THIS entry's row, so it doesn't hold the
+  // card open on its own.
+  private blockHasOtherContent(entry: ManualEntry): boolean {
+    const hasOtherEntry = this.entries.some(e =>
+      e.task === entry.task && e.id !== entry.id
+      && !this.hiddenIds.has(e.id) && !this.removingIds.has(e.id)
+      && !(this.isFoldable(e) && this.isFoldable(entry)));
+    const hasSession = this.closedSessions.some(s =>
+      (s.task ?? '—') === entry.task
+      && !this.sesHiddenIds.has(s.id) && !this.sesRemovingIds.has(s.id));
+    return hasOtherEntry || hasSession;
+  }
+
+  // One motion for the block's last content: the exact ctx-menu delete
+  // collapse; every commit that emptied the block rides the same timer.
+  private foldCardThen(task: string, commit: () => void): void {
+    const pending = this.foldPending.get(task);
+    if (pending) { pending.push(commit); return; }
+    this.foldPending.set(task, [commit]);
+    this.foldingTasks.add(task);
+    this.collapseCardEl(task);
+    this.taskRemoveTimers.set(task, setTimeout(() => {
+      this.taskRemoveTimers.delete(task);
+      for (const c of this.foldPending.get(task) ?? []) c();
+      this.foldPending.delete(task);
+      this.foldingTasks.delete(task);
+      this.cardEl(task)?.removeAttribute('style'); // insurance for a reused element
     }, REMOVE_ANIM_MS));
   }
 
@@ -501,10 +636,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
   }
 
-  // Same catch-up for the session and card pipelines: a session id gone from
+  // Same catch-up for the session and block pipelines: a session id gone from
   // the data (our DELETE landed, or an external change) drops its local
-  // state; a task with no closed session and no session-born add left is a
-  // finished card delete.
+  // state; a task with no session and no entry left is a finished block
+  // delete.
   private reconcileTrackedDeletes(): void {
     const aliveSes = new Set(this.closedSessions.map(s => s.id));
     for (const id of [...this.sesHiddenIds]) {
@@ -519,9 +654,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
     const aliveTasks = new Set<string>();
     for (const s of this.closedSessions) aliveTasks.add(s.task ?? '—');
-    for (const e of this.entries) {
-      if (e.sourceSessionId) aliveTasks.add(e.task);
-    }
+    for (const e of this.entries) aliveTasks.add(e.task);
     for (const task of [...this.hiddenTasks]) {
       if (!aliveTasks.has(task)) this.hiddenTasks.delete(task);
     }
@@ -584,6 +717,19 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.step(ev.deltaY < 0 ? STEP_MINUTES : -STEP_MINUTES);
   }
 
+  // The manual added row carries the draft wheel when the fresh entry
+  // folded into it — the aggregate's number spins, the diff is the fresh
+  // entry's own minutes.
+  foldedHasFresh(b: TicketBlock): boolean {
+    return this.freshMinutes !== null && b.folded.some(e => e.id === this.freshId);
+  }
+
+  onFoldedWheel(b: TicketBlock, ev: WheelEvent): void {
+    if (!this.foldedHasFresh(b)) return;
+    ev.preventDefault();
+    this.step(ev.deltaY < 0 ? STEP_MINUTES : -STEP_MINUTES);
+  }
+
   private armFreeze(): void {
     if (this.freezeTimer) clearTimeout(this.freezeTimer);
     this.freezeTimer = setTimeout(() => this.freeze(), FRESH_WINDOW_MS);
@@ -606,7 +752,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // ─── Inline row edit (double-click) ────────────────────────────────────
 
   onRowDblClick(e: ManualEntry): void {
-    if (!this.canEdit(e) || this.actionPending || this.editingId === e.id || this.isDeleted(e)) return;
+    if (!this.canEdit(e) || this.actionPending || this.editingId === e.id
+        || this.isDeleted(e) || this.taskDeleted(e.task)) return;
     this.editingId = e.id;
     this.editMinutes = this.displayMinutes(e);
     this.editActivity = this.displayActivity(e);
@@ -649,95 +796,46 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
-  // ─── Ticket name ────────────────────────────────────────────────────────
-
-  summaryOf(e: ManualEntry): string {
-    return this.issueSummaries[e.task] ?? '';
-  }
-
-  // ─── Session groups (closed sessions + session-born adds) ───────────────
-  // One card per ticket, summed — mirrors how the daemon folds sessions and
-  // their "+ Add time" entries into a single Tempo worklog. A ticket with
-  // only a manual add still gets its card; closed sessions join it later.
-  // Header is read-only; dblclick / context menu toggles the breakdown, where
-  // a manual add's ⊕ node morphs into its delete on hover.
+  // ─── Observed row (sessions + breakdown) ────────────────────────────────
 
   // Task keys whose breakdown is open. Survives refreshes within the instance;
   // resets on tab switch (feed re-creation) — that matches a "peek" gesture.
   expandedTasks = new Set<string>();
 
-  get trackedGroups(): readonly TrackedGroup[] {
-    const byTask = new Map<string, { sessions: SessionDetail[]; manual: ManualEntry[] }>();
-    const bucketOf = (task: string): { sessions: SessionDetail[]; manual: ManualEntry[] } => {
-      let b = byTask.get(task);
-      if (!b) { b = { sessions: [], manual: [] }; byTask.set(task, b); }
-      return b;
-    };
-    for (const s of this.closedSessions) {
-      const task = s.task ?? '—';
-      if (this.hiddenTasks.has(task) || this.sesHiddenIds.has(s.id)) continue;
-      bucketOf(task).sessions.push(s);
-    }
-    for (const e of this.entries) {
-      if (!e.sourceSessionId || this.hiddenIds.has(e.id) || this.hiddenTasks.has(e.task)) continue;
-      bucketOf(e.task).manual.push(e);
-    }
-    const groups: TrackedGroup[] = [];
-    for (const [task, b] of byTask) {
-      // Breakdown chronology: a session sits at its close point (last
-      // activity), a manual add at the moment it was added.
-      const items: GroupItem[] = [
-        ...b.sessions.map(s => ({ kind: 'session' as const, session: s, at: s.lastSeenAt })),
-        ...b.manual.map(e => ({ kind: 'manual' as const, entry: e, at: e.createdAt })),
-      ].sort((x, y) => x.at.localeCompare(y.at));
-      const manualMs = b.manual.reduce(
-        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : e.minutes), 0) * 60_000;
-      b.sessions.sort((x, y) => x.startedAt.localeCompare(y.startedAt));
-      groups.push({
-        task,
-        totalMs: b.sessions.reduce(
-          (sum, s) => sum + (this.sesGone(s.id) ? 0 : s.effectiveDurationMs), 0) + manualMs,
-        manualMs,
-        sessions: b.sessions,
-        items,
-      });
-    }
-    return groups;
+  isExpandedTask(task: string): boolean {
+    return this.expandedTasks.has(task);
   }
 
-  // The group's place in the feed chronology: its newest breakdown item.
-  private groupAt(g: TrackedGroup): string {
-    return g.items[g.items.length - 1].at;
+  toggleTracked(task: string): void {
+    if (this.expandedTasks.has(task)) this.expandedTasks.delete(task);
+    else this.expandedTasks.add(task);
   }
 
-  trackByGroupItem(_i: number, bi: GroupItem): string {
-    return bi.kind === 'session' ? `s:${bi.session.id}` : `m:${bi.entry.id}`;
+  // The trunk's length: one 18px line per breakdown row still standing.
+  brkCount(b: TicketBlock): number {
+    return b.sessions.filter(s => !this.sesRemovingIds.has(s.id)).length;
   }
 
-  isExpanded(g: TrackedGroup): boolean {
-    return this.expandedTasks.has(g.task);
-  }
-
-  toggleTracked(g: TrackedGroup): void {
-    if (this.expandedTasks.has(g.task)) this.expandedTasks.delete(g.task);
-    else this.expandedTasks.add(g.task);
-  }
-
-  onTrackedContextMenu(g: TrackedGroup, ev: MouseEvent): void {
+  // The card's menu — answered by the block's own surfaces (lid, observed
+  // row, manual added row); described entries keep their entry menu. Delete
+  // takes the whole card, exactly like the old tracked card did.
+  onBlockContextMenu(b: TicketBlock, ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
-    if (this.taskDeleted(g) || this.foldingCards.has(g.task)) return;
+    if (this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
     openCtxMenu(ev.clientX, ev.clientY, [
-      {
-        icon: '⤢',
-        label: this.isExpanded(g) ? 'Hide details' : 'Show details',
-        action: () => this.toggleTracked(g),
-      },
-      { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(g) },
+      ...(b.sessions.length > 0
+        ? [{
+            icon: '⤢',
+            label: this.isExpandedTask(b.task) ? 'Hide details' : 'Show details',
+            action: () => this.toggleTracked(b.task),
+          }]
+        : []),
+      { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
     ]);
   }
 
-  // ─── Tracked deletes (session row ✕ / whole card) — entry-row undo twin ──
+  // ─── Tracked deletes (session line ✕ / whole block) — entry-row undo twin ─
 
   sessionDeleted(s: SessionDetail): boolean {
     return this.sesDeleteTimers.has(s.id) || this.sesRemovingIds.has(s.id);
@@ -746,6 +844,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   deleteSessionRow(s: SessionDetail, ev: MouseEvent): void {
     ev.stopPropagation();
     if (this.sessionDeleted(s)) return;
+    // The last line of the block's last row — the card's delete.
+    if (!this.blockHasOtherSessionContent(s)) {
+      this.deleteTaskCard(s.task ?? '—');
+      return;
+    }
     this.sesDeleteTimers.set(s.id, setTimeout(() => this.startSessionRemove(s.id), UNDO_WINDOW_MS));
     this.recomputeLive();
   }
@@ -762,103 +865,109 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private startSessionRemove(id: string): void {
     this.sesDeleteTimers.delete(id);
     this.sesRemovingIds.add(id);
-    this.sesRemoveTimers.set(id, setTimeout(() => {
+    const commit = (): void => {
       this.sesRemovingIds.delete(id);
       this.sesRemoveTimers.delete(id);
       this.sesHiddenIds.add(id);
       this.sessionDeleteCommitted.emit(id);
-      const s = this.closedSessions.find(x => x.id === id);
-      if (s) this.maybeFoldEmptiedCard(s.task ?? '—');
-    }, REMOVE_ANIM_MS));
+    };
+    const s = this.closedSessions.find(x => x.id === id);
+    if (s && !this.blockHasOtherSessionContent(s)) {
+      this.foldCardThen(s.task ?? '—', commit);
+      return;
+    }
+    this.sesRemoveTimers.set(id, setTimeout(commit, REMOVE_ANIM_MS));
   }
 
-  taskDeleted(g: TrackedGroup): boolean {
-    return this.taskDeleteTimers.has(g.task) || this.removingTasks.has(g.task);
+  private blockHasOtherSessionContent(session: SessionDetail): boolean {
+    const task = session.task ?? '—';
+    const hasEntry = this.entries.some(e =>
+      e.task === task && !this.hiddenIds.has(e.id) && !this.removingIds.has(e.id));
+    const hasOtherSession = this.closedSessions.some(s =>
+      s.id !== session.id && (s.task ?? '—') === task
+      && !this.sesHiddenIds.has(s.id) && !this.sesRemovingIds.has(s.id));
+    return hasEntry || hasOtherSession;
   }
 
-  private deleteTaskCard(g: TrackedGroup): void {
-    if (this.taskDeleted(g)) return;
-    this.taskDeleteTimers.set(g.task, setTimeout(() => this.startTaskRemove(g.task), UNDO_WINDOW_MS));
+  taskDeleted(task: string): boolean {
+    return this.taskDeleteTimers.has(task) || this.removingTasks.has(task);
+  }
+
+  private deleteTaskCard(task: string): void {
+    if (this.taskDeleted(task)) return;
+    this.taskDeleteTimers.set(task, setTimeout(() => this.startTaskRemove(task), UNDO_WINDOW_MS));
     this.recomputeLive();
   }
 
-  undoTaskDelete(g: TrackedGroup, ev: MouseEvent): void {
+  undoTaskDelete(task: string, ev: MouseEvent): void {
     ev.stopPropagation();
-    const timer = this.taskDeleteTimers.get(g.task);
+    const timer = this.taskDeleteTimers.get(task);
     if (!timer) return;
     clearTimeout(timer);
-    this.taskDeleteTimers.delete(g.task);
+    this.taskDeleteTimers.delete(task);
     this.recomputeLive();
   }
 
   private startTaskRemove(task: string): void {
     this.taskDeleteTimers.delete(task);
     this.removingTasks.add(task);
+    // Blocks have no fixed height cap — measure and fold inline.
+    this.collapseCardEl(task);
     this.taskRemoveTimers.set(task, setTimeout(() => {
       this.removingTasks.delete(task);
       this.taskRemoveTimers.delete(task);
       this.hiddenTasks.add(task);
+      this.cardEl(task)?.removeAttribute('style');
       this.commitTaskDelete(task);
     }, REMOVE_ANIM_MS));
   }
 
-  // Deleting the last breakdown line leaves an empty card: it follows its
-  // content out — after the row's own collapse the husk folds shut, exactly
-  // like a ctx-menu card delete (the rows' deletes are already committed,
-  // so the fold is purely visual).
-  private maybeFoldEmptiedCard(task: string): void {
-    if (this.foldingCards.has(task) || this.taskGone(task)) return;
-    const hasSession = this.closedSessions.some(s => (s.task ?? '—') === task && !this.sesHiddenIds.has(s.id));
-    const hasAdd = this.entries.some(e => !!e.sourceSessionId && e.task === task && !this.hiddenIds.has(e.id));
-    if (hasSession || hasAdd) return;
-
-    // The husk keeps the group's old feed slot (newest raw row of the task —
-    // hidden rows included, they ARE the slot).
-    const ats = [
-      ...this.closedSessions.filter(s => (s.task ?? '—') === task).map(s => s.lastSeenAt),
-      ...this.entries.filter(e => !!e.sourceSessionId && e.task === task).map(e => e.createdAt),
-    ].sort();
-    this.foldingCards.set(task, {
-      group: { task, totalMs: 0, manualMs: 0, sessions: [], items: [] },
-      at: ats[ats.length - 1] ?? '',
-    });
-
-    // Measured inline fold: trackBy keeps the DOM element, so the collapse
-    // starts from its real height (a fixed CSS cap would eat the animation).
+  // Measured inline fold: trackBy keeps the DOM element, so the collapse
+  // starts from its real height (a fixed CSS cap would eat the animation).
+  private collapseCardEl(task: string): void {
     const el = this.cardEl(task);
-    if (el) {
-      el.style.overflow = 'hidden';
-      el.style.maxHeight = `${el.offsetHeight}px`;
-      void el.offsetHeight;
-      el.style.transition = 'max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease, margin 0.22s ease';
-      el.style.maxHeight = '0';
-      el.style.opacity = '0';
-      el.style.paddingTop = '0';
-      el.style.paddingBottom = '0';
-      el.style.marginBottom = '0';
-    }
-    this.taskRemoveTimers.set(task, setTimeout(() => {
-      this.taskRemoveTimers.delete(task);
-      this.foldingCards.delete(task);
-      this.cardEl(task)?.removeAttribute('style'); // insurance for a reused element
-    }, REMOVE_ANIM_MS));
+    if (!el) return;
+    el.style.overflow = 'hidden';
+    el.style.maxHeight = `${el.offsetHeight}px`;
+    void el.offsetHeight;
+    el.style.transition = 'max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease, margin 0.22s ease';
+    el.style.maxHeight = '0';
+    el.style.opacity = '0';
+    el.style.paddingTop = '0';
+    el.style.paddingBottom = '0';
+    el.style.marginBottom = '0';
   }
 
   private cardEl(task: string): HTMLElement | null {
     return this.host.nativeElement.querySelector<HTMLElement>(
-      `.log-row2.ses[data-task="${CSS.escape(task)}"]`);
+      `.blk[data-task="${CSS.escape(task)}"]`);
   }
 
-  // The taskless card has no ticket key to address on the daemon — its
-  // delete is the sum of its sessions' deletes (it can't carry manual adds:
-  // "+ Add time" requires a task).
+  // Deleting the block takes every row with it: the daemon's task-delete
+  // clears sessions and session-born adds; the block's standalone entries
+  // go with the card by their own DELETEs. The taskless block has no ticket
+  // key to address — its delete is the sum of its sessions' deletes.
   private commitTaskDelete(task: string): void {
-    if (task !== '—') {
-      this.taskDeleteCommitted.emit(task);
-      return;
+    if (task === '—') {
+      for (const s of this.closedSessions) {
+        if ((s.task ?? '—') === '—') this.sessionDeleteCommitted.emit(s.id);
+      }
+    } else {
+      // The daemon's task-delete addresses tracked material; a block of
+      // standalone entries alone has nothing there to delete.
+      const hasTracked = this.closedSessions.some(s => (s.task ?? '—') === task)
+        || this.entries.some(e => e.task === task && !!e.sourceSessionId);
+      if (hasTracked) this.taskDeleteCommitted.emit(task);
     }
-    for (const s of this.closedSessions) {
-      if ((s.task ?? '—') === '—') this.sessionDeleteCommitted.emit(s.id);
+    for (const e of this.entries) {
+      if (e.task !== task || e.sourceSessionId) continue;
+      if (this.removingIds.has(e.id)) continue; // its own pipeline is committing
+      const t = this.deleteTimers.get(e.id);
+      if (t) { clearTimeout(t); this.deleteTimers.delete(e.id); }
+      if (!this.hiddenIds.has(e.id)) {
+        this.hiddenIds.add(e.id);
+        this.deleteCommitted.emit(e.id);
+      }
     }
   }
 
@@ -875,15 +984,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.issueSummaries[task] ?? '';
   }
 
-  sessionsLabel(g: TrackedGroup): string {
-    const n = g.sessions.length;
+  sessionsLabel(b: TicketBlock): string {
+    const n = b.sessions.length;
     return `${n} session${n === 1 ? '' : 's'}`;
   }
 
-  // Day span of the group's tracking: first session start – last activity seen.
-  trackedRange(g: TrackedGroup): string {
-    const first = g.sessions[0];
-    const lastSeen = g.sessions.reduce(
+  // Day span of the block's tracking: first session start – last activity seen.
+  trackedRange(b: TicketBlock): string {
+    const first = b.sessions[0];
+    const lastSeen = b.sessions.reduce(
       (max, s) => s.lastSeenAt > max ? s.lastSeenAt : max, first.lastSeenAt);
     return `${this.formatHm(first.startedAt)}–${this.formatHm(lastSeen)}`;
   }

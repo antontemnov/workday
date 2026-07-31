@@ -1,7 +1,7 @@
 @use 'glass';
 
-// History feed — no panel chrome: the day view's scroll carries the rows,
-// material is coded by the border (logged = thin solid frame + 5px gap).
+// History feed — no panel chrome: the day view's scroll carries the blocks,
+// material is coded by the glass slab; the 8px gap keeps neighbours apart.
 :host {
   display: block;
 }
@@ -10,49 +10,52 @@
   padding-bottom: 12px;
 }
 
-// ─── Entry rows — two fixed bands on one shared grid ──────────────────────
-// Band 1: key | name | time. Band 2: type | desc | actions — desc sits exactly
-// under the name, type under the key chip. Edit swaps only the second band's
-// cells for controls and frames the time in place: display geometry == edit
-// geometry, the row height never changes and neighbours never shift.
-.log-row2 {
-  // Same glass slab as the session cards — materialized records share one
-  // body; the 8px gap keeps them from merging into one sheet. State washes
-  // (fresh/editing/deleted) lay their tint over $card-body in ::after.
+// ─── Ticket block — one identity over the day's worklog rows ──────────────
+// The identity (key | name | Σ) prints once in the lid; every row underneath
+// is a future worklog on the same shared grid (type | explains-itself | time).
+.blk {
   @include glass.glass-card;
-  padding: 3px 8px 4px;
+  padding: 3px 8px 5px;
   margin-bottom: 8px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  // The breakdown link's hairline — glass, not green: the trunk carries
+  // structure, colour in the feed is taken by roles.
+  --cn: rgba(205, 214, 244, 0.17);
 
-  // No hover fill: records are data, not buttons — only the corner actions
-  // wake up on hover (opacity below).
   &:last-child { margin-bottom: 0; }
-  &:not(.removing):not(.ses) { max-height: 48px; }
+  &.one { padding-bottom: 4px; }
 }
 
-.r-l1 {
+// The lid (divider-lab variant B): the header stands on denser glass with the
+// slab's own top rounding — the boundary to the rows reads as a change of
+// material, not a rail cut through the card.
+.blk-id {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
   align-items: center;
-  height: 17px;
+  height: 23px;
+  margin: -3px -8px 0;
+  padding: 3px 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.014));
+  border-radius: 8px 8px 0 0;
+
+  .sum {
+    color: #cdd6f4;
+    font-weight: 700;
+    white-space: nowrap;
+    justify-self: end;
+  }
 }
 
-.r-l2 {
-  display: flex;
-  align-items: center;
-  height: 20px;
+// 1px only: the lid's own 3px bottom padding already carries the separation —
+// more margin here read as a hole between header and rows.
+.blk-body {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 0 8px;
   margin-top: 1px;
-}
-
-.rv {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
-  gap: 8px;
-  align-items: center;
 }
 
 // Ticket chip — logged species: the shared candy capsule, dyed mauve.
@@ -93,11 +96,70 @@
   &.none { color: #585b70; font-style: italic; }
 }
 
-// Time — the stable right column of band 1; it never leaves its slot. The
-// fresh draft keeps its always-on wheel; edit swaps the span for a frameless
-// input (mauve digits only — no box), same geometry.
-.c-dur {
-  color: #cdd6f4;
+// ─── Worklog rows ─────────────────────────────────────────────────────────
+.wl {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 20px;
+}
+
+// Type — a quiet bold label in the column under the ticket chip: same case as
+// the select, no badge, no per-type colour.
+.c-type {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #939ab6;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+// The middle column answers one question — how the row explains itself:
+// evidence (green), a description (grey italic), or the admission that
+// there's nothing to explain (mauve ⊕ manual added).
+.c-ds {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #7f849c;
+  font-style: italic;
+  font-size: 10.5px;
+}
+
+.c-ds.trk {
+  font-style: normal;
+  color: rgba(166, 227, 161, 0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  svg { flex-shrink: 0; opacity: 0.8; }
+}
+
+.c-ds.man {
+  font-style: normal;
+  color: rgba(203, 166, 247, 0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  // The ⊕ node wears the row's mauve and doubles as the delete.
+  .m-act { color: inherit; }
+  .m-act .g-plus { opacity: 1; }
+}
+
+// Time — the stable right column; it never leaves its slot. Row times are
+// parts, not results: detail-sized and detail-coloured, so the header Σ
+// stays the card's only loud number. The fresh draft keeps its always-on
+// wheel; edit swaps the span for a frameless input (mauve digits only — no
+// box), same geometry.
+.wl .c-dur {
+  color: #7f849c;
+  font-size: 10.5px;
   font-weight: 700;
   white-space: nowrap;
   text-align: right;
@@ -115,147 +177,48 @@
   }
 
   &.edit {
+    grid-column: 3;
     width: 64px;
-    height: 17px;
+    height: 18px;
     background: transparent;
     color: #cba6f7;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 10.5px;
     outline: none;
   }
 }
 
-// Type — a quiet bold label in the column under the ticket chip: same case as
-// the select, no badge, no per-type colour. Weight and grid keep it apart
-// from the description.
-.c-type {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: #939ab6;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.c-ds {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: #7f849c;
-  font-style: italic;
-  font-size: 10.5px;
-}
-
-// Session-born origin marker: interval glyph + "N sessions · HH:MM–HH:MM" in
-// green half-tone — tracking gave birth to this row. The glyph is a segment
-// with a node at each end — same node the commit glyph carries in its centre:
-// one dot = a commit, two end dots = a span of tracked time.
-.c-ds.ses-info {
-  font-style: normal;
-  color: rgba(166, 227, 161, 0.7);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-
-  svg { flex-shrink: 0; opacity: 0.8; }
-
-  // Manual share of a merged card — logged material: mauve half-tone with
-  // the same ⊕ node its breakdown line carries.
-  .add-note {
-    color: rgba(203, 166, 247, 0.65);
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-
-    svg { opacity: 1; }
-  }
-}
-
-// Hover actions in the empty right corner of band 2 — opacity only, nothing moves.
-.r-act {
-  display: flex;
-  gap: 5px;
-  justify-self: end;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.log-row2:hover .r-act { opacity: 1; }
-
-.abtn {
-  width: 22px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  border: 1px solid #313244;
-  background: #11111b;
-  color: #6c7086;
-  padding: 0;
-  cursor: pointer;
-
-  &:hover { color: #a6adc8; border-color: #45475a; }
-
-  &.lock { cursor: default; }
-  &.lock:hover { color: #6c7086; border-color: #313244; }
-
-  svg { display: block; }
-}
-
-.log-row2.fresh {
+// Row entrances: the fresh draft and batch/instant pops fly in; an accepted
+// suggestion's row slides from the offer's old spot instead (inline FLIP).
+.wl.fresh {
   animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1);
-
-  &::after { background: linear-gradient(rgba(203, 166, 247, 0.08), rgba(203, 166, 247, 0.08)), glass.$card-body; }
 }
 
-// Batch / instant static rows fly in with a brief mauve accent. `backwards`
-// holds the pre-animation state through the staggered animation-delay.
-.log-row2.pop {
+.wl.pop {
   animation: row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1) backwards;
-
-  &::after { background: linear-gradient(rgba(203, 166, 247, 0.08), rgba(203, 166, 247, 0.08)), glass.$card-body; }
 }
 
-// An accepted suggestion's row is NOT a new thing — it slides down from the
-// offer's old spot (inline FLIP transform), so the entry animation is off.
-.log-row2.arrive {
+.wl.arrive {
   animation: none;
 }
 
-// Edit: the active row is marked by fill only (no rails anywhere in the
-// system); band 1 stays put with the name dimmed, time edits in its slot.
-.log-row2.editing {
-  &::after { background: linear-gradient(rgba(203, 166, 247, 0.08), rgba(203, 166, 247, 0.08)), glass.$card-body; }
-
-  .c-nm { color: #8f96b3; }
-}
+// Edit: the row is marked by the form morph alone (no washes inside a block);
+// band 1 of the old card is now the lid and stays untouched.
+.wl.editing .c-nm { color: #8f96b3; }
 
 // Delete: instant with undo — the totals already rolled back, the row stays
 // in place struck-through with a burning ↩ in the time slot for ~3s.
-.log-row2.deleted {
-  &::after { background: linear-gradient(rgba(243, 139, 168, 0.04), rgba(243, 139, 168, 0.04)), glass.$card-body; }
-
-  .c-key, .c-nm, .c-type, .c-ds {
-    opacity: 0.38;
-    text-decoration: line-through;
-  }
+.wl.deleted {
+  .c-type, .c-ds { opacity: 0.38; text-decoration: line-through; }
+  .c-ds .m-act svg { opacity: 0.28; }
 }
 
-// Undo window over — collapse and leave (max-height covers the two bands).
-.log-row2.removing {
-  max-height: 0;
+// Undo window over — collapse and leave.
+.wl.removing {
+  height: 0;
   opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-top-width: 0;
-  border-bottom-width: 0;
-  margin-bottom: 0;
   overflow: hidden;
-  transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease, margin 0.22s ease;
+  transition: height 0.22s ease, opacity 0.18s ease;
 }
 
 .l-undo {
@@ -278,11 +241,11 @@
 }
 
 // "★ added to favorites" feedback on the description slot.
-.log-row2.fav-done .c-ds.fav-note { color: #cba6f7; font-style: normal; }
+.wl.fav-done .c-ds.fav-note { color: #cba6f7; font-style: normal; }
 
-// ─── Edit form — band 2's cells replaced by controls in place ─────────────
+// ─── Edit form — the row's cells replaced by controls in place ────────────
 .rf {
-  flex: 1;
+  grid-column: 1 / 3;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -368,14 +331,36 @@
   50%      { border-color: rgba(203, 166, 247, 0.25); }
 }
 
-// ─── Session-born rows — closed sessions, read-only ───────────────────────
+// ─── Observed row + breakdown ─────────────────────────────────────────────
 // Breakdown toggles by dblclick / context menu — no extra button.
-.log-row2.ses { cursor: default; }
+.wl.trkline {
+  cursor: default;
+  position: relative;
 
-// Breakdown expand/collapse inside the row's border — grid-rows mechanic:
-// rows stay in the DOM, the wrapper animates 0fr→1fr both ways; the rows
-// fade and slide in a touch behind the height.
-.trk-detail {
+  // The trunk: grows from the centre of the o—o glyph (89px = 74 + 8 + half
+  // of the 15px glyph) down to the middle of the last breakdown line —
+  // 10px to the row's bottom edge + 18px per line − 9px back up. It lives on
+  // the row because its length is the child count (--n); the height
+  // transition retracts it in step with the rows' 0fr collapse.
+  &::after {
+    content: '';
+    position: absolute;
+    left: 89px;
+    top: 10px;
+    width: 1px;
+    height: 0;
+    background: var(--cn);
+    transition: height 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  &.open::after { height: calc(var(--n, 1) * 18px + 1px); }
+}
+
+// Expand/collapse inside the block — grid-rows mechanic: lines stay in the
+// DOM, the wrapper animates 0fr→1fr both ways; the lines fade and slide in a
+// touch behind the height.
+.brk {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-rows: 0fr;
   transition: grid-template-rows 0.22s cubic-bezier(0.4, 0, 0.2, 1);
@@ -384,104 +369,87 @@
 }
 
 // The clip doubles as the breakdown's column master: max-content columns
-// resolve across ALL session lines (via subgrid rows), so every portion —
-// glyph, commit count, ·, +adds, −dels — sits exactly one under another.
-// Range keeps the shared 74px first column; duration right-aligns in the
-// last, 1fr soaking the middle slack.
-.trk-clip {
+// resolve across ALL lines (via subgrid rows), so every portion — range,
+// commit count, ±churn — sits exactly one under another. The 103px indent
+// puts the first character right under the "2" of "2 sessions".
+.brk-clip {
   overflow: hidden;
   min-height: 0;
+  padding-left: 103px;
   display: grid;
-  grid-template-columns: 74px 13px max-content max-content max-content max-content 1fr;
+  grid-template-columns: max-content max-content 13px max-content max-content max-content 1fr max-content;
   column-gap: 8px;
 }
 
-.ses-row {
+.bk {
+  position: relative;
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
   align-items: center;
-  height: 19px;
+  height: 18px;
   font-size: 10px;
   color: #7f849c;
   font-variant-numeric: tabular-nums;
   opacity: 0;
   transform: translateY(-3px);
-  transition: opacity 0.16s ease, transform 0.2s ease;
+  transition: opacity 0.16s ease, transform 0.2s ease, height 0.22s ease;
 
-  .trk-detail.open & {
+  .brk.open & {
     opacity: 1;
     transform: none;
   }
 
-  .rng { color: #8b90ab; }
+  // The bend to the trunk: 9px, stopping 5px short of the text — a stroke,
+  // not a pointer.
+  &::before {
+    content: '';
+    position: absolute;
+    left: -14px;
+    top: 50%;
+    width: 9px;
+    height: 1px;
+    background: var(--cn);
+  }
 
-  .s-glyph { opacity: 0.7; }
-
-  .csep  { color: #45475a; }
+  .rng  { color: #8b90ab; }
+  .csep { color: #45475a; }
+  .s-com { color: #a6adc8; }
   .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
   .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
 
   .sdur {
+    grid-column: 8;
+    grid-row: 1;
     justify-self: end;
     font-weight: 700;
     color: #a6adc8;
   }
-}
 
-// Manual add inside the breakdown: time right-aligned under the ranges'
-// tails, grey ⊕ node, "manual added time" from the commits column, duration
-// in the shared right column. The delete lives in the node itself — hover
-// morphs ⊕ into ✕; while the undo window burns, ↩ takes the phrase's place,
-// then the line collapses.
-// Delete states shared by both breakdown kinds (session line and manual
-// add): struck endpoints, dimmed node, collapse on removing.
-.ses-row {
-  overflow: hidden;
-  transition: opacity 0.16s ease, transform 0.2s ease,
-              height 0.22s ease, margin 0.22s ease, padding 0.22s ease;
+  .m-act { grid-column: 3; grid-row: 1; }
 
   &.deleted {
     .rng, .sdur, .s-com, .csep, .plus, .minus { opacity: 0.38; text-decoration: line-through; }
     .m-act svg { opacity: 0.28; }
-    // With the stats spans swapped for the undo, auto-flow would drift the
-    // duration left — pin it to its column.
-    .sdur { grid-column: 7; grid-row: 1; }
+  }
+
+  &.removing {
+    opacity: 0;
+    height: 0;
+    overflow: hidden;
   }
 }
 
-.ses-row.man {
-
-  // Everything explicitly placed: the phrase's span covers cols 3–7, which
-  // would otherwise push auto-flowed neighbours into a phantom second row.
-  .rng {
-    grid-column: 1;
-    grid-row: 1;
-    padding-left: 6ch; // 11ch range − 5ch time: tails in one column
-  }
-
-  // Spans into the 1fr track so the phrase never widens the sessions'
-  // evidence columns.
-  .m-phrase {
-    grid-column: 3 / -1;
-    grid-row: 1;
-    justify-self: start;
-    color: #6c7086;
-    white-space: nowrap;
-  }
-
-  .sdur { grid-column: 7; grid-row: 1; }
-}
-
+// The glyph-as-button (o—o in the breakdown, ⊕ on the manual added row):
+// hover morphs it into ✕, click starts the shared undo pipeline.
 .m-act {
-  grid-column: 2;
-  grid-row: 1;
   width: 13px;
-  height: 19px;
+  height: 18px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   background: none;
   border: none;
   color: #7f849c;
@@ -499,7 +467,7 @@
 }
 
 .m-undo {
-  grid-column: 3 / -1;
+  grid-column: 4 / 8;
   grid-row: 1;
   justify-self: start;
   height: 14px;
@@ -507,28 +475,19 @@
   font-size: 9px;
 }
 
-// Undo window over — the line collapses and leaves (entry-row precedent).
-.trk-detail.open .ses-row.removing {
-  opacity: 0;
-  height: 0;
-  margin-top: 0;
-  padding-top: 0;
-  border-top-width: 0;
-}
+// The block's last content goes down with the whole card in one motion —
+// inside the fold the row keeps its height so only the card's own collapse
+// is seen, not a row death followed by a vanishing husk.
+.blk.folding .wl.removing { height: 20px; opacity: 1; }
+.blk.folding .bk.removing { height: 18px; opacity: 1; }
 
-// Whole-card delete: the group row is capped only while it burns, so the
-// removing collapse has a height to transition from (48px cap excludes .ses
-// rows — an open breakdown outgrows it).
-.log-row2.ses.deleted {
-  &:not(.removing) { max-height: 480px; }
-
-  .trk-detail { opacity: 0.38; }
-}
-
-.trk-detail .ses-row:first-child {
-  margin-top: 4px;
-  padding-top: 3px;
-  border-top: 1px solid rgba(205, 214, 244, 0.06);
+// Whole-block delete: everything struck while the undo burns; the collapse
+// itself is a measured inline fold (blocks have no fixed height cap).
+.blk.deleted {
+  .c-key, .c-nm, .c-type, .c-ds, .wl .c-dur { opacity: 0.38; text-decoration: line-through; }
+  .c-ds .m-act svg { opacity: 0.28; }
+  .brk { opacity: 0.38; }
+  .wl.trkline::after { opacity: 0.38; }
 }
 
 @keyframes row-in {

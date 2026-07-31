@@ -1,167 +1,163 @@
-<!-- History feed: manual entries and session-born groups interleaved
-     newest-first. Two-band rows on one shared grid (key | name | time over
-     type | desc | actions). Edit swaps only the second band's cells for
-     controls — same geometry, the row height never changes. -->
+<!-- History feed: ticket blocks newest-first. One identity header (the lid)
+     per ticket, worklog rows inside on the shared 74px | 1fr | max grid.
+     Row order is fixed: observed sessions on top, the folded manual added
+     row, then described entries oldest-first. Edit swaps only a row's cells
+     for controls — same geometry, the block height never changes. -->
 <div class="lp-table">
-  <ng-container *ngFor="let it of feedItems; trackBy: trackByFeed">
+  <div class="blk"
+       *ngFor="let b of feedBlocks; trackBy: trackByBlock"
+       [attr.data-task]="b.task"
+       [class.one]="b.rowCount <= 1"
+       [class.deleted]="taskDeleted(b.task)"
+       [class.removing]="removingTasks.has(b.task)"
+       [class.folding]="foldingTasks.has(b.task)">
 
-    <div class="log-row2"
-         *ngIf="it.kind === 'entry'"
-         [attr.data-eid]="it.entry.id"
-         [class.fresh]="isFresh(it.entry)"
-         [class.arrive]="arrivingId === it.entry.id"
-         [class.pop]="poppingIds.has(it.entry.id)"
-         [style.animation-delay.ms]="popDelayMs.get(it.entry.id)"
-         [class.editing]="editingId === it.entry.id"
-         [class.deleted]="isDeleted(it.entry)"
-         [class.removing]="removingIds.has(it.entry.id)"
-         [class.fav-done]="favDoneId === it.entry.id"
-         (dblclick)="onRowDblClick(it.entry)"
-         (contextmenu)="onRowContextMenu(it.entry, $event)">
+    <!-- The lid — read-only identity + day Σ; right-click = the card's menu -->
+    <div class="blk-id" (contextmenu)="onBlockContextMenu(b, $event)">
+      <span class="c-key" [class.no-title]="!summaryOfTask(b.task)">{{ b.task }}</span>
+      <span class="c-nm"
+            [class.none]="!summaryOfTask(b.task)">{{ summaryOfTask(b.task) || '— name not cached' }}</span>
+      <ng-container *ngIf="taskDeleted(b.task); else blockSumTpl">
+        <button type="button" class="l-undo" (click)="undoTaskDelete(b.task, $event)">↩ undo</button>
+      </ng-container>
+      <ng-template #blockSumTpl>
+        <span class="sum">{{ blockSum(b) }}</span>
+      </ng-template>
+    </div>
 
-      <div class="r-l1">
-        <span class="c-key" [class.no-title]="!summaryOf(it.entry)">{{ it.entry.task }}</span>
-        <span class="c-nm"
-              [class.none]="!summaryOf(it.entry)">{{ summaryOf(it.entry) || '— name not cached' }}</span>
+    <div class="blk-body">
 
-        <ng-container *ngIf="isDeleted(it.entry); else aliveMin">
-          <button type="button" class="l-undo" (click)="undoDelete(it.entry, $event)">↩ undo</button>
+      <!-- Observed row — sessions' evidence; dblclick / context menu as the
+           old tracked card. The trunk to the breakdown grows from the o—o
+           glyph (::after, --n = lines still standing). -->
+      <ng-container *ngIf="b.sessions.length > 0">
+        <div class="wl trkline"
+             [class.open]="isExpandedTask(b.task)"
+             [style.--n]="brkCount(b)"
+             (dblclick)="toggleTracked(b.task)"
+             (contextmenu)="onBlockContextMenu(b, $event)">
+          <span class="c-type">{{ activityLabel(developmentActivity) }}</span>
+          <span class="c-ds trk"><svg width="15" height="8" viewBox="0 0 15 8" aria-hidden="true"><circle cx="2.9" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="5.2" y1="4" x2="9.8" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="12.1" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>{{ sessionsLabel(b) }} · {{ trackedRange(b) }}</span></span>
+          <span class="c-dur">{{ trkDur(b) }}</span>
+        </div>
+
+        <!-- Breakdown — one 18px line per session, indented to sit under the
+             "2" of "2 sessions"; the o—o node doubles as the delete: hover
+             morphs it into ✕, click starts the same undo pipeline. -->
+        <div class="brk" [class.open]="isExpandedTask(b.task)">
+          <div class="brk-clip">
+            <div class="bk"
+                 *ngFor="let s of b.sessions; trackBy: trackBySession"
+                 [class.deleted]="sessionDeleted(s)"
+                 [class.removing]="sesRemovingIds.has(s.id)">
+              <span class="rng">{{ sessionInterval(s) }}</span>
+              <span class="csep">·</span>
+              <button type="button" class="m-act"
+                      [disabled]="sessionDeleted(s)"
+                      (click)="deleteSessionRow(s, $event)"
+                      (dblclick)="$event.stopPropagation()">
+                <svg class="g-plus" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>
+                <svg class="g-x" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="3.7" y1="1.2" x2="9.3" y2="6.8" stroke="currentColor" stroke-width="1.25"/><line x1="9.3" y1="1.2" x2="3.7" y2="6.8" stroke="currentColor" stroke-width="1.25"/></svg>
+              </button>
+              <ng-container *ngIf="!sessionDeleted(s); else sesUndo">
+                <span class="s-com">{{ s.evidence.commits }}</span>
+                <span class="csep">·</span>
+                <b class="plus">+{{ s.evidence.linesAdded }}</b>
+                <b class="minus">−{{ s.evidence.linesRemoved }}</b>
+              </ng-container>
+              <ng-template #sesUndo>
+                <button type="button" class="l-undo m-undo" (click)="undoSessionDelete(s, $event)">↩ undo</button>
+              </ng-template>
+              <span class="sdur">{{ formatDurationHm(s.effectiveDurationMs) }}</span>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Manual added — the single folded row of unnamed declared time.
+           The ⊕ node IS the delete; the whole aggregate burns on one undo. -->
+      <div class="wl manline"
+           *ngIf="b.folded.length > 0"
+           [class.deleted]="foldedDeleted(b)"
+           [class.removing]="foldedRemoving(b)"
+           (contextmenu)="onBlockContextMenu(b, $event)">
+        <span class="c-type">{{ activityLabel(developmentActivity) }}</span>
+        <span class="c-ds man">
+          <button type="button" class="m-act"
+                  [disabled]="foldedDeleted(b)"
+                  (click)="deleteFolded(b, $event)"
+                  (dblclick)="$event.stopPropagation()">
+            <svg class="g-plus" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><circle cx="6.5" cy="4" r="3.5" fill="none" stroke="currentColor" stroke-width="0.8"/><line x1="6.5" y1="2" x2="6.5" y2="6" stroke="currentColor" stroke-width="1.25"/><line x1="4.5" y1="4" x2="8.5" y2="4" stroke="currentColor" stroke-width="1.25"/></svg>
+            <svg class="g-x" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="3.7" y1="1.2" x2="9.3" y2="6.8" stroke="currentColor" stroke-width="1.25"/><line x1="9.3" y1="1.2" x2="3.7" y2="6.8" stroke="currentColor" stroke-width="1.25"/></svg>
+          </button>
+          <span>manual added</span>
+        </span>
+        <ng-container *ngIf="foldedDeleted(b); else foldedDur">
+          <button type="button" class="l-undo" (click)="undoFolded(b, $event)">↩ undo</button>
         </ng-container>
-        <ng-template #aliveMin>
-          <!-- Time never leaves its slot: edit swaps the span for a
-               frameless wdDuration input (wheel ±15m / typed). -->
-          <input *ngIf="editingId === it.entry.id; else viewMin"
-                 class="c-dur edit"
-                 [(wdDuration)]="editMinutes"
-                 (durEnter)="saveEdit(it.entry)"
-                 (keydown.escape)="cancelEdit(); $event.stopPropagation()"
-                 title="1h 15m · 90 · 45m — wheel: ±15m" />
-          <ng-template #viewMin>
-            <span class="c-dur"
-                  [class.wheel]="isFresh(it.entry)"
-                  (wheel)="onFreshWheel(it.entry, $event)">{{ formatDurationHm(displayMinutes(it.entry) * 60000) }}</span>
-          </ng-template>
+        <ng-template #foldedDur>
+          <span class="c-dur"
+                [class.wheel]="foldedHasFresh(b)"
+                (wheel)="onFoldedWheel(b, $event)">{{ showFoldedDur(b) ? formatDurationHm(b.foldedMinutes * 60000) : '' }}</span>
         </ng-template>
       </div>
 
-      <div class="r-l2">
-        <ng-container *ngIf="editingId === it.entry.id; else viewBand">
+      <!-- Described entries — ordinary records: dblclick edit in place,
+           right-click menu, delete with the 3s undo in the time slot. -->
+      <div class="wl ent"
+           *ngFor="let e of b.named; trackBy: trackByEntry"
+           [attr.data-eid]="e.id"
+           [class.fresh]="isFresh(e)"
+           [class.arrive]="arrivingId === e.id"
+           [class.pop]="poppingIds.has(e.id)"
+           [style.animation-delay.ms]="popDelayMs.get(e.id)"
+           [class.editing]="editingId === e.id"
+           [class.deleted]="isDeleted(e)"
+           [class.removing]="removingIds.has(e.id)"
+           [class.fav-done]="favDoneId === e.id"
+           (dblclick)="onRowDblClick(e)"
+           (contextmenu)="onRowContextMenu(e, $event)">
+
+        <ng-container *ngIf="editingId === e.id; else viewBand">
           <div class="rf" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
             <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
-            <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(it.entry)">
+            <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
               <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
             </select>
             <input class="le-desc"
                    [class.need]="editDescNeeded"
                    [(ngModel)]="editDescription"
-                   (keydown.enter)="saveEdit(it.entry)"
+                   (keydown.enter)="saveEdit(e)"
                    placeholder="description" />
-            <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(it.entry)">Save</button>
+            <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
           </div>
         </ng-container>
         <ng-template #viewBand>
-          <div class="rv">
-            <span class="c-type">{{ activityLabel(displayActivity(it.entry)) }}</span>
-            <span class="c-ds" *ngIf="favDoneId !== it.entry.id; else favDone">{{ displayDescription(it.entry) }}</span>
-            <ng-template #favDone><span class="c-ds fav-note">★ added to favorites</span></ng-template>
-            <span class="r-act">
-              <span *ngIf="it.entry.sourceSessionId"
-                    class="abtn lock"><svg width="10" height="11" viewBox="0 0 10 11" aria-hidden="true"><rect x="1.6" y="4.6" width="6.8" height="4.8" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M3.2 4.6V3.2a1.8 1.8 0 013.6 0v1.4" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></span>
-            </span>
-          </div>
+          <span class="c-type">{{ activityLabel(displayActivity(e)) }}</span>
+          <span class="c-ds" *ngIf="favDoneId !== e.id; else favNote">{{ displayDescription(e) }}</span>
+          <ng-template #favNote><span class="c-ds fav-note">★ added to favorites</span></ng-template>
         </ng-template>
-      </div>
-    </div>
 
-    <!-- Session group — closed sessions and session-born "+ Add time"
-         entries folded per ticket, the way push folds them into one worklog.
-         Origin markers: interval glyph + session range in green half-tone,
-         manual share as a mauve "+NNm added" note. Dblclick / right-click
-         toggles the chronological breakdown inside the row's border. -->
-    <div class="log-row2 ses"
-         *ngIf="it.kind === 'group'"
-         [attr.data-task]="it.group.task"
-         [class.open]="isExpanded(it.group)"
-         [class.deleted]="taskDeleted(it.group)"
-         [class.removing]="removingTasks.has(it.group.task)"
-         (dblclick)="toggleTracked(it.group)"
-         (contextmenu)="onTrackedContextMenu(it.group, $event)">
-      <div class="r-l1">
-        <span class="c-key" [class.no-title]="!summaryOfTask(it.group.task)">{{ it.group.task }}</span>
-        <span class="c-nm"
-              [class.none]="!summaryOfTask(it.group.task)">{{ summaryOfTask(it.group.task) || '— name not cached' }}</span>
-        <ng-container *ngIf="taskDeleted(it.group); else groupDur">
-          <button type="button" class="l-undo" (click)="undoTaskDelete(it.group, $event)">↩ undo</button>
+        <ng-container *ngIf="isDeleted(e); else entDur">
+          <button type="button" class="l-undo" (click)="undoDelete(e, $event)">↩ undo</button>
         </ng-container>
-        <ng-template #groupDur>
-          <span class="c-dur">{{ formatDurationHm(it.group.totalMs) }}</span>
+        <ng-template #entDur>
+          <!-- Time never leaves its slot: edit swaps the span for a
+               frameless wdDuration input (wheel ±15m / typed). -->
+          <input *ngIf="editingId === e.id; else viewDur"
+                 class="c-dur edit"
+                 [(wdDuration)]="editMinutes"
+                 (durEnter)="saveEdit(e)"
+                 (keydown.escape)="cancelEdit(); $event.stopPropagation()"
+                 title="1h 15m · 90 · 45m — wheel: ±15m" />
+          <ng-template #viewDur>
+            <span class="c-dur"
+                  [class.wheel]="isFresh(e)"
+                  (wheel)="onFreshWheel(e, $event)">{{ showEntryDur(b, e) ? formatDurationHm(displayMinutes(e) * 60000) : '' }}</span>
+          </ng-template>
         </ng-template>
       </div>
-      <div class="r-l2"><div class="rv">
-        <span class="c-type">{{ activityLabel(developmentActivity) }}</span>
-        <span class="c-ds ses-info">
-          <ng-container *ngIf="it.group.sessions.length > 0">
-            <svg width="15" height="8" viewBox="0 0 15 8" aria-hidden="true"><circle cx="2.9" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="5.2" y1="4" x2="9.8" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="12.1" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>{{ sessionsLabel(it.group) }} · {{ trackedRange(it.group) }}</span>
-          </ng-container>
-          <span class="add-note" *ngIf="it.group.manualMs > 0"><ng-container *ngIf="it.group.sessions.length > 0">·</ng-container><svg width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><circle cx="6.5" cy="4" r="3.5" fill="none" stroke="currentColor" stroke-width="0.8"/><line x1="6.5" y1="2" x2="6.5" y2="6" stroke="currentColor" stroke-width="1.25"/><line x1="4.5" y1="4" x2="8.5" y2="4" stroke="currentColor" stroke-width="1.25"/></svg>{{ formatDurationHm(it.group.manualMs) }} added</span>
-        </span>
-        <span class="r-act"></span>
-      </div></div>
-      <div class="trk-detail" [class.open]="isExpanded(it.group)">
-        <div class="trk-clip">
-          <!-- One subgrid line per breakdown item, oldest first — sessions at
-               their close point (range | glyph | commits | · | +adds | −dels |
-               duration), manual adds at their createdAt (time | ⊕ | phrase |
-               duration). The ⊕ node doubles as the delete: hover morphs it
-               into ✕, click starts the same undo pipeline the entry rows use. -->
 
-          <ng-container *ngFor="let bi of it.group.items; trackBy: trackByGroupItem">
-            <!-- The session glyph doubles as the delete, like the add's ⊕:
-                 hover morphs o—o into ✕, click starts the same undo pipeline. -->
-            <div class="ses-row" *ngIf="bi.kind === 'session'"
-                 [class.deleted]="sessionDeleted(bi.session)"
-                 [class.removing]="sesRemovingIds.has(bi.session.id)">
-              <span class="rng">{{ sessionInterval(bi.session) }}</span>
-              <button type="button" class="m-act"
-                      [disabled]="sessionDeleted(bi.session)"
-                      (click)="deleteSessionRow(bi.session, $event)"
-                      (dblclick)="$event.stopPropagation()">
-                <svg class="g-plus s-glyph" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>
-                <svg class="g-x" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="3.7" y1="1.2" x2="9.3" y2="6.8" stroke="currentColor" stroke-width="1.25"/><line x1="9.3" y1="1.2" x2="3.7" y2="6.8" stroke="currentColor" stroke-width="1.25"/></svg>
-              </button>
-              <ng-container *ngIf="!sessionDeleted(bi.session); else sesUndo">
-                <span class="s-com">{{ bi.session.evidence.commits }}</span>
-                <span class="csep">·</span>
-                <b class="plus">+{{ bi.session.evidence.linesAdded }}</b>
-                <b class="minus">−{{ bi.session.evidence.linesRemoved }}</b>
-              </ng-container>
-              <ng-template #sesUndo>
-                <button type="button" class="l-undo m-undo" (click)="undoSessionDelete(bi.session, $event)">↩ undo</button>
-              </ng-template>
-              <span class="sdur">{{ formatDurationHm(bi.session.effectiveDurationMs) }}</span>
-            </div>
-            <div class="ses-row man"
-                 *ngIf="bi.kind === 'manual'"
-                 [class.deleted]="isDeleted(bi.entry)"
-                 [class.removing]="removingIds.has(bi.entry.id)">
-              <span class="rng">{{ formatHm(bi.entry.createdAt) }}</span>
-              <button type="button" class="m-act"
-                      [disabled]="isDeleted(bi.entry)"
-                      (click)="deleteManualEntry(bi.entry, $event)"
-                      (dblclick)="$event.stopPropagation()">
-                <svg class="g-plus" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><circle cx="6.5" cy="4" r="3.5" fill="none" stroke="currentColor" stroke-width="0.8"/><line x1="6.5" y1="2" x2="6.5" y2="6" stroke="currentColor" stroke-width="1.25"/><line x1="4.5" y1="4" x2="8.5" y2="4" stroke="currentColor" stroke-width="1.25"/></svg>
-                <svg class="g-x" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="3.7" y1="1.2" x2="9.3" y2="6.8" stroke="currentColor" stroke-width="1.25"/><line x1="9.3" y1="1.2" x2="3.7" y2="6.8" stroke="currentColor" stroke-width="1.25"/></svg>
-              </button>
-              <span class="m-phrase" *ngIf="!isDeleted(bi.entry); else manUndo">manual added</span>
-              <ng-template #manUndo>
-                <button type="button" class="l-undo m-undo" (click)="undoDelete(bi.entry, $event)">↩ undo</button>
-              </ng-template>
-              <span class="sdur">{{ formatDurationHm(bi.entry.minutes * 60000) }}</span>
-            </div>
-          </ng-container>
-        </div>
-      </div>
     </div>
-
-  </ng-container>
+  </div>
 </div>
