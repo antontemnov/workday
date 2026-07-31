@@ -6,6 +6,7 @@
 import { importEntryOnDate } from '../core/day-edit.js';
 import type { AppConfig, ManualEntry, Secrets, TempoImportItem, TempoImportResponse, TempoMonthSnapshot, TempoWorklog } from '../core/types.js';
 import { loadPushLog, savePushLog, loadTombstones, pushLogKey } from './push-log.js';
+import { acquirePushLock } from './push-lock.js';
 import { fetchMonthSnapshot } from './tempo-snapshot.js';
 
 export interface ImportEntryInput {
@@ -145,6 +146,12 @@ export async function importTempoWorklogs(
   secrets: Secrets,
   options: ImportOptions,
 ): Promise<TempoImportResponse> {
-  const snapshot = await fetchMonthSnapshot(year, month, secrets);
-  return { ...importFromSnapshot(snapshot, options), syncedAt: snapshot.fetchedAt };
+  // Import rewrites push-log — same cross-process lock as a commit push.
+  const releaseLock = acquirePushLock('import');
+  try {
+    const snapshot = await fetchMonthSnapshot(year, month, secrets);
+    return { ...importFromSnapshot(snapshot, options), syncedAt: snapshot.fetchedAt };
+  } finally {
+    releaseLock();
+  }
 }

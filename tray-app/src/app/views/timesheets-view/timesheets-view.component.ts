@@ -2,8 +2,10 @@ import { Component, ElementRef, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
+import { PushStateService } from '../../services/push-state.service';
 import {
   ActivityType,
+  ApiResponse,
   DEVELOPMENT_ACTIVITY,
   Favorite,
   ManualEntryPatch,
@@ -11,6 +13,7 @@ import {
   MonthDayStatus,
   MonthResponse,
   PushPlanEntry,
+  PushResponse,
   ScheduleDay,
   TempoApprovalResponse,
   TempoImportRequest,
@@ -104,7 +107,10 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   year: number;
   month: number;
 
-  pushing = false;
+  // In-flight flag lives in a root service — see PushStateService.
+  get pushing(): boolean {
+    return this.pushState.pushing();
+  }
   pushError: string | null = null;
   pushNote: string | null = null;
   // Push refused by the conflict gate — these worklogs were edited in Tempo
@@ -157,7 +163,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   // Guards against stale responses landing after a month switch.
   private loadSeq = 0;
 
-  constructor(private api: WorkdayApiService, private host: ElementRef<HTMLElement>) {
+  constructor(private api: WorkdayApiService, private pushState: PushStateService, private host: ElementRef<HTMLElement>) {
     const today = localToday();
     this.year = Number(today.slice(0, 4));
     this.month = Number(today.slice(5, 7));
@@ -401,11 +407,15 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
 
   async onPush(force = false): Promise<void> {
     if (this.pushing || !this.monthData || (this.pushCount === 0 && !force)) return;
-    this.pushing = true;
+    this.pushState.pushing.set(true);
     this.pushError = null;
     this.conflicts = [];
-    const res = await this.api.pushToTempo(this.monthData.from, this.monthData.to, force);
-    this.pushing = false;
+    let res: ApiResponse<PushResponse>;
+    try {
+      res = await this.api.pushToTempo(this.monthData.from, this.monthData.to, force);
+    } finally {
+      this.pushState.pushing.set(false);
+    }
     if (res.ok && res.data) {
       if (res.data.blockedByConflicts) {
         // Nothing was executed — surface the choice, no reload needed.

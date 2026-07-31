@@ -104,6 +104,9 @@ export const ISSUE_CACHE_FILE = 'issue-cache.json';
 export const ISSUE_SUMMARY_TTL_MS = 30 * 60_000;
 export const PUSH_LOG_FILE = 'push-log.json';
 export const PUSH_TOMBSTONES_FILE = 'push-tombstones.json';
+export const PUSH_LOCK_FILE = 'push-lock.json';
+/** A crashed push leaves the lock behind — older than this counts as stale. */
+export const PUSH_LOCK_STALE_MS = 10 * 60_000;
 export const TEMPO_REPORT_DIR = 'tempo';
 export const TEMPO_CACHE_DIR = 'tempo-cache';
 export const TEMPO_BASE_URL = 'https://api.tempo.io';

@@ -7,6 +7,7 @@ import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient } from './tempo-client.js';
 import { invalidateApprovalCache } from './tempo-approvals.js';
 import { loadPushLog, savePushLog, pushLogKey, loadTombstones, removeTombstonesByWorklogIds } from './push-log.js';
+import { acquirePushLock } from './push-lock.js';
 import { refreshSnapshotsInRange } from './tempo-snapshot.js';
 import { buildPushPlan, formatHours } from './reconcile.js';
 
@@ -171,6 +172,19 @@ interface RunPushOptions {
 
 /** Full push pipeline: build report → resolve Jira → fetch Tempo → plan → execute */
 export async function runPush(options: RunPushOptions): Promise<PushResponse> {
+  // Dry runs are read-only. Commit pushes take the cross-process lock, so a
+  // second push cannot plan against the same pre-push Tempo state and create
+  // every pending worklog twice.
+  if (!options.commit) return runPushPipeline(options);
+  const releaseLock = acquirePushLock('push');
+  try {
+    return await runPushPipeline(options);
+  } finally {
+    releaseLock();
+  }
+}
+
+async function runPushPipeline(options: RunPushOptions): Promise<PushResponse> {
   const { from, to, commit, config, secrets, filePath, force } = options;
 
   // Step 1: Build or load report
