@@ -23,12 +23,18 @@ impl TrayStatus {
     }
 
     fn eyes_svg(self) -> &'static str {
-        // Use r##"..."## so the SVG attribute sequence `"#` (e.g. fill="#a6e3a1")
+        // Use r##"..."## so the SVG attribute sequence `"#` (e.g. fill="#2aa757")
         // doesn't terminate the raw string the way r#"..."# would.
+        //
+        // Two layers per eye: saturated green iris nearly filling the socket
+        // plus a pale glowing core. The old single pastel #a6e3a1 ellipse had
+        // almost the same luminance as the lavender face — invisible at 16px.
         match self {
             TrayStatus::Live => {
-                r##"<ellipse cx="23.6" cy="42.8" rx="4.6" ry="7.2" fill="#a6e3a1"/>
-                    <ellipse cx="40.4" cy="42.8" rx="4.6" ry="7.2" fill="#a6e3a1"/>"##
+                r##"<ellipse cx="23.6" cy="42.8" rx="6.4" ry="8.9" fill="#2aa757"/>
+                    <ellipse cx="40.4" cy="42.8" rx="6.4" ry="8.9" fill="#2aa757"/>
+                    <ellipse cx="23.6" cy="42.8" rx="3" ry="4.6" fill="#d9ffe0"/>
+                    <ellipse cx="40.4" cy="42.8" rx="3" ry="4.6" fill="#d9ffe0"/>"##
             }
             _ => "",
         }
