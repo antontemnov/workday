@@ -239,13 +239,26 @@ fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     }
 }
 
+/// Physical tray icon size: Windows draws the notification area at 16 logical
+/// px scaled by the primary monitor's DPI. Rendering the vector at exactly
+/// that size skips the shell's blurry downscale.
+fn tray_icon_size(app: &AppHandle) -> u32 {
+    let scale = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .unwrap_or(1.0);
+    ((16.0 * scale).round() as u32).clamp(16, 64)
+}
+
 /// Update the tray icon's status dot and tooltip.
 /// `kind` is one of: "live" | "pending" | "idle" | "paused" | "none".
 /// `tooltip` defaults to "Workday" when empty.
 #[tauri::command]
 fn set_tray_status(app: AppHandle, kind: String, tooltip: Option<String>) -> Result<(), String> {
     let status = TrayStatus::parse(&kind);
-    let icon = tray_icon::build(status)?;
+    let icon = tray_icon::build(status, tray_icon_size(&app))?;
     let tray = app.tray_by_id("main").ok_or("tray not found")?;
     tray.set_icon(Some(icon)).map_err(|e| e.to_string())?;
     let tooltip_text = tooltip.unwrap_or_else(|| "Workday".to_string());
@@ -401,9 +414,9 @@ pub fn run() {
             let tray = app.tray_by_id("main").expect("tray not found");
 
             // Replace the static "placeholder" icon from tauri.conf.json with
-            // the freshly rendered octocat silhouette (no dot yet — the
-            // frontend will call set_tray_status once data arrives).
-            if let Ok(icon) = tray_icon::build(TrayStatus::None) {
+            // the freshly rendered daemon glyph (empty sockets — the frontend
+            // will call set_tray_status once data arrives).
+            if let Ok(icon) = tray_icon::build(TrayStatus::None, tray_icon_size(app.handle())) {
                 let _ = tray.set_icon(Some(icon));
             }
 

@@ -35,32 +35,43 @@ impl TrayStatus {
     }
 }
 
-/// The workday daemon at 64×64: bell head with horns, lavender #b7bdda.
+/// The workday daemon (64 viewBox): bell head with horns, lavender #b7bdda.
 /// Eye sockets are punched through the head path (fill-rule evenodd), so at
 /// rest the taskbar shows through them — literally empty eyes.
+/// Horns are bolder than the Start-menu tile's: at 16–24px thin horns
+/// dissolve into antialiasing.
 const DEMON_SVG_BODY: &str = r##"
-  <path d="M 14.4 32.8 Q 11.2 22.4 15.2 13.6 Q 20.8 20 24 28 Z" fill="#b7bdda"/>
-  <path d="M 49.6 32.8 Q 52.8 22.4 48.8 13.6 Q 43.2 20 40 28 Z" fill="#b7bdda"/>
-  <path fill-rule="evenodd" fill="#b7bdda" d="M 8.8 60 C 9.2 46.4 10.8 40 13.2 36 C 15.6 27.6 22.4 25.6 32 25.6 C 41.6 25.6 48.4 27.6 50.8 36 C 53.2 40 54.8 46.4 55.2 60 Z M 16.8 42.8 a 6.8 9.4 0 1 0 13.6 0 a 6.8 9.4 0 1 0 -13.6 0 Z M 33.6 42.8 a 6.8 9.4 0 1 0 13.6 0 a 6.8 9.4 0 1 0 -13.6 0 Z"/>
+  <path d="M 12.8 32.8 Q 9.6 22.4 14.6 13.6 Q 21.8 20 25.6 28 Z" fill="#b7bdda"/>
+  <path d="M 51.2 32.8 Q 54.4 22.4 49.4 13.6 Q 42.2 20 38.4 28 Z" fill="#b7bdda"/>
+  <path fill-rule="evenodd" fill="#b7bdda" d="M 9.4 55 C 9.6 46 10.8 40 13.2 36 C 15.6 27.6 22.4 25.6 32 25.6 C 41.6 25.6 48.4 27.6 50.8 36 C 53.2 40 54.4 46 54.6 55 Q 32 62.5 9.4 55 Z M 16.8 42.8 a 6.8 9.4 0 1 0 13.6 0 a 6.8 9.4 0 1 0 -13.6 0 Z M 33.6 42.8 a 6.8 9.4 0 1 0 13.6 0 a 6.8 9.4 0 1 0 -13.6 0 Z"/>
 "##;
 
-/// Build a 64×64 RGBA icon: daemon silhouette + status eyes.
+/// Optically centers the glyph (its own center of mass sits at y≈36.8 of 64,
+/// which read as "sunk" in the taskbar) and scales it up to fill the canvas.
+const GLYPH_TRANSFORM: &str = "translate(32 32) scale(1.17) translate(-32 -36.8)";
+
+/// Build an RGBA icon at `size` px: daemon silhouette + status eyes.
+/// `size` should be the physical tray icon size (16 × DPI scale) — rendering
+/// the vector at the exact size avoids the shell's blurry downscale.
 /// Returns a Tauri `Image` ready to hand to `tray.set_icon(...)`.
-pub fn build(status: TrayStatus) -> Result<Image<'static>, String> {
-    const SIZE: u32 = 64;
+pub fn build(status: TrayStatus, size: u32) -> Result<Image<'static>, String> {
+    let size = size.clamp(16, 64);
     let svg = format!(
-        r##"<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg">
-              {body}
-              {eyes}
+        r##"<svg width="{size}" height="{size}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+              <g transform="{transform}">
+                {body}
+                {eyes}
+              </g>
             </svg>"##,
-        size = SIZE,
+        size = size,
+        transform = GLYPH_TRANSFORM,
         body = DEMON_SVG_BODY,
         eyes = status.eyes_svg()
     );
 
     let tree = usvg::Tree::from_str(&svg, &usvg::Options::default())
         .map_err(|e| format!("parse svg: {}", e))?;
-    let mut pixmap = tiny_skia::Pixmap::new(SIZE, SIZE).ok_or("alloc pixmap")?;
+    let mut pixmap = tiny_skia::Pixmap::new(size, size).ok_or("alloc pixmap")?;
     resvg::render(
         &tree,
         tiny_skia::Transform::identity(),
@@ -71,7 +82,7 @@ pub fn build(status: TrayStatus) -> Result<Image<'static>, String> {
     // straight (non-premultiplied) RGBA — convert before handing it over so
     // semi-transparent edges (antialiased pixels) don't render darker.
     let rgba = unpremultiply(pixmap.data());
-    Ok(Image::new_owned(rgba, SIZE, SIZE))
+    Ok(Image::new_owned(rgba, size, size))
 }
 
 /// Premultiplied → straight RGBA. Both inputs and outputs are RGBA8.
