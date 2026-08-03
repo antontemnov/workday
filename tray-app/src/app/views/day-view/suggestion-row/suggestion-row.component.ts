@@ -61,6 +61,8 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
   @Input() actionPending = false;
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() activityAllowed: readonly string[] = [];
+  // Jira summaries for resolved tasks (daemon name cache, suggestions poll).
+  @Input() summaries: Readonly<Record<string, string>> = {};
   // Ticket picked for this row in the cloud's accept-picker.
   @Input() picked: SuggestionPick | null = null;
 
@@ -111,6 +113,17 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
 
   get activityOptions(): readonly ActivityType[] {
     return activityOptions(this.activityTypes, this.activityAllowed);
+  }
+
+  // Review rows carry the colleague's branch as title — a technical artifact.
+  // Shown only until the ticket's Jira summary is cached (same name the row
+  // will wear once accepted); meetings keep their published title.
+  get titleLabel(): string {
+    const s = this.suggestion;
+    if (s.source === 'review' && s.resolved) {
+      return this.summaries[s.resolved.task] || s.title;
+    }
+    return s.title;
   }
 
   get durLabel(): string {

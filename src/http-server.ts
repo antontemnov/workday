@@ -446,6 +446,7 @@ export class HttpServer {
       ...candidates.map(s => this.toSessionSummary(s, tracker)),
       ...watching.map(w => buildWatchingCard(w, tracker.getSensitivity(w.repoName), now)),
     ];
+    const jiraBaseUrl = tryLoadSecrets()?.Jira_BaseUrl?.trim() || undefined;
 
     return {
       ok: true,
@@ -457,6 +458,7 @@ export class HttpServer {
         uptime: Math.floor((Date.now() - this.deps.getStartedAt()) / 1000),
         openSessions: summaries,
         calendar: this.deps.calendarCollector.getStatus(),
+        ...(jiraBaseUrl ? { jiraBaseUrl } : {}),
       },
     };
   }

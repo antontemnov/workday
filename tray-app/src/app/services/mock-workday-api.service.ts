@@ -349,6 +349,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
         'ATL-101': 'Team ceremonies & sync rituals',
         'ATL-205': 'Payments backlog refinement',
         'ATL-118': 'Payments squad: grooming & planning',
+        'ATL-4512': '[DEV] Payment retry: dedupe idempotency keys',
         // APP-1024 left unmapped → its Logged row shows the "name not cached" placeholder
       },
     };
@@ -372,6 +373,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       ok: true,
       data: {
         running: true, pid: 1234, date: this.today, uptime: 3600,
+        jiraBaseUrl: 'https://your-company.atlassian.net',
         calendar: {
           configured: this.mockCalendarConfigured,
           lastFetchAt: this.mockCalendarConfigured ? this.mockCalendarFetchedAt : null,
@@ -729,6 +731,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       issueSummaries: {
         'ATL-101': 'Team ceremonies & sync rituals',
         'ATL-205': 'Payments backlog refinement',
+        'ATL-4512': '[DEV] Payment retry: dedupe idempotency keys',
       },
     };
   }

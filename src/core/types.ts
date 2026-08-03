@@ -619,6 +619,9 @@ export interface StatusResponse {
   readonly uptime: number;
   readonly openSessions: readonly SessionSummary[];
   readonly calendar?: CalendarFeedStatus;
+  // Jira site root — lets the tray build /browse links. Absent when
+  // secrets.json has no Jira_BaseUrl.
+  readonly jiraBaseUrl?: string;
 }
 
 export interface CalendarFeedStatus {

@@ -14,7 +14,7 @@
         <button type="button" class="chip ask" [disabled]="actionPending" (click)="accept()"><span class="k-ind"><svg class="k-spark dim" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg></span>task?</button>
       </ng-template>
     </ng-template>
-    <span class="s-title">{{ suggestion.title }}</span>
+    <span class="s-title">{{ titleLabel }}</span>
     <!-- Time never leaves its slot: the form swaps the span for a frameless
          wdDuration input — minutes are editable ONLY here (logged-edit rule). -->
     <input *ngIf="editing; else viewDur"

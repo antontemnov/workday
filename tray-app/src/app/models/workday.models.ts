@@ -104,6 +104,9 @@ export interface StatusResponse {
   date: string;
   uptime: number;
   calendar?: CalendarFeedStatus;
+  // Jira site root for /browse links. Absent on daemons < 0.41.0 or when
+  // secrets have no Jira_BaseUrl — the "Open in browser" menu item hides.
+  jiraBaseUrl?: string;
 }
 
 // ─── Calendar feed (meeting suggestions groundwork) ──────────────────────

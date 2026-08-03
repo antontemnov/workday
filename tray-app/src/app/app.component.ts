@@ -61,6 +61,9 @@ export class AppComponent implements OnInit, OnDestroy {
   // a deliberately stopped daemon is never respawned by the watchdog.
   daemonReachable = true;
   daemonUserStopped = false;
+  // Jira site root from the status poll — kept on failure (self-heals on the
+  // next tick), absent on older daemons → browse links stay hidden.
+  jiraBaseUrl: string | null = null;
   private watchdogFailures = 0;
   private lastDaemonSpawnAt = 0;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
@@ -186,6 +189,8 @@ export class AppComponent implements OnInit, OnDestroy {
       this.daemonReachable = true;
       this.daemonUserStopped = false;
       this.watchdogFailures = 0;
+      const jiraUrl = res.data?.jiraBaseUrl;
+      if (jiraUrl) this.jiraBaseUrl = jiraUrl;
       return;
     }
 

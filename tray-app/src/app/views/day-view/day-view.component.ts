@@ -60,6 +60,8 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() suggestions: readonly Suggestion[] = [];
   // Jira summaries for resolved/candidate tasks (daemon name cache).
   @Input() suggestionSummaries: Readonly<Record<string, string>> = {};
+  // Jira site root (status poll) — null hides the browse links.
+  @Input() jiraBaseUrl: string | null = null;
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
