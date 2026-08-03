@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, tryLoadSecrets, getWorkdayHome, getPackageRoot, getDataDir, computeWorkingDate, ensureConfigFiles } from './core/config.js';
+import { loadConfig, loadSecrets, tryLoadSecrets, getWorkdayHome, getPackageRoot, getDataDir, computeWorkingDate, ensureConfigFiles, getApiPort } from './core/config.js';
 import { UpdateManager } from './core/update-manager.js';
 import {
   CONFIG_FILE_NAME,
@@ -81,8 +81,10 @@ let cachedApiBaseUrl: string | null = null;
 
 function getApiBaseUrl(): string {
   if (!cachedApiBaseUrl) {
-    const config = loadConfig();
-    cachedApiBaseUrl = `http://127.0.0.1:${config.apiPort}`;
+    // Non-fatal port resolution: on a fresh machine (no config yet) every
+    // transport-level command must still run — "workday start" used to die
+    // here before its self-bootstrap could create the config.
+    cachedApiBaseUrl = `http://127.0.0.1:${getApiPort()}`;
   }
   return cachedApiBaseUrl;
 }

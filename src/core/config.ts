@@ -384,6 +384,22 @@ export function ensureConfigFiles(): { createdConfig: boolean; createdSecrets: b
   return { createdConfig, createdSecrets };
 }
 
+/**
+ * apiPort without requiring a config file — a fresh machine (no config yet)
+ * answers with the default port instead of exiting. loadConfig() stays fatal
+ * for callers that need the full config; CLI transport must not.
+ */
+export function getApiPort(): number {
+  const configPath = join(WORKDAY_HOME, CONFIG_FILE_NAME);
+  if (!existsSync(configPath)) return DEFAULT_API_PORT;
+  try {
+    const raw = readJson<{ apiPort?: number }>(configPath);
+    return raw.apiPort ?? DEFAULT_API_PORT;
+  } catch {
+    return DEFAULT_API_PORT;
+  }
+}
+
 /** Atomic write of config.json — tmp + rename, preserves formatting. */
 export function writeConfig(config: AppConfig): void {
   const configPath = join(WORKDAY_HOME, CONFIG_FILE_NAME);
