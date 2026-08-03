@@ -186,16 +186,16 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
       ...(this.suggestion.resolved
         ? [{ icon: '✓', label: 'Log…', action: (): void => this.accept() }]
         : [{ icon: '⌕', label: 'Pick ticket…', action: (): void => this.accept() }]),
-      // Only a resolved row has a page to open — "task?" has no ticket yet.
-      ...(this.suggestion.resolved && canBrowseTicket(this.jiraBaseUrl, this.suggestion.resolved.task)
-        ? [{ icon: GLOBE_ICON, label: 'Open in browser',
-             action: (): void => openTicketInBrowser(this.jiraBaseUrl, this.suggestion.resolved!.task) }]
-        : []),
       { icon: '✕', label: 'Deny', action: () => this.dismiss() },
       // Review rows have no series to mute — dismiss closes the day.
       ...(this.suggestion.source === 'review'
         ? []
         : [{ icon: '⏸', label: 'Mute series…', action: (): void => this.openMuteMenu(x, y) }]),
+      // Only a resolved row has a page to open — "task?" has no ticket yet.
+      ...(this.suggestion.resolved && canBrowseTicket(this.jiraBaseUrl, this.suggestion.resolved.task)
+        ? [{ icon: GLOBE_ICON, label: 'Open in browser',
+             action: (): void => openTicketInBrowser(this.jiraBaseUrl, this.suggestion.resolved!.task) }]
+        : []),
     ]);
   }
 
