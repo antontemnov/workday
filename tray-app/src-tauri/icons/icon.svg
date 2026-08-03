@@ -1,0 +1,30 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- workday app icon: the daemon (bell head, mini-mediator nose). Source of truth for raster exports. -->
+  <defs>
+    <clipPath id="tileClip"><rect x="2" y="2" width="252" height="252" rx="56"/></clipPath>
+    <linearGradient id="tileApp" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2a3e"/>
+      <stop offset="1" stop-color="#191926"/>
+    </linearGradient>
+    <radialGradient id="aurM" cx="0.85" cy="0.15" r="0.6">
+      <stop offset="0" stop-color="rgba(203,166,247,0.08)"/>
+      <stop offset="1" stop-color="rgba(203,166,247,0)"/>
+    </radialGradient>
+    <radialGradient id="aurT" cx="0.15" cy="0.85" r="0.6">
+      <stop offset="0" stop-color="rgba(148,226,213,0.06)"/>
+      <stop offset="1" stop-color="rgba(148,226,213,0)"/>
+    </radialGradient>
+  </defs>
+  <rect x="2" y="2" width="252" height="252" rx="56" fill="url(#tileApp)"/>
+  <g clip-path="url(#tileClip)">
+    <rect x="2" y="2" width="252" height="252" fill="url(#aurM)"/>
+    <rect x="2" y="2" width="252" height="252" fill="url(#aurT)"/>
+    <path d="M 62 148 Q 50 104 66 74 Q 86 96 96 124 Z" fill="#b7bdda"/>
+    <path d="M 194 148 Q 206 104 190 74 Q 170 96 160 124 Z" fill="#b7bdda"/>
+    <path d="M 30 254 C 32 206 38 180 48 162 C 58 122 90 112 128 112 C 166 112 198 122 208 162 C 218 180 224 206 226 254 Z" fill="#b7bdda"/>
+    <ellipse cx="95" cy="182" rx="20" ry="28" fill="#2b2b3f" transform="rotate(-6 95 182)"/>
+    <ellipse cx="161" cy="182" rx="20" ry="28" fill="#2b2b3f" transform="rotate(6 161 182)"/>
+    <path d="M 123.5 219 Q 128 217 132.5 219 Q 131.75 224.5 128 227.25 Q 124.25 224.5 123.5 219 Z" fill="#ac8fd8"/>
+  </g>
+  <rect x="3" y="3" width="250" height="250" rx="55" fill="none" stroke="rgba(205,214,244,0.12)" stroke-width="2"/>
+</svg>

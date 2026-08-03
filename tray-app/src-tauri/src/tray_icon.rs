@@ -1,14 +1,14 @@
 use tauri::image::Image;
 
-/// Status drives the colour of the dot painted in the icon's bottom-right
-/// corner. `None` means "no dot", reserved for the no-session state.
+/// Status drives the daemon's eyes. `Live` (tracking) lights them green;
+/// every other state leaves the sockets empty.
 #[derive(Debug, Clone, Copy)]
 pub enum TrayStatus {
-    Live,    // green
-    Pending, // yellow
-    Idle,    // orange
-    Paused,  // grey (hollow)
-    None,    // no dot — base octocat only
+    Live,    // tracking — green eyes
+    Pending, // empty sockets
+    Idle,    // empty sockets
+    Paused,  // empty sockets
+    None,    // empty sockets
 }
 
 impl TrayStatus {
@@ -22,43 +22,40 @@ impl TrayStatus {
         }
     }
 
-    fn dot_svg(self) -> &'static str {
+    fn eyes_svg(self) -> &'static str {
         // Use r##"..."## so the SVG attribute sequence `"#` (e.g. fill="#a6e3a1")
         // doesn't terminate the raw string the way r#"..."# would.
         match self {
-            TrayStatus::Live =>
-                r##"<circle cx="50" cy="50" r="10" fill="#a6e3a1" stroke="#1e1e2e" stroke-width="2"/>"##,
-            TrayStatus::Pending =>
-                r##"<circle cx="50" cy="50" r="10" fill="#f9e2af" stroke="#1e1e2e" stroke-width="2"/>"##,
-            TrayStatus::Idle =>
-                r##"<circle cx="50" cy="50" r="10" fill="#fab387" stroke="#1e1e2e" stroke-width="2"/>"##,
-            TrayStatus::Paused =>
-                r##"<circle cx="50" cy="50" r="9" fill="none" stroke="#6c7086" stroke-width="2.5"/>"##,
-            TrayStatus::None => "",
+            TrayStatus::Live => {
+                r##"<ellipse cx="23.6" cy="42.8" rx="4.6" ry="7.2" fill="#a6e3a1"/>
+                    <ellipse cx="40.4" cy="42.8" rx="4.6" ry="7.2" fill="#a6e3a1"/>"##
+            }
+            _ => "",
         }
     }
 }
 
-/// Octocat path from GitHub's mark-github octicon (MIT-licensed via primer/octicons).
-/// 24x24 viewBox; we scale and translate it inside a 64x64 canvas.
-const OCTOCAT_PATH: &str = "M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943";
+/// The workday daemon at 64×64: bell head with horns, lavender #b7bdda.
+/// Eye sockets are punched through the head path (fill-rule evenodd), so at
+/// rest the taskbar shows through them — literally empty eyes.
+const DEMON_SVG_BODY: &str = r##"
+  <path d="M 14.4 32.8 Q 11.2 22.4 15.2 13.6 Q 20.8 20 24 28 Z" fill="#b7bdda"/>
+  <path d="M 49.6 32.8 Q 52.8 22.4 48.8 13.6 Q 43.2 20 40 28 Z" fill="#b7bdda"/>
+  <path fill-rule="evenodd" fill="#b7bdda" d="M 8.8 60 C 9.2 46.4 10.8 40 13.2 36 C 15.6 27.6 22.4 25.6 32 25.6 C 41.6 25.6 48.4 27.6 50.8 36 C 53.2 40 54.8 46.4 55.2 60 Z M 16.8 42.8 a 6.8 9.4 0 1 0 13.6 0 a 6.8 9.4 0 1 0 -13.6 0 Z M 33.6 42.8 a 6.8 9.4 0 1 0 13.6 0 a 6.8 9.4 0 1 0 -13.6 0 Z"/>
+"##;
 
-/// Build a 64×64 RGBA icon: octocat silhouette + optional status dot.
+/// Build a 64×64 RGBA icon: daemon silhouette + status eyes.
 /// Returns a Tauri `Image` ready to hand to `tray.set_icon(...)`.
 pub fn build(status: TrayStatus) -> Result<Image<'static>, String> {
     const SIZE: u32 = 64;
-    // Octocat path is 24×24. We scale by ~2.4 to fit inside 64×64 with ~4px
-    // breathing room on each side; transform=scale(2.4) translate(2, 1).
     let svg = format!(
         r##"<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg">
-              <g transform="translate(2,1) scale(2.4)">
-                <path d="{path}" fill="#cdd6f4"/>
-              </g>
-              {dot}
+              {body}
+              {eyes}
             </svg>"##,
         size = SIZE,
-        path = OCTOCAT_PATH,
-        dot = status.dot_svg()
+        body = DEMON_SVG_BODY,
+        eyes = status.eyes_svg()
     );
 
     let tree = usvg::Tree::from_str(&svg, &usvg::Options::default())
