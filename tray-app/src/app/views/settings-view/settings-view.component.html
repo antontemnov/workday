@@ -126,6 +126,22 @@
           </div>
         </div>
       </div>
+
+      <!-- Browser for ticket links (Open in browser menu items). Windows-only
+           enumeration; hidden on daemons < 0.42.0 or an empty list. -->
+      <div class="opt-row" *ngIf="browserRowVisible">
+        <div class="left">
+          <span class="name">Open links in</span>
+          <span class="hint">Browser for ticket links.</span>
+        </div>
+        <div class="right">
+          <select class="browser-select" [ngModel]="browserValue" (ngModelChange)="onBrowserChange($event)">
+            <option value="">System default</option>
+            <option *ngIf="browserMissing" [value]="browserValue">{{ browserMissingLabel }}</option>
+            <option *ngFor="let b of browsers" [value]="b.path">{{ b.name }}</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <!-- Scopes: Jira projects the issue search offers · Tempo activity types
@@ -302,22 +318,6 @@
               </div>
             </ng-template>
           </div>
-        </div>
-      </div>
-
-      <!-- Browser for ticket links (Open in browser menu items). Windows-only
-           enumeration; hidden on daemons < 0.42.0 or an empty list. -->
-      <div class="opt-row" *ngIf="browserRowVisible">
-        <div class="left">
-          <span class="name">Open links in</span>
-          <span class="hint">Browser for ticket links.</span>
-        </div>
-        <div class="right">
-          <select class="browser-select" [ngModel]="browserValue" (ngModelChange)="onBrowserChange($event)">
-            <option value="">System default</option>
-            <option *ngIf="browserMissing" [value]="browserValue">{{ browserMissingLabel }}</option>
-            <option *ngFor="let b of browsers" [value]="b.path">{{ b.name }}</option>
-          </select>
         </div>
       </div>
 
