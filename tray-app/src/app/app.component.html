@@ -71,6 +71,9 @@
       [weekdayLabel]="formattedWeekday"
       [actionPending]="actionPending"
       [daemonUserStopped]="daemonUserStopped"
+      [daemonInstalling]="daemonInstalling"
+      [daemonInstallError]="daemonInstallError"
+      [nodeMissing]="nodeMissing"
       [sensitivityPills]="sensitivityPills"
       [activityTypes]="activityTypes"
       [activityAllowed]="activityAllowed"
@@ -92,9 +95,13 @@
       (suggestionAcceptSubmitted)="submitSuggestionAccept($event)"
       (suggestionDismissSubmitted)="submitSuggestionDismiss($event)"
       (suggestionMuteSubmitted)="submitSuggestionMute($event)"
-      (settingsRequested)="setView('set')" />
+      (settingsRequested)="setView('set')"
+      (retryInstall)="retryDaemonInstall()" />
 
     <app-timesheets-view *ngSwitchCase="'sheet'" />
+
+    <app-setup-view *ngSwitchCase="'setup'"
+      (done)="onSetupDone()" />
 
     <app-settings-view *ngSwitchCase="'set'"
       [daemonReachable]="daemonReachable"

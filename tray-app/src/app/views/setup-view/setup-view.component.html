@@ -1,0 +1,174 @@
+<div class="content setup">
+  <div class="status-msg" *ngIf="loading">Loading…</div>
+
+  <ng-container *ngIf="!loading">
+    <div class="setup-head">
+      <div class="setup-title">Set up Workday</div>
+      <div class="steps">
+        <div class="step-dot"
+             *ngFor="let label of stepLabels; let i = index"
+             [class.active]="step === i + 1"
+             [class.done]="step > i + 1">
+          <span class="dot-num">{{ step > i + 1 ? '✓' : i + 1 }}</span>
+          <span class="dot-label">{{ label }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 1: Atlassian site + email -->
+    <div class="setup-section" *ngIf="step === 1">
+      <h3>Your Atlassian site</h3>
+      <div class="field">
+        <label>Jira base URL</label>
+        <input class="input-line"
+               [(ngModel)]="jiraBaseUrl"
+               placeholder="https://your-company.atlassian.net"
+               (keydown.enter)="primaryAction()">
+      </div>
+      <div class="field">
+        <label>Work email</label>
+        <input class="input-line"
+               [(ngModel)]="jiraEmail"
+               placeholder="you@company.com"
+               (keydown.enter)="primaryAction()">
+      </div>
+      <div class="hint">
+        Used to talk to Jira and to find your site's Tempo page.
+        Everything stays on this machine, in ~/.workday/secrets.json.
+      </div>
+    </div>
+
+    <!-- Step 2: tokens with resolved links -->
+    <div class="setup-section" *ngIf="step === 2">
+      <h3>API tokens</h3>
+
+      <div class="token-block">
+        <div class="tb-head">
+          <span class="dot" [class.ok]="jiraSaved"></span>
+          <span class="tb-name">Jira token</span>
+          <span class="tb-state" *ngIf="jiraSaved">
+            saved{{ jiraProbe?.displayName ? ' — hello, ' + jiraProbe?.displayName : '' }}
+          </span>
+        </div>
+        <div class="tb-link">
+          <button class="btn small" (click)="openLink(links?.jiraToken)">Open token page</button>
+          <span class="tb-url">{{ links?.jiraToken }}</span>
+        </div>
+        <div class="tb-input">
+          <input class="input-line"
+                 [(ngModel)]="jiraToken"
+                 placeholder="paste the token"
+                 (keydown.enter)="checkJira()">
+          <button class="btn small primary"
+                  [disabled]="jiraChecking || !jiraToken.trim()"
+                  (click)="checkJira()">
+            {{ jiraChecking ? 'Checking…' : 'Check & save' }}
+          </button>
+        </div>
+        <div class="tb-error" *ngIf="jiraProbe && !jiraProbe.ok">{{ jiraProbe.error }}</div>
+      </div>
+
+      <div class="token-block">
+        <div class="tb-head">
+          <span class="dot" [class.ok]="tempoSaved"></span>
+          <span class="tb-name">Tempo token</span>
+          <span class="tb-state" *ngIf="tempoSaved">saved</span>
+        </div>
+        <div class="tb-hint">Create it with full access — read-only tokens hide schedules and approvals.</div>
+        <div class="tb-link" *ngIf="links?.tempoToken">
+          <button class="btn small" (click)="openLink(links?.tempoToken)">Open Tempo settings</button>
+          <span class="tb-url">{{ links?.tempoToken }}</span>
+        </div>
+        <div class="tb-input">
+          <input class="input-line"
+                 [(ngModel)]="tempoToken"
+                 placeholder="paste the token"
+                 (keydown.enter)="checkTempo()">
+          <button class="btn small primary"
+                  [disabled]="tempoChecking || !tempoToken.trim()"
+                  (click)="checkTempo()">
+            {{ tempoChecking ? 'Checking…' : 'Check & save' }}
+          </button>
+        </div>
+        <div class="tb-error" *ngIf="tempoProbe && !tempoProbe.ok">{{ tempoProbe.error }}</div>
+      </div>
+
+      <div class="hint" *ngIf="!jiraSaved">The Jira token is required to continue; Tempo can wait until the first push.</div>
+    </div>
+
+    <!-- Step 3: repos + tracked projects + branch owners -->
+    <div class="setup-section" *ngIf="step === 3">
+      <h3>Repositories to watch</h3>
+      <div class="repo-cluster">
+        <span class="repo-pill" *ngFor="let r of repos">
+          {{ repoName(r) }}
+          <button class="pill-x" (click)="removeRepo(r)">×</button>
+        </span>
+        <button class="btn small" (click)="addRepo()">+ add</button>
+      </div>
+      <div class="hint">Local git checkouts the daemon polls for activity.</div>
+
+      <h3 class="mt">Jira projects to track</h3>
+      <div class="proj-list" *ngIf="knownProjects.length > 0">
+        <button class="proj-item"
+                *ngFor="let p of knownProjects"
+                [class.on]="isKeySelected(p.key)"
+                (click)="toggleKey(p.key)">
+          <span class="pk">{{ p.key }}</span>
+          <span class="pn">{{ p.name }}</span>
+        </button>
+      </div>
+      <div class="hint" *ngIf="projectsLoading">Fetching projects from Jira…</div>
+      <div class="hint" *ngIf="!projectsLoading && knownProjects.length === 0">
+        No projects fetched — check the Jira token on the previous step.
+      </div>
+
+      <h3 class="mt">Branch owners</h3>
+      <div class="field">
+        <input class="input-line"
+               [(ngModel)]="branchOwners"
+               placeholder="jdoe, j.doe (empty = every branch)">
+      </div>
+      <div class="hint">Names that mark a branch as yours, as they appear in branch names.</div>
+    </div>
+
+    <!-- Step 4: calendar feed (optional) -->
+    <div class="setup-section" *ngIf="step === 4">
+      <h3>Outlook calendar <span class="opt">optional</span></h3>
+      <div class="hint">
+        Meetings become one-click log suggestions. In Outlook web:
+        Settings → Calendar → Shared calendars → Publish a calendar → copy the ICS link.
+      </div>
+      <div class="tb-link">
+        <button class="btn small" (click)="openLink(links?.calendarSettings)">Open Outlook settings</button>
+        <span class="tb-url">{{ links?.calendarSettings }}</span>
+      </div>
+      <div class="tb-input">
+        <input class="input-line"
+               [(ngModel)]="calendarUrl"
+               placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
+               (keydown.enter)="saveCalendar()">
+        <button class="btn small primary"
+                [disabled]="savingCalendar || !calendarUrl.trim()"
+                (click)="saveCalendar()">
+          {{ savingCalendar ? 'Checking…' : 'Save & check' }}
+        </button>
+      </div>
+      <div class="tb-state ok-line" *ngIf="calendarSaved">
+        Feed connected{{ meetingsFound !== null ? ' — ' + meetingsFound + ' meetings in the window' : '' }}
+      </div>
+    </div>
+
+    <div class="setup-nav">
+      <button class="btn" *ngIf="step > 1" (click)="back()">Back</button>
+      <span class="nav-error" *ngIf="stepError">{{ stepError }}</span>
+      <span class="nav-spacer"></span>
+      <button class="btn ghost-quiet" *ngIf="step < 4" (click)="skip()">Skip for now</button>
+      <button class="btn primary"
+              [disabled]="primaryDisabled"
+              (click)="primaryAction()">
+        {{ primaryLabel }}
+      </button>
+    </div>
+  </ng-container>
+</div>

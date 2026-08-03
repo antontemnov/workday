@@ -2,14 +2,34 @@
 <div class="status-msg" *ngIf="loading">Connecting to daemon...</div>
 
 <!-- Daemon offline. No Start button here: the watchdog brings a crashed
-     daemon back on its own; a deliberate stop is reverted from Settings. -->
+     daemon back on its own; a deliberate stop is reverted from Settings.
+     First run adds two more states: npm install in flight / Node missing. -->
 <div class="start-screen" *ngIf="error && !loading">
-  <div class="daemon-state" [class.stopped]="daemonUserStopped">
-    {{ daemonUserStopped ? 'Daemon stopped' : 'Daemon unreachable' }}
-  </div>
-  <div class="start-hint">
-    {{ daemonUserStopped ? 'Start it again from Settings' : 'Restarting automatically…' }}
-  </div>
+  <ng-container *ngIf="nodeMissing">
+    <div class="daemon-state stopped">Node.js required</div>
+    <div class="start-hint">
+      The tracking engine runs on Node.js 20+.<br>
+      Install it from <span class="mono">nodejs.org</span>, then check again.
+    </div>
+    <button class="install-retry" (click)="retryInstall.emit()">Check again</button>
+  </ng-container>
+
+  <ng-container *ngIf="!nodeMissing && daemonInstalling">
+    <div class="daemon-state">Setting up tracking engine…</div>
+    <div class="start-hint">First launch: installing the background daemon</div>
+  </ng-container>
+
+  <ng-container *ngIf="!nodeMissing && !daemonInstalling">
+    <div class="daemon-state" [class.stopped]="daemonUserStopped || daemonInstallError">
+      {{ daemonInstallError ? 'Daemon install failed'
+         : daemonUserStopped ? 'Daemon stopped' : 'Daemon unreachable' }}
+    </div>
+    <div class="start-hint">
+      {{ daemonInstallError ? daemonInstallError
+         : daemonUserStopped ? 'Start it again from Settings' : 'Restarting automatically…' }}
+    </div>
+    <button class="install-retry" *ngIf="daemonInstallError" (click)="retryInstall.emit()">Retry install</button>
+  </ng-container>
 </div>
 
 <!-- Displacement map for the day header's bottom edge (lab-2 liquid stage):

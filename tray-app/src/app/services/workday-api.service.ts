@@ -42,6 +42,9 @@ import {
   SuggestionAcceptResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
+  SetupResponse,
+  SetupValidateRequest,
+  SetupValidateResponse,
 } from '../models/workday.models';
 
 /**
@@ -76,6 +79,16 @@ export abstract class WorkdayApiService {
   abstract isDaemonManuallyStopped(): Promise<boolean>;
   abstract getAutostartEnabled(): Promise<boolean>;
   abstract setAutostartEnabled(enabled: boolean): Promise<void>;
+
+  // First-run surface: "not installed" vs "not running" on the offline
+  // screen, the Node.js precondition, and the npm install itself.
+  abstract isDaemonInstalled(): Promise<boolean>;
+  abstract getNodeVersion(): Promise<string | null>;
+  abstract installDaemon(): Promise<void>;
+
+  // Setup wizard — status + resolved token-page links, live credential probes.
+  abstract getSetup(): Promise<ApiResponse<SetupResponse>>;
+  abstract validateSetup(request: SetupValidateRequest): Promise<ApiResponse<SetupValidateResponse>>;
 
   // Manual entries — standalone time on a task. add targets the currently-
   // tracked day; update/delete take an optional date (YYYY-MM-DD) for past

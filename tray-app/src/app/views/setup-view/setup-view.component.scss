@@ -1,0 +1,336 @@
+// Setup wizard — same quiet language as Settings: graphite sections on the
+// dark base, blue for primary, green only for "verified" dots.
+
+:host {
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.content {
+  padding: 10px 12px 14px;
+}
+
+.status-msg {
+  color: #6c7086;
+  text-align: center;
+  padding: 40px 0;
+}
+
+// ─── Head + step indicator ──────────────────────────────────────────────
+.setup-head {
+  margin-bottom: 10px;
+}
+
+.setup-title {
+  color: #cdd6f4;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+
+.steps {
+  display: flex;
+  gap: 6px;
+}
+
+.step-dot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid #313244;
+  color: #6c7086;
+  font-size: 10px;
+
+  .dot-num {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #313244;
+    color: #bac2de;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  &.active {
+    border-color: rgba(137, 180, 250, 0.5);
+    color: #cdd6f4;
+
+    .dot-num {
+      background: #89b4fa;
+      color: #1e1e2e;
+    }
+  }
+
+  &.done {
+    color: #6c7086;
+
+    .dot-num {
+      background: rgba(166, 227, 161, 0.2);
+      color: #a6e3a1;
+    }
+  }
+}
+
+// ─── Sections ───────────────────────────────────────────────────────────
+.setup-section {
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  padding: 10px 12px;
+
+  h3 {
+    margin: 0 0 8px 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #b4befe;
+    font-weight: 700;
+
+    &.mt { margin-top: 14px; }
+
+    .opt {
+      margin-left: 6px;
+      color: #6c7086;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+  }
+}
+
+.field {
+  margin-bottom: 8px;
+
+  label {
+    display: block;
+    color: #bac2de;
+    font-size: 11px;
+    margin-bottom: 3px;
+  }
+}
+
+.input-line {
+  width: 100%;
+  box-sizing: border-box;
+  background: #11111b;
+  border: 1px solid #313244;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 3px;
+
+  &:focus { outline: none; border-color: #89b4fa; }
+}
+
+.hint {
+  color: #6c7086;
+  font-size: 10px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+// ─── Buttons (settings-view idiom, component-scoped) ────────────────────
+.btn {
+  background: #313244;
+  border: none;
+  color: #cdd6f4;
+  padding: 6px 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+
+  &:hover:not(:disabled) { background: #45475a; }
+  &.primary {
+    background: #89b4fa;
+    color: #1e1e2e;
+    font-weight: 600;
+    &:hover:not(:disabled) { background: #74a3f8; }
+  }
+  &:disabled { opacity: 0.4; cursor: default; }
+  &.small { padding: 3px 8px; font-size: 10px; }
+  &.ghost-quiet {
+    background: transparent;
+    border: 1px solid #313244;
+    color: #6c7086;
+    &:hover:not(:disabled) { color: #bac2de; border-color: #45475a; }
+  }
+}
+
+// ─── Token blocks (step 2) ──────────────────────────────────────────────
+.token-block {
+  padding: 8px 0;
+  border-top: 1px solid #23243a;
+
+  &:first-of-type { border-top: 0; padding-top: 2px; }
+}
+
+.tb-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #585b70;
+    flex-shrink: 0;
+
+    &.ok {
+      background: #a6e3a1;
+      box-shadow: 0 0 5px rgba(166, 227, 161, 0.5);
+    }
+  }
+
+  .tb-name {
+    color: #bac2de;
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+
+.tb-state {
+  color: #a6e3a1;
+  font-size: 10px;
+
+  &.ok-line { display: block; margin-top: 6px; }
+}
+
+.tb-hint {
+  color: #fab387;
+  font-size: 10px;
+  margin-top: 3px;
+}
+
+.tb-link {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0;
+  min-width: 0;
+
+  .tb-url {
+    color: #6c7086;
+    font-size: 9px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    user-select: all;
+  }
+}
+
+.tb-input {
+  display: flex;
+  gap: 6px;
+
+  .input-line { flex: 1; letter-spacing: 1px; }
+  .input-line:focus { letter-spacing: 0; }
+  .btn { flex-shrink: 0; }
+}
+
+.tb-error {
+  color: #f38ba8;
+  font-size: 10px;
+  margin-top: 4px;
+}
+
+// ─── Repos + projects (step 3) ──────────────────────────────────────────
+.repo-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.repo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 10px;
+  padding: 2px 6px 2px 9px;
+  color: #bac2de;
+  font-size: 10px;
+
+  .pill-x {
+    background: transparent;
+    border: none;
+    color: #585b70;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+    line-height: 1;
+
+    &:hover { color: #f38ba8; }
+  }
+}
+
+.proj-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.proj-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+
+  .pk {
+    color: #6c7086;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 36px;
+  }
+  .pn {
+    color: #bac2de;
+    font-size: 11px;
+  }
+
+  &:hover { border-color: #313244; }
+
+  &.on {
+    background: rgba(137, 180, 250, 0.08);
+    border-color: rgba(137, 180, 250, 0.35);
+
+    .pk { color: #89b4fa; }
+    .pn { color: #cdd6f4; }
+  }
+}
+
+// ─── Bottom nav ─────────────────────────────────────────────────────────
+.setup-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+
+  .nav-spacer { flex: 1; }
+
+  .nav-error {
+    color: #f38ba8;
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

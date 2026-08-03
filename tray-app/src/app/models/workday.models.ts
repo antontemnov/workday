@@ -639,6 +639,9 @@ export interface UpdateApplyResponse {
 export interface SettingsPatch {
   readonly config?: Partial<SettingsConfigSubset>;
   readonly secrets?: {
+    // Identity fields — accepted by daemons >= 0.43.0 (setup wizard).
+    readonly jiraEmail?: string;
+    readonly jiraBaseUrl?: string;
     readonly jiraToken?: string;
     readonly tempoToken?: string;
     readonly calendarIcsUrl?: string;
@@ -648,6 +651,50 @@ export interface SettingsPatch {
 // POST /api/repo and /api/repo/remove both return the new repos list.
 export interface AddRepoResponse {
   readonly repos: readonly string[];
+}
+
+// ─── Setup (first-run wizard) ──────────────────────────────────────────────
+
+export interface SetupLinks {
+  readonly jiraToken: string;
+  // null until a Jira base URL is known — the Tempo config page lives on the
+  // user's own Atlassian site.
+  readonly tempoToken: string | null;
+  readonly calendarSettings: string;
+}
+
+export interface SetupConfigured {
+  readonly jira: boolean;
+  readonly tempo: boolean;
+  readonly calendar: boolean;
+  readonly repos: boolean;
+  readonly tracking: boolean;
+}
+
+// GET /api/setup — wizard status + resolved token-page links. Absent on
+// daemons < 0.43.0 (404 → the wizard shows its daemon-update hint).
+export interface SetupResponse {
+  readonly configured: SetupConfigured;
+  readonly jiraBaseUrl: string;
+  readonly jiraEmail: string;
+  readonly links: SetupLinks;
+}
+
+// POST /api/setup/validate — live credential probes, nothing persisted.
+export interface SetupValidateRequest {
+  readonly jira?: { readonly baseUrl: string; readonly email: string; readonly token: string };
+  readonly tempo?: { readonly token: string };
+}
+
+export interface SetupProbeResult {
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly displayName?: string;
+}
+
+export interface SetupValidateResponse {
+  readonly jira?: SetupProbeResult;
+  readonly tempo?: SetupProbeResult;
 }
 
 // ─── Browsers (link opening) ───────────────────────────────────────────────

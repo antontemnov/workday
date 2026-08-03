@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -50,8 +50,10 @@ function isValidTimezone(tz: string): boolean {
 }
 
 export function validateConfig(config: AppConfig): void {
-  if (!config.repos || config.repos.length === 0) {
-    throw new Error('config.json: repos must be a non-empty array');
+  // Empty repos is valid: a fresh install tracks nothing until the setup
+  // wizard (or a hand edit) adds repositories.
+  if (!config.repos || !Array.isArray(config.repos)) {
+    throw new Error('config.json: repos must be an array');
   }
 
   for (const repo of config.repos) {
@@ -330,6 +332,56 @@ export function loadConfig(): AppConfig {
   } as AppConfig;
   validateConfig(config);
   return config;
+}
+
+/** Fresh-install config.json template — shared by `workday init` and the
+ *  daemon's self-bootstrap. repos stays empty (nothing tracked yet); PROJ is
+ *  the documented tracking placeholder the setup wizard replaces. */
+export function buildConfigTemplate(): Record<string, unknown> {
+  return {
+    repos: [],
+    boundaryHour: 4,
+    tracking: { projectKeys: ['PROJ'], branchOwners: [] },
+    genericBranches: ['develop', 'main', 'master'],
+    session: {
+      diffPollSeconds: 30,
+      signalDeduplicationSeconds: 300,
+      dayBoundaryCheckSeconds: 60,
+      reflogCount: 20,
+    },
+    report: { roundingMinutes: 15 },
+    workDays: [1, 2, 3, 4, 5],
+    holidays: [],
+  };
+}
+
+/** Fresh-install secrets.json template. Empty strings, not example values —
+ *  the setup wizard prefills its inputs from here and must not show
+ *  placeholder text as if it were saved data. */
+export function buildSecretsTemplate(): Secrets {
+  return { Jira_Email: '', Jira_BaseUrl: '', Jira_Token: '', Tempo_Token: '' };
+}
+
+/**
+ * Self-bootstrap for a clean machine: create WORKDAY_HOME and template
+ * config/secrets when missing, so the daemon (and the tray setup wizard
+ * talking to it) can start without any manual file editing.
+ */
+export function ensureConfigFiles(): { createdConfig: boolean; createdSecrets: boolean } {
+  if (!existsSync(WORKDAY_HOME)) {
+    mkdirSync(WORKDAY_HOME, { recursive: true });
+  }
+  const configPath = join(WORKDAY_HOME, CONFIG_FILE_NAME);
+  const secretsPath = join(WORKDAY_HOME, SECRETS_FILE_NAME);
+  const createdConfig = !existsSync(configPath);
+  if (createdConfig) {
+    writeFileSync(configPath, JSON.stringify(buildConfigTemplate(), null, 2) + '\n', 'utf-8');
+  }
+  const createdSecrets = !existsSync(secretsPath);
+  if (createdSecrets) {
+    writeFileSync(secretsPath, JSON.stringify(buildSecretsTemplate(), null, 2) + '\n', 'utf-8');
+  }
+  return { createdConfig, createdSecrets };
 }
 
 /** Atomic write of config.json — tmp + rename, preserves formatting. */

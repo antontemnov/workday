@@ -57,6 +57,10 @@ import {
   SuggestionUnmuteResponse,
   MutedSuggestionSeries,
   suggestionSourceRef,
+  SetupResponse,
+  SetupValidateRequest,
+  SetupValidateResponse,
+  SetupProbeResult,
 } from '../models/workday.models';
 
 // Local-only preview service — returns rich mock data so the UI can be
@@ -85,6 +89,25 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockBrowser: string | null = null;
   private mockCalendarConfigured = true;
   private mockCalendarFetchedAt = new Date(Date.now() - 25 * 60_000).toISOString();
+
+  // Wizard preview: ?mock=1&setup=1 starts the mock unconfigured so the
+  // whole setup flow can be walked in a plain browser.
+  private readonly mockSetupMode = typeof location !== 'undefined' && location.search.includes('setup=1');
+  private mockJiraBaseUrl = 'https://example.atlassian.net';
+  private mockJiraEmail = 'jdoe@example.com';
+
+  public constructor() {
+    super();
+    if (this.mockSetupMode) {
+      this.mockJiraConfigured = false;
+      this.mockTempoConfigured = false;
+      this.mockCalendarConfigured = false;
+      this.mockRepos = [];
+      this.mockTracking = { projectKeys: ['PROJ'], branchOwners: [] };
+      this.mockJiraBaseUrl = '';
+      this.mockJiraEmail = '';
+    }
+  }
 
   // Mutable so add/edit manual entries feel real in mock mode.
   private mockManualEntries: ManualEntry[] = [
@@ -820,6 +843,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
       if (patch.config.browser !== undefined) this.mockBrowser = patch.config.browser ?? null;
     }
     if (patch.secrets) {
+      if (patch.secrets.jiraEmail !== undefined) this.mockJiraEmail = patch.secrets.jiraEmail;
+      if (patch.secrets.jiraBaseUrl !== undefined) this.mockJiraBaseUrl = patch.secrets.jiraBaseUrl;
       if (patch.secrets.jiraToken !== undefined) {
         this.mockJiraConfigured = patch.secrets.jiraToken.trim() !== '';
       }
@@ -832,6 +857,59 @@ export class MockWorkdayApiService extends WorkdayApiService {
       }
     }
     return { ok: true, data: {} };
+  }
+
+  async isDaemonInstalled(): Promise<boolean> {
+    return true;
+  }
+
+  async getNodeVersion(): Promise<string | null> {
+    return 'v22.11.0';
+  }
+
+  async installDaemon(): Promise<void> {
+    await delay(600);
+  }
+
+  async getSetup(): Promise<ApiResponse<SetupResponse>> {
+    const keys = this.mockTracking.projectKeys;
+    return {
+      ok: true,
+      data: {
+        configured: {
+          jira: this.mockJiraConfigured,
+          tempo: this.mockTempoConfigured,
+          calendar: this.mockCalendarConfigured,
+          repos: this.mockRepos.length > 0,
+          tracking: keys.length > 0 && !(keys.length === 1 && keys[0] === 'PROJ'),
+        },
+        jiraBaseUrl: this.mockJiraBaseUrl,
+        jiraEmail: this.mockJiraEmail,
+        links: {
+          jiraToken: 'https://id.atlassian.com/manage-profile/security/api-tokens',
+          tempoToken: this.mockJiraBaseUrl
+            ? `${this.mockJiraBaseUrl}/plugins/servlet/ac/io.tempo.jira/tempo-app#!/configuration/api-integration`
+            : null,
+          calendarSettings: 'https://outlook.office.com/calendar/options/calendar/sharedCalendars',
+        },
+      },
+    };
+  }
+
+  async validateSetup(request: SetupValidateRequest): Promise<ApiResponse<SetupValidateResponse>> {
+    await delay(700);
+    const result: { jira?: SetupProbeResult; tempo?: SetupProbeResult } = {};
+    if (request.jira) {
+      result.jira = request.jira.token.trim()
+        ? { ok: true, displayName: 'Jane Doe' }
+        : { ok: false, error: 'Authentication failed — check the token and email' };
+    }
+    if (request.tempo) {
+      result.tempo = request.tempo.token.trim()
+        ? { ok: true }
+        : { ok: false, error: 'Token is required' };
+    }
+    return { ok: true, data: result };
   }
 
   async getBrowsers(): Promise<ApiResponse<BrowsersResponse>> {

@@ -72,6 +72,16 @@ async function jiraGet(path: string, secrets: Secrets): Promise<unknown> {
   return res.json();
 }
 
+export interface JiraMyself {
+  readonly accountId: string;
+  readonly displayName?: string;
+}
+
+/** Live credential probe for the setup flow — explicit secrets, no caching. */
+export async function fetchMyself(secrets: Secrets): Promise<JiraMyself> {
+  return await jiraGet('/rest/api/3/myself', secrets) as JiraMyself;
+}
+
 /** Get current user's Jira accountId (cached) */
 export async function getAccountId(secrets: Secrets): Promise<string> {
   const cache = loadCache();

@@ -48,6 +48,9 @@ import {
   SuggestionAcceptResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
+  SetupResponse,
+  SetupValidateRequest,
+  SetupValidateResponse,
 } from '../models/workday.models';
 
 const BASE_URL = 'http://127.0.0.1:9213';
@@ -226,6 +229,40 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async setAutostartEnabled(enabled: boolean): Promise<void> {
     await invoke('set_autostart_enabled', { enabled });
+  }
+
+  override async isDaemonInstalled(): Promise<boolean> {
+    try {
+      return await invoke<boolean>('daemon_installed');
+    } catch {
+      return true; // outside Tauri — never offer the npm install
+    }
+  }
+
+  override async getNodeVersion(): Promise<string | null> {
+    try {
+      return await invoke<string | null>('node_version');
+    } catch {
+      return null;
+    }
+  }
+
+  override async installDaemon(): Promise<void> {
+    try {
+      // Same Rust command the version-gate upgrade uses: npm install -g,
+      // then stop (no-op here) + start.
+      await invoke('upgrade_daemon');
+    } catch (e: unknown) {
+      throw new Error(typeof e === 'string' ? e : 'Daemon install failed');
+    }
+  }
+
+  override async getSetup(): Promise<ApiResponse<SetupResponse>> {
+    return this.get('/api/setup');
+  }
+
+  override async validateSetup(request: SetupValidateRequest): Promise<ApiResponse<SetupValidateResponse>> {
+    return this.post('/api/setup/validate', request as unknown as Record<string, unknown>);
   }
 
   // ─── Manual entries ──────────────────────────────────────────────────

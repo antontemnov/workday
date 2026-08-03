@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, tryLoadSecrets, getWorkdayHome, getPackageRoot, getDataDir, computeWorkingDate } from './core/config.js';
+import { loadConfig, loadSecrets, tryLoadSecrets, getWorkdayHome, getPackageRoot, getDataDir, computeWorkingDate, ensureConfigFiles } from './core/config.js';
 import { UpdateManager } from './core/update-manager.js';
 import {
   CONFIG_FILE_NAME,
@@ -69,6 +69,7 @@ import type {
   Suggestion,
   BrowsersResponse,
   OpenUrlResponse,
+  SetupResponse,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus, MonthDayStatus, SuggestionsDayState } from './core/types.js';
 
@@ -891,48 +892,11 @@ async function handleDay(args: string[]): Promise<void> {
 
 function handleInit(): void {
   const home = getWorkdayHome();
-
-  if (!existsSync(home)) {
-    mkdirSync(home, { recursive: true });
-    console.log(`Created ${home}`);
-  }
-
+  const created = ensureConfigFiles();
   const configPath = join(home, CONFIG_FILE_NAME);
-  if (!existsSync(configPath)) {
-    const template = {
-      repos: [],
-      boundaryHour: 4,
-      tracking: { projectKeys: ['PROJ'], branchOwners: [] },
-      genericBranches: ['develop', 'main', 'master'],
-      session: {
-        diffPollSeconds: 30,
-        signalDeduplicationSeconds: 300,
-        dayBoundaryCheckSeconds: 60,
-        reflogCount: 20,
-      },
-      report: { roundingMinutes: 15 },
-      workDays: [1, 2, 3, 4, 5],
-      holidays: [],
-    };
-    writeFileSync(configPath, JSON.stringify(template, null, 2) + '\n', 'utf-8');
-    console.log(`Created ${configPath}`);
-  } else {
-    console.log(`Config already exists: ${configPath}`);
-  }
-
   const secretsPath = join(home, SECRETS_FILE_NAME);
-  if (!existsSync(secretsPath)) {
-    const template = {
-      Jira_Email: 'your-email@company.com',
-      Jira_BaseUrl: 'https://your-company.atlassian.net',
-      Jira_Token: '',
-      Tempo_Token: '',
-    };
-    writeFileSync(secretsPath, JSON.stringify(template, null, 2) + '\n', 'utf-8');
-    console.log(`Created ${secretsPath}`);
-  } else {
-    console.log(`Secrets already exists: ${secretsPath}`);
-  }
+  console.log(created.createdConfig ? `Created ${configPath}` : `Config already exists: ${configPath}`);
+  console.log(created.createdSecrets ? `Created ${secretsPath}` : `Secrets already exists: ${secretsPath}`);
 
   console.log('');
   console.log('Setup instructions:');
@@ -952,6 +916,27 @@ function handleInit(): void {
   console.log('  3. Run: workday start');
 }
 
+async function handleSetup(): Promise<void> {
+  const result = await apiGet<SetupResponse>('/api/setup');
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+  const d = result.data;
+  const mark = (v: boolean): string => v ? '[x]' : '[ ]';
+
+  console.log('Setup status:');
+  console.log(`  ${mark(d.configured.jira)} Jira credentials${d.jiraEmail ? ` (${d.jiraEmail})` : ''}`);
+  console.log(`  ${mark(d.configured.tempo)} Tempo token`);
+  console.log(`  ${mark(d.configured.repos)} Tracked repositories`);
+  console.log(`  ${mark(d.configured.tracking)} Tracking scope (Jira project keys)`);
+  console.log(`  ${mark(d.configured.calendar)} Outlook calendar feed (optional)`);
+  console.log('');
+  console.log('Where to create tokens:');
+  console.log(`  Jira:  ${d.links.jiraToken}`);
+  console.log(`  Tempo: ${d.links.tempoToken ?? '(set Jira base URL first — the Tempo page lives on your Atlassian site)'}`);
+  console.log(`  Calendar publishing: ${d.links.calendarSettings}`);
+  console.log('');
+  console.log(`Finish setup in the tray app, or edit ${join(getWorkdayHome(), SECRETS_FILE_NAME)} by hand.`);
+}
+
 async function handleDaemon(): Promise<void> {
   // Foreground mode with live status dashboard
   const { Daemon } = await import('./daemon.js');
@@ -962,17 +947,11 @@ async function handleDaemon(): Promise<void> {
 // ─── Background spawn ───────────────────────────────────────────────────
 
 function spawnBackground(): void {
-  const home = getWorkdayHome();
-  const configPath = join(home, CONFIG_FILE_NAME);
-  const secretsPath = join(home, SECRETS_FILE_NAME);
-
-  if (!existsSync(configPath)) {
-    console.error(`Cannot start daemon: ${CONFIG_FILE_NAME} not found at ${configPath}`);
-    process.exit(1);
-  }
-  if (!existsSync(secretsPath)) {
-    console.error(`Cannot start daemon: ${SECRETS_FILE_NAME} not found at ${secretsPath}`);
-    process.exit(1);
+  // Self-bootstrap: a clean machine gets template config/secrets so the
+  // daemon comes up and the tray setup wizard has someone to talk to.
+  const created = ensureConfigFiles();
+  if (created.createdConfig || created.createdSecrets) {
+    console.log('Fresh install — created template config; finish setup in the tray app or via "workday setup".');
   }
 
   const daemonScript = resolveDaemonScript();
@@ -1738,6 +1717,9 @@ async function main(): Promise<void> {
     case 'init':
       handleInit();
       break;
+    case 'setup':
+      await handleSetup();
+      break;
     case 'daemon':
       await handleDaemon();
       break;
@@ -1751,6 +1733,7 @@ function printHelp(): void {
 
 Usage:
   workday init               Initialize config in ~/.workday/
+  workday setup              Setup status + token-page links (first-run checklist)
   workday start              Start daemon and print status
   workday stop               Stop running daemon
   workday status             Show daemon status and open sessions

@@ -180,6 +180,36 @@ async fn start_daemon() -> Result<String, String> {
     Ok("Daemon starting...".to_string())
 }
 
+/// Whether the workday CLI resolves on the (enriched) PATH — lets the
+/// offline screen distinguish "not installed" (first run → auto-install)
+/// from "installed but not running" (watchdog restarts it).
+#[tauri::command]
+async fn daemon_installed() -> bool {
+    let path = enriched_path();
+    let probe = if cfg!(target_os = "windows") {
+        "where workday"
+    } else {
+        "command -v workday"
+    };
+    match shell_run(probe, &path) {
+        Ok(out) => out.status.success(),
+        Err(_) => false,
+    }
+}
+
+/// Node.js version string ("v22.1.0"), or None when node is absent — the
+/// first-run daemon install needs Node >= 20 and the UI must say so.
+#[tauri::command]
+async fn node_version() -> Option<String> {
+    let path = enriched_path();
+    match shell_run("node --version", &path) {
+        Ok(out) if out.status.success() => {
+            Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+        }
+        _ => None,
+    }
+}
+
 /// Manual-stop marker written by the daemon on an explicit stop. The
 /// frontend watchdog checks it before respawning: a deliberately stopped
 /// daemon stays stopped until the user starts it (or the next login).
@@ -306,7 +336,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart-launch"]),
         ))
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, daemon_installed, node_version, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

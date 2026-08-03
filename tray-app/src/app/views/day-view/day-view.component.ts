@@ -50,6 +50,11 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() weekdayLabel = '';
   @Input() actionPending = false;
   @Input() daemonUserStopped = false;
+  // First-run install states for the offline screen: npm install in flight,
+  // its failure, or the missing-Node wall (the one thing we can't self-heal).
+  @Input() daemonInstalling = false;
+  @Input() daemonInstallError: string | null = null;
+  @Input() nodeMissing = false;
   @Input() sensitivityPills: readonly SensitivityPillOption[] = [];
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() activityAllowed: readonly string[] = [];
@@ -74,6 +79,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Output() favoriteAddSubmitted = new EventEmitter<FavoriteInput>();
   @Output() favoritesRemoveSubmitted = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();
+  @Output() retryInstall = new EventEmitter<void>();
   @Output() suggestionAcceptSubmitted = new EventEmitter<SuggestionAcceptRequest>();
   @Output() suggestionDismissSubmitted = new EventEmitter<{ uid: string; date: string }>();
   @Output() suggestionMuteSubmitted = new EventEmitter<{ uid: string; date: string; days: number | null }>();

@@ -15,18 +15,21 @@ Requires Node.js 20+.
 ## Quick Start
 
 ```bash
-workday init                  # creates ~/.workday/ with config templates
-# edit ~/.workday/config.json — add repo paths, tracked Jira project keys,
-#                               and (optionally) your branch-owner name(s)
-workday start                 # start background daemon
+workday start                 # first run self-creates ~/.workday/ templates
+workday setup                 # setup checklist + links to token pages
+# finish setup in the tray app's wizard, or edit ~/.workday/*.json by hand
 workday status                # check running sessions
 workday today                 # full day summary
 ```
+
+The tray app drives the whole first run itself: it npm-installs the daemon
+when missing and opens a setup wizard (site → tokens → tracking → calendar).
 
 ## Commands
 
 ```
 workday init                           Initialize config in ~/.workday/
+workday setup                          Setup status + token-page links
 workday start                          Start daemon (background)
 workday stop                           Stop daemon
 workday status                         Show daemon status and sessions

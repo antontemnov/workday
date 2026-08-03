@@ -24,9 +24,10 @@ import {
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
 import { SettingsViewComponent } from './views/settings-view/settings-view.component';
+import { SetupViewComponent } from './views/setup-view/setup-view.component';
 
 type TrayKind = 'live' | 'pending' | 'idle' | 'paused' | 'none';
-type ActiveView = 'day' | 'sheet' | 'set';
+type ActiveView = 'day' | 'sheet' | 'set' | 'setup';
 
 interface SensitivityPillOption {
   readonly key: SensitivityLevel;
@@ -38,7 +39,7 @@ interface SensitivityPillOption {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, DayViewComponent, TimesheetsViewComponent, SettingsViewComponent],
+  imports: [CommonModule, DayViewComponent, TimesheetsViewComponent, SettingsViewComponent, SetupViewComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -67,6 +68,18 @@ export class AppComponent implements OnInit, OnDestroy {
   private watchdogFailures = 0;
   private lastDaemonSpawnAt = 0;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+
+  // First-run: the daemon is an npm package the tray installs itself when
+  // the offline screen discovers it missing. One attempt per launch —
+  // failures park in daemonInstallError with a manual retry.
+  daemonInstalling = false;
+  daemonInstallError: string | null = null;
+  nodeMissing = false;
+  private daemonInstallAttempted = false;
+
+  // Setup wizard auto-show: checked once per launch after the daemon comes
+  // up. In-memory only — an unfinished setup re-offers on the next launch.
+  private setupOffered = false;
 
   // Sensitivity = idle-patience scale. Pause/Resume is a separate per-card
   // button now, so it's no longer a pill here. Labels are display-only; the
@@ -189,8 +202,14 @@ export class AppComponent implements OnInit, OnDestroy {
       this.daemonReachable = true;
       this.daemonUserStopped = false;
       this.watchdogFailures = 0;
+      this.nodeMissing = false;
+      this.daemonInstallError = null;
       const jiraUrl = res.data?.jiraBaseUrl;
       if (jiraUrl) this.jiraBaseUrl = jiraUrl;
+      if (!this.setupOffered) {
+        this.setupOffered = true;
+        void this.maybeOfferSetup();
+      }
       return;
     }
 
@@ -199,6 +218,15 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.daemonUserStopped) {
       this.watchdogFailures = 0;
       return;
+    }
+
+    // First run: no point respawning a CLI that isn't there — install it.
+    if (!this.daemonInstallAttempted && !this.daemonInstalling) {
+      const installed = await this.api.isDaemonInstalled();
+      if (!installed) {
+        await this.installDaemonFlow();
+        return;
+      }
     }
 
     this.watchdogFailures++;
@@ -210,6 +238,47 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       // Outside Tauri (browser dev) — nothing to spawn.
     }
+  }
+
+  // npm install -g workday-daemon via Rust, with the Node precondition
+  // surfaced as its own screen — the one thing the app cannot self-heal.
+  private async installDaemonFlow(): Promise<void> {
+    this.daemonInstallAttempted = true;
+    const node = await this.api.getNodeVersion();
+    if (!node) {
+      this.nodeMissing = true;
+      return;
+    }
+    this.nodeMissing = false;
+    this.daemonInstalling = true;
+    this.daemonInstallError = null;
+    try {
+      await this.api.installDaemon();
+      // Install command already spawned "workday start" — give it a moment.
+      this.lastDaemonSpawnAt = Date.now();
+      setTimeout(() => { void this.watchdogTick(); void this.refresh(); }, 3000);
+      setTimeout(() => { void this.refresh(); }, 7000);
+    } catch (e: unknown) {
+      this.daemonInstallError = e instanceof Error ? e.message : 'Daemon install failed';
+    } finally {
+      this.daemonInstalling = false;
+    }
+  }
+
+  // Offline-screen retry (failed install / Node installed since).
+  async retryDaemonInstall(): Promise<void> {
+    this.daemonInstallAttempted = false;
+    this.daemonInstallError = null;
+    await this.watchdogTick();
+  }
+
+  // Fresh daemon without the essentials configured → open the wizard. An
+  // older daemon 404s the endpoint — no wizard, nothing lost.
+  private async maybeOfferSetup(): Promise<void> {
+    const res = await this.api.getSetup();
+    if (!res.ok || !res.data) return;
+    const c = res.data.configured;
+    if (!c.jira || !c.repos) this.setView('setup');
   }
 
   // ─── App self-update ─────────────────────────────────────────────────────
@@ -330,6 +399,12 @@ export class AppComponent implements OnInit, OnDestroy {
       void this.refreshSuggestions();
     }
     this.activeView = v;
+  }
+
+  // Wizard finished or skipped → back to the day view with fresh data.
+  onSetupDone(): void {
+    this.setView('day');
+    void this.refresh();
   }
 
   // DayView mode pill click → existing pause / sensitivity action.

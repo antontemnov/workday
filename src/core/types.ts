@@ -1089,6 +1089,52 @@ export interface AddRepoResponse {
   readonly repos: readonly string[];
 }
 
+// ─── Setup (first-run wizard) ───────────────────────────────────────────
+
+export interface SetupLinks {
+  readonly jiraToken: string;
+  // null until a Jira base URL is known — the Tempo config page lives on the
+  // user's own Atlassian site.
+  readonly tempoToken: string | null;
+  readonly calendarSettings: string;
+}
+
+export interface SetupConfigured {
+  readonly jira: boolean;
+  readonly tempo: boolean;
+  readonly calendar: boolean;
+  readonly repos: boolean;
+  // projectKeys set to something other than the PROJ template placeholder.
+  readonly tracking: boolean;
+}
+
+// GET /api/setup — wizard status + resolved token-page links.
+export interface SetupResponse {
+  readonly configured: SetupConfigured;
+  // Stored non-secret identity fields for input prefill (never tokens).
+  readonly jiraBaseUrl: string;
+  readonly jiraEmail: string;
+  readonly links: SetupLinks;
+}
+
+// POST /api/setup/validate — live credential probes, nothing persisted.
+export interface SetupValidateRequest {
+  readonly jira?: { readonly baseUrl: string; readonly email: string; readonly token: string };
+  readonly tempo?: { readonly token: string };
+}
+
+export interface SetupProbeResult {
+  readonly ok: boolean;
+  readonly error?: string;
+  // Jira probe returns the account's display name — the wizard greets with it.
+  readonly displayName?: string;
+}
+
+export interface SetupValidateResponse {
+  readonly jira?: SetupProbeResult;
+  readonly tempo?: SetupProbeResult;
+}
+
 // ─── Browsers (link opening) ────────────────────────────────────────────
 
 export interface BrowserInfo {

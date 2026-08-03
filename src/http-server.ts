@@ -29,7 +29,9 @@ import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './cor
 import {
   isJiraConfigured, searchIssues, checkIssueExists,
   loadCachedSummaries, backfillIssueSummaries, fetchProjects,
+  fetchMyself, JiraApiError,
 } from './push/jira-client.js';
+import { TempoClient, TempoApiError } from './push/tempo-client.js';
 import { buildMonthResponse } from './push/month-report.js';
 import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
 import { runPush } from './push/tempo-pusher.js';
@@ -49,6 +51,9 @@ import {
 import {
   MAX_BODY_BYTES,
   API_VERSION,
+  JIRA_TOKEN_SETTINGS_URL,
+  TEMPO_TOKEN_SETTINGS_PATH,
+  OUTLOOK_SHARED_CALENDARS_URL,
   MS_PER_MINUTE,
   MAX_ENTRY_MINUTES,
   DEFAULT_MANUAL_ACTIVITY,
@@ -120,6 +125,10 @@ import type {
   SuggestionUnmuteResponse,
   BrowsersResponse,
   OpenUrlResponse,
+  SetupResponse,
+  SetupValidateRequest,
+  SetupValidateResponse,
+  SetupProbeResult,
 } from './core/types.js';
 import { listInstalledBrowsers, openUrlInBrowser } from './core/browser-registry.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
@@ -128,6 +137,17 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function isAckAction(value: string): value is NotificationAckAction {
   return value === 'shown' || value === 'opened' || value === 'hidden';
+}
+
+/** Wizard-facing message for a failed credential probe. */
+function describeProbeError(err: unknown, service: string): string {
+  if (err instanceof JiraApiError || err instanceof TempoApiError) {
+    if (err.status === 401) return 'Authentication failed — check the token' + (service === 'Jira' ? ' and email' : '');
+    if (err.status === 403) return 'Token accepted but access denied — check token permissions';
+    return `${service} answered HTTP ${err.status}`;
+  }
+  // fetch network failure / invalid URL
+  return `Cannot reach ${service} — check the URL and your network`;
 }
 
 export interface HttpServerDeps {
@@ -360,6 +380,13 @@ export class HttpServer {
         this.sendJson(res, 200, response);
         setImmediate(() => void this.deps.stopCallback());
         return;
+      }
+      if (method === 'GET' && path === '/api/setup') {
+        return this.sendJson(res, 200, this.handleGetSetup());
+      }
+      if (method === 'POST' && path === '/api/setup/validate') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleSetupValidate(body));
       }
       if (method === 'GET' && path === '/api/settings') {
         return this.sendJson(res, 200, this.handleGetSettings());
@@ -1215,6 +1242,80 @@ export class HttpServer {
     return { ...data, allowed: [...this.deps.config.activities.values] };
   }
 
+  // ─── Setup (first-run wizard) ────────────────────────────────────
+
+  private handleGetSetup(): ApiResponse<SetupResponse> {
+    const s = tryLoadSecrets();
+    const jiraBaseUrl = s?.Jira_BaseUrl?.trim() ?? '';
+    const keys = this.deps.config.tracking.projectKeys;
+    let tempoTokenUrl: string | null = null;
+    if (jiraBaseUrl) {
+      try {
+        tempoTokenUrl = new URL(TEMPO_TOKEN_SETTINGS_PATH, jiraBaseUrl).toString();
+      } catch { /* malformed base URL — link stays null */ }
+    }
+
+    return {
+      ok: true,
+      data: {
+        configured: {
+          jira: !!s && isJiraConfigured(s),
+          tempo: !!s?.Tempo_Token?.trim(),
+          calendar: !!s?.Calendar_IcsUrl?.trim(),
+          repos: this.deps.config.repos.length > 0,
+          tracking: keys.length > 0 && !(keys.length === 1 && keys[0] === 'PROJ'),
+        },
+        jiraBaseUrl,
+        jiraEmail: s?.Jira_Email?.trim() ?? '',
+        links: {
+          jiraToken: JIRA_TOKEN_SETTINGS_URL,
+          tempoToken: tempoTokenUrl,
+          calendarSettings: OUTLOOK_SHARED_CALENDARS_URL,
+        },
+      },
+    };
+  }
+
+  private async handleSetupValidate(body: Record<string, unknown>): Promise<ApiResponse<SetupValidateResponse>> {
+    const request = body as SetupValidateRequest;
+    const result: { jira?: SetupProbeResult; tempo?: SetupProbeResult } = {};
+
+    if (request.jira) {
+      const probe: Secrets = {
+        Jira_BaseUrl: request.jira.baseUrl?.trim() ?? '',
+        Jira_Email: request.jira.email?.trim() ?? '',
+        Jira_Token: request.jira.token?.trim() ?? '',
+        Tempo_Token: '',
+      };
+      if (!isJiraConfigured(probe)) {
+        result.jira = { ok: false, error: 'Base URL, email and token are all required' };
+      } else {
+        try {
+          const me = await fetchMyself(probe);
+          result.jira = { ok: true, ...(me.displayName ? { displayName: me.displayName } : {}) };
+        } catch (err) {
+          result.jira = { ok: false, error: describeProbeError(err, 'Jira') };
+        }
+      }
+    }
+
+    if (request.tempo) {
+      const token = request.tempo.token?.trim() ?? '';
+      if (!token) {
+        result.tempo = { ok: false, error: 'Token is required' };
+      } else {
+        try {
+          await new TempoClient(token).getWorkAttributes();
+          result.tempo = { ok: true };
+        } catch (err) {
+          result.tempo = { ok: false, error: describeProbeError(err, 'Tempo') };
+        }
+      }
+    }
+
+    return { ok: true, data: result };
+  }
+
   // ─── Settings ────────────────────────────────────────────────────
 
   private handleGetSettings(): ApiResponse<SettingsResponse> {
@@ -1261,7 +1362,10 @@ export class HttpServer {
   private async handlePostSettings(body: Record<string, unknown>): Promise<ApiResponse<SettingsResponse>> {
     const patch = body as {
       config?: Partial<AppConfig>;
-      secrets?: { jiraToken?: string; tempoToken?: string; calendarIcsUrl?: string };
+      secrets?: {
+        jiraEmail?: string; jiraBaseUrl?: string;
+        jiraToken?: string; tempoToken?: string; calendarIcsUrl?: string;
+      };
     };
 
     if (patch.config) {
@@ -1289,6 +1393,8 @@ export class HttpServer {
         }
         const next: Secrets = {
           ...current,
+          ...(patch.secrets.jiraEmail !== undefined ? { Jira_Email: patch.secrets.jiraEmail } : {}),
+          ...(patch.secrets.jiraBaseUrl !== undefined ? { Jira_BaseUrl: patch.secrets.jiraBaseUrl } : {}),
           ...(patch.secrets.jiraToken !== undefined ? { Jira_Token: patch.secrets.jiraToken } : {}),
           ...(patch.secrets.tempoToken !== undefined ? { Tempo_Token: patch.secrets.tempoToken } : {}),
           ...(patch.secrets.calendarIcsUrl !== undefined ? { Calendar_IcsUrl: patch.secrets.calendarIcsUrl } : {}),

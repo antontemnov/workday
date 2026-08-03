@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from '
 import { spawn } from 'node:child_process';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig } from './core/config.js';
+import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig, ensureConfigFiles } from './core/config.js';
 import { readDailyLog, writeDailyLog } from './core/daily-log.js';
 import { runStartupJanitor } from './core/janitor.js';
 import { writeStopMarker, clearStopMarker } from './core/stop-marker.js';
@@ -54,6 +54,10 @@ export class Daemon {
 
   public async start(options?: { foreground?: boolean }): Promise<void> {
     this.foreground = options?.foreground ?? false;
+    const bootstrap = ensureConfigFiles();
+    if (bootstrap.createdConfig || bootstrap.createdSecrets) {
+      console.log('Fresh install detected — created template config; finish setup in the tray app or via "workday setup".');
+    }
     this.config = loadConfig();
     this.secrets = loadSecrets();
 

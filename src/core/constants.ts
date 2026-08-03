@@ -23,6 +23,14 @@ export const DEFAULT_API_PORT = 9213;
 // reinstall-loop the daemon.
 export const API_VERSION = 13;
 
+// ─── Setup links (first-run wizard) ─────────────────────────────────────
+// Vendor-stable URLs only — never instance-specific. The Tempo page is
+// instance-relative: resolved against secrets.Jira_BaseUrl at request time
+// (the io.tempo.jira plugin path is identical on every Tempo Cloud site).
+export const JIRA_TOKEN_SETTINGS_URL = 'https://id.atlassian.com/manage-profile/security/api-tokens';
+export const TEMPO_TOKEN_SETTINGS_PATH = '/plugins/servlet/ac/io.tempo.jira/tempo-app#!/configuration/api-integration';
+export const OUTLOOK_SHARED_CALENDARS_URL = 'https://outlook.office.com/calendar/options/calendar/sharedCalendars';
+
 // ─── Auto-update ────────────────────────────────────────────────────────
 export const NPM_PACKAGE_NAME = 'workday-daemon';
 export const NPM_REGISTRY_LATEST_URL = `https://registry.npmjs.org/${NPM_PACKAGE_NAME}/latest`;
