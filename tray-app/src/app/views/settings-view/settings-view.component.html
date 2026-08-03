@@ -131,8 +131,8 @@
            enumeration; hidden on daemons < 0.42.0 or an empty list. -->
       <div class="opt-row" *ngIf="browserRowVisible">
         <div class="left">
-          <span class="name">Open links in</span>
-          <span class="hint">Browser for ticket links.</span>
+          <span class="name">Default browser</span>
+          <span class="hint">Open ticket links in this browser.</span>
         </div>
         <div class="right">
           <select class="browser-select" [ngModel]="browserValue" (ngModelChange)="onBrowserChange($event)">
