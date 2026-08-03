@@ -12,6 +12,8 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  BrowsersResponse,
+  OpenUrlResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
   ActivityTypesResponse,
@@ -149,6 +151,11 @@ export abstract class WorkdayApiService {
   // Repo list edits — separate endpoints so the daemon can validate paths.
   abstract addRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
   abstract removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
+
+  // Link opening — installed-browser inventory (Settings dropdown) and the
+  // open itself, routed through the daemon so config.browser applies.
+  abstract getBrowsers(): Promise<ApiResponse<BrowsersResponse>>;
+  abstract openUrl(url: string): Promise<ApiResponse<OpenUrlResponse>>;
 
   // Daemon updates — check npm registry / install + restart the daemon.
   abstract checkDaemonUpdate(): Promise<ApiResponse<UpdateCheckResponse>>;

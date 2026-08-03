@@ -23,6 +23,8 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  BrowsersResponse,
+  OpenUrlResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
   ActivityTypesResponse,
@@ -80,6 +82,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
   ];
   private mockActivityValues: string[] = ['Development', 'CodeReview', 'Other'];
   private mockCalendar = { enabled: true, hidePrivate: false };
+  private mockBrowser: string | null = null;
   private mockCalendarConfigured = true;
   private mockCalendarFetchedAt = new Date(Date.now() - 25 * 60_000).toISOString();
 
@@ -782,6 +785,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           search: { projectKeys: [...this.mockProjectKeys], knownProjects: this.mockKnownProjects.map(p => ({ ...p })) },
           activities: { values: [...this.mockActivityValues] },
           calendar: { ...this.mockCalendar },
+          browser: this.mockBrowser,
         },
         secretsMeta: {
           jiraConfigured: this.mockJiraConfigured,
@@ -813,6 +817,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           hidePrivate: patch.config.calendar.hidePrivate ?? this.mockCalendar.hidePrivate,
         };
       }
+      if (patch.config.browser !== undefined) this.mockBrowser = patch.config.browser ?? null;
     }
     if (patch.secrets) {
       if (patch.secrets.jiraToken !== undefined) {
@@ -827,6 +832,23 @@ export class MockWorkdayApiService extends WorkdayApiService {
       }
     }
     return { ok: true, data: {} };
+  }
+
+  async getBrowsers(): Promise<ApiResponse<BrowsersResponse>> {
+    return {
+      ok: true,
+      data: {
+        browsers: [
+          { name: 'Google Chrome', path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' },
+          { name: 'Microsoft Edge', path: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' },
+        ],
+      },
+    };
+  }
+
+  async openUrl(url: string): Promise<ApiResponse<OpenUrlResponse>> {
+    console.log(`[mock] open ${url} via ${this.mockBrowser ?? 'system default'}`);
+    return { ok: true, data: { opened: true, browser: this.mockBrowser } };
   }
 
   async addRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {

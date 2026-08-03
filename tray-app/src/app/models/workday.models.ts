@@ -606,6 +606,9 @@ export interface SettingsConfigSubset {
     readonly enabled: boolean;
     readonly hidePrivate: boolean;
   };
+  // Browser exe for /api/open links, null = system default. Absent on
+  // daemons < 0.42.0 — the Settings row hides itself.
+  readonly browser?: string | null;
 }
 
 // GET /api/settings returns config + metadata about which secrets are set
@@ -645,4 +648,22 @@ export interface SettingsPatch {
 // POST /api/repo and /api/repo/remove both return the new repos list.
 export interface AddRepoResponse {
   readonly repos: readonly string[];
+}
+
+// ─── Browsers (link opening) ───────────────────────────────────────────────
+
+export interface BrowserInfo {
+  readonly name: string;   // registry display name, e.g. "Microsoft Edge"
+  readonly path: string;   // full exe path
+}
+
+// GET /api/browsers — installed browsers (Windows registry; empty elsewhere).
+export interface BrowsersResponse {
+  readonly browsers: readonly BrowserInfo[];
+}
+
+// POST /api/open {url} — opens in config.browser, or the system default.
+export interface OpenUrlResponse {
+  readonly opened: boolean;
+  readonly browser: string | null;
 }

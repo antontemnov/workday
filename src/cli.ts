@@ -15,6 +15,7 @@ import {
   DAEMON_START_POLL_MS,
   MS_PER_MINUTE,
   DEFAULT_MANUAL_ACTIVITY,
+  JIRA_KEY_PATTERN,
 } from './core/constants.js';
 import { isEmptyDayLog } from './core/janitor.js';
 import {
@@ -66,6 +67,8 @@ import type {
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
   Suggestion,
+  BrowsersResponse,
+  OpenUrlResponse,
 } from './core/types.js';
 import { SensitivityLevel, DayStatus, MonthDayStatus, SuggestionsDayState } from './core/types.js';
 
@@ -1590,6 +1593,43 @@ async function handleSuggestions(args: string[]): Promise<void> {
   printSuggestionsDay(result.data);
 }
 
+// ─── Open in browser ────────────────────────────────────────────────────
+
+async function handleOpen(args: string[]): Promise<void> {
+  const target = args[0];
+  if (!target) {
+    console.log('Usage: workday open <ATL-123|https://url>   Opens in config.browser (workday browsers)');
+    return;
+  }
+  let url = target;
+  if (JIRA_KEY_PATTERN.test(target)) {
+    const base = tryLoadSecrets()?.Jira_BaseUrl?.trim();
+    if (!base) { console.log('Jira_BaseUrl not set in secrets.json — cannot build the ticket link.'); return; }
+    url = `${base.replace(/\/+$/, '')}/browse/${target}`;
+  }
+  const result = await apiPost<OpenUrlResponse>('/api/open', { url });
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+  console.log(`Opened ${url}`);
+  console.log(`  via: ${result.data.browser ?? 'system default browser'}`);
+}
+
+async function handleBrowsers(): Promise<void> {
+  const result = await apiGet<BrowsersResponse>('/api/browsers');
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+  const settings = await apiGet<SettingsResponse>('/api/settings');
+  const active = settings.ok ? settings.data?.config.browser ?? null : null;
+  if (result.data.browsers.length === 0) {
+    console.log('No browsers found (registry enumeration is Windows-only).');
+    return;
+  }
+  console.log(`Browsers (${active ? 'custom' : 'system default'} in use):`);
+  console.log(`  ${active === null ? '*' : ' '} System default`);
+  for (const b of result.data.browsers) {
+    console.log(`  ${active === b.path ? '*' : ' '} ${b.name}`);
+    console.log(`      ${b.path}`);
+  }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1689,6 +1729,12 @@ async function main(): Promise<void> {
     case 'suggestions':
       await handleSuggestions(args.slice(1));
       break;
+    case 'open':
+      await handleOpen(args.slice(1));
+      break;
+    case 'browsers':
+      await handleBrowsers();
+      break;
     case 'init':
       handleInit();
       break;
@@ -1750,6 +1796,8 @@ Usage:
   workday suggestions mute <#N|uid> [--days N]         Mute a meeting series (no --days = forever)
   workday suggestions muted                            Manually muted series
   workday suggestions unmute <uid|--all>               Release muted series
+  workday open <ATL-123|url>                           Open a ticket/link in the configured browser
+  workday browsers                                     Installed browsers (* = config.browser choice)
 
 Target: session index (#1, #2) or session id (hex)`);
 }

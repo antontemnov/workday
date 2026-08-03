@@ -118,7 +118,10 @@ import type {
   SuggestionAcceptResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
+  BrowsersResponse,
+  OpenUrlResponse,
 } from './core/types.js';
+import { listInstalledBrowsers, openUrlInBrowser } from './core/browser-registry.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -360,6 +363,13 @@ export class HttpServer {
       }
       if (method === 'GET' && path === '/api/settings') {
         return this.sendJson(res, 200, this.handleGetSettings());
+      }
+      if (method === 'GET' && path === '/api/browsers') {
+        return this.sendJson(res, 200, await this.handleBrowsers());
+      }
+      if (method === 'POST' && path === '/api/open') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, this.handleOpenUrl(body));
       }
       if (method === 'POST' && path === '/api/settings') {
         const body = await this.readBody(req);
@@ -1240,6 +1250,7 @@ export class HttpServer {
           },
           activities: { values: [...c.activities.values] },
           calendar: { enabled: c.calendar.enabled, hidePrivate: c.calendar.hidePrivate },
+          browser: c.browser ?? null,
         },
         secretsMeta: { jiraConfigured, tempoConfigured, calendarConfigured },
         daemonVersion: this.deps.getVersion(),
@@ -1297,6 +1308,27 @@ export class HttpServer {
 
     await this.deps.forceTick();
     return this.handleGetSettings();
+  }
+
+  private async handleBrowsers(): Promise<ApiResponse<BrowsersResponse>> {
+    return { ok: true, data: { browsers: await listInstalledBrowsers() } };
+  }
+
+  private handleOpenUrl(body: Record<string, unknown>): ApiResponse<OpenUrlResponse> {
+    const url = typeof body.url === 'string' ? body.url.trim() : '';
+    let parsed: URL;
+    try { parsed = new URL(url); } catch { return { ok: false, error: 'Invalid url' }; }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return { ok: false, error: 'Only http(s) links can be opened' };
+    }
+    const browser = this.deps.config.browser ?? null;
+    if (browser && !existsSync(browser)) {
+      // Stale config (browser uninstalled/moved) — the tray falls back to
+      // its own default-browser open on this error.
+      return { ok: false, error: `Configured browser not found: ${browser}` };
+    }
+    openUrlInBrowser(url, browser);
+    return { ok: true, data: { opened: true, browser } };
   }
 
   private async handleAddRepo(body: Record<string, unknown>): Promise<ApiResponse<AddRepoResponse>> {

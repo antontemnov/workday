@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
 import {
-  ActivityType, CalendarFeedStatus, MutedSuggestionSeries, ProjectRef, SensitivityLevel,
+  ActivityType, BrowserInfo, CalendarFeedStatus, MutedSuggestionSeries, ProjectRef, SensitivityLevel,
   SettingsConfigSubset, SettingsResponse, TrackingConfig,
 } from '../../models/workday.models';
 
@@ -50,6 +50,10 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   calendarStatus: CalendarFeedStatus | null = null;
   private calendarStatusTimer: number | null = null;
 
+  // Installed browsers for the "Open links in" dropdown (daemon registry
+  // enumeration, Windows-only — empty list hides the row).
+  browsers: readonly BrowserInfo[] = [];
+
   // Display labels only — backing enum values (low/normal/patient/always_on)
   // are unchanged. Mirrors the day-view scale naming.
   readonly sensitivityOptions: readonly { key: SensitivityLevel; label: string }[] = [
@@ -92,6 +96,12 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     // work-attributes cache.
     void this.loadActivityCatalog();
     void this.refreshMuted();
+    void this.loadBrowsers();
+  }
+
+  private async loadBrowsers(): Promise<void> {
+    const res = await this.api.getBrowsers();
+    if (res.ok && res.data) this.browsers = res.data.browsers;
   }
 
   private async loadActivityCatalog(): Promise<void> {
@@ -565,6 +575,35 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
 
   get hidePrivateOn(): boolean {
     return this.settings?.config.calendar?.hidePrivate === true;
+  }
+
+  // ─── Browser for links ("Open in browser" menu items) ───────────────────
+
+  // Row needs both sides: a daemon that knows the field AND something to pick.
+  get browserRowVisible(): boolean {
+    return this.settings?.config.browser !== undefined && this.browsers.length > 0;
+  }
+
+  get browserValue(): string {
+    return this.settings?.config.browser ?? '';
+  }
+
+  // Configured exe no longer among the installed ones (uninstalled/moved) —
+  // keep the selection visible as a dead option instead of lying "default".
+  get browserMissing(): boolean {
+    const cfg = this.settings?.config.browser;
+    return !!cfg && !this.browsers.some(b => b.path === cfg);
+  }
+
+  get browserMissingLabel(): string {
+    const cfg = this.settings?.config.browser ?? '';
+    return `${cfg.split(/[\\/]/).pop() ?? cfg} (not found)`;
+  }
+
+  onBrowserChange(value: string): void {
+    const next = value === '' ? null : value;
+    this.applyLocal(c => ({ ...c, browser: next }));
+    this.queue({ browser: next }, 'immediate');
   }
 
   // ─── Muted suggestion series (manual mutes, see suggestion-row menu) ────

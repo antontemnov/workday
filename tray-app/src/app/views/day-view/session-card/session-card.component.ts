@@ -4,6 +4,7 @@ import { SessionDetail, SensitivityLevel, SensitivityPill } from '../../../model
 import { DurationFieldComponent } from '../duration-field/duration-field.component';
 import { parseDurationToMinutes } from '../duration-field/duration.util';
 import { openCtxMenu } from '../ctx-menu.util';
+import { GLOBE_ICON, JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import { staminaHeat, staminaHeatLite } from './stamina-heat.util';
 
 interface SpeedPillOption {
@@ -46,6 +47,8 @@ export class SessionCardComponent {
   @Input() speedPills: readonly SpeedPillOption[] = [];
   // Jira summaries from the day payload (task key → name, cached by the daemon).
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
+  // Jira site root — null (older daemon / no secrets) hides Open in browser.
+  @Input() jiraBaseUrl: string | null = null;
 
   // Re-uses the existing pill channel: 'pause' → pause API, a level → sensitivity API.
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
@@ -56,6 +59,8 @@ export class SessionCardComponent {
   addPopoverOpen = false;
   addTimeStr = '30m';
   attemptedAdd = false;
+
+  public constructor(private jiraLink: JiraLinkService) {}
 
   // ─── Identity ──────────────────────────────────────────────────────────
 
@@ -262,6 +267,10 @@ export class SessionCardComponent {
             title: 'Resume the session to change its mode', action: (): void => {} }
         : { icon: MODE_ICON, label: 'Mode', hint: current, action: (): void => this.openModeMenu(x, y) },
       { icon: '⧉', label: 'Copy branch', action: (): void => this.copyBranch() },
+      ...(canBrowseTicket(this.jiraBaseUrl, this.session.task)
+        ? [{ icon: GLOBE_ICON, label: 'Open in browser',
+             action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, this.session.task!) }]
+        : []),
     ]);
   }
 

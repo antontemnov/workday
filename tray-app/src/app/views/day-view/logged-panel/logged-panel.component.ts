@@ -1,7 +1,7 @@
 import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { GLOBE_ICON, canBrowseTicket, openTicketInBrowser } from '../jira-link.util';
+import { GLOBE_ICON, JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import {
   ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
   SessionDetail, normalizeFavName,
@@ -106,7 +106,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // adds it to the Day total so it moves together with the feed.
   @Output() liveDiffChanged = new EventEmitter<number>();
 
-  public constructor(private host: ElementRef<HTMLElement>, private cdr: ChangeDetectorRef) {}
+  public constructor(private host: ElementRef<HTMLElement>, private cdr: ChangeDetectorRef, private jiraLink: JiraLinkService) {}
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
@@ -944,7 +944,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
           }]
         : []),
       ...(canBrowseTicket(this.jiraBaseUrl, b.task)
-        ? [{ icon: GLOBE_ICON, label: 'Open in browser', action: (): void => openTicketInBrowser(this.jiraBaseUrl, b.task) }]
+        ? [{ icon: GLOBE_ICON, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) }]
         : []),
       { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
     ]);

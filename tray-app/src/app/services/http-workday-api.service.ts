@@ -17,6 +17,8 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  BrowsersResponse,
+  OpenUrlResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
   ActivityTypesResponse,
@@ -355,6 +357,14 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async addRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {
     return this.post<AddRepoResponse>('/api/repo', { path });
+  }
+
+  override async getBrowsers(): Promise<ApiResponse<BrowsersResponse>> {
+    return this.get<BrowsersResponse>('/api/browsers');
+  }
+
+  override async openUrl(url: string): Promise<ApiResponse<OpenUrlResponse>> {
+    return this.post<OpenUrlResponse>('/api/open', { url });
   }
 
   override async removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {

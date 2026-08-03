@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivityType, DEVELOPMENT_ACTIVITY, ManualEntryInput, Suggestion } from '../../../models/workday.models';
 import { activityOptions } from '../activity.util';
 import { openCtxMenu } from '../ctx-menu.util';
-import { GLOBE_ICON, canBrowseTicket, openTicketInBrowser } from '../jira-link.util';
+import { GLOBE_ICON, JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 
 // Mirrors the daemon's accept default (DEFAULT_MANUAL_ACTIVITY).
@@ -87,7 +87,7 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
   denying = false;
   private denyTimer: ReturnType<typeof setTimeout> | null = null;
 
-  public constructor(private host: ElementRef<HTMLElement>) {}
+  public constructor(private host: ElementRef<HTMLElement>, private jiraLink: JiraLinkService) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     const ch = changes['suggestion'];
@@ -194,7 +194,7 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
       // Only a resolved row has a page to open — "task?" has no ticket yet.
       ...(this.suggestion.resolved && canBrowseTicket(this.jiraBaseUrl, this.suggestion.resolved.task)
         ? [{ icon: GLOBE_ICON, label: 'Open in browser',
-             action: (): void => openTicketInBrowser(this.jiraBaseUrl, this.suggestion.resolved!.task) }]
+             action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, this.suggestion.resolved!.task) }]
         : []),
     ]);
   }

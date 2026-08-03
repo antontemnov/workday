@@ -93,6 +93,10 @@ export function validateConfig(config: AppConfig): void {
   validateNotificationsConfig(config.notifications);
   validateCalendarConfig(config.calendar);
 
+  if (config.browser !== undefined && config.browser !== null && typeof config.browser !== 'string') {
+    throw new Error('config.json: browser must be a string path or null');
+  }
+
   if (config.defaultBranch !== undefined && typeof config.defaultBranch !== 'string') {
     throw new Error('config.json: defaultBranch must be a string');
   }

@@ -27,6 +27,10 @@ export interface AppConfig {
   readonly activities: ActivityScopeConfig;
   readonly notifications: NotificationsConfig;
   readonly calendar: CalendarConfig;
+  // Full path to the browser exe that /api/open spawns for links.
+  // null/absent → system default browser. Windows-only feature (the
+  // enumeration is registry-based); harmless elsewhere.
+  readonly browser?: string | null;
 }
 
 // ─── Git tracking scope ──────────────────────────────────────────────────
@@ -1067,6 +1071,7 @@ export interface SettingsConfigSubset {
   readonly search: SearchConfig;
   readonly activities: ActivityScopeConfig;
   readonly calendar: CalendarConfig;
+  readonly browser: string | null;
 }
 
 export interface SettingsResponse {
@@ -1082,6 +1087,24 @@ export interface SettingsResponse {
 
 export interface AddRepoResponse {
   readonly repos: readonly string[];
+}
+
+// ─── Browsers (link opening) ────────────────────────────────────────────
+
+export interface BrowserInfo {
+  readonly name: string;   // registry display name, e.g. "Microsoft Edge"
+  readonly path: string;   // full exe path
+}
+
+// GET /api/browsers — installed browsers (Windows registry; empty elsewhere).
+export interface BrowsersResponse {
+  readonly browsers: readonly BrowserInfo[];
+}
+
+// POST /api/open {url} — opens in config.browser, or the system default.
+export interface OpenUrlResponse {
+  readonly opened: boolean;
+  readonly browser: string | null;  // exe path used, null = system default
 }
 
 // ─── Report & Push ──────────────────────────────────────────────────────

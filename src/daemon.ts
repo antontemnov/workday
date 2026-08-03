@@ -241,6 +241,11 @@ export class Daemon {
         hidePrivate: patch.calendar.hidePrivate ?? cur.hidePrivate,
       };
     }
+
+    // browser — /api/open reads it live; null clears to the system default.
+    if (patch.browser !== undefined) {
+      (this.config as { browser?: string | null }).browser = patch.browser;
+    }
   }
 
   public async addRepo(repoPath: string): Promise<{ ok: boolean; error?: string }> {

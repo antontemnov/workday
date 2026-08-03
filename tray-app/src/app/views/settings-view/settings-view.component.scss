@@ -264,6 +264,21 @@
   &.edit { letter-spacing: 0; }
 }
 
+// "Open links in" — same quiet box as the token fields.
+.browser-select {
+  background: #11111b;
+  border: 1px solid #313244;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  max-width: 190px;
+  cursor: pointer;
+
+  &:focus { outline: none; border-color: #89b4fa; }
+}
+
 .token-eye {
   background: transparent;
   border: 1px solid #313244;
