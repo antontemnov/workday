@@ -1,7 +1,7 @@
 import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { open as shellOpen } from '@tauri-apps/plugin-shell';
+import { GLOBE_ICON, canBrowseTicket, openTicketInBrowser } from '../jira-link.util';
 import {
   ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
   SessionDetail, normalizeFavName,
@@ -31,11 +31,6 @@ const POP_STAGGER_MS = 80;
 // biggest rank jumper lifts off the glass for the trip.
 const REORDER_DELAY_MS = 260;
 const REORDER_FLIGHT_MS = 440;
-
-// Mirrors the daemon's JIRA_KEY_PATTERN — '—' (taskless) blocks have no page.
-const TICKET_KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/;
-// Globe for "Open in browser" (inline SVG — crisp on fractional DPI).
-const GLOBE_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"><circle cx="6" cy="6" r="4.6"/><ellipse cx="6" cy="6" rx="2.1" ry="4.6"/><line x1="1.4" y1="6" x2="10.6" y2="6"/></svg>';
 
 // One ticket's day — the identity printed once over the worklog rows it
 // carries. Rows: observed Development (sessions + breakdown), the single
@@ -948,22 +943,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
             action: () => this.toggleTracked(b.task),
           }]
         : []),
-      ...(this.canBrowse(b.task)
-        ? [{ icon: GLOBE_ICON, label: 'Open in browser', action: (): void => this.openInBrowser(b.task) }]
+      ...(canBrowseTicket(this.jiraBaseUrl, b.task)
+        ? [{ icon: GLOBE_ICON, label: 'Open in browser', action: (): void => openTicketInBrowser(this.jiraBaseUrl, b.task) }]
         : []),
       { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
     ]);
-  }
-
-  private canBrowse(task: string): boolean {
-    return !!this.jiraBaseUrl && TICKET_KEY_RE.test(task);
-  }
-
-  private openInBrowser(task: string): void {
-    if (!this.jiraBaseUrl) return;
-    const url = `${this.jiraBaseUrl.replace(/\/+$/, '')}/browse/${task}`;
-    // Outside Tauri (browser dev) the plugin throws — a plain tab will do.
-    void shellOpen(url).catch(() => window.open(url, '_blank'));
   }
 
   // ─── Tracked deletes (session line ✕ / whole block) — entry-row undo twin ─

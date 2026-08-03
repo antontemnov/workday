@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivityType, DEVELOPMENT_ACTIVITY, ManualEntryInput, Suggestion } from '../../../models/workday.models';
 import { activityOptions } from '../activity.util';
 import { openCtxMenu } from '../ctx-menu.util';
+import { GLOBE_ICON, canBrowseTicket, openTicketInBrowser } from '../jira-link.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 
 // Mirrors the daemon's accept default (DEFAULT_MANUAL_ACTIVITY).
@@ -63,6 +64,8 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
   @Input() activityAllowed: readonly string[] = [];
   // Jira summaries for resolved tasks (daemon name cache, suggestions poll).
   @Input() summaries: Readonly<Record<string, string>> = {};
+  // Jira site root — null (older daemon / no secrets) hides Open in browser.
+  @Input() jiraBaseUrl: string | null = null;
   // Ticket picked for this row in the cloud's accept-picker.
   @Input() picked: SuggestionPick | null = null;
 
@@ -183,6 +186,11 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
       ...(this.suggestion.resolved
         ? [{ icon: '✓', label: 'Log…', action: (): void => this.accept() }]
         : [{ icon: '⌕', label: 'Pick ticket…', action: (): void => this.accept() }]),
+      // Only a resolved row has a page to open — "task?" has no ticket yet.
+      ...(this.suggestion.resolved && canBrowseTicket(this.jiraBaseUrl, this.suggestion.resolved.task)
+        ? [{ icon: GLOBE_ICON, label: 'Open in browser',
+             action: (): void => openTicketInBrowser(this.jiraBaseUrl, this.suggestion.resolved!.task) }]
+        : []),
       { icon: '✕', label: 'Deny', action: () => this.dismiss() },
       // Review rows have no series to mute — dismiss closes the day.
       ...(this.suggestion.source === 'review'
