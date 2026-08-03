@@ -10,6 +10,12 @@
   ; launch entry next to the plugin's Run key. Healed on every install
   ; (updates included) so existing machines lose the duplicate.
   Delete "$APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Workday.lnk"
+  ; Installing is intent to track: a manual-stop marker left by an earlier
+  ; uninstall (its "workday stop" writes one) would keep the daemon down
+  ; until the next login. Updates skip this — a deliberate stop survives them.
+  ${If} $UpdateMode <> 1
+    Delete "$PROFILE\.workday\daemon.stopped"
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -30,6 +36,9 @@
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "workday"
     Delete "$APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Workday.lnk"
     Delete "$PROFILE\.workday\tray.autostart-initialized"
+    ; Our own PREUNINSTALL stop just wrote this marker — left behind it would
+    ; keep a future reinstall's daemon down until the next login.
+    Delete "$PROFILE\.workday\daemon.stopped"
     ; The template's own app-data cleanup covers only the WebView folder —
     ; with the checkbox ticked the daemon home (config, secrets, day logs)
     ; goes too.
