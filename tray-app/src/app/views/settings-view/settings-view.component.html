@@ -321,9 +321,16 @@
         </div>
       </div>
 
-      <!-- Calendar feed: the published-calendar URL is the secret (anyone
-           with the link reads the calendar). Hidden on daemons < 0.32.0. -->
-      <div class="opt-row" *ngIf="calendarBlockVisible">
+    </div>
+
+    <!-- Calendar: its own section — the feed drives meeting suggestions, a
+         standalone integration next to the token ones. The published-calendar
+         URL is the secret (anyone with the link reads the calendar).
+         Hidden on daemons < 0.32.0. -->
+    <div class="settings-section" *ngIf="calendarBlockVisible">
+      <h3>Calendar <span class="sub">Outlook feed · meeting suggestions</span></h3>
+
+      <div class="opt-row">
         <div class="left">
           <span class="name">Calendar feed (ICS)</span>
           <span class="hint" [class.update-error]="calendarStatusIsError">
@@ -354,7 +361,7 @@
         </div>
       </div>
 
-      <div class="opt-row" *ngIf="calendarBlockVisible">
+      <div class="opt-row">
         <div class="left">
           <span class="name">Hide private meetings</span>
           <span class="hint">Private appointments never appear as suggestions.</span>
@@ -366,7 +373,7 @@
 
       <!-- Muted series — manual mutes made from the suggestion context menu.
            Collapsed to a count; expand to release one (✕) or all. -->
-      <div class="opt-row" *ngIf="calendarBlockVisible">
+      <div class="opt-row">
         <div class="left">
           <span class="name">Muted series</span>
           <span class="hint">Right-click a suggestion in Day view to mute it.</span>
@@ -378,7 +385,7 @@
           <ng-template #noMuted><span class="muted-none">none</span></ng-template>
         </div>
       </div>
-      <div class="muted-list" *ngIf="calendarBlockVisible && mutedOpen && mutedList.length">
+      <div class="muted-list" *ngIf="mutedOpen && mutedList.length">
         <div class="muted-row" *ngFor="let m of mutedList">
           <span class="m-title">{{ m.title || m.uid }}</span>
           <span class="m-until">{{ mutedUntilLabel(m) }}</span>

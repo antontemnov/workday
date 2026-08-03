@@ -94,14 +94,6 @@
     font-weight: 700;
 
     &.mt { margin-top: 14px; }
-
-    .opt {
-      margin-left: 6px;
-      color: #6c7086;
-      font-weight: 400;
-      text-transform: none;
-      letter-spacing: 0;
-    }
   }
 }
 
@@ -166,6 +158,34 @@
 }
 
 // ─── Token blocks (step 2) ──────────────────────────────────────────────
+.browser-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #23243a;
+
+  .br-label {
+    color: #6c7086;
+    font-size: 10px;
+  }
+}
+
+.browser-select {
+  background: #11111b;
+  border: 1px solid #313244;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  max-width: 190px;
+  cursor: pointer;
+
+  &:focus { outline: none; border-color: #89b4fa; }
+}
+
 .token-block {
   padding: 8px 0;
   border-top: 1px solid #23243a;
@@ -179,15 +199,22 @@
   gap: 6px;
 
   .dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: #585b70;
     flex-shrink: 0;
 
     &.ok {
       background: #a6e3a1;
-      box-shadow: 0 0 5px rgba(166, 227, 161, 0.5);
+      box-shadow: 0 0 6px rgba(166, 227, 161, 0.6);
+    }
+
+    // A failed check outranks a previously saved token — the dot signals
+    // "needs attention" until the bad paste is fixed or removed.
+    &.err {
+      background: #f38ba8;
+      box-shadow: 0 0 6px rgba(243, 139, 168, 0.5);
     }
   }
 
@@ -196,6 +223,8 @@
     font-size: 11px;
     font-weight: 600;
   }
+
+  .tb-state { margin-left: auto; text-align: right; }
 }
 
 .tb-state {
@@ -205,26 +234,60 @@
   &.ok-line { display: block; margin-top: 6px; }
 }
 
-.tb-hint {
-  color: #fab387;
+.tb-note {
+  color: #6c7086;
   font-size: 10px;
   margin-top: 3px;
+
+  strong {
+    color: #fab387;
+    font-weight: 600;
+  }
 }
 
 .tb-link {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  margin: 6px 0;
+  margin: 7px 0;
   min-width: 0;
 
-  .tb-url {
-    color: #6c7086;
-    font-size: 9px;
+  .tb-host {
+    color: #585b70;
+    font-size: 10px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    user-select: all;
+  }
+}
+
+.link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid rgba(137, 180, 250, 0.35);
+  color: #89b4fa;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 3px 9px;
+  border-radius: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  svg {
+    width: 7px;
+    height: 7px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &:hover {
+    border-color: rgba(137, 180, 250, 0.7);
+    background: rgba(137, 180, 250, 0.08);
   }
 }
 
@@ -232,8 +295,7 @@
   display: flex;
   gap: 6px;
 
-  .input-line { flex: 1; letter-spacing: 1px; }
-  .input-line:focus { letter-spacing: 0; }
+  .input-line { flex: 1; }
   .btn { flex-shrink: 0; }
 }
 

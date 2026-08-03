@@ -899,15 +899,19 @@ export class MockWorkdayApiService extends WorkdayApiService {
   async validateSetup(request: SetupValidateRequest): Promise<ApiResponse<SetupValidateResponse>> {
     await delay(700);
     const result: { jira?: SetupProbeResult; tempo?: SetupProbeResult } = {};
+    // The literal token "bad" fails — lets the wizard's failed-check state
+    // (red dot + blocked Continue) be walked in mock mode.
     if (request.jira) {
-      result.jira = request.jira.token.trim()
+      const t = request.jira.token.trim();
+      result.jira = t && t !== 'bad'
         ? { ok: true, displayName: 'Jane Doe' }
         : { ok: false, error: 'Authentication failed — check the token and email' };
     }
     if (request.tempo) {
-      result.tempo = request.tempo.token.trim()
+      const t = request.tempo.token.trim();
+      result.tempo = t && t !== 'bad'
         ? { ok: true }
-        : { ok: false, error: 'Token is required' };
+        : { ok: false, error: 'Authentication failed — check the token' };
     }
     return { ok: true, data: result };
   }

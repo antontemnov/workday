@@ -42,21 +42,37 @@
     <div class="setup-section" *ngIf="step === 2">
       <h3>API tokens</h3>
 
+      <!-- Token pages open through the daemon — pick the work browser first
+           so they land where the user is signed in. Hidden when the daemon
+           found no browsers (non-Windows). -->
+      <div class="browser-row" *ngIf="browsers.length > 0">
+        <span class="br-label">Open links in</span>
+        <select class="browser-select" [ngModel]="browserValue" (ngModelChange)="onBrowserChange($event)">
+          <option value="">System default</option>
+          <option *ngFor="let b of browsers" [value]="b.path">{{ b.name }}</option>
+        </select>
+      </div>
+
       <div class="token-block">
         <div class="tb-head">
-          <span class="dot" [class.ok]="jiraSaved"></span>
+          <span class="dot" [class.ok]="jiraSaved" [class.err]="jiraProbe && !jiraProbe.ok"></span>
           <span class="tb-name">Jira token</span>
-          <span class="tb-state" *ngIf="jiraSaved">
+          <span class="tb-state" *ngIf="jiraSaved && !(jiraProbe && !jiraProbe.ok)">
             saved{{ jiraProbe?.displayName ? ' — hello, ' + jiraProbe?.displayName : '' }}
           </span>
         </div>
         <div class="tb-link">
-          <button class="btn small" (click)="openLink(links?.jiraToken)">Open token page</button>
-          <span class="tb-url">{{ links?.jiraToken }}</span>
+          <button class="link-chip" (click)="openLink(links?.jiraToken)">
+            Get a token
+            <svg viewBox="0 0 8 8" aria-hidden="true"><path d="M2.5 1.5h4v4M6.5 1.5 1.5 6.5" /></svg>
+          </button>
+          <span class="tb-host">{{ linkHost(links?.jiraToken) }}</span>
         </div>
         <div class="tb-input">
           <input class="input-line"
-                 [(ngModel)]="jiraToken"
+                 type="password"
+                 [ngModel]="jiraToken"
+                 (ngModelChange)="onJiraTokenInput($event)"
                  placeholder="paste the token"
                  (keydown.enter)="checkJira()">
           <button class="btn small primary"
@@ -70,18 +86,23 @@
 
       <div class="token-block">
         <div class="tb-head">
-          <span class="dot" [class.ok]="tempoSaved"></span>
+          <span class="dot" [class.ok]="tempoSaved" [class.err]="tempoProbe && !tempoProbe.ok"></span>
           <span class="tb-name">Tempo token</span>
-          <span class="tb-state" *ngIf="tempoSaved">saved</span>
+          <span class="tb-state" *ngIf="tempoSaved && !(tempoProbe && !tempoProbe.ok)">saved</span>
         </div>
-        <div class="tb-hint">Create it with full access — read-only tokens hide schedules and approvals.</div>
+        <div class="tb-note"><strong>Full access</strong> — read-only tokens hide schedules and approvals.</div>
         <div class="tb-link" *ngIf="links?.tempoToken">
-          <button class="btn small" (click)="openLink(links?.tempoToken)">Open Tempo settings</button>
-          <span class="tb-url">{{ links?.tempoToken }}</span>
+          <button class="link-chip" (click)="openLink(links?.tempoToken)">
+            Open Tempo settings
+            <svg viewBox="0 0 8 8" aria-hidden="true"><path d="M2.5 1.5h4v4M6.5 1.5 1.5 6.5" /></svg>
+          </button>
+          <span class="tb-host">{{ linkHost(links?.tempoToken) }}</span>
         </div>
         <div class="tb-input">
           <input class="input-line"
-                 [(ngModel)]="tempoToken"
+                 type="password"
+                 [ngModel]="tempoToken"
+                 (ngModelChange)="onTempoTokenInput($event)"
                  placeholder="paste the token"
                  (keydown.enter)="checkTempo()">
           <button class="btn small primary"
@@ -132,21 +153,26 @@
       <div class="hint">Names that mark a branch as yours, as they appear in branch names.</div>
     </div>
 
-    <!-- Step 4: calendar feed (optional) -->
+    <!-- Step 4: calendar feed (required) -->
     <div class="setup-section" *ngIf="step === 4">
-      <h3>Outlook calendar <span class="opt">optional</span></h3>
+      <h3>Outlook calendar</h3>
       <div class="hint">
-        Meetings become one-click log suggestions. In Outlook web:
-        Settings → Calendar → Shared calendars → Publish a calendar → copy the ICS link.
+        Meetings become one-click log suggestions — connect the feed to finish.
+        In Outlook web: Settings → Calendar → Shared calendars →
+        Publish a calendar → copy the ICS link.
       </div>
       <div class="tb-link">
-        <button class="btn small" (click)="openLink(links?.calendarSettings)">Open Outlook settings</button>
-        <span class="tb-url">{{ links?.calendarSettings }}</span>
+        <button class="link-chip" (click)="openLink(links?.calendarSettings)">
+          Open Outlook settings
+          <svg viewBox="0 0 8 8" aria-hidden="true"><path d="M2.5 1.5h4v4M6.5 1.5 1.5 6.5" /></svg>
+        </button>
+        <span class="tb-host">{{ linkHost(links?.calendarSettings) }}</span>
       </div>
       <div class="tb-input">
         <input class="input-line"
+               type="password"
                [(ngModel)]="calendarUrl"
-               placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
+               placeholder="paste the published .ics link"
                (keydown.enter)="saveCalendar()">
         <button class="btn small primary"
                 [disabled]="savingCalendar || !calendarUrl.trim()"
@@ -163,7 +189,6 @@
       <button class="btn" *ngIf="step > 1" (click)="back()">Back</button>
       <span class="nav-error" *ngIf="stepError">{{ stepError }}</span>
       <span class="nav-spacer"></span>
-      <button class="btn ghost-quiet" *ngIf="step < 4" (click)="skip()">Skip for now</button>
       <button class="btn primary"
               [disabled]="primaryDisabled"
               (click)="primaryAction()">

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
 import {
+  BrowserInfo,
   ProjectRef,
   SetupLinks,
   SetupProbeResult,
@@ -44,6 +45,8 @@ export class SetupViewComponent implements OnInit {
   tempoChecking = false;
   jiraSaved = false;
   tempoSaved = false;
+  browsers: readonly BrowserInfo[] = [];
+  browserValue = '';
 
   // Step 3 — tracking
   repos: readonly string[] = [];
@@ -66,7 +69,11 @@ export class SetupViewComponent implements OnInit {
   }
 
   private async load(): Promise<void> {
-    const [setupRes, settingsRes] = await Promise.all([this.api.getSetup(), this.api.getSettings()]);
+    const [setupRes, settingsRes, browsersRes] = await Promise.all([
+      this.api.getSetup(),
+      this.api.getSettings(),
+      this.api.getBrowsers(),
+    ]);
     if (setupRes.ok && setupRes.data) {
       const d = setupRes.data;
       this.jiraBaseUrl = d.jiraBaseUrl;
@@ -85,7 +92,9 @@ export class SetupViewComponent implements OnInit {
       this.branchOwners = c.tracking.branchOwners.join(', ');
       this.knownProjects = c.search?.knownProjects ?? [];
       this.selectedKeys = c.tracking.projectKeys.filter(k => k !== 'PROJ');
+      this.browserValue = c.browser ?? '';
     }
+    if (browsersRes.ok && browsersRes.data) this.browsers = browsersRes.data.browsers;
     this.loading = false;
   }
 
@@ -97,11 +106,20 @@ export class SetupViewComponent implements OnInit {
     return 'Continue';
   }
 
+  // Strict gates: a visible check failure or pasted-but-unchecked input
+  // blocks the step — "green dot + red error + Continue" must be impossible.
   get primaryDisabled(): boolean {
     if (this.step === 1) return this.savingIdentity;
-    if (this.step === 2) return !this.jiraSaved;
+    if (this.step === 2) {
+      return !this.jiraSaved
+        || this.jiraChecking || this.tempoChecking
+        || (this.jiraProbe !== null && !this.jiraProbe.ok)
+        || (this.tempoProbe !== null && !this.tempoProbe.ok)
+        || this.jiraToken.trim() !== ''
+        || this.tempoToken.trim() !== '';
+    }
     if (this.step === 3) return this.savingTracking;
-    return false;
+    return !this.calendarSaved || this.savingCalendar || this.calendarUrl.trim() !== '';
   }
 
   async primaryAction(): Promise<void> {
@@ -118,14 +136,25 @@ export class SetupViewComponent implements OnInit {
     }
   }
 
-  skip(): void {
-    this.done.emit();
-  }
-
   async openLink(url: string | null | undefined): Promise<void> {
     if (!url) return;
-    // Failure is silent by design — the URL is printed next to the button.
+    // Failure is silent by design — the destination host is printed next to
+    // the button, so the user can always walk there by hand.
     await this.api.openUrl(url);
+  }
+
+  linkHost(url: string | null | undefined): string {
+    if (!url) return '';
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  }
+
+  onBrowserChange(value: string): void {
+    this.browserValue = value;
+    void this.api.updateSettings({ config: { browser: value || null } });
   }
 
   // ─── Step 1: identity ──────────────────────────────────────────────────
@@ -159,6 +188,19 @@ export class SetupViewComponent implements OnInit {
   }
 
   // ─── Step 2: tokens ────────────────────────────────────────────────────
+
+  // Editing the input voids a stale failure (the gate would otherwise hold
+  // the step hostage after the bad paste is deleted). A successful probe —
+  // the greeting — stays.
+  onJiraTokenInput(value: string): void {
+    this.jiraToken = value;
+    if (this.jiraProbe && !this.jiraProbe.ok) this.jiraProbe = null;
+  }
+
+  onTempoTokenInput(value: string): void {
+    this.tempoToken = value;
+    if (this.tempoProbe && !this.tempoProbe.ok) this.tempoProbe = null;
+  }
 
   async checkJira(): Promise<void> {
     const token = this.jiraToken.trim();
@@ -226,7 +268,7 @@ export class SetupViewComponent implements OnInit {
   }
 
   async addRepo(): Promise<void> {
-    const path = window.prompt('Absolute path to a git repository:');
+    const path = await this.pickRepoPath();
     if (!path?.trim()) return;
     const res = await this.api.addRepo(path.trim());
     if (res.ok && res.data) {
@@ -235,6 +277,23 @@ export class SetupViewComponent implements OnInit {
     } else {
       this.stepError = res.error ?? 'Failed to add repository';
     }
+  }
+
+  // Same idiom as settings-view: native folder dialog inside Tauri, prompt
+  // fallback in browser dev mode (the plugin module doesn't resolve there).
+  private async pickRepoPath(): Promise<string | null> {
+    const isInTauri = !!(window as unknown as Record<string, unknown>)['__TAURI_INTERNALS__'];
+    if (isInTauri) {
+      try {
+        const dialog = await import('@tauri-apps/plugin-dialog');
+        const selected = await dialog.open({ directory: true, multiple: false, title: 'Select repository folder' });
+        return typeof selected === 'string' ? selected : null;
+      } catch (e) {
+        console.error('Folder picker failed', e);
+        return window.prompt('Absolute path to a git repository:') ?? null;
+      }
+    }
+    return window.prompt('Absolute path to a git repository:');
   }
 
   async removeRepo(path: string): Promise<void> {
@@ -273,7 +332,7 @@ export class SetupViewComponent implements OnInit {
     this.step = 4;
   }
 
-  // ─── Step 4: calendar (optional) ───────────────────────────────────────
+  // ─── Step 4: calendar (required — it feeds meeting suggestions) ────────
 
   async saveCalendar(): Promise<void> {
     const url = this.calendarUrl.trim();
