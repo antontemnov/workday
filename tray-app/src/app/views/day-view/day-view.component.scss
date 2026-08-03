@@ -209,8 +209,7 @@
   // swaps can't tremble it.
   text-align: right;
   // The whole gap to the ＋Log capsule (flex gap + this) rides on the total,
-  // never on the header or the capsule: an empty day drops the span and the
-  // capsule keeps its own 14px to the edge.
+  // never on the header or the capsule.
   margin-left: 9px;
   font-size: 17px;
   font-weight: 700;
@@ -228,6 +227,17 @@
   // pair — they were already centred on each other before any of this.
   position: relative;
   top: -5.65px;
+
+  // Zero-width space: gives the span a real line box (and thus a baseline)
+  // even when the label is empty — an empty flex item's baseline would be
+  // synthesized from its box edge and the ascent above would collapse.
+  &::after { content: '\200B'; }
+
+  // Empty day: the span survives as a baseline strut — its ascent is what
+  // keeps the date pinned under the weekday — but its horizontal footprint
+  // collapses: 0ch width from the template, -8px eats the flex gap, so the
+  // ＋Log capsule keeps its own 14px to the edge.
+  &.empty { margin-left: -8px; }
 
   &.flash { color: #cba6f7; }
 }

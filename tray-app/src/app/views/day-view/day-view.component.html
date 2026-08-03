@@ -41,11 +41,12 @@
     <!-- Width is pinned to the label's character count: a fixed box per
          length, so glyph/DPI rounding can't tremble the Log capsule when
          digits swap; it shifts only when the format itself changes
-         (59m → 1h 00m, 9h → 10h). An empty day drops the span entirely —
-         even a 0ch box would keep its flex gap + margin as a hole between
-         the Log capsule and the edge. -->
+         (59m → 1h 00m, 9h → 10h). On an empty day the span stays as a
+         zero-width baseline strut (.empty collapses its horizontal
+         footprint) — dropping it would let the date ride up under the
+         weekday, since the total's ascent is what holds the baseline. -->
     <span class="day-total"
-          *ngIf="dayTotalLabel"
+          [class.empty]="!dayTotalLabel"
           [style.width.ch]="dayTotalLabel.length"
           [class.flash]="dayFlash">{{ dayTotalLabel }}</span>
   </div>
