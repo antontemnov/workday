@@ -21,6 +21,12 @@ const PENDING_TTL_MS = 10_000;
 // Delete is instant with a client-side undo: the row stays struck-through
 // with a burning ↩ for this long, then collapses and the DELETE goes out.
 const UNDO_WINDOW_MS = 3000;
+// Safety net, same idea as PENDING_TTL_MS: a committed delete the data never
+// confirms (DELETE lost — e.g. daemon down mid-request) un-hides after this
+// long. Longer than every refresh cadence in the system (tray poll 10s,
+// daemon tick 30s), so a stale read can never outlive it and resurrect a
+// successfully deleted row.
+const HIDDEN_TTL_MS = 45_000;
 const REMOVE_ANIM_MS = 240;
 const FAV_FEEDBACK_MS = 1200;
 // Batch / instant static rows fly in once with a staggered pop.
@@ -129,21 +135,22 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // Delete pipeline: undo window (timer) → collapse animation → hidden until
   // the server data drops the row. The live diff excludes an entry from the
-  // first stage.
+  // first stage. Hidden masks carry their commit timestamp: data still
+  // holding the id past HIDDEN_TTL_MS means the DELETE was lost — unhide.
   private deleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   removingIds = new Set<string>();
-  private hiddenIds = new Set<string>();
+  private hiddenIds = new Map<string, number>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // Same three-stage pipeline for closed sessions (keyed by session id)...
   private sesDeleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   sesRemovingIds = new Set<string>();
-  private sesHiddenIds = new Set<string>();
+  private sesHiddenIds = new Map<string, number>();
   private sesRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // ...and for whole ticket blocks (keyed by task): one undo per block.
   private taskDeleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   removingTasks = new Set<string>();
-  private hiddenTasks = new Set<string>();
+  private hiddenTasks = new Map<string, number>();
   private taskRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // Blocks mid whole-card fold: deleting the block's last content collapses
   // the card in ONE motion (the ctx-menu delete's collapse) — the row's own
@@ -220,7 +227,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     // ids go hidden so the block commits below can't re-emit them.
     for (const [id, timer] of this.deleteTimers) {
       clearTimeout(timer);
-      this.hiddenIds.add(id);
+      this.hiddenIds.set(id, Date.now());
       this.deleteCommitted.emit(id);
     }
     this.deleteTimers.clear();
@@ -690,7 +697,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const commit = (): void => {
       this.removingIds.delete(id);
       this.removeTimers.delete(id);
-      this.hiddenIds.add(id);
+      this.hiddenIds.set(id, Date.now());
       this.deleteCommitted.emit(id);
     };
     const e = this.entries.find(x => x.id === id);
@@ -734,11 +741,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   // Server data caught up (or the entry vanished externally) — drop the
-  // local delete state for ids the data no longer carries.
+  // local delete state for ids the data no longer carries. An id the data
+  // STILL carries past HIDDEN_TTL_MS is a lost DELETE — unhide it, the row
+  // honestly returns.
   private reconcileDeletes(): void {
     const alive = new Set(this.entries.map(e => e.id));
-    for (const id of [...this.hiddenIds]) {
-      if (!alive.has(id)) this.hiddenIds.delete(id);
+    const now = Date.now();
+    for (const [id, hiddenAt] of [...this.hiddenIds]) {
+      if (!alive.has(id) || now - hiddenAt > HIDDEN_TTL_MS) this.hiddenIds.delete(id);
     }
     for (const [id, timer] of [...this.deleteTimers]) {
       if (!alive.has(id)) {
@@ -753,9 +763,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // state; a task with no session and no entry left is a finished block
   // delete.
   private reconcileTrackedDeletes(): void {
+    const now = Date.now();
     const aliveSes = new Set(this.closedSessions.map(s => s.id));
-    for (const id of [...this.sesHiddenIds]) {
-      if (!aliveSes.has(id)) this.sesHiddenIds.delete(id);
+    for (const [id, hiddenAt] of [...this.sesHiddenIds]) {
+      if (!aliveSes.has(id) || now - hiddenAt > HIDDEN_TTL_MS) this.sesHiddenIds.delete(id);
     }
     for (const [id, timer] of [...this.sesDeleteTimers]) {
       if (!aliveSes.has(id)) {
@@ -767,8 +778,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const aliveTasks = new Set<string>();
     for (const s of this.closedSessions) aliveTasks.add(s.task ?? '—');
     for (const e of this.entries) aliveTasks.add(e.task);
-    for (const task of [...this.hiddenTasks]) {
-      if (!aliveTasks.has(task)) this.hiddenTasks.delete(task);
+    for (const [task, hiddenAt] of [...this.hiddenTasks]) {
+      if (!aliveTasks.has(task) || now - hiddenAt > HIDDEN_TTL_MS) this.hiddenTasks.delete(task);
     }
     for (const [task, timer] of [...this.taskDeleteTimers]) {
       if (!aliveTasks.has(task)) {
@@ -983,7 +994,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const commit = (): void => {
       this.sesRemovingIds.delete(id);
       this.sesRemoveTimers.delete(id);
-      this.sesHiddenIds.add(id);
+      this.sesHiddenIds.set(id, Date.now());
       this.sessionDeleteCommitted.emit(id);
     };
     const s = this.closedSessions.find(x => x.id === id);
@@ -1031,7 +1042,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.taskRemoveTimers.set(task, setTimeout(() => {
       this.removingTasks.delete(task);
       this.taskRemoveTimers.delete(task);
-      this.hiddenTasks.add(task);
+      this.hiddenTasks.set(task, Date.now());
       this.cardEl(task)?.removeAttribute('style');
       this.commitTaskDelete(task);
     }, REMOVE_ANIM_MS));
@@ -1080,7 +1091,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       const t = this.deleteTimers.get(e.id);
       if (t) { clearTimeout(t); this.deleteTimers.delete(e.id); }
       if (!this.hiddenIds.has(e.id)) {
-        this.hiddenIds.add(e.id);
+        this.hiddenIds.set(e.id, Date.now());
         this.deleteCommitted.emit(e.id);
       }
     }
