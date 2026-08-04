@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, DayStatus, SignalType, PauseSource, SensitivityLevel } from './types.js';
 import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery } from './types.js';
@@ -7,6 +8,7 @@ import {
   generateSessionId,
   createEmptyEvidence,
   createEmptyLog,
+  getDailyLogPath,
   writeDailyLog,
   deleteDailyLog,
   addSignal,
@@ -56,6 +58,10 @@ export class SessionTracker {
   // Lazy-day gate: a day loaded from disk keeps being written; a fresh draft
   // materializes only on the first confirmed fact (activation/manual entry).
   private loadedFromDisk: boolean;
+  // Dirty gate: serialization of the last successful flush. Without it a
+  // quiet day (all sessions closed) is rewritten every poll tick for hours.
+  // Reset whenever this.dailyLog is replaced or its file is deleted.
+  private lastFlushedState: string | null = null;
   public onSessionClosed: ((sessionId: string) => void) | null = null;
 
   public constructor(config: AppConfig, initialLog?: DailyLog) {
@@ -239,6 +245,7 @@ export class SessionTracker {
     const newDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
     this.dailyLog = createEmptyLog(newDate, this.config);
     this.loadedFromDisk = false;
+    this.lastFlushedState = null;
 
     this.lastEvaluatorResult = null;
 
@@ -269,6 +276,7 @@ export class SessionTracker {
       && !this.dailyLog.pushedAt) {
       deleteDailyLog(this.dailyLog.date);
       this.loadedFromDisk = false; // day de-materializes back into a draft
+      this.lastFlushedState = null;
       return { ok: true, deleted: session, dayFileDeleted: true };
     }
 
@@ -305,6 +313,7 @@ export class SessionTracker {
       && !this.dailyLog.pushedAt) {
       deleteDailyLog(this.dailyLog.date);
       this.loadedFromDisk = false; // day de-materializes back into a draft
+      this.lastFlushedState = null;
       return { ok: true, sessions, entries, dayFileDeleted: true };
     }
 
@@ -394,10 +403,16 @@ export class SessionTracker {
   /**
    * Write current daily log to disk (atomic). No-op until the day is
    * materialized: file exists ⇔ a confirmed fact happened (lazy day).
+   * Skips the write when nothing changed since the last flush; the
+   * existsSync guard keeps flush self-healing — an externally deleted
+   * file is restored on the next tick even with unchanged state.
    */
   public flush(): void {
     if (!isDayMaterialized(this.dailyLog, this.loadedFromDisk)) return;
-    writeDailyLog(this.dailyLog);
+    const serialized = JSON.stringify(this.dailyLog, null, 2);
+    if (serialized === this.lastFlushedState && existsSync(getDailyLogPath(this.dailyLog.date))) return;
+    writeDailyLog(this.dailyLog, serialized);
+    this.lastFlushedState = serialized;
   }
 
   /** Get summary of open sessions (for status display) */

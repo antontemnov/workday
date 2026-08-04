@@ -179,8 +179,10 @@ function releaseLock(lockPath: string, fd: number): void {
   try { unlinkSync(lockPath); } catch { /* best effort */ }
 }
 
-/** Write daily log to disk using atomic write pattern with backup */
-export function writeDailyLog(log: DailyLog): void {
+/** Write daily log to disk using atomic write pattern with backup.
+ *  `serialized` lets a caller that already stringified the log (dirty-gate
+ *  comparison in SessionTracker.flush) skip a second stringify. */
+export function writeDailyLog(log: DailyLog, serialized?: string): void {
   ensureDataDir(log.date);
   const filePath = getDailyLogPath(log.date);
   const lockPath = filePath + LOCK_EXTENSION;
@@ -194,7 +196,7 @@ export function writeDailyLog(log: DailyLog): void {
       try { copyFileSync(filePath, bakPath); } catch { /* best effort */ }
     }
 
-    writeFileSync(tmpPath, JSON.stringify(log, null, 2), 'utf-8');
+    writeFileSync(tmpPath, serialized ?? JSON.stringify(log, null, 2), 'utf-8');
     renameSync(tmpPath, filePath);
   } finally {
     releaseLock(lockPath, fd);
