@@ -526,9 +526,14 @@ export class SessionTracker {
         } else if (sessionScore.isIdleTimeout) {
           // score == 0 with idle-timeout eligible (Always-on already filtered upstream)
           this.applyAutoPause(session, PauseSource.IdleTimeout, now);
-        } else {
-          // score > 0 but not leader → Superseded
+        } else if (result.leaderId !== null) {
+          // Lost to a live leader → Superseded
           this.applyAutoPause(session, PauseSource.Superseded, now);
+        } else {
+          // Leaderless tick: only an Always-on session drained to zero lands
+          // here (any score > 0 elects a leader; a plain zero went IdleTimeout).
+          // Nothing superseded it — nonstop keeps accruing.
+          this.closeAutoPause(session, now);
         }
       } else if (session.state === SessionState.Pending) {
         // Legacy PENDING sessions loaded from old logs: promote as before
@@ -642,6 +647,8 @@ export class SessionTracker {
    * trimmed end (= where the pause chain began). Manual pauses are exempt —
    * a frozen session waits for the user; Superseded transitions into
    * IdleTimeout once the score drains, so it is covered transitively.
+   * Always-on sessions never enter IdleTimeout and are exempt by design —
+   * their only honest ends are a real gap (PC sleep), manual stop, rollover.
    * Runs at the start of each daemon tick, so after a PC-sleep gap the
    * stale session closes before wake-up activity births a new one.
    */
