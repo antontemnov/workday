@@ -1,12 +1,11 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 13;
+export const EXPECTED_API_VERSION = 14;
 
 export enum SensitivityLevel {
   Low = 'low',
   Normal = 'normal',
   Patient = 'patient',
-  AlwaysOn = 'always_on',
 }
 
 export type SensitivityPill = SensitivityLevel | 'pause';

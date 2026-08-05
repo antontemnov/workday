@@ -356,10 +356,9 @@ async function handleSensitivity(args: string[]): Promise<void> {
     SensitivityLevel.Low,
     SensitivityLevel.Normal,
     SensitivityLevel.Patient,
-    SensitivityLevel.AlwaysOn,
   ];
   if (!validLevels.includes(level as SensitivityLevel)) {
-    console.log('Usage: workday sensitivity <low|normal|patient|always_on> [repo]');
+    console.log('Usage: workday sensitivity <low|normal|patient> [repo]');
     return;
   }
   const repo = args[1];
@@ -1744,7 +1743,7 @@ Usage:
   workday pause              Pause all active sessions
   workday pause <repo>       Pause a specific repo session
   workday resume             Resume all paused sessions
-  workday sensitivity <level>             Set global default (low|normal|patient|always_on)
+  workday sensitivity <level>             Set global default (low|normal|patient)
   workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
   workday task-delete <KEY> [--date DATE]              Delete a ticket's tracked block (sessions + manual adds)

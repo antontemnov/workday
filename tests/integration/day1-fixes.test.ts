@@ -564,7 +564,6 @@ async function test6_emaPrecision(): Promise<void> {
       sessionId: 'test-ema',
       signals: { hasDynamics: true, hasCommit: false, deltaMagnitude: 5 },
       maxTicks: 90,
-      ignoreIdleTimeout: false,
     }]);
 
     const score = result.scores.get('test-ema')!;

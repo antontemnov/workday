@@ -21,7 +21,7 @@ export const DEFAULT_API_PORT = 9213;
 // pick it up (they re-check every 6h), THEN npm-publish the daemon —
 // a tray with the old exact-match check meeting a newer apiVersion would
 // reinstall-loop the daemon.
-export const API_VERSION = 13;
+export const API_VERSION = 14;
 
 // ─── Setup links (first-run wizard) ─────────────────────────────────────
 // Vendor-stable URLs only — never instance-specific. The Tempo page is
@@ -268,12 +268,10 @@ export const DECAY_BOOST = 2;
 // ─── Sensitivity → max timeout (stamina ceiling) in minutes ──────────────
 // The single knob per level: the score ceiling. The touch floor is derived
 // from it via STAMINA_FLOOR_RATIO — no separate min constant.
-// AlwaysOn uses the Normal number but isIdleTimeout is ignored at apply stage.
 export const SENSITIVITY_TIMEOUTS = {
-  low:       15,
-  normal:    45,
-  patient:   90,
-  always_on: 45,
+  low:     15,
+  normal:  45,
+  patient: 90,
 } as const;
 
 export const DEFAULT_SENSITIVITY = 'normal';

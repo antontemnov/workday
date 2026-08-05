@@ -501,9 +501,9 @@ export class SessionTracker {
       : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
 
     const level = getSensitivityForRepo(this.config, session.repo);
-    const { maxTicks, ignoreIdleTimeout } = resolveSensitivityTicks(level, this.config.session.diffPollSeconds);
+    const maxTicks = resolveSensitivityTicks(level, this.config.session.diffPollSeconds);
 
-    return { sessionId: session.id, signals, maxTicks, ignoreIdleTimeout };
+    return { sessionId: session.id, signals, maxTicks };
   }
 
   /** Apply evaluator results: auto-pause, auto-resume, candidate promotion */
@@ -524,16 +524,11 @@ export class SessionTracker {
           // Leader — close any auto-pause
           this.closeAutoPause(session, now);
         } else if (sessionScore.isIdleTimeout) {
-          // score == 0 with idle-timeout eligible (Always-on already filtered upstream)
+          // score == 0 → idle timeout
           this.applyAutoPause(session, PauseSource.IdleTimeout, now);
-        } else if (result.leaderId !== null) {
-          // Lost to a live leader → Superseded
-          this.applyAutoPause(session, PauseSource.Superseded, now);
         } else {
-          // Leaderless tick: only an Always-on session drained to zero lands
-          // here (any score > 0 elects a leader; a plain zero went IdleTimeout).
-          // Nothing superseded it — nonstop keeps accruing.
-          this.closeAutoPause(session, now);
+          // score > 0 but not leader → Superseded
+          this.applyAutoPause(session, PauseSource.Superseded, now);
         }
       } else if (session.state === SessionState.Pending) {
         // Legacy PENDING sessions loaded from old logs: promote as before
@@ -549,8 +544,7 @@ export class SessionTracker {
     // becomes a confirmed fact, pushed into the log and flushed immediately
     // (the moment the day materializes). Fade-out: score drained to zero —
     // the same decay that idle-pauses a session, but an unconfirmed fact has
-    // nothing to pause, so it evaporates. Raw score, not isIdleTimeout: an
-    // Always-on repo must not breed an immortal candidate.
+    // nothing to pause, so it evaporates.
     let promoted = false;
     for (const [repoName, session] of [...this.candidates]) {
       const sessionScore = result.scores.get(session.id);
@@ -647,8 +641,6 @@ export class SessionTracker {
    * trimmed end (= where the pause chain began). Manual pauses are exempt —
    * a frozen session waits for the user; Superseded transitions into
    * IdleTimeout once the score drains, so it is covered transitively.
-   * Always-on sessions never enter IdleTimeout and are exempt by design —
-   * their only honest ends are a real gap (PC sleep), manual stop, rollover.
    * Runs at the start of each daemon tick, so after a PC-sleep gap the
    * stale session closes before wake-up activity births a new one.
    */

@@ -54,13 +54,12 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   // enumeration, Windows-only — empty list hides the row).
   browsers: readonly BrowserInfo[] = [];
 
-  // Display labels only — backing enum values (low/normal/patient/always_on)
-  // are unchanged. Mirrors the day-view scale naming.
+  // Display labels only — backing enum values (low/normal/patient) are
+  // unchanged. Mirrors the day-view scale naming.
   readonly sensitivityOptions: readonly { key: SensitivityLevel; label: string }[] = [
-    { key: SensitivityLevel.Low,      label: 'Sharp' },
-    { key: SensitivityLevel.Normal,   label: 'Normal' },
-    { key: SensitivityLevel.Patient,  label: 'Relaxed' },
-    { key: SensitivityLevel.AlwaysOn, label: 'Nonstop' },
+    { key: SensitivityLevel.Low,     label: 'Sharp' },
+    { key: SensitivityLevel.Normal,  label: 'Normal' },
+    { key: SensitivityLevel.Patient, label: 'Relaxed' },
   ];
 
   // Launch-at-login (Tauri autostart plugin via Rust commands). Loaded on

@@ -776,10 +776,10 @@ export class HttpServer {
 
   private async handleSensitivity(body: Record<string, unknown>): Promise<ApiResponse<SensitivityResponse>> {
     const tracker = this.deps.sessionTracker;
-    // { level: 'low' | 'normal' | 'patient' | 'always_on', repo?: string }
+    // { level: 'low' | 'normal' | 'patient', repo?: string }
     const rawLevel = typeof body.level === 'string' ? body.level : '';
     if (!isSensitivityLevel(rawLevel)) {
-      return { ok: false, error: `Invalid level: ${rawLevel}. Use low|normal|patient|always_on` };
+      return { ok: false, error: `Invalid level: ${rawLevel}. Use low|normal|patient` };
     }
     const repo = typeof body.repo === 'string' ? body.repo : undefined;
 
@@ -1837,6 +1837,5 @@ export class HttpServer {
 function isSensitivityLevel(value: string): value is SensitivityLevel {
   return value === SensitivityLevel.Low
     || value === SensitivityLevel.Normal
-    || value === SensitivityLevel.Patient
-    || value === SensitivityLevel.AlwaysOn;
+    || value === SensitivityLevel.Patient;
 }

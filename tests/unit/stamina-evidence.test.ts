@@ -59,7 +59,6 @@ function runTicks(evaluator: ActivityEvaluator, id: string, specs: readonly Tick
         deltaMagnitude: spec.lines ?? 0,
       },
       maxTicks: MAX_TICKS,
-      ignoreIdleTimeout: false,
     }]);
     last = result.scores.get(id);
   }
@@ -147,7 +146,6 @@ test('Patient: full bar drains in ~70 min — under the 90-min plain fade, toler
     sessionId: 'p',
     signals: { hasDynamics: dyn, hasCommit: false, deltaMagnitude: dyn ? 20 : 0 },
     maxTicks: patientMax,
-    ignoreIdleTimeout: false,
   }]).scores.get('p')!;
   let s!: SessionScore;
   for (let i = 0; i < 120; i++) s = tickOnce(true); // fill the bar, EMA → 1
@@ -241,12 +239,12 @@ function tickPair(
     {
       sessionId: 'A',
       signals: { hasDynamics: aSpec.dyn ?? false, hasCommit: aSpec.commit ?? false, deltaMagnitude: aSpec.lines ?? 0 },
-      maxTicks: MAX_TICKS, ignoreIdleTimeout: false,
+      maxTicks: MAX_TICKS,
     },
     {
       sessionId: 'B',
       signals: { hasDynamics: bSpec.dyn ?? false, hasCommit: bSpec.commit ?? false, deltaMagnitude: bSpec.lines ?? 0 },
-      maxTicks: MAX_TICKS, ignoreIdleTimeout: false,
+      maxTicks: MAX_TICKS,
     },
   ]);
   return result.leaderId;
@@ -290,9 +288,9 @@ test('mixed sensitivities: Patient and Normal compete on equal terms', () => {
   const ev = new ActivityEvaluator(POLL_SECONDS);
   const tickMixed = (aDyn: boolean, bDyn: boolean): string | null => ev.processAllTicks([
     { sessionId: 'A', signals: { hasDynamics: aDyn, hasCommit: false, deltaMagnitude: aDyn ? 5 : 0 },
-      maxTicks: 180, ignoreIdleTimeout: false }, // Patient
+      maxTicks: 180 }, // Patient
     { sessionId: 'B', signals: { hasDynamics: bDyn, hasCommit: false, deltaMagnitude: bDyn ? 5 : 0 },
-      maxTicks: MAX_TICKS, ignoreIdleTimeout: false }, // Normal
+      maxTicks: MAX_TICKS }, // Normal
   ]).leaderId;
   // Patient repo works → leads
   for (let i = 0; i < 10; i++) tickMixed(true, false);

@@ -234,8 +234,7 @@ export function branchMatchesOwner(branch: string, owners: readonly string[]): b
 function isValidSensitivity(level: string): level is SensitivityLevel {
   return level === SensitivityLevel.Low
     || level === SensitivityLevel.Normal
-    || level === SensitivityLevel.Patient
-    || level === SensitivityLevel.AlwaysOn;
+    || level === SensitivityLevel.Patient;
 }
 
 function validateSecrets(secrets: Secrets): void {
@@ -267,10 +266,17 @@ export function loadConfig(): AppConfig {
   delete raw.schedule;
   delete raw.dayBoundaryHour;
 
+  // Migrate the removed always_on level in place (nonstop mode cut in 0.44.0).
   const rawSensitivity = (raw.sensitivity ?? {}) as Partial<SensitivityConfig>;
+  const migrateLevel = (level: unknown): SensitivityLevel | undefined =>
+    level === 'always_on' ? SensitivityLevel.Normal : level as SensitivityLevel | undefined;
+  const perRepo: Record<string, SensitivityLevel> = {};
+  for (const [repo, level] of Object.entries(rawSensitivity.perRepo ?? {})) {
+    perRepo[repo] = migrateLevel(level) ?? (DEFAULT_SENSITIVITY as SensitivityLevel);
+  }
   const sensitivity: SensitivityConfig = {
-    default: rawSensitivity.default ?? (DEFAULT_SENSITIVITY as SensitivityLevel),
-    perRepo: rawSensitivity.perRepo ?? {},
+    default: migrateLevel(rawSensitivity.default) ?? (DEFAULT_SENSITIVITY as SensitivityLevel),
+    perRepo,
   };
 
   const rawSession = (raw.session ?? {}) as Record<string, unknown>;
@@ -476,15 +482,9 @@ export function getConfiguredDefaultBranchName(config: AppConfig, repoPath: stri
     ?? config.defaultBranch;
 }
 
-/** Resolve (maxTicks, ignoreIdleTimeout) for evaluator from sensitivity. */
-export function resolveSensitivityTicks(
-  level: SensitivityLevel,
-  pollSeconds: number,
-): { maxTicks: number; ignoreIdleTimeout: boolean } {
-  return {
-    maxTicks: SENSITIVITY_TIMEOUTS[level] * 60 / pollSeconds,
-    ignoreIdleTimeout: level === SensitivityLevel.AlwaysOn,
-  };
+/** Resolve evaluator maxTicks (stamina ceiling) from sensitivity. */
+export function resolveSensitivityTicks(level: SensitivityLevel, pollSeconds: number): number {
+  return SENSITIVITY_TIMEOUTS[level] * 60 / pollSeconds;
 }
 
 export function loadSecrets(): Secrets {

@@ -62,7 +62,7 @@ export class ActivityEvaluator {
    *    faster the buffer cools once activity stops — a full Normal bar drains
    *    in ~30 min after an abrupt stop, not 45; gentle enough that a think gap
    *    after a burst isn't mistaken for a break)
-   * 8. score == 0 → idle timeout → eligible for auto-pause (unless ignoreIdleTimeout)
+   * 8. score == 0 → idle timeout → eligible for auto-pause
    *
    * Leadership is driven by a separate short-window attention EMA (~2 min),
    * not by the stamina score — see pickLeader. This keeps repo handover fast
@@ -126,7 +126,7 @@ export class ActivityEvaluator {
         normalizedScore,
         ema: st.ema,
         etaTicks: this.estimateIdleTicks(st, floorTicks),
-        isIdleTimeout: st.score === 0 && !tick.ignoreIdleTimeout,
+        isIdleTimeout: st.score === 0,
       });
     }
 

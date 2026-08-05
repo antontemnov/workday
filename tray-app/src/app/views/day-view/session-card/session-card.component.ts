@@ -114,20 +114,9 @@ export class SessionCardComponent {
 
   // Manual pause is the only "frozen" state — scale locks, stamina stops
   // draining. Auto-pauses (idle/superseded/away) keep the scale live so you can
-  // still bump sensitivity (e.g. to Nonstop) to change what happens next.
+  // still bump sensitivity to change what happens next.
   get isManualPaused(): boolean {
     return this.session.paused && (this.session.pauseSource ?? '').toLowerCase() === 'manual';
-  }
-
-  get isAlwaysOn(): boolean {
-    return !this.session.paused && this.session.sensitivity === SensitivityLevel.AlwaysOn;
-  }
-
-  // A Nonstop session that has yielded (Switched) or been manually paused: the
-  // stamina bar is meaningless here (no idle leash applies), so the edge shows an
-  // empty track and no tooltip — the status badge already says Switched/Paused.
-  get isNonstopPaused(): boolean {
-    return this.session.paused && this.session.sensitivity === SensitivityLevel.AlwaysOn;
   }
 
   // ─── Stamina edge ──────────────────────────────────────────────────────
@@ -150,8 +139,7 @@ export class SessionCardComponent {
   // A frozen card empties its edge: the ice badge already tells that story, and
   // a leftover stub of colour under it would argue with it.
   get edgePercent(): number {
-    if (this.isNonstopPaused || this.isAutoPaused) return 0;
-    if (this.isAlwaysOn) return 100;
+    if (this.isAutoPaused) return 0;
     return this.staminaPercent;
   }
 
@@ -164,22 +152,15 @@ export class SessionCardComponent {
 
   get staminaTooltip(): string {
     if (this.isManualPaused) return `Frozen · ${this.staminaPercent}%`;
-    if (this.isAlwaysOn) return 'Nonstop — no idle pause';
     return `Stamina ${this.staminaPercent}%`;
   }
 
   // Tracked highlight — the glass rim's catch-light follows the edge fill:
-  // stamina colour while accruing, an electric sky-blue for Nonstop, plain
-  // glass (neutral) the moment tracking stops. The quad is
+  // stamina colour while accruing, plain glass (neutral) the moment tracking
+  // stops. The quad is
   // [top catch-light, bottom counter-glint, strong sweep, soft post-wave] —
   // same hue family; the strong sweep speaks loudest, its echo whispers.
   private get glintPair(): readonly [string, string, string, string] {
-    if (this.isAlwaysOn) {
-      return [
-        'rgba(116, 199, 236, 0.4)', 'rgba(137, 180, 250, 0.14)',
-        'rgba(137, 180, 250, 0.8)', 'rgba(148, 226, 213, 0.32)',
-      ];
-    }
     if (!this.isAccruing || this.session.normalizedScore <= 0) {
       return [
         'rgba(205, 214, 244, 0.14)', 'rgba(205, 214, 244, 0.05)',

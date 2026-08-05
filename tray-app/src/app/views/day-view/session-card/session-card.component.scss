@@ -562,15 +562,6 @@
     transition: width 0.5s ease, background-color 0.5s ease;
   }
 
-  // Always-on (Nonstop) — never drains; the mode's old signature gradient
-  // (teal → sky → lavender) drifts along the edge: "wired to power",
-  // unmistakably not a frozen grey.
-  .fill.shimmer {
-    background: linear-gradient(120deg, #94e2d5, #74c7ec, #89b4fa, #94e2d5);
-    background-size: 300% 100%;
-    animation: nonstop-flow 7s linear infinite;
-  }
-
   // Custom tooltip (replaces the native title) — shown on hovering the edge.
   .edge-tip {
     position: absolute;
@@ -598,10 +589,6 @@
   }
 }
 
-@keyframes nonstop-flow {
-  0%   { background-position: 0 0; }
-  100% { background-position: 300% 0; }
-}
 
 // Two waves per cycle: the strong glint passes first, then its echo — a
 // wider, dimmer post-wave — flows slowly along the same path, then rest.

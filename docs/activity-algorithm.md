@@ -59,7 +59,6 @@ The repo's **sensitivity** sets a single knob — the max timeout / stamina ceil
 | `low` | 15 min | 3.75 min |
 | `normal` (default) | 45 min | 11.25 min |
 | `patient` | 90 min | 22.5 min |
-| `always_on` | 45 min (idle timeout ignored) | 11.25 min |
 
 | Constant | Value | Unit | Description |
 |----------|-------|------|-------------|
@@ -883,7 +882,7 @@ Pending sessions are closed by:
 
 | Constant | Value | Rationale |
 |----------|-------|-----------|
-| `SENSITIVITY_TIMEOUTS` | low 15 / normal 45 / patient 90 / always_on 45 min | The single per-level knob: stamina ceiling = max leash |
+| `SENSITIVITY_TIMEOUTS` | low 15 / normal 45 / patient 90 min | The single per-level knob: stamina ceiling = max leash |
 | `STAMINA_FLOOR_RATIO` | 1/4 | Touch floor = ceiling / 4 (Normal: 11.25 min) — no pause noise, no bar jump, rides out a think gap unaided |
 | `EMA_WINDOW_MINUTES` | 10 | Frequency memory of ~15 min, forgets after ~30 min idle |
 | `ATTENTION_WINDOW_MINUTES` | 2 | Leadership follows the developer within ~2 min |
@@ -911,7 +910,6 @@ interface TickInput {
   readonly sessionId: string;
   readonly signals: ActivitySignals;
   readonly maxTicks: number;            // sensitivity ceiling in ticks
-  readonly ignoreIdleTimeout: boolean;  // always_on
   // Note: manually paused sessions are NOT sent to evaluator at all (full freeze)
 }
 

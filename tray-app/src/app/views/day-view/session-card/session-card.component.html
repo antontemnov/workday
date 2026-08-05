@@ -100,10 +100,9 @@
   <div class="edge">
     <span class="edge-clip">
       <span class="fill"
-            [class.shimmer]="isAlwaysOn"
             [style.width.%]="edgePercent"
-            [style.background]="isAlwaysOn ? null : staminaColor"></span>
+            [style.background]="staminaColor"></span>
     </span>
-    <span class="edge-tip" *ngIf="!isNonstopPaused">{{ staminaTooltip }}</span>
+    <span class="edge-tip">{{ staminaTooltip }}</span>
   </div>
 </div>

@@ -106,7 +106,6 @@ export enum SensitivityLevel {
   Low = 'low',
   Normal = 'normal',
   Patient = 'patient',
-  AlwaysOn = 'always_on',
 }
 
 export interface SensitivityConfig {
@@ -1297,7 +1296,6 @@ export interface TickInput {
   readonly sessionId: string;
   readonly signals: ActivitySignals;
   readonly maxTicks: number;
-  readonly ignoreIdleTimeout: boolean;
 }
 
 export interface EvaluatorResult {
