@@ -31,78 +31,26 @@ html:has(body.toast-window), body.toast-window {
 
 // ─── Context menu (ctx-menu.util.ts) ─────────────────────────────────────
 // Global: the popover mounts on document.body, outside any component scope.
+// One glass clothing for every menu; the body lives in ::before so the blur
+// never becomes a containing block for the rows.
 .ctx-menu {
   position: fixed;
   z-index: 70;
-  min-width: 158px;
-  background: #191926;
-  border: 1px solid rgba(203, 166, 247, 0.22);
-  border-radius: 8px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  min-width: 176px;
+  max-width: 340px;
   padding: 4px;
+  border-radius: 10px;
+  isolation: isolate;
+  border: 1px solid rgba(205, 214, 244, 0.13);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.75), 0 4px 12px -3px rgba(0, 0, 0, 0.5);
   font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
   font-size: 11px;
   user-select: none;
   transform-origin: 0 0;
-  animation: ctx-menu-in 0.12s cubic-bezier(0.2, 1.2, 0.4, 1);
+  animation: ctx-menu-in 0.12s ease-out;
 
-  .ctx-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 10px;
-    border-radius: 5px;
-    color: #bac2de;
-    cursor: pointer;
-
-    .ci-ic { width: 12px; text-align: center; color: #6c7086; font-size: 10.5px; }
-    .ci-ic svg { display: block; margin: 0 auto; }
-
-    // Current value pushed to the right edge, dimmer than the label — the row
-    // states what it's set to without opening its sub-menu.
-    .ci-hint { margin-left: auto; padding-left: 16px; color: #6c7086; }
-
-    &:hover { background: #313244; color: #cdd6f4; }
-
-    &.danger {
-      color: #f38ba8;
-      .ci-ic { color: #f38ba8; }
-      &:hover { background: rgba(243, 139, 168, 0.12); color: #f38ba8; }
-    }
-
-    &.disabled {
-      color: #585b70;
-      cursor: default;
-      .ci-ic { color: #45475a; }
-      .ci-hint { color: #45475a; }
-      &:hover { background: none; color: #585b70; }
-    }
-  }
-
-  .ctx-sep {
-    height: 1px;
-    background: #313244;
-    margin: 3px 4px;
-  }
-}
-
-@keyframes ctx-menu-in {
-  0% { transform: scale(0.85); opacity: 0; }
-}
-
-// ─── Glass menu — the anchored variant (toggleAnchoredMenu) ───────────────
-// Same mechanic, glass clothing: the body lives in ::before so the blur
-// never becomes a containing block for the rows.
-.ctx-menu.glass {
-  min-width: 176px;
-  max-width: 340px;
-  border-radius: 10px;
-  isolation: isolate;
-  background: none;
-  border: 1px solid rgba(205, 214, 244, 0.13);
-  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.75), 0 4px 12px -3px rgba(0, 0, 0, 0.5);
-  transform-origin: 12px 0;
-  animation: ctx-glass-in 0.12s ease-out;
+  // Anchored menus grow from under their anchor, not from the cursor.
+  &.anchored { transform-origin: 12px 0; }
 
   &::before {
     content: '';
@@ -120,12 +68,33 @@ html:has(body.toast-window), body.toast-window {
   }
 
   .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
     border-radius: 6px;
+    color: #bac2de;
+    cursor: pointer;
     white-space: nowrap;
 
-    .ci-ic { height: 12px; display: inline-flex; flex-shrink: 0; color: #7f849c; }
-    .ci-ic svg { margin: 0; }
-    .ci-hint { padding-left: 18px; font-size: 10.5px; }
+    // Fixed 12px box: inline SVG icons and legacy text glyphs share it.
+    .ci-ic {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #7f849c;
+      font-size: 10.5px;
+    }
+
+    .ci-ic svg { display: block; }
+
+    // Current value pushed to the right edge, dimmer than the label — the row
+    // states what it's set to without opening its sub-menu.
+    .ci-hint { margin-left: auto; padding-left: 18px; color: #6c7086; font-size: 10.5px; }
+
     .ci-go { color: #585b70; margin-left: 6px; }
     .ci-go.lone { margin-left: auto; padding-left: 18px; }
 
@@ -138,12 +107,15 @@ html:has(body.toast-window), body.toast-window {
     }
 
     &.danger {
+      color: #f38ba8;
       .ci-ic { color: #f38ba8; }
       &:hover { background: rgba(243, 139, 168, 0.13); color: #f38ba8; box-shadow: none; }
       &:hover .ci-ic { color: #f38ba8; }
     }
 
     &.disabled {
+      color: #585b70;
+      cursor: default;
       .ci-ic, .ci-hint { color: #45475a; }
       &:hover { background: none; box-shadow: none; color: #585b70; }
       &:hover .ci-ic { color: #45475a; }
@@ -151,6 +123,7 @@ html:has(body.toast-window), body.toast-window {
   }
 
   .ctx-sep {
+    height: 1px;
     margin: 3px 6px;
     background: rgba(205, 214, 244, 0.085);
   }
@@ -197,10 +170,10 @@ html:has(body.toast-window), body.toast-window {
   }
 }
 
-@keyframes ctx-glass-in {
+@keyframes ctx-menu-in {
   0% { transform: scale(0.94); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ctx-menu, .ctx-menu.glass { animation: none; }
+  .ctx-menu { animation: none; }
 }

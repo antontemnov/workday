@@ -584,6 +584,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // ─── Context menu (right-click) ─────────────────────────────────────────
 
+  // A card owns its whole surface: a right-click no row answered must not
+  // fall through to the feed's own menu. Text inputs keep the native one.
+  onCardContextMenu(ev: MouseEvent): void {
+    const target = ev.target as HTMLElement | null;
+    if (target?.closest('input, textarea')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
   onRowContextMenu(e: ManualEntry, ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();

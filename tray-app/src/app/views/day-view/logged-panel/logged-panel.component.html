@@ -11,7 +11,8 @@
        [class.one]="b.rowCount <= 1"
        [class.deleted]="taskDeleted(b.task)"
        [class.removing]="removingTasks.has(b.task)"
-       [class.folding]="foldingTasks.has(b.task)">
+       [class.folding]="foldingTasks.has(b.task)"
+       (contextmenu)="onCardContextMenu($event)">
 
     <!-- The lid — read-only identity + day Σ; right-click = the card's menu -->
     <div class="blk-id" (contextmenu)="onBlockContextMenu(b, $event)">

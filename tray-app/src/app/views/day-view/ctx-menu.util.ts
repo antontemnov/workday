@@ -91,7 +91,7 @@ export function openAnchoredMenu(anchor: HTMLElement, items: readonly CtxMenuEnt
   closeCtxMenu();
   if (items.length === 0) return;
   const menu = buildMenu(items);
-  menu.classList.add('glass');
+  menu.classList.add('anchored');
   // A sub-menu replaces its parent in place — no second entrance.
   if (sameAnchor) menu.style.animation = 'none';
   document.body.appendChild(menu);
