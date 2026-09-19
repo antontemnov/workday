@@ -1080,7 +1080,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (s.closedBy) {
       if (this.sessionDeleted(s) || this.taskDeleted(s.task ?? '—')) return;
       toggleAnchoredMenu(anchor, () => [
-        { icon: CTX_ICON.x, label: 'Delete session', danger: true, action: () => this.deleteSessionRow(s) },
+        { icon: CTX_ICON.x, label: 'Delete tracking', danger: true, action: () => this.deleteSessionRow(s) },
         ...this.branchRows(s),
       ]);
       return;
