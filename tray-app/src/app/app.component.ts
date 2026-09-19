@@ -482,15 +482,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ─── Add time ──────────────────────────────────────────────────────────
 
-  // The ticket's manual added total (absolute, 0 removes): bare Development
-  // time, one record per ticket — folds into the session aggregate at push.
-  async onSetAdded(e: { task: string; minutes: number }): Promise<void> {
-    await this.runAction(() => this.api.setManualAdded(e.task, e.minutes));
-  }
-
   // ─── Manual entries ────────────────────────────────────────────────────
 
   async submitLog(input: ManualEntryInput): Promise<void> {
+    // A bare Development add lands on the ticket's existing record and comes
+    // back under the same id — drop it first so the panel sees a change.
+    this.freshEntryId = null;
     await this.runAction(async () => {
       const res = await this.api.addManualEntry(input);
       // Captured before the refresh inside runAction, so the panel sees the

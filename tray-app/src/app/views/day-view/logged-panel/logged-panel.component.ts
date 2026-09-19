@@ -1,14 +1,14 @@
 import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { GLOBE_ICON, JiraLinkService, canBrowseTicket } from '../jira-link.util';
+import { JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import {
-  ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
+  ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryInput, ManualEntryPatch,
   SensitivityLevel, SensitivityPill, SessionDetail, normalizeFavName,
 } from '../../../models/workday.models';
 import { activityLabel, activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
-import { CtxMenuEntry, openAnchoredMenu, openCtxMenu, toggleAnchoredMenu } from '../ctx-menu.util';
+import { CtxMenuEntry, openAnchoredMenu, toggleAnchoredMenu } from '../ctx-menu.util';
 import { CTX_ICON } from '../ctx-icons.util';
 import { SessionRowComponent, SessionRowState, sessionRowState } from '../session-row/session-row.component';
 import { staminaHeat } from '../session-row/stamina-heat.util';
@@ -18,6 +18,7 @@ const FRESH_WINDOW_MS = 4000;
 const STEP_MINUTES = 15;
 const MIN_MINUTES = 15;
 const MAX_MINUTES = 480;
+const DRAFT_MINUTES = 30;
 // Safety net: a pending patch the data never confirms (failed PATCH) reverts
 // the optimistic row after this long.
 const PENDING_TTL_MS = 10_000;
@@ -135,6 +136,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Output() sessionDeleteCommitted = new EventEmitter<string>();
   @Output() taskDeleteCommitted = new EventEmitter<string>();
   @Output() favoriteAdded = new EventEmitter<FavoriteInput>();
+  // Add time on a card: a new entry for that ticket (the ＋Log path).
+  @Output() entryAdded = new EventEmitter<ManualEntryInput>();
   // Uncommitted + unconfirmed local minutes vs the server data — the parent
   // adds it to the Day total so it moves together with the feed.
   @Output() liveDiffChanged = new EventEmitter<number>();
@@ -147,8 +150,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private freshBase: number | null = null;
   private freezeTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Inline row edit (double-click).
+  // The row form — one at a time: an entry's edit (editingId) or the Add
+  // time draft on a card (draftTask); both share the edit* fields.
   editingId: string | null = null;
+  draftTask: string | null = null;
   editMinutes = 30;
   editActivity = '';
   editDescription = '';
@@ -637,18 +642,19 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return e.id === this.freshId && this.freshMinutes !== null;
   }
 
+  // The manual added record edits too — its form locks everything but time.
   canEdit(e: ManualEntry): boolean {
-    return !e.added && !this.isFresh(e);
+    return !this.isFresh(e);
   }
 
   canDelete(e: ManualEntry): boolean {
     return !this.isFresh(e);
   }
 
-  // ─── Context menu (right-click) ─────────────────────────────────────────
+  // ─── Row menus — grown from the row's handle by a left click ────────────
 
-  // A card owns its whole surface: a right-click no row answered must not
-  // fall through to the feed's own menu. Text inputs keep the native one.
+  // No right-click inside a card: the feed's own menu must not leak through
+  // its surface. Text inputs keep the native one.
   onCardContextMenu(ev: MouseEvent): void {
     const target = ev.target as HTMLElement | null;
     if (target?.closest('input, textarea')) return;
@@ -656,25 +662,47 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     ev.stopPropagation();
   }
 
-  onRowContextMenu(e: ManualEntry, ev: MouseEvent): void {
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (this.editingId === e.id || this.isFresh(e) || this.isDeleted(e)
-        || this.taskDeleted(e.task)) return;
-    const items = [
-      ...(this.canEdit(e) ? [{ icon: '✎', label: 'Edit', action: () => this.onRowDblClick(e) }] : []),
+  // The ticket key — the card's handle. Delete takes the whole card.
+  onTicketMenu(b: TicketBlock, ev: MouseEvent): void {
+    if (this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
+    toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
+      ...(b.task !== '—'
+        ? [{ icon: CTX_ICON.add, label: 'Add time', action: (): void => this.openDraft(b.task) }] : []),
+      // A running session can't be deleted — and it would resurrect the card.
+      b.hot
+        ? { icon: CTX_ICON.x, label: 'Delete', hint: 'live', disabled: true, action: (): void => {} }
+        : { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
+      ...(canBrowseTicket(this.jiraBaseUrl, b.task)
+        ? [{ separator: true as const },
+           { icon: CTX_ICON.globe, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) }]
+        : []),
+    ]);
+  }
+
+  // The type word — an entry's handle.
+  onEntryMenu(e: ManualEntry, ev: MouseEvent): void {
+    if (this.isFresh(e) || this.isDeleted(e) || this.taskDeleted(e.task)) return;
+    toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
+      { icon: CTX_ICON.edit, label: 'Edit', action: () => this.onRowDblClick(e) },
       // Hidden only when structurally impossible (no description to name the
       // template); an exact duplicate shows as a disabled fact instead.
       ...(this.canFavorite(e)
         ? [this.isInFavorites(e)
-          ? { icon: '★', label: 'In favorites', disabled: true,
+          ? { icon: CTX_ICON.star, label: 'In favorites', disabled: true,
               title: 'This exact task + description + duration is already saved', action: (): void => {} }
-          : { icon: '★', label: 'Add to favorites', action: () => this.addToFavorites(e) }]
+          : { icon: CTX_ICON.star, label: 'Add to favorites', action: () => this.addToFavorites(e) }]
         : []),
-      ...(this.canDelete(e)
-        ? [{ icon: '✕', label: 'Delete', danger: true, action: () => this.deleteEntry(e) }] : []),
-    ];
-    openCtxMenu(ev.clientX, ev.clientY, items);
+      { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteEntry(e) },
+    ]);
+  }
+
+  // The manual added row: its time is all there is to edit.
+  onAddedMenu(b: TicketBlock, m: ManualEntry, ev: MouseEvent): void {
+    if (this.foldedHasFresh(b) || this.foldedDeleted(b) || this.taskDeleted(b.task)) return;
+    toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
+      { icon: CTX_ICON.edit, label: 'Edit time', action: () => this.onRowDblClick(m) },
+      { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteFolded(b) },
+    ]);
   }
 
   // A favorite is task + name (description) — no description, nothing to save.
@@ -732,8 +760,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
-  // The manual added row folds several unnamed entries behind one glyph —
-  // its ⊕ IS the delete, and the whole aggregate burns on one undo window.
+  // The manual added row — deleted from its menu, one undo window.
   foldedDeleted(b: TicketBlock): boolean {
     return b.folded.length > 0 && b.folded.every(e => this.isDeleted(e));
   }
@@ -742,8 +769,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return b.folded.length > 0 && b.folded.every(e => this.removingIds.has(e.id));
   }
 
-  deleteFolded(b: TicketBlock, ev: MouseEvent): void {
-    ev.stopPropagation();
+  deleteFolded(b: TicketBlock): void {
     const alive = b.folded.filter(e => !this.isDeleted(e));
     if (alive.length === 0) return;
     // The folded row as the block's last content — the card's delete.
@@ -943,43 +969,73 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
-  // ─── Inline row edit (double-click) ────────────────────────────────────
+  // ─── The row form — inline edit (menu / double-click) and the Add time draft ─
 
   onRowDblClick(e: ManualEntry): void {
     if (!this.canEdit(e) || this.actionPending || this.editingId === e.id
         || this.isDeleted(e) || this.taskDeleted(e.task)) return;
+    this.draftTask = null;
     this.editingId = e.id;
     this.editMinutes = this.displayMinutes(e);
     this.editActivity = this.displayActivity(e);
     this.editPinnedActivity = this.editActivity;
     this.editDescription = this.displayDescription(e);
-    // Focus the description once the form morph renders — no select() on the
-    // frameless time (the highlight box reads as a glitch there); the time
-    // edits by wheel or an explicit click into it.
+    // Focus once the form morph renders. The description — no select() on
+    // the frameless time (the highlight box reads as a glitch there); the
+    // locked manual added form has only its time to offer.
+    this.focusForm(e.added ? '.c-dur.edit' : '.le-desc');
+  }
+
+  // Add time: a new row born as its own form at the foot of the card.
+  private openDraft(task: string): void {
+    if (this.actionPending || this.taskDeleted(task)) return;
+    this.editingId = null;
+    this.editPinnedActivity = '';
+    const options = this.activityOptions;
+    this.editActivity = (options.find(a => a.value === DEVELOPMENT_ACTIVITY) ?? options[0])?.value ?? DEVELOPMENT_ACTIVITY;
+    this.editDescription = '';
+    this.editMinutes = DRAFT_MINUTES;
+    this.draftTask = task;
+    this.focusForm('.le-desc');
+  }
+
+  private focusForm(selector: string): void {
     setTimeout(() => {
-      this.host.nativeElement.querySelector<HTMLInputElement>('.le-desc')?.focus();
+      this.host.nativeElement.querySelector<HTMLInputElement>(`.wl.editing ${selector}`)?.focus();
     }, 80);
   }
 
-  cancelEdit(): void {
+  cancelForm(): void {
     this.editingId = null;
+    this.draftTask = null;
   }
 
   // Description is required for everything but Development (daemon rule);
   // clearing it on a Development row is a legal explicit edit.
   get editDescNeeded(): boolean {
-    return this.editingId !== null
+    return (this.editingId !== null || this.draftTask !== null)
       && this.editDescription.trim() === ''
       && this.editActivity !== DEVELOPMENT_ACTIVITY;
   }
 
-  saveEdit(e: ManualEntry): void {
-    if (this.actionPending || this.editingId !== e.id) return;
+  // null = the Add time draft.
+  saveForm(e: ManualEntry | null): void {
+    if (this.actionPending) return;
+    if (e ? this.editingId !== e.id : this.draftTask === null) return;
     if (this.editDescNeeded) {
       this.host.nativeElement.querySelector<HTMLInputElement>('.le-desc')?.focus();
       return;
     }
     const description = this.editDescription.trim();
+    if (!e) {
+      const task = this.draftTask as string;
+      this.draftTask = null;
+      if (this.editMinutes <= 0) return;
+      // Bare Development lands on the ticket's manual added record — the
+      // daemon's rule; a described one becomes an entry of its own.
+      this.entryAdded.emit({ task, minutes: this.editMinutes, description, activity: this.editActivity });
+      return;
+    }
     const patch: ManualEntryPatch = {};
     if (this.editMinutes !== this.displayMinutes(e)) (patch as { minutes?: number }).minutes = this.editMinutes;
     if (this.editActivity !== this.displayActivity(e)) (patch as { activity?: string }).activity = this.editActivity;
@@ -1017,7 +1073,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const mode = this.speedPills.find(o => o.key === s.sensitivity)?.label ?? '—';
     return [
       ...(state === 'tracking'
-        ? [{ icon: CTX_ICON.pause, label: 'Pause', action: (): void => this.selectPill(s, 'pause') }] : []),
+        ? [{ icon: CTX_ICON.pause, label: 'Pause', hint: this.pauseHint(s), action: (): void => this.selectPill(s, 'pause') }] : []),
       // Resume = clear the manual pause by re-applying the current sensitivity;
       // the daemon closes the open manual pause as a side-effect.
       ...(state === 'paused'
@@ -1028,6 +1084,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
             action: (): void => openAnchoredMenu(anchor, this.modeMenu(s, anchor)) },
       ...this.branchRows(s),
     ];
+  }
+
+  // What pausing by hand would pre-empt: the time left before the idle
+  // auto-pause, were nothing else to happen.
+  private pauseHint(s: SessionDetail): string | undefined {
+    if (s.pauseEtaMs === null || s.pauseEtaMs === undefined) return undefined;
+    return `${this.formatDurationHm(Math.max(s.pauseEtaMs, 60_000))} to auto-pause`;
   }
 
   private modeMenu(s: SessionDetail, anchor: HTMLElement): readonly CtxMenuEntry[] {
@@ -1057,24 +1120,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       { separator: true },
       { branch: s.branch, copyIcon: CTX_ICON.copy, copiedIcon: CTX_ICON.check },
     ];
-  }
-
-  // The card's menu — answered by the block's own surfaces (lid, manual
-  // added row); described entries keep their entry menu. Delete takes the
-  // whole card.
-  onBlockContextMenu(b: TicketBlock, ev: MouseEvent): void {
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
-    openCtxMenu(ev.clientX, ev.clientY, [
-      ...(canBrowseTicket(this.jiraBaseUrl, b.task)
-        ? [{ icon: GLOBE_ICON, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) }]
-        : []),
-      // A running session can't be deleted — and it would resurrect the card.
-      b.hot
-        ? { icon: '✕', label: 'Delete', hint: 'live', disabled: true, action: (): void => {} }
-        : { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
-    ]);
   }
 
   // ─── Tracked deletes (session line ✕ / whole block) — entry-row undo twin ─

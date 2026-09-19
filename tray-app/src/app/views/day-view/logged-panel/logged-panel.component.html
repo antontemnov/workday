@@ -4,9 +4,11 @@
      order lifts it above the projected content (the day view's suggestions),
      the cold history stays below — one ngFor, so a card going hot/cold keeps
      its DOM node. Row order is fixed: live sessions, closed sessions
-     newest-first, the folded manual added row, then described entries
-     oldest-first. Edit swaps only a row's cells for controls — same geometry,
-     the block height never changes. -->
+     newest-first, the manual added row, then described entries oldest-first,
+     then the Add time draft. No right-click inside a card: the left column
+     is every row's handle — the ticket key, the pill, the type word open
+     that row's menu. Edit swaps only a row's cells for controls — same
+     geometry, the block height never changes. -->
 <div class="lp-table">
   <div class="lp-mid"><ng-content /></div>
   <!-- Where the cold history starts — the fly-chip's landing mark. -->
@@ -19,15 +21,15 @@
        [style.--heat]="b.heat || null"
        [class.hot]="b.hot"
        [class.quiet]="b.quiet"
-       [class.one]="b.rowCount <= 1"
+       [class.one]="b.rowCount <= 1 && draftTask !== b.task"
        [class.deleted]="taskDeleted(b.task)"
        [class.removing]="removingTasks.has(b.task)"
        [class.folding]="foldingTasks.has(b.task)"
        (contextmenu)="onCardContextMenu($event)">
 
-    <!-- The lid — read-only identity + day Σ; right-click = the card's menu -->
-    <div class="blk-id" (contextmenu)="onBlockContextMenu(b, $event)">
-      <span class="tkt">{{ b.task }}</span>
+    <!-- The lid — identity + day Σ; the key is the card's handle -->
+    <div class="blk-id">
+      <span class="tkt anc" (click)="onTicketMenu(b, $event)">{{ b.task }}</span>
       <span class="c-nm"
             [class.none]="!summaryOfTask(b.task)">{{ summaryOfTask(b.task) || '— name not cached' }}</span>
       <ng-container *ngIf="taskDeleted(b.task); else blockSumTpl">
@@ -57,38 +59,47 @@
         (undoRequested)="undoSessionDelete(s)" />
 
       <!-- 3px of air between the tracked rows and the declared ones -->
-      <div class="rgap" *ngIf="b.sessionRows.length > 0 && (b.folded.length > 0 || b.named.length > 0)"></div>
+      <div class="rgap" *ngIf="b.sessionRows.length > 0 && (b.folded.length > 0 || b.named.length > 0 || draftTask === b.task)"></div>
 
-      <!-- Manual added — the single folded row of unnamed declared time.
-           The ⊕ node IS the delete; the whole aggregate burns on one undo. -->
+      <!-- Manual added — the ticket's bare Development time, one record.
+           A tag, not a description; only its time is editable. -->
       <div class="wl manline"
-           *ngIf="b.folded.length > 0"
+           *ngIf="b.folded[0] as m"
+           [class.editing]="editingId === m.id"
            [class.deleted]="foldedDeleted(b)"
            [class.removing]="foldedRemoving(b)"
-           (contextmenu)="onBlockContextMenu(b, $event)">
-        <span class="c-type">{{ activityLabel(developmentActivity) }}</span>
-        <span class="c-ds man">
-          <button type="button" class="m-act"
-                  [disabled]="foldedDeleted(b)"
-                  (click)="deleteFolded(b, $event)"
-                  (dblclick)="$event.stopPropagation()">
-            <svg class="g-plus" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><circle cx="6.5" cy="4" r="3.5" fill="none" stroke="currentColor" stroke-width="0.8"/><line x1="6.5" y1="2" x2="6.5" y2="6" stroke="currentColor" stroke-width="1.25"/><line x1="4.5" y1="4" x2="8.5" y2="4" stroke="currentColor" stroke-width="1.25"/></svg>
-            <svg class="g-x" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="3.7" y1="1.2" x2="9.3" y2="6.8" stroke="currentColor" stroke-width="1.25"/><line x1="9.3" y1="1.2" x2="3.7" y2="6.8" stroke="currentColor" stroke-width="1.25"/></svg>
-          </button>
-          <span>manual added</span>
-        </span>
+           (dblclick)="onRowDblClick(m)">
+        <ng-container *ngIf="editingId === m.id; else manView">
+          <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: m, locked: true }" />
+        </ng-container>
+        <ng-template #manView>
+          <span class="c-type anc" (click)="onAddedMenu(b, m, $event)">{{ activityLabel(developmentActivity) }}</span>
+          <span class="c-ds man">
+            <span>manual added</span>
+            <svg class="mg" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true"><circle cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width="0.9"/><line x1="4.5" y1="2.5" x2="4.5" y2="6.5" stroke="currentColor" stroke-width="1.1"/><line x1="2.5" y1="4.5" x2="6.5" y2="4.5" stroke="currentColor" stroke-width="1.1"/></svg>
+          </span>
+        </ng-template>
         <ng-container *ngIf="foldedDeleted(b); else foldedDur">
           <button type="button" class="l-undo" (click)="undoFolded(b, $event)">↩ undo</button>
         </ng-container>
         <ng-template #foldedDur>
-          <span class="c-dur"
-                [class.wheel]="foldedHasFresh(b)"
-                (wheel)="onFoldedWheel(b, $event)">{{ showFoldedDur(b) ? formatDurationHm(b.foldedMinutes * 60000) : '' }}</span>
+          <input *ngIf="editingId === m.id; else foldedViewDur"
+                 class="c-dur edit"
+                 [(wdDuration)]="editMinutes"
+                 (durEnter)="saveForm(m)"
+                 (keydown.escape)="cancelForm(); $event.stopPropagation()"
+                 title="1h 15m · 90 · 45m — wheel: ±15m" />
+          <ng-template #foldedViewDur>
+            <span class="c-dur"
+                  [class.wheel]="foldedHasFresh(b)"
+                  (wheel)="onFoldedWheel(b, $event)">{{ showFoldedDur(b) ? formatDurationHm(displayMinutes(m) * 60000) : '' }}</span>
+          </ng-template>
         </ng-template>
       </div>
 
-      <!-- Described entries — ordinary records: dblclick edit in place,
-           right-click menu, delete with the 3s undo in the time slot. -->
+      <!-- Described entries — ordinary records: the type word opens the
+           entry's menu, dblclick edits in place, delete burns a 3s undo in
+           the time slot. -->
       <div class="wl ent"
            *ngFor="let e of b.named; trackBy: trackByEntry"
            [attr.data-eid]="e.id"
@@ -100,25 +111,13 @@
            [class.deleted]="isDeleted(e)"
            [class.removing]="removingIds.has(e.id)"
            [class.fav-done]="favDoneId === e.id"
-           (dblclick)="onRowDblClick(e)"
-           (contextmenu)="onRowContextMenu(e, $event)">
+           (dblclick)="onRowDblClick(e)">
 
         <ng-container *ngIf="editingId === e.id; else viewBand">
-          <div class="rf" (keydown.escape)="cancelEdit(); $event.stopPropagation()">
-            <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelEdit()">←</button>
-            <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveEdit(e)">
-              <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
-            </select>
-            <input class="le-desc"
-                   [class.need]="editDescNeeded"
-                   [(ngModel)]="editDescription"
-                   (keydown.enter)="saveEdit(e)"
-                   placeholder="description" />
-            <button type="button" class="le-save" [disabled]="actionPending" (click)="saveEdit(e)">Save</button>
-          </div>
+          <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: e, locked: false }" />
         </ng-container>
         <ng-template #viewBand>
-          <span class="c-type">{{ activityLabel(displayActivity(e)) }}</span>
+          <span class="c-type anc" (click)="onEntryMenu(e, $event)">{{ activityLabel(displayActivity(e)) }}</span>
           <span class="c-ds" *ngIf="favDoneId !== e.id; else favNote">{{ displayDescription(e) }}</span>
           <ng-template #favNote><span class="c-ds fav-note">★ added to favorites</span></ng-template>
         </ng-template>
@@ -132,8 +131,8 @@
           <input *ngIf="editingId === e.id; else viewDur"
                  class="c-dur edit"
                  [(wdDuration)]="editMinutes"
-                 (durEnter)="saveEdit(e)"
-                 (keydown.escape)="cancelEdit(); $event.stopPropagation()"
+                 (durEnter)="saveForm(e)"
+                 (keydown.escape)="cancelForm(); $event.stopPropagation()"
                  title="1h 15m · 90 · 45m — wheel: ±15m" />
           <ng-template #viewDur>
             <span class="c-dur"
@@ -143,6 +142,36 @@
         </ng-template>
       </div>
 
+      <!-- Add time — a new row born as its own form. Saved bare (Development,
+           no description) it lands on manual added; described, it becomes
+           an entry. -->
+      <div class="wl ent editing draft" *ngIf="draftTask === b.task">
+        <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: null, locked: false }" />
+        <input class="c-dur edit"
+               [(wdDuration)]="editMinutes"
+               (durEnter)="saveForm(null)"
+               (keydown.escape)="cancelForm(); $event.stopPropagation()"
+               title="1h 15m · 90 · 45m — wheel: ±15m" />
+      </div>
+
     </div>
   </div>
 </div>
+
+<!-- The row form — one at a time: an entry's edit, the manual added row's
+     time-only edit (locked), or the Add time draft (no entry yet). -->
+<ng-template #rowForm let-e let-locked="locked">
+  <div class="rf" (keydown.escape)="cancelForm(); $event.stopPropagation()">
+    <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelForm()">←</button>
+    <select class="le-act" [(ngModel)]="editActivity" [disabled]="locked" (keydown.enter)="saveForm(e)">
+      <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+    </select>
+    <input class="le-desc"
+           [class.need]="editDescNeeded"
+           [(ngModel)]="editDescription"
+           [disabled]="locked"
+           (keydown.enter)="saveForm(e)"
+           placeholder="description" />
+    <button type="button" class="le-save" [disabled]="actionPending" (click)="saveForm(e)"><span>Save</span></button>
+  </div>
+</ng-template>
