@@ -783,14 +783,14 @@ export class HttpServer {
 
   private async handleSensitivity(body: Record<string, unknown>): Promise<ApiResponse<SensitivityResponse>> {
     const tracker = this.deps.sessionTracker;
-    // { level: 'low' | 'normal' | 'patient', repo?: string }
+    // { level: 'low' | 'normal' | 'patient', repo?: string, keepPause?: boolean }
     const rawLevel = typeof body.level === 'string' ? body.level : '';
     if (!isSensitivityLevel(rawLevel)) {
       return { ok: false, error: `Invalid level: ${rawLevel}. Use low|normal|patient` };
     }
     const repo = typeof body.repo === 'string' ? body.repo : undefined;
 
-    tracker.setSensitivity(rawLevel, repo);
+    tracker.setSensitivity(rawLevel, repo, body.keepPause === true);
     tracker.flush();
     // Re-run evaluator so the new maxTicks takes effect immediately.
     await this.deps.forceTick();

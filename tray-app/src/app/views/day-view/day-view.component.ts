@@ -66,7 +66,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // Jira site root (status poll) — null hides the browse links.
   @Input() jiraBaseUrl: string | null = null;
 
-  @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
+  @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill; keepPause?: boolean }>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();

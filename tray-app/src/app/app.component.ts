@@ -407,11 +407,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   // DayView mode pill click → existing pause / sensitivity action.
-  async onPillSelected(e: { session: SessionDetail; pill: SensitivityPill }): Promise<void> {
+  async onPillSelected(e: { session: SessionDetail; pill: SensitivityPill; keepPause?: boolean }): Promise<void> {
     if (e.pill === 'pause') {
       await this.runAction(() => this.api.pause(e.session.repo));
     } else {
-      await this.runAction(() => this.api.sensitivity(e.pill as SensitivityLevel, e.session.repo));
+      await this.runAction(() => this.api.sensitivity(e.pill as SensitivityLevel, e.session.repo, e.keepPause));
     }
   }
 

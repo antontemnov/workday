@@ -61,7 +61,7 @@ export abstract class WorkdayApiService {
   abstract getStatus(): Promise<ApiResponse<StatusResponse>>;
   abstract pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>>;
   abstract resume(): Promise<ApiResponse<{ resumed: string[] }>>;
-  abstract sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>>;
+  abstract sensitivity(level: SensitivityLevel, repo?: string, keepPause?: boolean): Promise<ApiResponse<SensitivityResponse>>;
   // Set a ticket's manual added total — absolute, 0 removes the record.
   // Optional date (YYYY-MM-DD) for past days — omitted = the tracked day.
   abstract setManualAdded(task: string, minutes: number, date?: string): Promise<ApiResponse<ManualAddedResponse>>;

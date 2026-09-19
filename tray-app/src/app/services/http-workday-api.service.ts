@@ -183,8 +183,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/resume');
   }
 
-  override async sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>> {
-    return this.post('/api/sensitivity', repo ? { level, repo } : { level });
+  override async sensitivity(level: SensitivityLevel, repo?: string, keepPause?: boolean): Promise<ApiResponse<SensitivityResponse>> {
+    return this.post('/api/sensitivity', { level, ...(repo ? { repo } : {}), ...(keepPause ? { keepPause: true } : {}) });
   }
 
   override async setManualAdded(task: string, minutes: number, date?: string): Promise<ApiResponse<ManualAddedResponse>> {

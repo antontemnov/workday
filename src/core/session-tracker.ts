@@ -558,14 +558,16 @@ export class SessionTracker {
    * Set sensitivity for a repo (perRepo override) or global default.
    * Persisted to config.json immediately. Auto-resumes manual pause on the
    * affected repos as a side effect — switching off Pause via the scale pill.
+   * keepPause skips that: the mode changes under a session that stays paused.
    */
-  public setSensitivity(level: SensitivityLevel, repoName?: string): void {
+  public setSensitivity(level: SensitivityLevel, repoName?: string, keepPause = false): void {
     if (repoName) {
       this.config.sensitivity.perRepo[repoName] = level;
     } else {
       this.config.sensitivity.default = level;
     }
     writeConfig(this.config);
+    if (keepPause) return;
 
     // Side effect: any manual pause on the affected repo(s) is closed —
     // picking a sensitivity pill implicitly resumes the session.

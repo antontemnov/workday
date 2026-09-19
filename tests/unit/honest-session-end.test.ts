@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { SessionTracker } from '../../src/core/session-tracker.js';
 import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import { trimTrailingPauses, computeEffectiveDuration } from '../../src/core/daily-log.js';
-import { ClosedBy, PauseSource } from '../../src/core/types.js';
+import { ClosedBy, PauseSource, SensitivityLevel } from '../../src/core/types.js';
 import type { AppConfig, PollResult, Session, Pause } from '../../src/core/types.js';
 
 const POLL_SECONDS = 30;
@@ -256,6 +256,29 @@ test('idleCloseHours: 0 disables auto-close', () => {
   const { tracker, session, pause } = makeIdleSession(0);
   tracker.closeIdleSessions(Date.parse(pause.from) + 24 * HOUR_MS);
   assert.equal(session.closedBy, null);
+});
+
+console.log('\nManual pause and the mode');
+
+test('setSensitivity resumes a manually paused session', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  tracker.pauseRepoSession(session.repo);
+  tracker.setSensitivity(SensitivityLevel.Patient, session.repo);
+  assert.equal(tracker.hasOpenPause(session), false);
+  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Patient);
+});
+
+test('keepPause changes the mode under a session that stays paused', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  tracker.pauseRepoSession(session.repo);
+  tracker.setSensitivity(SensitivityLevel.Low, session.repo, true);
+  assert.equal(tracker.hasOpenPause(session), true);
+  assert.equal(session.pauses[session.pauses.length - 1].source, PauseSource.Manual);
+  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Low);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

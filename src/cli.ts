@@ -361,12 +361,15 @@ async function handleSensitivity(args: string[]): Promise<void> {
     SensitivityLevel.Patient,
   ];
   if (!validLevels.includes(level as SensitivityLevel)) {
-    console.log('Usage: workday sensitivity <low|normal|patient> [repo]');
+    console.log('Usage: workday sensitivity <low|normal|patient> [repo] [--keep-pause]');
     return;
   }
-  const repo = args[1];
+  const rest = args.slice(1);
+  const keepPause = rest.includes('--keep-pause');
+  const repo = rest.find(a => a !== '--keep-pause');
   const body: Record<string, unknown> = { level };
   if (repo) body.repo = repo;
+  if (keepPause) body.keepPause = true;
 
   const result = await apiPost<SensitivityResponse>('/api/sensitivity', body);
   if (!result.ok) {
@@ -1810,6 +1813,7 @@ Usage:
   workday resume             Resume all paused sessions
   workday sensitivity <level>             Set global default (low|normal|patient)
   workday sensitivity <level> <repo>      Set per-repo sensitivity
+  workday sensitivity <level> <repo> --keep-pause   Same, a manually paused session stays paused
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
   workday task-delete <KEY> [--date DATE]              Delete a ticket's tracked block (sessions + manual adds)
   workday log <task> <min> ["<desc>"] [--activity T]   Log manual time (today; desc optional for Development)

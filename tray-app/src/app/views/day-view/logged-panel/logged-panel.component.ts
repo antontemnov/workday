@@ -127,7 +127,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // Pause / resume / mode of a live session — the day view's pill channel:
   // 'pause' → pause API, a level → sensitivity API (which also resumes).
-  @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
+  @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill; keepPause?: boolean }>();
   @Output() patchCommitted = new EventEmitter<{ id: string; patch: ManualEntryPatch }>();
   // Fired when the undo window closes — the entry is gone for the user; the
   // parent sends the actual DELETE (undo never re-creates server-side).
@@ -1088,9 +1088,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     toggleAnchoredMenu(anchor, () => this.liveSessionMenu(s, anchor));
   }
 
-  // Tracking: Pause · Mode ›. Paused: Resume · Mode as a disabled fact (a
-  // manual pause freezes the scale). Waiting: Mode › only — a manual resume
-  // there is a no-op, the evaluator re-pauses on the next tick.
+  // Tracking: Pause · Mode ›. Paused: Resume · Mode › (the mode changes under
+  // the pause, the session stays paused). Waiting: Mode › only — a manual
+  // resume there is a no-op, the evaluator re-pauses on the next tick.
   private liveSessionMenu(s: SessionDetail, anchor: HTMLElement): readonly CtxMenuEntry[] {
     const state = sessionRowState(s);
     const mode = this.speedPills.find(o => o.key === s.sensitivity)?.label ?? '—';
@@ -1101,10 +1101,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       // the daemon closes the open manual pause as a side-effect.
       ...(state === 'paused'
         ? [{ icon: CTX_ICON.play, label: 'Resume', action: (): void => this.selectPill(s, s.sensitivity) }] : []),
-      state === 'paused'
-        ? { icon: CTX_ICON.mode, label: 'Mode', hint: `${mode} · paused`, disabled: true, action: (): void => {} }
-        : { icon: CTX_ICON.mode, label: 'Mode', hint: mode, nav: 'go' as const,
-            action: (): void => openAnchoredMenu(anchor, this.modeMenu(s, anchor)) },
+      { icon: CTX_ICON.mode, label: 'Mode', hint: mode, nav: 'go' as const,
+        action: (): void => openAnchoredMenu(anchor, this.modeMenu(s, anchor)) },
       ...this.branchRows(s),
     ];
   }
@@ -1126,14 +1124,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         icon: o.key === s.sensitivity ? CTX_ICON.check : CTX_ICON.none,
         label: o.label,
         hint: o.hint,
-        action: (): void => { if (o.key !== s.sensitivity) this.selectPill(s, o.key); },
+        // Setting a mode resumes a manual pause (that is what Resume rides
+        // on) — a paused session asks the daemon to keep it.
+        action: (): void => { if (o.key !== s.sensitivity) this.selectPill(s, o.key, sessionRowState(s) === 'paused'); },
       })),
     ];
   }
 
-  private selectPill(session: SessionDetail, pill: SensitivityPill): void {
+  private selectPill(session: SessionDetail, pill: SensitivityPill, keepPause = false): void {
     if (this.actionPending) return;
-    this.pillSelected.emit({ session, pill });
+    this.pillSelected.emit({ session, pill, ...(keepPause ? { keepPause } : {}) });
   }
 
   // The branch closes every session menu — read it whole, click to copy.

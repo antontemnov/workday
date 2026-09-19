@@ -433,11 +433,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: { resumed: [] } };
   }
 
-  // Mirrors the daemon: setting the sensitivity also clears a manual pause.
-  async sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>> {
+  // Mirrors the daemon: setting the sensitivity also clears a manual pause,
+  // unless keepPause asks to leave it.
+  async sensitivity(level: SensitivityLevel, repo?: string, keepPause?: boolean): Promise<ApiResponse<SensitivityResponse>> {
     if (repo) {
       this.mockRepoSensitivity.set(repo, level);
-      this.mockManualPaused.delete(repo);
+      if (!keepPause) this.mockManualPaused.delete(repo);
     }
     return { ok: true, data: { repo: repo ?? null, level } };
   }
