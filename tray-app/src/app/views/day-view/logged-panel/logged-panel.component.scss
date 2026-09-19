@@ -189,7 +189,8 @@
 }
 
 // «manual added» — a tag, not a description: an outline, neutral ink, the ⊕
-// mark on the right, box-centred.
+// mark on the right. The mark sits 0.5px above the box centre (a centred
+// flex item moves by half its margin).
 .c-ds.man {
   font-style: normal;
   justify-self: start;
@@ -208,7 +209,7 @@
   box-shadow: inset 0 0 0 1px rgba(205, 214, 244, 0.13);
   background: rgba(205, 214, 244, 0.03);
 
-  .mg { flex-shrink: 0; color: #6c7086; }
+  .mg { flex-shrink: 0; color: #6c7086; margin-bottom: 1px; }
 }
 
 // Time — the stable right column; it never leaves its slot. Row times are
