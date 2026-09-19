@@ -35,6 +35,7 @@
     border-color: rgba(205, 214, 244, 0.3);
 
     .s-title { color: #a6adc8; }
+    .chip.key { color: #aeb6cf; }
   }
 
   // The collapse below animates max-height, which only interpolates from a
@@ -181,9 +182,9 @@
   50%      { border-color: rgba(249, 226, 175, 0.22); }
 }
 
-// Ticket badge. Resolved: the session badges' candy with the light switched
-// off — low dye densities, muted ink — so it cannot read as already-logged;
-// the lit amber star in the indicator slot carries the signal instead.
+// Ticket badge. Resolved: a bare key — the lit amber star and muted text, no
+// box: glass belongs to controls, and the key of a ticket block is text too.
+// The star stands where the session lamp and the "task?" star do.
 .chip {
   justify-self: start;
   position: relative;
@@ -195,14 +196,11 @@
   border-radius: 7px;
   white-space: nowrap;
 
+  // Hover lifts the key by the title's own step, on the title's timing.
   &.key {
-    @include glass.glass-candy((205 214 244), (228 233 250), #8b90ab);
-    --m1: 0.08;
-    --m2: 0.03;
-    --m3: 0.06;
-    --eg: 0.12;
-    --ec: 0.14;
-    --pool: 0.1;
+    padding: 0 0 0 7px;
+    color: #9399b2;
+    transition: color 0.15s ease;
   }
 
   // No ticket resolved yet — a dashed neutral placeholder with a smouldering
@@ -225,11 +223,9 @@
   }
 }
 
-// Indicator slot inside the badge (session-lamp parity), riding above the
-// candy's front blik.
+// Indicator slot inside the badge (session-lamp parity).
 .k-ind {
   position: relative;
-  z-index: 3;
   width: 9px;
   height: 9px;
   margin-right: 5px;
