@@ -226,7 +226,7 @@ test('lost session DELETE: the tracked row returns after the TTL', () => {
   advance(46_000);
   h.refresh([e5], [s1]);
   assert.equal(blockOf(h, 'ATL-3')?.sessions.length, 1, 'session row resurrects');
-  assert.equal(blockOf(h, 'ATL-3')?.trkMs, 30 * 60_000);
+  assert.equal(blockOf(h, 'ATL-3')?.totalMs, 45 * 60_000, 'session time is back in the block Σ');
   assert.equal(h.lastDiff(), 0);
 });
 

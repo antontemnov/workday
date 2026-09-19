@@ -10,18 +10,15 @@
   padding-bottom: 12px;
 }
 
-// ─── Ticket block — one identity over the day's worklog rows ──────────────
+// ─── Ticket block — one identity over the day's rows ──────────────────────
 // The identity (key | name | Σ) prints once in the lid; every row underneath
-// is a future worklog on the same shared grid (type | explains-itself | time).
+// sits on the body's shared grid.
 .blk {
   @include glass.glass-card;
   padding: 3px 8px 5px;
   margin-bottom: 8px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  // The breakdown link's hairline — glass, not green: the trunk carries
-  // structure, colour in the feed is taken by roles.
-  --cn: rgba(205, 214, 244, 0.17);
   transition: box-shadow 0.2s ease;
 
   &:last-child { margin-bottom: 0; }
@@ -43,51 +40,42 @@
   grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
   gap: 8px;
   align-items: center;
-  height: 23px;
+  height: 26px;
   margin: -3px -8px 0;
   padding: 3px 8px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.014));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.018));
   border-radius: 8px 8px 0 0;
 
   .sum {
     color: #cdd6f4;
+    font-size: 11.5px;
     font-weight: 700;
     white-space: nowrap;
     justify-self: end;
   }
 }
 
-// 1px only: the lid's own 3px bottom padding already carries the separation —
-// more margin here read as a hole between header and rows.
+// The body grid: type | repo | · range | · ⊸ N | · diff | time. Only repo
+// stretches; the rest is max-content with a floor on the cell, so range
+// sits under range, ⊸ under ⊸, diff under diff, and the whole tail hugs the
+// time column.
 .blk-body {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  grid-template-columns: 74px minmax(0, 1fr) max-content max-content max-content minmax(48px, max-content);
   gap: 0 8px;
-  margin-top: 1px;
+  padding-top: 2px;
 }
 
-// Ticket chip — logged species: the shared candy capsule, dyed mauve.
-.c-key {
-  display: inline-flex;
-  align-items: center;
-  height: 17px;
-  font-weight: 600;
-  padding: 0 7px;
-  border-radius: 7px;
+// Ticket key — plain text centred in the type column: the accent is carried
+// by size, weight and a faint glow, never by hue or glass.
+.tkt {
+  justify-self: center;
   white-space: nowrap;
-  justify-self: start;
-  @include glass.glass-candy((203 166 247), (228 205 252), #cba6f7);
-
-  // Key without a Jira title — same glass, quieter dye.
-  &.no-title {
-    --ink: #9a8ec4;
-    --m1: 0.09;
-    --m2: 0.03;
-    --m3: 0.06;
-    --eg: 0.14;
-    --ec: 0.18;
-    --pool: 0.12;
-  }
+  color: #cdd6f4;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-shadow: 0 0 8px rgba(205, 214, 244, 0.3), 0 0 2px rgba(205, 214, 244, 0.18);
 }
 
 // Name — a long tail fades out instead of a hard ellipsis cut; the mask only
@@ -97,6 +85,7 @@
   overflow: hidden;
   white-space: nowrap;
   color: #bac2de;
+  font-size: 11.5px;
   cursor: default;
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
           mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
@@ -125,10 +114,11 @@
   font-weight: 700;
 }
 
-// The middle column answers one question — how the row explains itself:
-// evidence (green), a description (grey italic), or the admission that
-// there's nothing to explain (mauve ⊕ manual added).
+// The middle columns answer one question — how the row explains itself: a
+// description (grey italic), or the admission that there's nothing to
+// explain (mauve ⊕ manual added).
 .c-ds {
+  grid-column: 2 / 6;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -136,16 +126,6 @@
   color: #7f849c;
   font-style: italic;
   font-size: 10.5px;
-}
-
-.c-ds.trk {
-  font-style: normal;
-  color: rgba(166, 227, 161, 0.7);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-
-  svg { flex-shrink: 0; opacity: 0.8; }
 }
 
 .c-ds.man {
@@ -161,13 +141,14 @@
 }
 
 // Time — the stable right column; it never leaves its slot. Row times are
-// parts, not results: detail-sized and detail-coloured, so the header Σ
+// parts, not results: one muted ink down the whole column, so the header Σ
 // stays the card's only loud number. The fresh draft keeps its always-on
 // wheel; edit swaps the span for a frameless input (mauve digits only — no
 // box), same geometry.
 .wl .c-dur {
-  color: #7f849c;
-  font-size: 10.5px;
+  grid-column: 6;
+  color: #a6adc8;
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
   text-align: right;
@@ -185,13 +166,12 @@
   }
 
   &.edit {
-    grid-column: 3;
     width: 64px;
     height: 18px;
     background: transparent;
     color: #cba6f7;
     font-family: inherit;
-    font-size: 10.5px;
+    font-size: 11px;
     outline: none;
   }
 }
@@ -230,6 +210,7 @@
 }
 
 .l-undo {
+  grid-column: 6;
   justify-self: end;
   height: 16px;
   display: inline-flex;
@@ -253,7 +234,7 @@
 
 // ─── Edit form — the row's cells replaced by controls in place ────────────
 .rf {
-  grid-column: 1 / 3;
+  grid-column: 1 / 6;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -339,116 +320,88 @@
   50%      { border-color: rgba(203, 166, 247, 0.25); }
 }
 
-// ─── Observed row + breakdown ─────────────────────────────────────────────
-// Breakdown toggles by dblclick / context menu — no extra button.
-.wl.trkline {
-  cursor: default;
-  position: relative;
-
-  // The trunk: grows from the centre of the o—o glyph (89px = 74 + 8 + half
-  // of the 15px glyph) down to the middle of the last breakdown line —
-  // 10px to the row's bottom edge + 18px per line − 9px back up. It lives on
-  // the row because its length is the child count (--n); the height
-  // transition retracts it in step with the rows' 0fr collapse.
-  &::after {
-    content: '';
-    position: absolute;
-    left: 89px;
-    top: 10px;
-    width: 1px;
-    height: 0;
-    background: var(--cn);
-    transition: height 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  &.open::after { height: calc(var(--n, 1) * 18px + 1px); }
-}
-
-// Expand/collapse inside the block — grid-rows mechanic: lines stay in the
-// DOM, the wrapper animates 0fr→1fr both ways; the lines fade and slide in a
-// touch behind the height.
-.brk {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-
-  &.open { grid-template-rows: 1fr; }
-}
-
-// The clip doubles as the breakdown's column master: max-content columns
-// resolve across ALL lines (via subgrid rows), so every portion — range,
-// commit count, ±churn — sits exactly one under another. The 103px indent
-// puts the first character right under the "2" of "2 sessions".
-.brk-clip {
-  overflow: hidden;
-  min-height: 0;
-  padding-left: 103px;
-  display: grid;
-  grid-template-columns: max-content max-content 13px max-content max-content max-content 1fr max-content;
-  column-gap: 8px;
-}
-
-.bk {
-  position: relative;
+// ─── Session rows ─────────────────────────────────────────────────────────
+// [type] repo · range · ⊸ N · ±churn | time — a closed session is a 20px row
+// wearing the same type word as a manual Development row, without glass.
+.sr {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
   align-items: center;
-  height: 18px;
-  font-size: 10px;
-  color: #7f849c;
-  font-variant-numeric: tabular-nums;
-  opacity: 0;
-  transform: translateY(-3px);
-  transition: opacity 0.16s ease, transform 0.2s ease, height 0.22s ease;
+  height: 20px;
 
-  .brk.open & {
-    opacity: 1;
-    transform: none;
+  > .repo {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 10.5px;
+    color: #8b90ab;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+            mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
   }
 
-  // The bend to the trunk: 9px, stopping 5px short of the text — a stroke,
-  // not a pointer.
-  &::before {
-    content: '';
-    position: absolute;
-    left: -14px;
-    top: 50%;
-    width: 9px;
-    height: 1px;
-    background: var(--cn);
-  }
-
-  .rng  { color: #8b90ab; }
-  .csep { color: #45475a; }
-  .s-com { color: #a6adc8; }
-  .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
-  .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
-
-  .sdur {
-    grid-column: 8;
-    grid-row: 1;
+  > .dur {
+    grid-column: 6;
     justify-self: end;
     font-weight: 700;
     color: #a6adc8;
+    font-size: 11px;
+    white-space: nowrap;
   }
 
-  .m-act { grid-column: 3; grid-row: 1; }
-
+  // Undo window: the identity of the row is struck, its evidence just dims.
   &.deleted {
-    .rng, .sdur, .s-com, .csep, .plus, .minus { opacity: 0.38; text-decoration: line-through; }
-    .m-act svg { opacity: 0.28; }
+    .c-type, > .repo, .sc.rng .rv { opacity: 0.38; text-decoration: line-through; }
+    .sc.com, .sc.diff { opacity: 0.38; }
   }
 
   &.removing {
-    opacity: 0;
     height: 0;
+    opacity: 0;
     overflow: hidden;
+    transition: height 0.22s ease, opacity 0.18s ease;
   }
 }
 
-// The glyph-as-button (o—o in the breakdown, ⊕ on the manual added row):
+// A value cell: the separator dot leads its value and stands on the column
+// boundary — every dot of a column lines up.
+.sc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -2px;
+  font-size: 10.5px;
+  color: #8b90ab;
+  white-space: nowrap;
+
+  .csep { color: #45475a; font-style: normal; }
+  .s-com { color: #7f849c; }
+  .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
+  .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
+
+  &.rng  { min-width: calc(12ch + 6px); }
+  &.com  { min-width: calc(3ch + 25px); }
+  &.diff { min-width: calc(7ch + 12px); }
+}
+
+// 3px of air between the tracked rows and the declared ones.
+.rgap {
+  grid-column: 1 / -1;
+  height: 3px;
+}
+
+// ─── Anchors — the left column is the row's handle ────────────────────────
+// A click opens the row's menu from under the anchor; it stays lit (.armed)
+// while the menu lives. The type words sit in overflow-hidden cells where a
+// glow would clip, so theirs is ink only.
+.anc {
+  cursor: pointer;
+  transition: color 0.18s ease, filter 0.18s ease;
+}
+
+.c-type.anc:hover, .c-type.anc.armed { color: #cdd6f4; }
+
+// The glyph-as-button (⊸ on a closed session, ⊕ on the manual added row):
 // hover morphs it into ✕, click starts the shared undo pipeline.
 .m-act {
   width: 13px;
@@ -474,28 +427,19 @@
   &:disabled { pointer-events: none; }
 }
 
-.m-undo {
-  grid-column: 4 / 8;
-  grid-row: 1;
-  justify-self: start;
-  height: 14px;
-  padding: 0 6px;
-  font-size: 9px;
-}
-
 // The block's last content goes down with the whole card in one motion —
 // inside the fold the row keeps its height so only the card's own collapse
 // is seen, not a row death followed by a vanishing husk.
-.blk.folding .wl.removing { height: 20px; opacity: 1; }
-.blk.folding .bk.removing { height: 18px; opacity: 1; }
+.blk.folding .wl.removing,
+.blk.folding .sr.removing { height: 20px; opacity: 1; }
 
 // Whole-block delete: everything struck while the undo burns; the collapse
 // itself is a measured inline fold (blocks have no fixed height cap).
 .blk.deleted {
-  .c-key, .c-nm, .c-type, .c-ds, .wl .c-dur { opacity: 0.38; text-decoration: line-through; }
+  .tkt, .c-nm, .c-type, .c-ds, .wl .c-dur,
+  .sr > .repo, .sr .sc.rng .rv, .sr > .dur { opacity: 0.38; text-decoration: line-through; }
+  .sr .sc.com, .sr .sc.diff { opacity: 0.38; }
   .c-ds .m-act svg { opacity: 0.28; }
-  .brk { opacity: 0.38; }
-  .wl.trkline::after { opacity: 0.38; }
 }
 
 @keyframes row-in {

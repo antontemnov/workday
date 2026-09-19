@@ -8,7 +8,8 @@ import {
 } from '../../../models/workday.models';
 import { activityLabel, activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
-import { openCtxMenu } from '../ctx-menu.util';
+import { CtxMenuEntry, openCtxMenu, toggleAnchoredMenu } from '../ctx-menu.util';
+import { CTX_ICON } from '../ctx-icons.util';
 import { FEED_SORT_DEFAULT, FeedSortMode } from '../feed-sort.util';
 
 const FRESH_WINDOW_MS = 4000;
@@ -38,19 +39,18 @@ const POP_STAGGER_MS = 80;
 const REORDER_DELAY_MS = 260;
 const REORDER_FLIGHT_MS = 440;
 
-// One ticket's day — the identity printed once over the worklog rows it
-// carries. Rows: observed Development (sessions + breakdown), the single
-// folded "manual added" row, then each described entry. All sums are
-// DISPLAY sums: a row in its undo window has already left them.
+// One ticket's day — the identity printed once over the rows it carries.
+// Rows: each closed session, the single folded "manual added" row, then
+// each described entry. All sums are DISPLAY sums: a row in its undo window
+// has already left them.
 interface TicketBlock {
   readonly task: string;                        // ticket key, or '—' for taskless
   readonly at: string;                          // newest fact — feed position
-  readonly sessions: readonly SessionDetail[];  // closed, oldest first
+  readonly sessions: readonly SessionDetail[];  // closed, newest first
   readonly folded: readonly ManualEntry[];      // unnamed adds behind one row
   readonly named: readonly ManualEntry[];       // described entries, oldest first
   readonly rowCount: number;
   readonly totalMs: number;                     // header Σ
-  readonly trkMs: number;                       // observed row share
   readonly foldedMinutes: number;               // manual added row share
 }
 
@@ -66,8 +66,8 @@ export interface ArriveFrom {
 
 /**
  * History feed of the day view — ticket blocks newest-first: one identity
- * header (the lid) per ticket, worklog rows inside. Observed time is the top
- * row with its session breakdown; unnamed manual time folds into a single
+ * header (the lid) per ticket, worklog rows inside. Closed sessions stand as
+ * rows of their own on top; unnamed manual time folds into a single
  * "⊕ manual added" row; described entries keep their own rows with the
  * usual edit/delete/favorite mechanics. Every local change is reported to
  * the parent as a live diff so the Day total moves in the same instant;
@@ -440,7 +440,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
     const blocks: TicketBlock[] = [];
     for (const [task, b] of byTask) {
-      b.sessions.sort((x, y) => x.startedAt.localeCompare(y.startedAt));
+      b.sessions.sort((x, y) => y.startedAt.localeCompare(x.startedAt));
       b.named.sort((x, y) => x.createdAt.localeCompare(y.createdAt));
       const trkMs = b.sessions.reduce(
         (sum, s) => sum + (this.sesGone(s.id) ? 0 : s.effectiveDurationMs), 0);
@@ -459,9 +459,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         sessions: b.sessions,
         folded: b.folded,
         named: b.named,
-        rowCount: (b.sessions.length > 0 ? 1 : 0) + (b.folded.length > 0 ? 1 : 0) + b.named.length,
+        rowCount: b.sessions.length + (b.folded.length > 0 ? 1 : 0) + b.named.length,
         totalMs: trkMs + (foldedMinutes + namedMinutes) * 60_000,
-        trkMs,
         foldedMinutes,
       });
     }
@@ -495,8 +494,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return b.totalMs > 0 ? this.formatDurationHm(b.totalMs) : '';
   }
 
-  trkDur(b: TicketBlock): string {
-    return b.rowCount >= 2 && b.trkMs > 0 ? this.formatDurationHm(b.trkMs) : '';
+  showSessionDur(b: TicketBlock): boolean {
+    return b.rowCount >= 2;
   }
 
   // Transient states (draft wheel, edit input, undo) always own the slot —
@@ -919,41 +918,39 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
-  // ─── Observed row (sessions + breakdown) ────────────────────────────────
+  // ─── Closed session rows ────────────────────────────────────────────────
 
-  // Task keys whose breakdown is open. Survives refreshes within the instance;
-  // resets on tab switch (feed re-creation) — that matches a "peek" gesture.
-  expandedTasks = new Set<string>();
-
-  isExpandedTask(task: string): boolean {
-    return this.expandedTasks.has(task);
+  repoName(s: SessionDetail): string {
+    return s.repo.split('/').pop() ?? s.repo;
   }
 
-  toggleTracked(task: string): void {
-    if (this.expandedTasks.has(task)) this.expandedTasks.delete(task);
-    else this.expandedTasks.add(task);
+  // The type word is the row's anchor: its menu grows from under it.
+  onClosedSessionMenu(s: SessionDetail, ev: MouseEvent): void {
+    ev.stopPropagation();
+    if (this.sessionDeleted(s) || this.taskDeleted(s.task ?? '—')) return;
+    toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
+      { icon: CTX_ICON.x, label: 'Delete session', danger: true, action: () => this.deleteSessionRow(s) },
+      ...this.branchRows(s),
+    ]);
   }
 
-  // The trunk's length: one 18px line per breakdown row still standing.
-  brkCount(b: TicketBlock): number {
-    return b.sessions.filter(s => !this.sesRemovingIds.has(s.id)).length;
+  // The branch closes every session menu — read it whole, click to copy.
+  private branchRows(s: SessionDetail): readonly CtxMenuEntry[] {
+    if (!s.branch) return [];
+    return [
+      { separator: true },
+      { branch: s.branch, copyIcon: CTX_ICON.copy, copiedIcon: CTX_ICON.check },
+    ];
   }
 
-  // The card's menu — answered by the block's own surfaces (lid, observed
-  // row, manual added row); described entries keep their entry menu. Delete
-  // takes the whole card, exactly like the old tracked card did.
+  // The card's menu — answered by the block's own surfaces (lid, manual
+  // added row); described entries keep their entry menu. Delete takes the
+  // whole card.
   onBlockContextMenu(b: TicketBlock, ev: MouseEvent): void {
     ev.preventDefault();
     ev.stopPropagation();
     if (this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
     openCtxMenu(ev.clientX, ev.clientY, [
-      ...(b.sessions.length > 0
-        ? [{
-            icon: '⤢',
-            label: this.isExpandedTask(b.task) ? 'Hide details' : 'Show details',
-            action: () => this.toggleTracked(b.task),
-          }]
-        : []),
       ...(canBrowseTicket(this.jiraBaseUrl, b.task)
         ? [{ icon: GLOBE_ICON, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) }]
         : []),
@@ -967,8 +964,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.sesDeleteTimers.has(s.id) || this.sesRemovingIds.has(s.id);
   }
 
-  deleteSessionRow(s: SessionDetail, ev: MouseEvent): void {
-    ev.stopPropagation();
+  deleteSessionRow(s: SessionDetail, ev?: MouseEvent): void {
+    ev?.stopPropagation();
     if (this.sessionDeleted(s)) return;
     // The last line of the block's last row — the card's delete.
     if (!this.blockHasOtherSessionContent(s)) {
@@ -1108,19 +1105,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   summaryOfTask(task: string): string {
     return this.issueSummaries[task] ?? '';
-  }
-
-  sessionsLabel(b: TicketBlock): string {
-    const n = b.sessions.length;
-    return `${n} session${n === 1 ? '' : 's'}`;
-  }
-
-  // Day span of the block's tracking: first session start – last activity seen.
-  trackedRange(b: TicketBlock): string {
-    const first = b.sessions[0];
-    const lastSeen = b.sessions.reduce(
-      (max, s) => s.lastSeenAt > max ? s.lastSeenAt : max, first.lastSeenAt);
-    return `${this.formatHm(first.startedAt)}–${this.formatHm(lastSeen)}`;
   }
 
   // Tracked time is always Development — that's how it pushes to Tempo.
