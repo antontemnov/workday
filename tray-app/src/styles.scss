@@ -90,6 +90,117 @@ html:has(body.toast-window), body.toast-window {
   0% { transform: scale(0.85); opacity: 0; }
 }
 
+// ─── Glass menu — the anchored variant (toggleAnchoredMenu) ───────────────
+// Same mechanic, glass clothing: the body lives in ::before so the blur
+// never becomes a containing block for the rows.
+.ctx-menu.glass {
+  min-width: 176px;
+  max-width: 340px;
+  border-radius: 10px;
+  isolation: isolate;
+  background: none;
+  border: 1px solid rgba(205, 214, 244, 0.13);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.75), 0 4px 12px -3px rgba(0, 0, 0, 0.5);
+  transform-origin: 12px 0;
+  animation: ctx-glass-in 0.12s ease-out;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      linear-gradient(115deg, rgba(255, 255, 255, 0.055), transparent 42%, rgba(255, 255, 255, 0.025) 72%, transparent 90%),
+      linear-gradient(rgba(22, 22, 34, 0.6), rgba(22, 22, 34, 0.7));
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+            backdrop-filter: blur(16px) saturate(1.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+
+  .ctx-item {
+    border-radius: 6px;
+    white-space: nowrap;
+
+    .ci-ic { height: 12px; display: inline-flex; flex-shrink: 0; color: #7f849c; }
+    .ci-ic svg { margin: 0; }
+    .ci-hint { padding-left: 18px; font-size: 10.5px; }
+    .ci-go { color: #585b70; margin-left: 6px; }
+    .ci-go.lone { margin-left: auto; padding-left: 18px; }
+
+    &:hover {
+      background: rgba(205, 214, 244, 0.085);
+      color: #e6ebfa;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+      .ci-ic { color: #cdd6f4; }
+    }
+
+    &.danger {
+      .ci-ic { color: #f38ba8; }
+      &:hover { background: rgba(243, 139, 168, 0.13); color: #f38ba8; box-shadow: none; }
+      &:hover .ci-ic { color: #f38ba8; }
+    }
+
+    &.disabled {
+      .ci-ic, .ci-hint { color: #45475a; }
+      &:hover { background: none; box-shadow: none; color: #585b70; }
+      &:hover .ci-ic { color: #45475a; }
+    }
+  }
+
+  .ctx-sep {
+    margin: 3px 6px;
+    background: rgba(205, 214, 244, 0.085);
+  }
+
+  // The session's branch — always the last row; the whole row copies.
+  .ctx-branch {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+
+    .ci-ic {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+      margin-top: 1.5px;
+      display: inline-flex;
+      color: #7f849c;
+      transition: color 0.15s ease;
+    }
+
+    .ci-ic svg { display: block; }
+
+    .cb-name {
+      flex: 1;
+      min-width: 0;
+      font-size: 10.5px;
+      line-height: 1.45;
+      color: #a6adc8;
+      white-space: normal;
+      text-wrap: balance;
+      transition: color 0.15s ease;
+    }
+
+    &:hover {
+      background: rgba(205, 214, 244, 0.085);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    &:hover .cb-name, &.copied .cb-name { color: #e6ebfa; }
+    &:hover .ci-ic, &.copied .ci-ic { color: #cdd6f4; }
+  }
+}
+
+@keyframes ctx-glass-in {
+  0% { transform: scale(0.94); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ctx-menu { animation: none; }
+  .ctx-menu, .ctx-menu.glass { animation: none; }
 }
