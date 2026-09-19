@@ -32,8 +32,7 @@ type ActiveView = 'day' | 'sheet' | 'set' | 'setup';
 interface SensitivityPillOption {
   readonly key: SensitivityLevel;
   readonly label: string;
-  readonly description: string;
-  readonly title: string;
+  readonly hint: string;
 }
 
 @Component({
@@ -81,13 +80,14 @@ export class AppComponent implements OnInit, OnDestroy {
   // up. In-memory only — an unfinished setup re-offers on the next launch.
   private setupOffered = false;
 
-  // Sensitivity = idle-patience scale. Pause/Resume is a separate per-card
-  // button now, so it's no longer a pill here. Labels are display-only; the
-  // backing enum values (low/normal/patient) are unchanged.
+  // Sensitivity = idle-patience scale: at full stamina a session tolerates
+  // this much idle before auto-pausing (each change tops it up). Labels are
+  // display-only; the backing enum values (low/normal/patient) are unchanged.
+  // The hint rides the session's Mode menu.
   readonly sensitivityPills: readonly SensitivityPillOption[] = [
-    { key: SensitivityLevel.Low,      label: 'Sharp',   description: 'full stamina → 15 min idle', title: 'Short leash — at full stamina tolerates up to 15 min idle before pausing; each change tops it up' },
-    { key: SensitivityLevel.Normal,   label: 'Normal',  description: '→ 45 min',                  title: 'Default — at full stamina tolerates up to 45 min idle before pausing; each change tops it up' },
-    { key: SensitivityLevel.Patient,  label: 'Relaxed', description: '→ 90 min',                  title: 'Tolerant — at full stamina tolerates up to 90 min idle before pausing; each change tops it up' },
+    { key: SensitivityLevel.Low,     label: 'Sharp',   hint: '15m idle' },
+    { key: SensitivityLevel.Normal,  label: 'Normal',  hint: '45m idle' },
+    { key: SensitivityLevel.Patient, label: 'Relaxed', hint: '90m idle' },
   ];
 
   // Modal state (cross-cutting, triggered by DayView events)

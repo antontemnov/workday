@@ -4,12 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { GLOBE_ICON, JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import {
   ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryPatch,
-  SessionDetail, normalizeFavName,
+  SensitivityLevel, SensitivityPill, SessionDetail, normalizeFavName,
 } from '../../../models/workday.models';
 import { activityLabel, activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
-import { CtxMenuEntry, openCtxMenu, toggleAnchoredMenu } from '../ctx-menu.util';
+import { CtxMenuEntry, openAnchoredMenu, openCtxMenu, toggleAnchoredMenu } from '../ctx-menu.util';
 import { CTX_ICON } from '../ctx-icons.util';
+import { SessionRowComponent, SessionRowState, sessionRowState } from '../session-row/session-row.component';
+import { staminaHeat } from '../session-row/stamina-heat.util';
 import { FEED_SORT_DEFAULT, FeedSortMode } from '../feed-sort.util';
 
 const FRESH_WINDOW_MS = 4000;
@@ -39,14 +41,30 @@ const POP_STAGGER_MS = 80;
 const REORDER_DELAY_MS = 260;
 const REORDER_FLIGHT_MS = 440;
 
+// Live rows inside a block: the one accruing first, then the held one, then
+// the frozen ones.
+const LIVE_RANK: Readonly<Record<SessionRowState, number>> = { tracking: 0, paused: 1, waiting: 2, closed: 3 };
+
+interface SpeedPillOption {
+  readonly key: SensitivityLevel;
+  readonly label: string;
+  readonly hint: string;
+}
+
 // One ticket's day — the identity printed once over the rows it carries.
-// Rows: each closed session, the single folded "manual added" row, then
-// each described entry. All sums are DISPLAY sums: a row in its undo window
-// has already left them.
+// Rows: live sessions, each closed session, the single folded "manual
+// added" row, then each described entry. A block with a live session is HOT:
+// it stands above the suggestions and wears the rim. All sums are DISPLAY
+// sums: a row in its undo window has already left them.
 interface TicketBlock {
   readonly task: string;                        // ticket key, or '—' for taskless
   readonly at: string;                          // newest fact — feed position
+  readonly live: readonly SessionDetail[];      // open, the accruing one first
   readonly sessions: readonly SessionDetail[];  // closed, newest first
+  readonly sessionRows: readonly SessionDetail[]; // live + closed — one list, one DOM node per session
+  readonly hot: boolean;
+  readonly quiet: boolean;                      // hot, but nothing accrues — the rim stands still
+  readonly heat: string;                        // the accruing session's temperature (rim colour)
   readonly folded: readonly ManualEntry[];      // unnamed adds behind one row
   readonly named: readonly ManualEntry[];       // described entries, oldest first
   readonly rowCount: number;
@@ -65,9 +83,11 @@ export interface ArriveFrom {
 }
 
 /**
- * History feed of the day view — ticket blocks newest-first: one identity
- * header (the lid) per ticket, worklog rows inside. Closed sessions stand as
- * rows of their own on top; unnamed manual time folds into a single
+ * The day feed — ticket blocks: one identity header (the lid) per ticket,
+ * rows inside. Live sessions are rows of their ticket's block, which makes
+ * it HOT — hot blocks stand on top, the projected content (suggestions)
+ * under them, the cold history below. Closed sessions stand as rows of
+ * their own; unnamed manual time folds into a single
  * "⊕ manual added" row; described entries keep their own rows with the
  * usual edit/delete/favorite mechanics. Every local change is reported to
  * the parent as a live diff so the Day total moves in the same instant;
@@ -77,14 +97,18 @@ export interface ArriveFrom {
 @Component({
   selector: 'app-logged-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, DurationInputDirective],
+  imports: [CommonModule, FormsModule, DurationInputDirective, SessionRowComponent],
   templateUrl: './logged-panel.component.html',
   styleUrl: './logged-panel.component.scss',
 })
 export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input({ required: true }) entries: readonly ManualEntry[] = [];
+  // Live sessions — rows of their ticket's block; they make it hot.
+  @Input() openSessions: readonly SessionDetail[] = [];
   // Closed tracked sessions — rendered as read-only rows in the feed.
   @Input() closedSessions: readonly SessionDetail[] = [];
+  // Sensitivity levels for a live session's Mode menu.
+  @Input() speedPills: readonly SpeedPillOption[] = [];
   // Task key → ticket summary, for the name column. Absent key → placeholder.
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
   @Input() actionPending = false;
@@ -100,6 +124,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Jira site root — null (older daemon / no secrets) hides Open in browser.
   @Input() jiraBaseUrl: string | null = null;
 
+  // Pause / resume / mode of a live session — the day view's pill channel:
+  // 'pause' → pause API, a level → sensitivity API (which also resumes).
+  @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
   @Output() patchCommitted = new EventEmitter<{ id: string; patch: ManualEntryPatch }>();
   // Fired when the undo window closes — the entry is gone for the user; the
   // parent sends the actual DELETE (undo never re-creates server-side).
@@ -178,6 +205,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // (a new fact bubbles a card, a delete drops one back, the sort mode
   // changes), the cards FLY to their new spots instead of teleporting.
   private displayOrder: string[] = [];
+  // Which of the shown cards stand in the hot zone. Follows displayOrder, not
+  // the data: a card that just went hot/cold crosses the suggestions with the
+  // same FLIP flight instead of teleporting over them.
+  private displayHot = new Set<string>();
   private reorderTimer: ReturnType<typeof setTimeout> | null = null;
   private flipCleanTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
 
@@ -335,28 +366,46 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const target = this.sortTasks(blocks);
     const present = new Set(target);
     const rank = new Map(target.map((t, i) => [t, i]));
+    const hotNow = new Set(blocks.filter(b => b.hot).map(b => b.task));
     const merged = this.displayOrder.filter(t => present.has(t));
+    for (const t of [...this.displayHot]) {
+      if (!present.has(t)) this.displayHot.delete(t);
+    }
     for (const t of target) {
       if (merged.includes(t)) continue;
       const r = rank.get(t) ?? 0;
       let idx = merged.findIndex(k => (rank.get(k) ?? Infinity) > r);
       if (idx < 0) idx = merged.length;
       merged.splice(idx, 0, t);
+      if (hotNow.has(t)) this.displayHot.add(t); // born cards take their zone at once
     }
     this.displayOrder = merged;
-    if (merged.some((t, i) => t !== target[i])) this.scheduleReorder();
+    if (merged.some((t, i) => t !== target[i]) || !this.sameHotZone(hotNow)) this.scheduleReorder();
     const index = new Map(merged.map((t, i) => [t, i]));
     return blocks.sort((a, b) => (index.get(a.task) ?? 0) - (index.get(b.task) ?? 0));
   }
 
-  // The target order by the active mode. Recency: the block stands on its
-  // newest fact. Sum: biggest day total first, recency breaks ties.
+  // The target order: hot blocks first (the accruing one on top, then by
+  // freshness), the cold history by the active mode. Recency: the block
+  // stands on its newest fact. Sum: biggest day total first, recency breaks
+  // ties.
   private sortTasks(blocks: readonly TicketBlock[]): string[] {
+    const zone = (b: TicketBlock): number => !b.hot ? 2 : b.quiet ? 1 : 0;
     return [...blocks]
-      .sort((a, b) => this.feedSort === 'sum'
-        ? (b.totalMs - a.totalMs || b.at.localeCompare(a.at))
-        : b.at.localeCompare(a.at))
+      .sort((a, b) => zone(a) - zone(b)
+        || (!a.hot && this.feedSort === 'sum'
+          ? (b.totalMs - a.totalMs || b.at.localeCompare(a.at))
+          : b.at.localeCompare(a.at)))
       .map(b => b.task);
+  }
+
+  private sameHotZone(hotNow: ReadonlySet<string>): boolean {
+    return hotNow.size === this.displayHot.size && [...hotNow].every(t => this.displayHot.has(t));
+  }
+
+  // Flex order of a card: hot zone above the projected content, cold below.
+  cardOrder(b: TicketBlock): number {
+    return this.displayHot.has(b.task) ? 0 : 2;
   }
 
   // ─── FLIP re-sort — cards fly to their new spots, never teleport ───────
@@ -375,9 +424,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // everyone — no single card to spotlight). Mid-fold cards are left alone;
   // their collapse owns the element's inline styles.
   private playReorder(withTraveler: boolean): void {
-    const target = this.sortTasks(this.buildBlocks());
+    const blocks = this.buildBlocks();
+    const target = this.sortTasks(blocks);
+    const hotNow = new Set(blocks.filter(b => b.hot).map(b => b.task));
     if (this.displayOrder.length === target.length
-        && this.displayOrder.every((t, i) => t === target[i])) return;
+        && this.displayOrder.every((t, i) => t === target[i])
+        && this.sameHotZone(hotNow)) return;
     const before = new Map<string, number>();
     for (const c of this.host.nativeElement.querySelectorAll<HTMLElement>('.blk')) {
       before.set(c.dataset['task'] ?? '', c.getBoundingClientRect().top);
@@ -392,6 +444,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       });
     }
     this.displayOrder = [...target];
+    this.displayHot = hotNow;
     this.cdr.detectChanges();
     const moved: HTMLElement[] = [];
     for (const c of this.host.nativeElement.querySelectorAll<HTMLElement>('.blk')) {
@@ -421,12 +474,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   private buildBlocks(): TicketBlock[] {
-    const byTask = new Map<string, { sessions: SessionDetail[]; folded: ManualEntry[]; named: ManualEntry[] }>();
-    const bucketOf = (task: string): { sessions: SessionDetail[]; folded: ManualEntry[]; named: ManualEntry[] } => {
+    interface Bucket { live: SessionDetail[]; sessions: SessionDetail[]; folded: ManualEntry[]; named: ManualEntry[] }
+    const byTask = new Map<string, Bucket>();
+    const bucketOf = (task: string): Bucket => {
       let b = byTask.get(task);
-      if (!b) { b = { sessions: [], folded: [], named: [] }; byTask.set(task, b); }
+      if (!b) { b = { live: [], sessions: [], folded: [], named: [] }; byTask.set(task, b); }
       return b;
     };
+    // A live session always shows — no delete mask can hide running time.
+    for (const s of this.openSessions) bucketOf(s.task ?? '—').live.push(s);
     for (const s of this.closedSessions) {
       const task = s.task ?? '—';
       if (this.hiddenTasks.has(task) || this.sesHiddenIds.has(s.id)) continue;
@@ -440,7 +496,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
     const blocks: TicketBlock[] = [];
     for (const [task, b] of byTask) {
+      b.live.sort((x, y) => LIVE_RANK[sessionRowState(x)] - LIVE_RANK[sessionRowState(y)]
+        || y.lastSeenAt.localeCompare(x.lastSeenAt));
       b.sessions.sort((x, y) => y.startedAt.localeCompare(x.startedAt));
+      const liveMs = b.live.reduce((sum, s) => sum + s.effectiveDurationMs, 0);
+      const leader = b.live.find(s => sessionRowState(s) === 'tracking' && s.normalizedScore > 0);
       b.named.sort((x, y) => x.createdAt.localeCompare(y.createdAt));
       const trkMs = b.sessions.reduce(
         (sum, s) => sum + (this.sesGone(s.id) ? 0 : s.effectiveDurationMs), 0);
@@ -449,6 +509,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       const namedMinutes = b.named.reduce(
         (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
       const at = [
+        ...b.live.map(s => s.lastSeenAt),
         ...b.sessions.map(s => s.lastSeenAt),
         ...b.folded.map(e => e.createdAt),
         ...b.named.map(e => e.createdAt),
@@ -456,11 +517,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       blocks.push({
         task,
         at,
+        live: b.live,
         sessions: b.sessions,
+        sessionRows: [...b.live, ...b.sessions],
+        hot: b.live.length > 0,
+        quiet: b.live.length > 0 && !leader,
+        heat: leader ? staminaHeat(leader.normalizedScore) : '',
         folded: b.folded,
         named: b.named,
-        rowCount: b.sessions.length + (b.folded.length > 0 ? 1 : 0) + b.named.length,
-        totalMs: trkMs + (foldedMinutes + namedMinutes) * 60_000,
+        rowCount: b.live.length + b.sessions.length + (b.folded.length > 0 ? 1 : 0) + b.named.length,
+        totalMs: liveMs + trkMs + (foldedMinutes + namedMinutes) * 60_000,
         foldedMinutes,
       });
     }
@@ -728,7 +794,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const hasSession = this.closedSessions.some(s =>
       (s.task ?? '—') === entry.task
       && !this.sesHiddenIds.has(s.id) && !this.sesRemovingIds.has(s.id));
-    return hasOtherEntry || hasSession;
+    return hasOtherEntry || hasSession || this.hasLiveSession(entry.task);
   }
 
   // One motion for the block's last content: the exact ctx-menu delete
@@ -927,20 +993,64 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
-  // ─── Closed session rows ────────────────────────────────────────────────
+  // ─── Session rows ───────────────────────────────────────────────────────
 
-  repoName(s: SessionDetail): string {
-    return s.repo.split('/').pop() ?? s.repo;
+  isClosedSession(s: SessionDetail): boolean {
+    return !!s.closedBy;
   }
 
-  // The type word is the row's anchor: its menu grows from under it.
-  onClosedSessionMenu(s: SessionDetail, ev: MouseEvent): void {
-    ev.stopPropagation();
-    if (this.sessionDeleted(s) || this.taskDeleted(s.task ?? '—')) return;
-    toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
-      { icon: CTX_ICON.x, label: 'Delete session', danger: true, action: () => this.deleteSessionRow(s) },
+  // The left cell is the row's anchor: its menu grows from under it.
+  onSessionMenu(s: SessionDetail, anchor: HTMLElement): void {
+    if (s.closedBy) {
+      if (this.sessionDeleted(s) || this.taskDeleted(s.task ?? '—')) return;
+      toggleAnchoredMenu(anchor, () => [
+        { icon: CTX_ICON.x, label: 'Delete session', danger: true, action: () => this.deleteSessionRow(s) },
+        ...this.branchRows(s),
+      ]);
+      return;
+    }
+    toggleAnchoredMenu(anchor, () => this.liveSessionMenu(s, anchor));
+  }
+
+  // Tracking: Pause · Mode ›. Paused: Resume · Mode as a disabled fact (a
+  // manual pause freezes the scale). Waiting: Mode › only — a manual resume
+  // there is a no-op, the evaluator re-pauses on the next tick.
+  private liveSessionMenu(s: SessionDetail, anchor: HTMLElement): readonly CtxMenuEntry[] {
+    const state = sessionRowState(s);
+    const mode = this.speedPills.find(o => o.key === s.sensitivity)?.label ?? '—';
+    return [
+      ...(state === 'tracking'
+        ? [{ icon: CTX_ICON.pause, label: 'Pause', action: (): void => this.selectPill(s, 'pause') }] : []),
+      // Resume = clear the manual pause by re-applying the current sensitivity;
+      // the daemon closes the open manual pause as a side-effect.
+      ...(state === 'paused'
+        ? [{ icon: CTX_ICON.play, label: 'Resume', action: (): void => this.selectPill(s, s.sensitivity) }] : []),
+      state === 'paused'
+        ? { icon: CTX_ICON.mode, label: 'Mode', hint: `${mode} · paused`, disabled: true, action: (): void => {} }
+        : { icon: CTX_ICON.mode, label: 'Mode', hint: mode, nav: 'go' as const,
+            action: (): void => openAnchoredMenu(anchor, this.modeMenu(s, anchor)) },
       ...this.branchRows(s),
-    ]);
+    ];
+  }
+
+  private modeMenu(s: SessionDetail, anchor: HTMLElement): readonly CtxMenuEntry[] {
+    return [
+      { icon: CTX_ICON.back, label: 'Back', nav: 'back' as const,
+        action: (): void => openAnchoredMenu(anchor, this.liveSessionMenu(s, anchor)) },
+      { separator: true },
+      ...this.speedPills.map(o => ({
+        // The empty icon keeps the gutter, so the ✓ row stays aligned.
+        icon: o.key === s.sensitivity ? CTX_ICON.check : CTX_ICON.none,
+        label: o.label,
+        hint: o.hint,
+        action: (): void => { if (o.key !== s.sensitivity) this.selectPill(s, o.key); },
+      })),
+    ];
+  }
+
+  private selectPill(session: SessionDetail, pill: SensitivityPill): void {
+    if (this.actionPending) return;
+    this.pillSelected.emit({ session, pill });
   }
 
   // The branch closes every session menu — read it whole, click to copy.
@@ -963,7 +1073,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       ...(canBrowseTicket(this.jiraBaseUrl, b.task)
         ? [{ icon: GLOBE_ICON, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) }]
         : []),
-      { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
+      // A running session can't be deleted — and it would resurrect the card.
+      b.hot
+        ? { icon: '✕', label: 'Delete', hint: 'live', disabled: true, action: (): void => {} }
+        : { icon: '✕', label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
     ]);
   }
 
@@ -973,8 +1086,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.sesDeleteTimers.has(s.id) || this.sesRemovingIds.has(s.id);
   }
 
-  deleteSessionRow(s: SessionDetail, ev?: MouseEvent): void {
-    ev?.stopPropagation();
+  deleteSessionRow(s: SessionDetail): void {
     if (this.sessionDeleted(s)) return;
     // The last line of the block's last row — the card's delete.
     if (!this.blockHasOtherSessionContent(s)) {
@@ -985,8 +1097,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.recomputeLive();
   }
 
-  undoSessionDelete(s: SessionDetail, ev: MouseEvent): void {
-    ev.stopPropagation();
+  undoSessionDelete(s: SessionDetail): void {
     const timer = this.sesDeleteTimers.get(s.id);
     if (!timer) return;
     clearTimeout(timer);
@@ -1018,7 +1129,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     const hasOtherSession = this.closedSessions.some(s =>
       s.id !== session.id && (s.task ?? '—') === task
       && !this.sesHiddenIds.has(s.id) && !this.sesRemovingIds.has(s.id));
-    return hasEntry || hasOtherSession;
+    return hasEntry || hasOtherSession || this.hasLiveSession(task);
+  }
+
+  // A running session holds its card open: the block never folds under it.
+  private hasLiveSession(task: string): boolean {
+    return this.openSessions.some(s => (s.task ?? '—') === task);
   }
 
   taskDeleted(task: string): boolean {
@@ -1101,15 +1217,6 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         this.deleteCommitted.emit(e.id);
       }
     }
-  }
-
-  sessionInterval(s: SessionDetail): string {
-    return `${this.formatHm(s.startedAt)}–${this.formatHm(s.lastSeenAt)}`;
-  }
-
-  formatHm(iso: string): string {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
   summaryOfTask(task: string): string {

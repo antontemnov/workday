@@ -45,8 +45,9 @@
   </filter>
 </svg>
 
-<!-- The feed: sticky day header, then live sessions → (suggestions slot,
-     epoch 4) → history newest-first. One scroll, no sections. -->
+<!-- The feed: sticky day header, then the panel — hot ticket blocks (live
+     sessions inside) → suggestions → the cold history. One scroll, no
+     sections. -->
 <!-- Right-click on free content space (cards stop their own) — the window's
      menu: feed sort method. -->
 <div class="content" *ngIf="data && !error" (contextmenu)="onFeedContextMenu($event)">
@@ -71,33 +72,6 @@
           [class.flash]="dayFlash">{{ dayTotalLabel }}</span>
   </div>
 
-  <!-- Live sessions — "now" sits on top of the feed -->
-  <app-session-card
-    *ngFor="let s of openSessions"
-    [session]="s"
-    [actionPending]="actionPending"
-    [issueSummaries]="issueSummaries"
-    [jiraBaseUrl]="jiraBaseUrl"
-    [speedPills]="sensitivityPills"
-    (pillSelected)="pillSelected.emit($event)"
-    (addTimeSubmitted)="addTimeSubmitted.emit($event)" />
-
-  <!-- Suggested — graphite blueprint offers under the live cards; never counted anywhere -->
-  <app-suggestion-row
-    *ngFor="let g of suggestions; trackBy: trackBySuggestion"
-    [class.cloud-anchor]="isCloudAnchor(g)"
-    [suggestion]="g"
-    [actionPending]="actionPending"
-    [activityTypes]="activityTypes"
-    [activityAllowed]="activityAllowed"
-    [summaries]="suggestionSummaries"
-    [jiraBaseUrl]="jiraBaseUrl"
-    [picked]="pickFor(g)"
-    (pickRequested)="openCloudForAccept(g, $event)"
-    (acceptSubmitted)="onSuggestionAccept(g, $event)"
-    (dismissed)="onSuggestionDismiss(g)"
-    (muteSubmitted)="onSuggestionMute(g, $event)" />
-
   <!-- Radar only when the whole day is empty — otherwise the history speaks -->
   <div class="waiting" *ngIf="dayEmpty">
     <div class="radar">
@@ -112,10 +86,12 @@
     <div class="waiting-sub">any activity in your repos starts tracking</div>
   </div>
 
-  <!-- History — manual entries and session-born groups, newest first -->
+  <!-- The day's ticket blocks — live sessions, closed sessions and entries -->
   <app-logged-panel
     [entries]="manualEntries"
+    [openSessions]="openSessions"
     [closedSessions]="closedSessions"
+    [speedPills]="sensitivityPills"
     [issueSummaries]="issueSummaries"
     [actionPending]="actionPending"
     [activityTypes]="activityTypes"
@@ -130,7 +106,25 @@
     (sessionDeleteCommitted)="sessionDeleteSubmitted.emit($event)"
     (taskDeleteCommitted)="taskDeleteSubmitted.emit($event)"
     (favoriteAdded)="favoriteAddSubmitted.emit($event)"
-    (liveDiffChanged)="onLiveDiff($event)" />
+    (pillSelected)="pillSelected.emit($event)"
+    (liveDiffChanged)="onLiveDiff($event)">
+    <!-- Suggested — graphite blueprint offers, projected between the hot
+         blocks and the cold history; never counted anywhere -->
+    <app-suggestion-row
+      *ngFor="let g of suggestions; trackBy: trackBySuggestion"
+      [class.cloud-anchor]="isCloudAnchor(g)"
+      [suggestion]="g"
+      [actionPending]="actionPending"
+      [activityTypes]="activityTypes"
+      [activityAllowed]="activityAllowed"
+      [summaries]="suggestionSummaries"
+      [jiraBaseUrl]="jiraBaseUrl"
+      [picked]="pickFor(g)"
+      (pickRequested)="openCloudForAccept(g, $event)"
+      (acceptSubmitted)="onSuggestionAccept(g, $event)"
+      (dismissed)="onSuggestionDismiss(g)"
+      (muteSubmitted)="onSuggestionMute(g, $event)" />
+  </app-logged-panel>
 </div>
 
 <!-- Log cloud overlay — opens below the sticky header -->

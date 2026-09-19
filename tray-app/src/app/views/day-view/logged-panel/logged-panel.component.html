@@ -1,13 +1,24 @@
-<!-- History feed: ticket blocks newest-first. One identity header (the lid)
-     per ticket, rows inside on one shared grid (type | repo | · range |
-     · ⊸ N | · diff | time — only repo stretches). Row order is fixed: closed
-     sessions newest-first, the folded manual added row, then described
-     entries oldest-first. Edit swaps only a row's cells for controls — same
-     geometry, the block height never changes. -->
+<!-- The day feed: ticket blocks, one identity header (the lid) per ticket,
+     rows inside on one shared grid (type | repo | · range | · ⊸ N | · diff |
+     time — only repo stretches). A block with a live session is HOT: flex
+     order lifts it above the projected content (the day view's suggestions),
+     the cold history stays below — one ngFor, so a card going hot/cold keeps
+     its DOM node. Row order is fixed: live sessions, closed sessions
+     newest-first, the folded manual added row, then described entries
+     oldest-first. Edit swaps only a row's cells for controls — same geometry,
+     the block height never changes. -->
 <div class="lp-table">
+  <div class="lp-mid"><ng-content /></div>
+  <!-- Where the cold history starts — the fly-chip's landing mark. -->
+  <div class="lp-cold-mark"></div>
+
   <div class="blk"
        *ngFor="let b of feedBlocks; trackBy: trackByBlock"
        [attr.data-task]="b.task"
+       [style.order]="cardOrder(b)"
+       [style.--heat]="b.heat || null"
+       [class.hot]="b.hot"
+       [class.quiet]="b.quiet"
        [class.one]="b.rowCount <= 1"
        [class.deleted]="taskDeleted(b.task)"
        [class.removing]="removingTasks.has(b.task)"
@@ -29,34 +40,24 @@
 
     <div class="blk-body">
 
-      <!-- Closed sessions — one row each on the shared grid, newest first:
-           type | repo | · range | · ⊸ N | · diff | time. The type word is the
-           row's anchor (its menu); the ⊸ glyph doubles as the delete — hover
-           morphs it into ✕, the undo takes the time slot. -->
-      <div class="sr closed"
-           *ngFor="let s of b.sessions; trackBy: trackBySession"
-           [class.deleted]="sessionDeleted(s)"
-           [class.removing]="sesRemovingIds.has(s.id)">
-        <span class="c-type anc" (click)="onClosedSessionMenu(s, $event)">{{ activityLabel(developmentActivity) }}</span>
-        <span class="repo">{{ repoName(s) }}</span>
-        <span class="sc rng"><i class="csep">·</i><span class="rv">{{ sessionInterval(s) }}</span></span>
-        <span class="sc com"><i class="csep">·</i><button type="button" class="m-act"
-                [disabled]="sessionDeleted(s)"
-                (click)="deleteSessionRow(s, $event)">
-            <svg class="g-plus" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg>
-            <svg class="g-x" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="3.7" y1="1.2" x2="9.3" y2="6.8" stroke="currentColor" stroke-width="1.25"/><line x1="9.3" y1="1.2" x2="3.7" y2="6.8" stroke="currentColor" stroke-width="1.25"/></svg>
-          </button><span class="s-com">{{ s.evidence.commits }}</span></span>
-        <span class="sc diff"><i class="csep">·</i><b class="plus">+{{ s.evidence.linesAdded }}</b><b class="minus">−{{ s.evidence.linesRemoved }}</b></span>
-        <ng-container *ngIf="sessionDeleted(s); else sesDur">
-          <button type="button" class="l-undo" (click)="undoSessionDelete(s, $event)">↩ undo</button>
-        </ng-container>
-        <ng-template #sesDur>
-          <span class="dur">{{ showSessionDur(b) ? formatDurationHm(s.effectiveDurationMs) : '' }}</span>
-        </ng-template>
-      </div>
+      <!-- Sessions — one row each: live ones wear the pill (Tracking /
+           Paused / Waiting), closed ones the type word. The left cell is the
+           row's anchor (its menu); a closed row's ⊸ doubles as the delete,
+           the undo takes the time slot. -->
+      <app-session-row
+        *ngFor="let s of b.sessionRows; trackBy: trackBySession"
+        [session]="s"
+        [typeLabel]="activityLabel(developmentActivity)"
+        [showDur]="showSessionDur(b)"
+        [deleted]="sessionDeleted(s)"
+        [struck]="taskDeleted(b.task)"
+        [class.removing]="sesRemovingIds.has(s.id)"
+        (menuRequested)="onSessionMenu(s, $event)"
+        (deleteRequested)="deleteSessionRow(s)"
+        (undoRequested)="undoSessionDelete(s)" />
 
       <!-- 3px of air between the tracked rows and the declared ones -->
-      <div class="rgap" *ngIf="b.sessions.length > 0 && (b.folded.length > 0 || b.named.length > 0)"></div>
+      <div class="rgap" *ngIf="b.sessionRows.length > 0 && (b.folded.length > 0 || b.named.length > 0)"></div>
 
       <!-- Manual added — the single folded row of unnamed declared time.
            The ⊕ node IS the delete; the whole aggregate burns on one undo. -->

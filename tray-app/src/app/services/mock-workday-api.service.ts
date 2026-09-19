@@ -137,6 +137,9 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockEntrySeq = 8;
   // Sessions "removed" via deleteSession/deleteTask — filtered out of getToday.
   private mockDeletedSessionIds = new Set<string>();
+  // Per-repo manual pause / sensitivity overrides, so the live rows react.
+  private mockManualPaused = new Set<string>();
+  private mockRepoSensitivity = new Map<string, SensitivityLevel>();
 
   private readonly today = (() => {
     const d = new Date();
@@ -383,7 +386,14 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   async getToday(): Promise<ApiResponse<TodayResponse>> {
     const day = this.buildToday();
-    return { ok: true, data: { ...day, sessions: day.sessions.filter(s => !this.mockDeletedSessionIds.has(s.id)) } };
+    const sessions = day.sessions
+      .filter(s => !this.mockDeletedSessionIds.has(s.id))
+      .map(s => s.closedBy ? s : {
+        ...s,
+        sensitivity: this.mockRepoSensitivity.get(s.repo) ?? s.sensitivity,
+        ...(this.mockManualPaused.has(s.repo) ? { paused: true, pauseSource: 'manual' } : {}),
+      });
+    return { ok: true, data: { ...day, sessions } };
   }
 
   async getDay(_date: string): Promise<ApiResponse<TodayResponse>> {
@@ -410,16 +420,22 @@ export class MockWorkdayApiService extends WorkdayApiService {
     };
   }
 
-  async pause(): Promise<ApiResponse<{ paused: string[] }>> {
-    return { ok: true, data: { paused: [] } };
+  async pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>> {
+    if (repo) this.mockManualPaused.add(repo);
+    return { ok: true, data: { paused: repo ? [repo] : [] } };
   }
 
   async resume(): Promise<ApiResponse<{ resumed: string[] }>> {
     return { ok: true, data: { resumed: [] } };
   }
 
-  async sensitivity(level: SensitivityLevel): Promise<ApiResponse<SensitivityResponse>> {
-    return { ok: true, data: { repo: null, level } };
+  // Mirrors the daemon: setting the sensitivity also clears a manual pause.
+  async sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>> {
+    if (repo) {
+      this.mockRepoSensitivity.set(repo, level);
+      this.mockManualPaused.delete(repo);
+    }
+    return { ok: true, data: { repo: repo ?? null, level } };
   }
 
   async addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>> {

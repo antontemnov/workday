@@ -217,7 +217,7 @@ test('lost session DELETE: the tracked row returns after the TTL', () => {
   h.refresh([e5], [s1]);
   assert.equal(blockOf(h, 'ATL-3')?.sessions.length, 1);
 
-  h.comp.deleteSessionRow(s1, { stopPropagation(): void {} } as never);
+  h.comp.deleteSessionRow(s1);
   commitDelete();
   assert.deepEqual(h.sesDeleted, ['s1']);
 

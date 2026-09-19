@@ -2,7 +2,6 @@ import {
   Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { SessionCardComponent } from './session-card/session-card.component';
 import { LoggedPanelComponent, type ArriveFrom } from './logged-panel/logged-panel.component';
 import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
 import { SuggestionRowComponent, type SuggestionAcceptEvent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
@@ -31,14 +30,13 @@ const SORT_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" s
 interface SensitivityPillOption {
   readonly key: SensitivityLevel;
   readonly label: string;
-  readonly description: string;
-  readonly title: string;
+  readonly hint: string;
 }
 
 @Component({
   selector: 'app-day-view',
   standalone: true,
-  imports: [CommonModule, SessionCardComponent, LoggedPanelComponent, LogCloudComponent, SuggestionRowComponent],
+  imports: [CommonModule, LoggedPanelComponent, LogCloudComponent, SuggestionRowComponent],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
@@ -455,7 +453,9 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // entry is about to land as the newest row. Styled inline: the element
   // lives on document.body, outside the component's scoped styles.
   private flyChip(from: DOMRect, label: string, minutes: number): void {
-    const target = this.historyRef?.nativeElement ?? this.dayHeadRef?.nativeElement;
+    // The cold history's first slot — under the hot blocks and the offers.
+    const target = this.historyRef?.nativeElement.querySelector<HTMLElement>('.lp-cold-mark')
+      ?? this.historyRef?.nativeElement ?? this.dayHeadRef?.nativeElement;
     if (!target || from.width === 0) return;
     const to = target.getBoundingClientRect();
 

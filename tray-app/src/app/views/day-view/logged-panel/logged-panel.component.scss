@@ -1,4 +1,5 @@
 @use 'glass';
+@use 'feed';
 
 // History feed — no panel chrome: the day view's scroll carries the blocks,
 // material is coded by the glass slab; the 8px gap keeps neighbours apart.
@@ -6,9 +7,17 @@
   display: block;
 }
 
+// One flex column, three zones by `order`: hot blocks (0) · the projected
+// content — the day view's suggestions (1) · the cold history (2). Every
+// card carries its own 8px bottom margin, the padding tops it up to 12.
 .lp-table {
-  padding-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
 }
+
+.lp-mid { order: 1; }
+.lp-cold-mark { order: 2; height: 0; }
 
 // ─── Ticket block — one identity over the day's rows ──────────────────────
 // The identity (key | name | Σ) prints once in the lid; every row underneath
@@ -21,7 +30,6 @@
   font-variant-numeric: tabular-nums;
   transition: box-shadow 0.2s ease;
 
-  &:last-child { margin-bottom: 0; }
   &.one { padding-bottom: 4px; }
 
   // Mid-FLIP: the biggest rank jumper lifts off the glass for the flight —
@@ -30,6 +38,57 @@
     z-index: 5;
     box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.72), 0 3px 10px -4px rgba(0, 0, 0, 0.55);
   }
+}
+
+// A hot card is alive — a glass rim: a 1px catch-light ring hugging the
+// border, tinted by the accruing session's temperature. Layer 1 is the
+// living glint — a narrow band that sweeps the ring once per cycle, then its
+// wider, dimmer echo (position-only motion). The mask carves the ring out of
+// the pseudo so the card fill stays untouched.
+.blk.hot::before {
+  content: '';
+  position: absolute;
+  inset: -1px; // abspos offsets run from the padding box — -1px lands exactly on the border
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background:
+    linear-gradient(100deg, transparent 42%, rgb(var(--heat) / 0.8) 50%, transparent 58%),
+    linear-gradient(100deg, transparent 28%, rgb(var(--heat) / 0.3) 50%, transparent 72%),
+    linear-gradient(178deg, rgb(var(--heat) / 0.4), transparent 46%),
+    linear-gradient(358deg, rgb(var(--heat) / 0.13), transparent 40%);
+  background-size: 240% 100%, 240% 100%, 100% 100%, 100% 100%;
+  background-position: 120% 0, 120% 0, 0 0, 0 0;
+  background-repeat: no-repeat;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: rim-sweep 11s ease-in-out infinite;
+}
+
+// Nothing accrues (held or frozen): plain glass, standing still.
+.blk.hot.quiet::before {
+  background:
+    linear-gradient(100deg, transparent 42%, rgba(205, 214, 244, 0.3) 50%, transparent 58%),
+    linear-gradient(100deg, transparent 28%, rgba(205, 214, 244, 0.12) 50%, transparent 72%),
+    linear-gradient(178deg, rgba(205, 214, 244, 0.14), transparent 46%),
+    linear-gradient(358deg, rgba(205, 214, 244, 0.05), transparent 40%);
+  background-size: 240% 100%, 240% 100%, 100% 100%, 100% 100%;
+  background-position: 120% 0, 120% 0, 0 0, 0 0;
+  background-repeat: no-repeat;
+  animation: none;
+}
+
+// Two waves per cycle: the strong glint passes first, then its echo flows
+// slowly along the same path, then rest.
+@keyframes rim-sweep {
+  0%   { background-position: 120% 0, 120% 0, 0 0, 0 0; }
+  8%   { background-position: 76% 0, 120% 0, 0 0, 0 0; }
+  24%  { background-position: -20% 0, 98% 0, 0 0, 0 0; }
+  68%  { background-position: -20% 0, -20% 0, 0 0, 0 0; }
+  100% { background-position: -20% 0, -20% 0, 0 0, 0 0; }
 }
 
 // The lid (divider-lab variant B): the header stands on denser glass with the
@@ -102,17 +161,7 @@
   height: 20px;
 }
 
-// Type — a quiet bold label in the column under the ticket chip: same case as
-// the select, no badge, no per-type colour.
-.c-type {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: #939ab6;
-  font-size: 10px;
-  font-weight: 700;
-}
+.c-type { @include feed.type-word; }
 
 // The middle columns answer one question — how the row explains itself: a
 // description (grey italic), or the admission that there's nothing to
@@ -209,25 +258,7 @@
   transition: height 0.22s ease, opacity 0.18s ease;
 }
 
-.l-undo {
-  grid-column: 6;
-  justify-self: end;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid rgba(203, 166, 247, 0.5);
-  border-radius: 4px;
-  background: rgba(203, 166, 247, 0.08);
-  color: #cba6f7;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 0 8px;
-  cursor: pointer;
-  animation: need-pulse 1.6s ease-in-out infinite;
-
-  &:hover { background: rgba(203, 166, 247, 0.22); }
-}
+.l-undo { @include feed.undo-button; }
 
 // "★ added to favorites" feedback on the description slot.
 .wl.fav-done .c-ds.fav-note { color: #cba6f7; font-style: normal; }
@@ -315,74 +346,7 @@
   0% { transform: scaleX(0.5); opacity: 0; }
 }
 
-@keyframes need-pulse {
-  0%, 100% { border-color: rgba(203, 166, 247, 0.65); }
-  50%      { border-color: rgba(203, 166, 247, 0.25); }
-}
-
-// ─── Session rows ─────────────────────────────────────────────────────────
-// [type] repo · range · ⊸ N · ±churn | time — a closed session is a 20px row
-// wearing the same type word as a manual Development row, without glass.
-.sr {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  align-items: center;
-  height: 20px;
-
-  > .repo {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    font-size: 10.5px;
-    color: #8b90ab;
-    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
-            mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
-  }
-
-  > .dur {
-    grid-column: 6;
-    justify-self: end;
-    font-weight: 700;
-    color: #a6adc8;
-    font-size: 11px;
-    white-space: nowrap;
-  }
-
-  // Undo window: the identity of the row is struck, its evidence just dims.
-  &.deleted {
-    .c-type, > .repo, .sc.rng .rv { opacity: 0.38; text-decoration: line-through; }
-    .sc.com, .sc.diff { opacity: 0.38; }
-  }
-
-  &.removing {
-    height: 0;
-    opacity: 0;
-    overflow: hidden;
-    transition: height 0.22s ease, opacity 0.18s ease;
-  }
-}
-
-// A value cell: the separator dot leads its value and stands on the column
-// boundary — every dot of a column lines up.
-.sc {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: -2px;
-  font-size: 10.5px;
-  color: #8b90ab;
-  white-space: nowrap;
-
-  .csep { color: #45475a; font-style: normal; }
-  .s-com { color: #7f849c; }
-  .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
-  .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
-
-  &.rng  { min-width: calc(12ch + 6px); }
-  &.com  { min-width: calc(3ch + 25px); }
-  &.diff { min-width: calc(7ch + 12px); }
-}
+@include feed.need-pulse-keyframes;
 
 // 3px of air between the tracked rows and the declared ones.
 .rgap {
@@ -391,41 +355,10 @@
 }
 
 // ─── Anchors — the left column is the row's handle ────────────────────────
-// A click opens the row's menu from under the anchor; it stays lit (.armed)
-// while the menu lives. The type words sit in overflow-hidden cells where a
-// glow would clip, so theirs is ink only.
-.anc {
-  cursor: pointer;
-  transition: color 0.18s ease, filter 0.18s ease;
-}
+.anc { @include feed.anchor; }
+.c-type.anc { @include feed.type-word-anchor; }
 
-.c-type.anc:hover, .c-type.anc.armed { color: #cdd6f4; }
-
-// The glyph-as-button (⊸ on a closed session, ⊕ on the manual added row):
-// hover morphs it into ✕, click starts the shared undo pipeline.
-.m-act {
-  width: 13px;
-  height: 18px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: #7f849c;
-  cursor: pointer;
-
-  svg { display: block; opacity: 0.7; }
-  .g-x { display: none; color: rgba(243, 139, 168, 0.9); opacity: 1; }
-
-  &:hover:not(:disabled) {
-    .g-plus { display: none; }
-    .g-x { display: block; }
-  }
-
-  &:disabled { pointer-events: none; }
-}
+.m-act { @include feed.glyph-action; }
 
 // The block's last content goes down with the whole card in one motion —
 // inside the fold the row keeps its height so only the card's own collapse
@@ -436,9 +369,7 @@
 // Whole-block delete: everything struck while the undo burns; the collapse
 // itself is a measured inline fold (blocks have no fixed height cap).
 .blk.deleted {
-  .tkt, .c-nm, .c-type, .c-ds, .wl .c-dur,
-  .sr > .repo, .sr .sc.rng .rv, .sr > .dur { opacity: 0.38; text-decoration: line-through; }
-  .sr .sc.com, .sr .sc.diff { opacity: 0.38; }
+  .tkt, .c-nm, .c-type, .c-ds, .wl .c-dur { opacity: 0.38; text-decoration: line-through; }
   .c-ds .m-act svg { opacity: 0.28; }
 }
 

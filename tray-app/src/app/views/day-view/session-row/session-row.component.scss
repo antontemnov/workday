@@ -1,0 +1,341 @@
+@use 'glass';
+@use 'feed';
+
+// The host IS the grid row of the ticket block's body:
+// type | repo | · range | · ⊸ N | · diff | time. Live rows stand 24px around
+// an 18px pill (6px of glass between two pills in a row); closed — 20px.
+:host {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 24px;
+}
+
+:host(.closed) { height: 20px; }
+
+// Undo window over — collapse and leave.
+:host(.removing) {
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: height 0.22s ease, opacity 0.18s ease;
+}
+
+.c-type { @include feed.type-word; }
+.anc { @include feed.anchor; }
+.c-type.anc { @include feed.type-word-anchor; }
+
+.repo {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: #a6adc8;
+  font-weight: 600;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+}
+
+:host(.closed) .repo { color: #8b90ab; font-weight: 400; }
+:host(.frost) .repo { color: #8aa4d0; }
+
+// A value cell: the separator dot leads its value and stands on the column
+// boundary — every dot of a column lines up.
+.sc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -2px;
+  font-size: 10.5px;
+  color: #8b90ab;
+  white-space: nowrap;
+
+  .csep { color: #45475a; font-style: normal; }
+  .g { flex-shrink: 0; opacity: 0.7; color: #7f849c; }
+  .s-com { color: #7f849c; }
+  .plus  { color: rgba(166, 227, 161, 0.85); font-weight: 600; }
+  .minus { color: rgba(243, 139, 168, 0.85); font-weight: 600; }
+
+  &.rng  { min-width: calc(12ch + 6px); }
+  &.com  { min-width: calc(3ch + 25px); }
+  &.diff { min-width: calc(7ch + 12px); }
+}
+
+.dur {
+  grid-column: 6;
+  justify-self: end;
+  font-weight: 700;
+  color: #a6adc8;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+// A waiting row goes cold with its pill: the signs keep the meaning, colour
+// belongs to living sessions. A held one just fades its data.
+:host(.frost) .sc, :host(.frost) .dur { opacity: 0.7; }
+:host(.frost) .sc .plus, :host(.frost) .sc .minus { color: #7f849c; }
+:host(.paused) .repo, :host(.paused) .sc, :host(.paused) .dur { opacity: 0.75; }
+
+.m-act { @include feed.glyph-action; }
+.l-undo { @include feed.undo-button; }
+@include feed.need-pulse-keyframes;
+
+// Undo window: the identity of the row is struck, its evidence just dims.
+:host(.deleted), :host(.struck) {
+  .c-type, .repo, .sc.rng .rv { opacity: 0.38; text-decoration: line-through; }
+  .sc.com, .sc.diff { opacity: 0.38; }
+}
+
+:host(.struck) .dur { opacity: 0.38; text-decoration: line-through; }
+
+// ─── The pill — the type-column label dressed in the candy medallion ──────
+// Text = the type word's typography (10px/700): a closed row wears the same
+// label without glass. The glass is the session's state: ▶ / ⏸ / ■ in ice.
+// Unlit neutral dye by default; .lead lights it with the session's heat.
+.tb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  min-width: 73px;
+  padding: 0 7px 0 6px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  justify-self: start;
+  // Glyph centre: 6px left padding + half the 9px indicator box.
+  --lx: 10.5px;
+  @include glass.glass-candy((205 214 244), (228 233 250), #8b90ab);
+  --lc: var(--heat, 205 214 244);
+  --m1: 0.08;
+  --m2: 0.03;
+  --m3: 0.06;
+  --eg: 0.12;
+  --ec: 0.14;
+  --pool: 0.1;
+
+  // Silent under the cursor — no word morphs; the pill only brightens, and
+  // stays so while its menu is open.
+  &.anc:hover, &.anc.armed { filter: brightness(1.16); }
+}
+
+.k-txt { position: relative; z-index: 3; }
+
+// The fill carries the colour, so the glass under it runs thinner.
+.tb.aq {
+  --m1: 0.06;
+  --m2: 0.02;
+  --m3: 0.045;
+  --eg: 0.14;
+  --pool: 0.16;
+}
+
+// Tracking: dye and light = the session's temperature.
+.tb.lead {
+  --c: var(--heat, 205 214 244);
+  --ci: var(--heat-lite, 228 233 250);
+  --ink: #cdd6f4;
+  --lc: var(--heat, 205 214 244);
+  --ec: 0.3;
+  background:
+    radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.3), rgb(var(--lc) / 0.07) 11px, transparent 24px),
+    glass.$candy-body;
+
+  &::before {
+    background:
+      radial-gradient(circle at var(--lx) 50%, rgb(var(--lc) / 0.7), rgb(var(--lc) / 0.28) 12px, transparent 30px),
+      glass.$candy-rim;
+  }
+}
+
+// Paused — the user holds it. The capsule doesn't darken, it EMPTIES: the
+// dye thins to nothing, the candy volume is dropped, and the ⏸ burns red in
+// the empty glass. Red is free for this: the heat ramp never uses it.
+.tb.willp {
+  --c: 205 214 244;
+  --ci: 228 233 250;
+  --rc: 205 214 244;
+  --m1: 0.04;
+  --m2: 0.014;
+  --m3: 0.025;
+  background:
+    radial-gradient(circle at var(--lx) 50%, rgba(243, 139, 168, 0.19), rgba(243, 139, 168, 0.05) 13px, transparent 26px),
+    radial-gradient(95% 150% at 30% -25%, rgba(255, 255, 255, 0.069), transparent 66%),
+    linear-gradient(180deg, rgb(var(--c) / var(--m1)), rgb(var(--c) / var(--m2)) 55%, rgb(var(--c) / var(--m3)));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.104),
+    0 1px 3px -1px rgba(0, 0, 0, 0.2);
+
+  &::before {
+    background: conic-gradient(from 0deg,
+      rgb(var(--rc) / 0.184) 0deg,
+      rgb(var(--rc) / 0.035) 48deg,
+      rgb(var(--rc) / 0.092) 100deg,
+      rgba(255, 255, 255, 0.196) 135deg,
+      rgb(var(--rc) / 0.069) 195deg,
+      rgb(var(--rc) / 0.023) 228deg,
+      rgb(var(--rc) / 0.104) 275deg,
+      rgba(255, 255, 255, 0.3) 316deg,
+      rgb(var(--rc) / 0.184) 360deg);
+  }
+
+  // The front blik stills along with the glass.
+  &::after {
+    background: radial-gradient(50% 56% at 27% 4%, rgba(255, 255, 255, 0.092), transparent 68%);
+  }
+}
+
+// Stamina = the fill, left to right; its colour is the temperature. A soft
+// right edge — a hard meniscus through the word reads as a strike-through.
+.liq {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  z-index: 1;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+
+  i {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: calc(var(--stam, 0.6) * 100% + 4px);
+    background: linear-gradient(90deg, rgb(var(--heat) / 0.26), rgb(var(--heat) / 0.36) calc(100% - 5px), rgb(var(--heat) / 0));
+  }
+}
+
+// Held: the fill dims on the same level — the gauge does not drain.
+.tb.willp .liq { opacity: 0.3; }
+
+// Indicator — a fixed 9px box; glyphs swap inside it, the word never shifts.
+.k-ind {
+  position: relative;
+  // The crisp foreground plane — above the front-surface blik (::after, z2).
+  z-index: 3;
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+
+  > * {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    transition: opacity 0.15s ease;
+  }
+}
+
+// Tracking = ▶: colour and halo are the session's temperature.
+.k-lamp {
+  width: 8px;
+  height: 8px;
+  fill: rgb(var(--lc));
+  filter: drop-shadow(0 0 2px rgb(var(--lc) / 0.95)) drop-shadow(0 0 5px rgb(var(--lc) / 0.55));
+}
+
+.k-act {
+  width: 9px;
+  height: 9px;
+  fill: #f38ba8;
+  opacity: 0;
+}
+
+.tb.willp .k-lamp { opacity: 0; }
+
+.tb.willp .k-act {
+  opacity: 1;
+  filter: drop-shadow(0 0 2.5px rgba(243, 139, 168, 0.95)) drop-shadow(0 0 6px rgba(243, 139, 168, 0.5));
+}
+
+.k-stop {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: #9399b2;
+}
+
+// The word: «Tracking» and «Paused» share one grid cell — a state change is
+// an opacity crossfade, the pill's width never moves.
+.k-word {
+  position: relative;
+  z-index: 3;
+  display: inline-grid;
+  align-items: center;
+
+  > * {
+    grid-area: 1 / 1;
+    justify-self: start;
+    white-space: nowrap;
+    transition: opacity 0.15s ease;
+  }
+
+  .k-alt { opacity: 0; }
+}
+
+.tb.willp .k-word {
+  .k-txt { opacity: 0; }
+  .k-alt { opacity: 1; color: rgba(147, 153, 176, 0.62); text-shadow: none; }
+}
+
+// Waiting — the system stopped it (superseded / idle): frosted-over glass,
+// clearly blue, hoarfrost feathers (inline SVG dendrites) creeping in from
+// every edge, crystal specks, a frost haze hugging the rim and a cold aura.
+// The word sits BEHIND the ice — murky and softly blurred, still legible.
+// The ■ says "stopped"; the frost says "by itself, from the cold".
+.tb.frost {
+  color: #8aa4d0;
+  // Dendrites are third-order fractals: stem → forked branch → fine tick
+  // (three stroke weights), plus uneven frost patches (radial-gradient
+  // ellipses) and micro-clusters of specks — hoarfrost grows in patches.
+  background:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 17' preserveAspectRatio='none'><defs><radialGradient id='fp'><stop offset='0' stop-color='%23bcd6f8' stop-opacity='0.26'/><stop offset='0.65' stop-color='%23bcd6f8' stop-opacity='0.09'/><stop offset='1' stop-color='%23bcd6f8' stop-opacity='0'/></radialGradient></defs><ellipse cx='8' cy='3' rx='11' ry='4.8' fill='url(%23fp)'/><ellipse cx='74' cy='4' rx='9.5' ry='4.2' fill='url(%23fp)'/><ellipse cx='78' cy='12.5' rx='7' ry='4' fill='url(%23fp)'/><ellipse cx='15' cy='15.5' rx='9' ry='3.6' fill='url(%23fp)'/><ellipse cx='46' cy='1.2' rx='7' ry='2.6' fill='url(%23fp)' opacity='0.7'/><g fill='none' stroke='%23a9c9f2' stroke-linecap='round'><g stroke-width='0.55' opacity='0.75'><path d='M0 2 Q6 3.6 14 3.3'/><path d='M80 2.8 Q73 4.4 66 3.5'/></g><g stroke-width='0.5' opacity='0.7'><path d='M1.8 2.5 L2.6 1.2 L3.7 0.6 M2.6 1.2 L3.3 1.8'/><path d='M4 3 L5 1.6 L6.3 1.1 M5 1.6 L5.8 2.1'/><path d='M6.6 3.2 L7.6 2 L8.9 1.5 M7.6 2 L8.3 2.5'/><path d='M9.4 3.3 L10.3 2.2 L11.4 1.9 M10.3 2.2 L10.9 2.7'/><path d='M2.8 2.8 L3.6 4.3 L4.7 5.1 M3.6 4.3 L4.3 3.9'/><path d='M5.4 3.1 L6.2 4.6 L7.1 5.3 M6.2 4.6 L6.9 4.2'/><path d='M8.2 3.3 L8.9 4.6 L9.8 5.2 M8.9 4.6 L9.5 4.1'/><path d='M78.2 3.4 L77.2 1.9 L76 1.3 M77.2 1.9 L76.4 2.4'/><path d='M75.8 4 L74.6 2.6 L73.4 2.2 M74.6 2.6 L73.9 3.2'/><path d='M73 4.2 L72 2.9 L70.9 2.6 M72 2.9 L71.3 3.5'/><path d='M77 3.8 L76.2 5.4 L75.2 6 M76.2 5.4 L75.5 4.9'/><path d='M74.2 4.2 L73.4 5.7 L72.4 6.2 M73.4 5.7 L72.8 5.2'/></g><g stroke-width='0.35' opacity='0.8'><path d='M3.7 0.6 L4.5 0.3 M3.15 0.9 L3.55 0.35'/><path d='M6.3 1.1 L7.1 0.8 M5.6 1.35 L6 0.75'/><path d='M8.9 1.5 L9.7 1.25 M8.2 1.75 L8.6 1.15'/><path d='M11.4 1.9 L12.2 1.7'/><path d='M4.7 5.1 L5.5 5.5 M4.1 4.7 L4.5 5.4'/><path d='M7.1 5.3 L7.9 5.6'/><path d='M3.3 1.8 L3.95 2.25'/><path d='M5.8 2.1 L6.45 2.45'/><path d='M76 1.3 L75.1 1 M76.55 1.55 L76.1 0.9'/><path d='M73.4 2.2 L72.5 2 M74 2.3 L73.6 1.65'/><path d='M70.9 2.6 L70 2.5'/><path d='M75.2 6 L74.35 6.35'/><path d='M76.4 2.4 L75.75 2.85'/><path d='M73.9 3.2 L73.25 3.6'/></g><g stroke-width='0.5' opacity='0.55'><path d='M0 8.2 Q3.4 8.8 6.4 11.6'/><path d='M1.4 8.5 L2.2 7.2 L3.2 6.7 M2.2 7.2 L2.9 7.7'/><path d='M2.9 9.3 L4.1 8.5 L5.2 8.4 M4.1 8.5 L4.6 9.2'/><path d='M4.5 10.4 L5.6 9.7 M4.5 10.4 L5 11.4'/><path d='M2 9 L2.5 10.5 L3.3 11.3'/></g><g stroke-width='0.35' opacity='0.6'><path d='M3.2 6.7 L3.9 6.35 M2.55 6.9 L2.3 6.25'/><path d='M5.2 8.4 L5.9 8.3'/><path d='M3.3 11.3 L4 11.7'/></g><g stroke-width='0.5' opacity='0.45'><path d='M32 0 Q32.8 2.2 35 3.6'/><path d='M32.3 1 L31.2 1.8 L30.4 2.6 M31.2 1.8 L30.5 1.2'/><path d='M33.2 2.5 L32.4 3.5 M33.2 2.5 L34 3.3'/></g><g stroke-width='0.35' opacity='0.5'><path d='M30.4 2.6 L29.8 3.2 M30.8 2.2 L30.2 1.9'/></g><g stroke-width='0.5' opacity='0.4'><path d='M46 0 Q47.2 1.9 49.5 2.5'/><path d='M46.7 1.1 L45.8 1.9 M46.7 1.1 L47.4 2'/></g><g stroke-width='0.5' opacity='0.55'><path d='M80 8.2 Q76.6 8.8 74 10.8'/><path d='M78.5 8.5 L77.6 7.2 L76.5 6.8 M77.6 7.2 L76.9 7.8'/><path d='M76.9 9.3 L75.7 8.6 M76.9 9.3 L76.2 10.2'/></g><g stroke-width='0.35' opacity='0.6'><path d='M76.5 6.8 L75.8 6.5 M77.1 7 L76.9 6.35'/><path d='M76.2 10.2 L75.6 10.75'/></g><g stroke-width='0.5' opacity='0.5'><path d='M80 13.3 Q75 12.7 70.3 14.9'/><path d='M77.7 12.9 L76.9 14.4 L75.9 15 M76.9 14.4 L76.2 13.9'/><path d='M74.8 13.3 L74 14.8 M74.8 13.3 L74.1 12.7'/><path d='M72.4 13.9 L71.8 15.3'/></g><g stroke-width='0.35' opacity='0.55'><path d='M75.9 15 L75.1 15.35 M76.35 14.7 L76 15.4'/><path d='M74.1 12.7 L73.5 12.3'/></g><g stroke-width='0.5' opacity='0.5'><path d='M12 17 Q14.5 14.3 18.2 13.5'/><path d='M13.5 15.6 L12.4 14.6 L11.6 13.7 M12.4 14.6 L13 13.9'/><path d='M15.2 14.5 L14.6 13.1 M15.2 14.5 L16 13.8'/><path d='M16.8 13.9 L16.4 12.5 L15.7 11.7'/></g><g stroke-width='0.35' opacity='0.55'><path d='M11.6 13.7 L11 13.1 M12 14.15 L11.35 14.35'/><path d='M15.7 11.7 L15.1 11.2 M16.6 12.2 L17.2 11.8'/><path d='M14.6 13.1 L14.1 12.55'/></g><g stroke-width='0.5' opacity='0.45'><path d='M0 13.6 Q2.2 14.2 4 16'/><path d='M1.3 13.9 L2 12.7 M1.3 13.9 L0.7 12.9'/><path d='M2.6 14.9 L3.5 14.1'/></g><g stroke-width='0.5' opacity='0.4'><path d='M44 17 Q45.4 15 48 14.3'/><path d='M44.9 15.8 L44 14.8 M44.9 15.8 L45.7 15'/><path d='M46.5 14.8 L46 13.5'/></g></g><g fill='%23bcd6f8'><circle cx='12.5' cy='5.8' r='0.45' opacity='0.6'/><circle cx='13.8' cy='6.8' r='0.3' opacity='0.5'/><circle cx='11.4' cy='7' r='0.25' opacity='0.45'/><circle cx='20' cy='2.6' r='0.4' opacity='0.5'/><circle cx='26' cy='13' r='0.45' opacity='0.45'/><circle cx='36' cy='5.8' r='0.4' opacity='0.45'/><circle cx='40' cy='2.4' r='0.35' opacity='0.5'/><circle cx='50' cy='13.8' r='0.4' opacity='0.4'/><circle cx='55' cy='3.2' r='0.45' opacity='0.55'/><circle cx='58' cy='8.4' r='0.35' opacity='0.4'/><circle cx='70.6' cy='6' r='0.4' opacity='0.55'/><circle cx='71.8' cy='7.1' r='0.3' opacity='0.45'/><circle cx='69.4' cy='7.4' r='0.25' opacity='0.4'/><circle cx='63' cy='13.4' r='0.4' opacity='0.4'/><circle cx='28' cy='14.6' r='0.3' opacity='0.4'/><circle cx='27' cy='12' r='0.25' opacity='0.35'/><circle cx='24' cy='8' r='0.3' opacity='0.35'/></g></svg>"),
+    radial-gradient(120% 110% at 50% -40%, rgba(140, 180, 245, 0.3), transparent 62%),
+    radial-gradient(95% 115% at 104% 120%, rgba(120, 165, 240, 0.22), transparent 58%),
+    radial-gradient(80% 100% at -6% 118%, rgba(125, 168, 240, 0.18), transparent 52%),
+    linear-gradient(180deg, rgba(95, 145, 225, 0.18), rgba(10, 18, 48, 0.62));
+  background-size: cover, auto, auto, auto, auto;
+  background-repeat: no-repeat;
+  box-shadow:
+    inset 0 0 9px rgba(130, 172, 242, 0.3),
+    inset 0 1px 0 rgba(180, 210, 250, 0.24),
+    inset 0 -1px 1px rgba(5, 9, 24, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 0 8px rgba(110, 160, 240, 0.18);
+
+  // Frost-toned ring; fixed colours — no light ever floods a frozen pill.
+  &::before {
+    background: conic-gradient(from 0deg,
+      rgba(175, 208, 250, 0.45) 0deg,
+      rgba(150, 190, 245, 0.12) 48deg,
+      rgba(150, 190, 245, 0.22) 100deg,
+      rgba(255, 255, 255, 0.35) 135deg,
+      rgba(150, 190, 245, 0.18) 195deg,
+      rgba(150, 190, 245, 0.08) 228deg,
+      rgba(150, 190, 245, 0.25) 275deg,
+      rgba(255, 255, 255, 0.52) 316deg,
+      rgba(175, 208, 250, 0.45) 360deg);
+  }
+
+  // No front blik: the ice sheet IS the front surface here.
+  &::after { content: none; }
+
+  .k-txt {
+    color: rgba(150, 180, 230, 0.66);
+    filter: blur(0.35px);
+    text-shadow: 0 0 3px rgba(165, 200, 250, 0.45);
+  }
+
+  .k-stop {
+    background: #8fb0e6;
+    box-shadow: 0 0 3px rgba(130, 170, 235, 0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
