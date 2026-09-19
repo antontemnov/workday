@@ -225,8 +225,10 @@
   white-space: nowrap;
   text-align: right;
   justify-self: end;
+  // The box overhangs the column by its padding + frame, so the digits end
+  // exactly on the column edge — flush with the Σ and the session times.
   padding: 0 5px;
-  margin: 0 -5px;
+  margin: 0 -6px;
   border: 1px solid transparent;
   border-radius: 5px;
 
@@ -238,7 +240,9 @@
   }
 
   &.edit {
-    width: 64px;
+    // 60px less the -6px side margins = the column's 48px floor: opening a
+    // form never resizes the time column, the session tails stay put.
+    width: 60px;
     height: 18px;
     background: transparent;
     color: #cba6f7;

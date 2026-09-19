@@ -245,8 +245,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
         {
           id: 's3',
           repo: 'D:/work/infra-scripts',
-          task: 'OPS-512',
-          branch: 'OPS-512-pipeline-tweak',
+          // Same ticket as s1, another repo — the hot card carries two pills
+          // in a row: the accruing one and the frozen one.
+          task: 'ATL-6781',
+          branch: 'ATL-6781-atemnov-fee-pipeline-env',
           // Idle = activated then auto-paused; a never-activated session can't
           // be idle (real-data invariant, add-time gate relies on it).
           state: 'active',
