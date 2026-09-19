@@ -58,9 +58,6 @@
         (deleteRequested)="deleteSessionRow(s)"
         (undoRequested)="undoSessionDelete(s)" />
 
-      <!-- 3px of air between the tracked rows and the declared ones -->
-      <div class="rgap" *ngIf="b.sessionRows.length > 0 && (b.folded.length > 0 || b.named.length > 0 || draftTask === b.task || draftPending?.task === b.task)"></div>
-
       <!-- Manual added — the ticket's bare Development time, one record.
            A tag, not a description; only its time is editable. -->
       <div class="wl manline"

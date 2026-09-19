@@ -20,7 +20,7 @@ export function sessionRowState(s: SessionDetail): SessionRowState {
  * A live session wears the pill — Tracking ▶ (the fill is the stamina, the
  * dye its temperature), Paused ⏸ (the user holds it: emptied glass, red
  * glyph), Waiting ■ (the system stopped it: frost). A closed one is a plain
- * 20px row under the type word. The left cell is the row's anchor — a click
+ * 22px row under the type word. The left cell is the row's anchor — a click
  * asks the panel for the menu; the pill itself stays silent under the cursor.
  */
 @Component({

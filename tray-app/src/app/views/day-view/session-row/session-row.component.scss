@@ -3,7 +3,7 @@
 
 // The host IS the grid row of the ticket block's body:
 // type | repo | · range | · ⊸ N | · diff | time. Live rows stand 24px around
-// an 18px pill (6px of glass between two pills in a row); closed — 20px.
+// an 18px pill (6px of glass between two pills in a row); closed — 22px.
 :host {
   grid-column: 1 / -1;
   display: grid;
@@ -12,7 +12,7 @@
   height: 24px;
 }
 
-:host(.closed) { height: 20px; }
+:host(.closed) { height: 22px; }
 
 // Undo window over — collapse and leave.
 :host(.removing) {

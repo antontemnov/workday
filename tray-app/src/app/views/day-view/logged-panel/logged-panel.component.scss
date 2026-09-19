@@ -169,7 +169,7 @@
   display: grid;
   grid-template-columns: subgrid;
   align-items: center;
-  height: 20px;
+  height: 22px;
 }
 
 .c-type { @include feed.type-word; }
@@ -384,12 +384,6 @@
 
 @include feed.need-pulse-keyframes;
 
-// 3px of air between the tracked rows and the declared ones.
-.rgap {
-  grid-column: 1 / -1;
-  height: 3px;
-}
-
 // ─── Anchors — the left column is the row's handle ────────────────────────
 .anc { @include feed.anchor; }
 .c-type.anc { @include feed.type-word-anchor; }
@@ -398,7 +392,7 @@
 // inside the fold the row keeps its height so only the card's own collapse
 // is seen, not a row death followed by a vanishing husk.
 .blk.folding .wl.removing,
-.blk.folding .sr.removing { height: 20px; opacity: 1; }
+.blk.folding .sr.removing { height: 22px; opacity: 1; }
 
 // Whole-block delete: everything struck while the undo burns; the collapse
 // itself is a measured inline fold (blocks have no fixed height cap).
