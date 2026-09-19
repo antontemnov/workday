@@ -425,6 +425,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
   }
 
   async pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>> {
+    await delay(1200); // the daemon's flush + forced tick takes a second or two
     if (repo) this.mockManualPaused.add(repo);
     return { ok: true, data: { paused: repo ? [repo] : [] } };
   }
@@ -436,6 +437,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
   // Mirrors the daemon: setting the sensitivity also clears a manual pause,
   // unless keepPause asks to leave it.
   async sensitivity(level: SensitivityLevel, repo?: string, keepPause?: boolean): Promise<ApiResponse<SensitivityResponse>> {
+    await delay(1200);
     if (repo) {
       this.mockRepoSensitivity.set(repo, level);
       if (!keepPause) this.mockManualPaused.delete(repo);

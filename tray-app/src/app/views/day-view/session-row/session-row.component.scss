@@ -88,8 +88,9 @@
 
 :host(.struck) .dur { opacity: 0.38; text-decoration: line-through; }
 
-// A struck row opens no menu — its handle stays dark under the pointer.
-:host(.deleted), :host(.struck) {
+// A struck row opens no menu — its handle stays dark under the pointer; so
+// does every handle while the daemon answers an action.
+:host(.deleted), :host(.struck), :host(.locked) {
   .anc { pointer-events: none; }
 }
 

@@ -8,7 +8,7 @@ import {
 } from '../../../models/workday.models';
 import { activityLabel, activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
-import { CtxMenuEntry, openAnchoredMenu, toggleAnchoredMenu } from '../ctx-menu.util';
+import { CtxMenuEntry, closeCtxMenuWithin, openAnchoredMenu, toggleAnchoredMenu } from '../ctx-menu.util';
 import { CTX_ICON } from '../ctx-icons.util';
 import { SessionRowComponent, SessionRowState, sessionRowState } from '../session-row/session-row.component';
 import { staminaHeat } from '../session-row/stamina-heat.util';
@@ -247,6 +247,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
     // The action is over and nothing landed — the add failed; let the row go.
     if (changes['actionPending'] && !this.actionPending && !this.draftMerging) this.draftPending = null;
+    // The daemon answers in a second or two — the card menus stay shut
+    // meanwhile, or the same action is easily fired twice.
+    if (changes['actionPending'] && this.actionPending) closeCtxMenuWithin(this.host.nativeElement);
     if (changes['entries']) {
       // The fresh entry lands with the refresh that follows the POST — pick up
       // its minutes as the stepper base once it appears.
@@ -681,7 +684,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // The ticket key — the card's handle. Delete takes the whole card.
   onTicketMenu(b: TicketBlock, ev: MouseEvent): void {
-    if (this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
+    if (this.actionPending || this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       ...(b.task !== '—'
         ? [{ icon: CTX_ICON.add, label: 'Add time', action: (): void => this.openDraft(b.task) }] : []),
@@ -697,13 +700,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   // A handle lights up only while its menu can open: not during the fresh
-  // draft window, not on a struck row.
+  // draft window, not on a struck row, not while the daemon is answering.
   entryMenuReady(e: ManualEntry): boolean {
-    return !this.isFresh(e) && !this.isDeleted(e) && !this.taskDeleted(e.task);
+    return !this.actionPending && !this.isFresh(e) && !this.isDeleted(e) && !this.taskDeleted(e.task);
   }
 
   addedMenuReady(b: TicketBlock): boolean {
-    return !this.foldedHasFresh(b) && !this.foldedDeleted(b) && !this.taskDeleted(b.task);
+    return !this.actionPending && !this.foldedHasFresh(b) && !this.foldedDeleted(b) && !this.taskDeleted(b.task);
   }
 
   // The type word — an entry's handle.
@@ -1101,6 +1104,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // The left cell is the row's anchor: its menu grows from under it.
   onSessionMenu(s: SessionDetail, anchor: HTMLElement): void {
+    if (this.actionPending) return;
     if (s.closedBy) {
       if (this.sessionDeleted(s) || this.taskDeleted(s.task ?? '—')) return;
       toggleAnchoredMenu(anchor, () => [

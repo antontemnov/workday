@@ -64,6 +64,11 @@ export function closeCtxMenu(): void {
   if (menuAnchor) { menuAnchor.classList.remove('armed'); menuAnchor = null; }
 }
 
+// Closes the menu only when it grew from an anchor inside `root`.
+export function closeCtxMenuWithin(root: HTMLElement): void {
+  if (menuAnchor && root.contains(menuAnchor)) closeCtxMenu();
+}
+
 export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]): void {
   closeCtxMenu();
   if (items.length === 0) return;

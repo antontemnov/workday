@@ -126,12 +126,12 @@
 }
 
 // Ticket key — plain text centred in the type column: the accent is carried
-// by size, weight and a faint glow, never by hue or glass. It stands 1.5px
-// left of the centre (a centred item moves by half its margin): the key's
-// right edge tucks just inside the 11-letter type words' under it.
+// by size, weight and a faint glow, never by hue or glass. The centre is the
+// visible column's: the pill fills the 74px cell, but type words end at the
+// 11-letter one (10px type = 11 × 10/12 ch of the key), so over them the key
+// centres on that word — on the cell a short key would hang to the right.
 .tkt {
   justify-self: center;
-  margin-right: 3px;
   white-space: nowrap;
   color: #cdd6f4;
   font-size: 12px;
@@ -149,15 +149,21 @@
       text-shadow: 0 0 10px rgba(205, 214, 244, 0.62), 0 0 3px rgba(205, 214, 244, 0.42);
     }
   }
+
+  // The daemon is answering an action — no menu until it has.
+  &.locked { pointer-events: none; }
 }
 
-// Name — a long tail fades out instead of a hard ellipsis cut; the mask only
-// bites when the text actually reaches the column edge.
+.blk:not(.hot) .tkt { margin-right: calc(74px - 9.167ch); }
+
+// Name — the key's own ink: the lid reads as one line, the key stands out by
+// weight and glow alone. A long tail fades out instead of a hard ellipsis
+// cut; the mask only bites when the text actually reaches the column edge.
 .c-nm {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  color: #bac2de;
+  color: #cdd6f4;
   font-size: 11.5px;
   cursor: default;
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);

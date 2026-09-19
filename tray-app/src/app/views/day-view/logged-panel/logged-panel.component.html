@@ -29,7 +29,7 @@
 
     <!-- The lid — identity + day Σ; the key is the card's handle -->
     <div class="blk-id">
-      <span class="tkt anc" (click)="onTicketMenu(b, $event)">{{ b.task }}</span>
+      <span class="tkt anc" [class.locked]="actionPending" (click)="onTicketMenu(b, $event)">{{ b.task }}</span>
       <span class="c-nm"
             [class.none]="!summaryOfTask(b.task)">{{ summaryOfTask(b.task) || '— name not cached' }}</span>
       <ng-container *ngIf="taskDeleted(b.task); else blockSumTpl">
@@ -53,6 +53,7 @@
         [showDur]="showSessionDur(b)"
         [deleted]="sessionDeleted(s)"
         [struck]="taskDeleted(b.task)"
+        [locked]="actionPending"
         [class.removing]="sesRemovingIds.has(s.id)"
         (menuRequested)="onSessionMenu(s, $event)"
         (deleteRequested)="deleteSessionRow(s)"

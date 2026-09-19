@@ -40,6 +40,8 @@ export class SessionRowComponent {
   @Input() deleted = false;
   // The whole card burns: struck like the rest of it, the undo lives in the lid.
   @Input() struck = false;
+  // The daemon is answering an action: the handle opens no menu meanwhile.
+  @Input() locked = false;
 
   @Output() menuRequested = new EventEmitter<HTMLElement>();
   @Output() deleteRequested = new EventEmitter<void>();
@@ -69,6 +71,9 @@ export class SessionRowComponent {
 
   @HostBinding('class.struck')
   get isStruck(): boolean { return this.struck; }
+
+  @HostBinding('class.locked')
+  get isLocked(): boolean { return this.locked; }
 
   // Temperature + level of this session — the pill's dye, ▶ glow and fill.
   @HostBinding('style.--heat')
@@ -100,7 +105,7 @@ export class SessionRowComponent {
 
   onAnchorClick(ev: MouseEvent): void {
     ev.stopPropagation();
-    if (this.deleted || this.struck) return;
+    if (this.deleted || this.struck || this.locked) return;
     this.menuRequested.emit(ev.currentTarget as HTMLElement);
   }
 
