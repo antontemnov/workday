@@ -153,8 +153,9 @@
       </div>
 
       <!-- The saved draft holds its place as a plain row until the entry
-           lands (or the action fails) — no collapse-and-regrow. -->
-      <div class="wl ent pending" *ngIf="draftPending && draftPending.task === b.task">
+           lands (or the action fails) — no collapse-and-regrow. A bare
+           Development landing on manual added folds the row away instead. -->
+      <div class="wl ent pending" *ngIf="draftPending && draftPending.task === b.task" [class.removing]="draftMerging">
         <span class="c-type">{{ activityLabel(draftPending.activity) }}</span>
         <span class="c-ds">{{ draftPending.description }}</span>
         <span class="c-dur">{{ formatDurationHm(draftPending.minutes * 60000) }}</span>

@@ -157,6 +157,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // The draft between Save and its landing: shown as a plain row so the card
   // never collapses and regrows. Cleared by the fresh id or the action's end.
   draftPending: ManualEntryInput | null = null;
+  // A bare Development draft landing on an existing manual added record has
+  // no row to become: the pending row folds away while the record's time grows.
+  draftMerging = false;
+  private draftMerges = false;
+  private mergeTimer: ReturnType<typeof setTimeout> | null = null;
   // The entry that replaced the pending row in place — no row-in on it.
   landedId: string | null = null;
   editMinutes = 30;
@@ -234,14 +239,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.freeze(); // a new pick supersedes any still-open draft
       if (this.draftPending) {
         this.landedId = this.freshEntryId;
-        this.draftPending = null;
+        if (this.draftMerges) this.foldPendingRow(); else this.draftPending = null;
       }
       this.freshId = this.freshEntryId;
       this.freshMinutes = null;
       this.armFreeze();
     }
     // The action is over and nothing landed — the add failed; let the row go.
-    if (changes['actionPending'] && !this.actionPending) this.draftPending = null;
+    if (changes['actionPending'] && !this.actionPending && !this.draftMerging) this.draftPending = null;
     if (changes['entries']) {
       // The fresh entry lands with the refresh that follows the POST — pick up
       // its minutes as the stepper base once it appears.
@@ -289,6 +294,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
     this.taskDeleteTimers.clear();
     if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
+    if (this.mergeTimer !== null) clearTimeout(this.mergeTimer);
     if (this.reorderTimer !== null) clearTimeout(this.reorderTimer);
     this.pendingTimers.forEach(t => clearTimeout(t));
     this.removeTimers.forEach(t => clearTimeout(t));
@@ -1032,6 +1038,22 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.draftTask = null;
   }
 
+  private hasAddedRecord(task: string): boolean {
+    return this.entries.some(e => e.task === task && e.added === true && !this.isDeleted(e) && !this.hiddenIds.has(e.id));
+  }
+
+  private foldPendingRow(): void {
+    this.draftMerging = true;
+    this.mergeTimer = setTimeout(() => this.endPendingFold(), REMOVE_ANIM_MS);
+  }
+
+  private endPendingFold(): void {
+    if (this.mergeTimer !== null) clearTimeout(this.mergeTimer);
+    this.mergeTimer = null;
+    this.draftMerging = false;
+    this.draftPending = null;
+  }
+
   // Description is required for everything but Development (daemon rule);
   // clearing it on a Development row is a legal explicit edit.
   get editDescNeeded(): boolean {
@@ -1053,9 +1075,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       const task = this.draftTask as string;
       this.draftTask = null;
       if (this.editMinutes <= 0) return;
+      if (this.draftMerging) this.endPendingFold();
       // Bare Development lands on the ticket's manual added record — the
       // daemon's rule; a described one becomes an entry of its own.
       this.draftPending = { task, minutes: this.editMinutes, description, activity: this.editActivity };
+      this.draftMerges = description === '' && this.editActivity === DEVELOPMENT_ACTIVITY && this.hasAddedRecord(task);
       this.entryAdded.emit(this.draftPending);
       return;
     }
