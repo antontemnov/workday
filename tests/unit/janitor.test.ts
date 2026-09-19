@@ -182,7 +182,7 @@ test('idempotent: second run is a no-op', () => {
   assert.equal(result.migratedAdjustments, 0);
 });
 
-test('legacy manualAdjustments migrate into one session-born entry (merged, status kept)', () => {
+test('legacy manualAdjustments migrate into the manual added record (merged, status kept)', () => {
   const s = makeSession({});
   (s as Session & { manualAdjustments?: unknown }).manualAdjustments = [
     { minutes: 60, reason: 'manual via tray', addedAt: '2026-06-14T12:00:00.000Z' },
@@ -198,12 +198,13 @@ test('legacy manualAdjustments migrate into one session-born entry (merged, stat
   assert.equal(result.migratedAdjustments, 2);
 
   const log = readDailyLog('2026-06-14')!;
-  assert.equal(log.manualEntries.length, 1, 'merged into one entry per session');
+  assert.equal(log.manualEntries.length, 1, 'merged into one record');
   const entry = log.manualEntries[0];
   assert.equal(entry.minutes, 90);
   assert.equal(entry.activity, 'Development');
   assert.equal(entry.description, '');
-  assert.equal(entry.sourceSessionId, s.id);
+  assert.equal(entry.added, true);
+  assert.equal(entry.sourceSessionId, undefined);
   assert.equal(entry.createdAt, '2026-06-14T12:00:00.000Z', 'first addedAt');
   assert.equal(log.status, DayStatus.Pushed, 'status NOT flipped — totals unchanged');
   assert.equal((log.sessions[0] as Session & { manualAdjustments?: unknown }).manualAdjustments, undefined, 'legacy field removed');

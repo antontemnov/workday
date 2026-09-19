@@ -1,7 +1,7 @@
 import { readdirSync, rmdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from './config.js';
-import { readDailyLog, writeDailyLog, deleteDailyLog, trimTrailingPauses, generateSessionId } from './daily-log.js';
+import { readDailyLog, writeDailyLog, deleteDailyLog, trimTrailingPauses, generateSessionId, collapseAddedEntries } from './daily-log.js';
 import { ClosedBy } from './types.js';
 import { DEFAULT_ACTIVITY } from './constants.js';
 import type { DailyLog, ManualEntry, Session } from './types.js';
@@ -15,6 +15,9 @@ import type { DailyLog, ManualEntry, Session } from './types.js';
  *   close at their trimmed honest end. Absorbs the old recoverOrphanedLogs.
  * - Legacy never-activated sessions (activatedAt = null) are pruned:
  *   report-invisible zero-duration noise from old crash-day files.
+ * - Manual added time collapses to one record per ticket (legacy
+ *   session-born entries + bare Development standalones that own no Tempo
+ *   worklog) — see collapseAddedEntries.
  * - Files left with zero confirmed facts (no sessions, no manual entries,
  *   never pushed) are deleted — including historical empty files from the
  *   pre-lazy-day daemon. Emptied month dirs go too.
@@ -30,7 +33,11 @@ export interface JanitorResult {
   readonly prunedSessions: number;
   readonly deletedFiles: readonly string[];
   readonly migratedAdjustments: number;
+  readonly collapsedEntries: number;
 }
+
+/** Does this manual entry own a Tempo worklog (push-log ownership)? */
+export type EntryOwnershipCheck = (date: string, entry: ManualEntry) => boolean;
 
 // Pre-SQ-1 files: sessions carried manualAdjustments {minutes, reason, addedAt}.
 interface LegacyAdjustment {
@@ -40,10 +47,10 @@ interface LegacyAdjustment {
 type LegacySession = Session & { manualAdjustments?: LegacyAdjustment[] };
 
 /**
- * One-time migration: legacy per-session manualAdjustments become one
- * session-born ManualEntry per session (minutes summed, reasons dropped as
- * noise, createdAt = first addedAt). Totals are unchanged and session-born
- * entries fold back into the session aggregate at push time, so the day
+ * One-time migration: legacy per-session manualAdjustments become manual
+ * added time (minutes summed, reasons dropped as noise, createdAt = first
+ * addedAt) — the collapse pass right after leaves one record per ticket. Totals are unchanged and the
+ * time folds back into the session aggregate at push time, so the day
  * status is deliberately NOT flipped to Draft — a re-push produces the exact
  * same worklogs. Idempotent: the legacy field is removed from the file.
  */
@@ -64,7 +71,7 @@ function migrateAdjustments(log: DailyLog): number {
         description: '',
         activity: DEFAULT_ACTIVITY,
         createdAt: adjustments[0]?.addedAt ?? session.lastSeenAt,
-        sourceSessionId: session.id,
+        added: true,
       };
       if (!log.manualEntries) log.manualEntries = [];
       log.manualEntries.push(entry);
@@ -151,12 +158,14 @@ function removeEmptyMonthDirs(): void {
 /**
  * Run the full startup pass for every stored date before `currentDate`.
  * Corrupted files (unparseable, no backup) are left alone — never deleted
- * blindly. Idempotent: a clean data dir is a no-op.
+ * blindly. Idempotent: a clean data dir is a no-op. Without `ownsWorklog`
+ * only records already of the added kind collapse (push-neutral).
  */
-export function runStartupJanitor(currentDate: string): JanitorResult {
+export function runStartupJanitor(currentDate: string, ownsWorklog?: EntryOwnershipCheck): JanitorResult {
   let recovered = 0;
   let pruned = 0;
   let migrated = 0;
+  let collapsed = 0;
   const deletedFiles: string[] = [];
 
   for (const date of listAllStoredDates()) {
@@ -170,19 +179,23 @@ export function runStartupJanitor(currentDate: string): JanitorResult {
     const closedHere = closeOrphans(log);
     const prunedHere = pruneNeverActivated(log);
     const migratedHere = migrateAdjustments(log);
+    // Status untouched on purpose: the per-task totals are the same, a
+    // re-push produces the exact same worklogs.
+    const collapsedHere = collapseAddedEntries(log, ownsWorklog ? e => ownsWorklog(date, e) : undefined);
     recovered += closedHere;
     pruned += prunedHere;
     migrated += migratedHere;
+    collapsed += collapsedHere;
 
     if (isEmptyDayLog(log)) {
       deleteDailyLog(date);
       deletedFiles.push(date);
-    } else if (closedHere > 0 || prunedHere > 0 || migratedHere > 0) {
+    } else if (closedHere > 0 || prunedHere > 0 || migratedHere > 0 || collapsedHere > 0) {
       writeDailyLog(log);
     }
   }
 
   if (deletedFiles.length > 0) removeEmptyMonthDirs();
 
-  return { recoveredSessions: recovered, prunedSessions: pruned, deletedFiles, migratedAdjustments: migrated };
+  return { recoveredSessions: recovered, prunedSessions: pruned, deletedFiles, migratedAdjustments: migrated, collapsedEntries: collapsed };
 }

@@ -505,15 +505,143 @@ export function assertValidTask(task: string): void {
   }
 }
 
+// ─── Manual added — one record per ticket ─────────────────────────────────
+
+/** The ticket's manual added record (a legacy session-born entry reads as one). */
+export function isAddedEntry(entry: ManualEntry): boolean {
+  return !!entry.added || !!entry.sourceSessionId;
+}
+
+/** Bare Development — no description, no suggestion origin: manual added material. */
+function isBareDevelopment(activity: string, description: string, sourceRef?: string): boolean {
+  return activity === DEFAULT_ACTIVITY && !description && !sourceRef;
+}
+
+export function findAddedEntry(log: DailyLog, task: string): ManualEntry | undefined {
+  return (log.manualEntries ?? []).find(e => e.task === task && isAddedEntry(e));
+}
+
 /**
- * Add a manual entry — declared time on a task. Session-born entries
- * (sourceSessionId set) have no description and are always Development;
- * standalone entries require description and activity.
+ * Restore the one-record-per-ticket invariant. Records of the added kind
+ * always merge — push folds them by task anyway, so any day is safe. Bare
+ * Development standalones join only when `isOwned` is given: the day was
+ * never pushed and the entry owns no Tempo worklog — merging a pushed one
+ * would rewrite Tempo history behind the user's back. The merged record
+ * keeps the earliest id/createdAt. Idempotent; returns entries rewritten.
+ */
+export function collapseAddedEntries(log: DailyLog, isOwned?: (entry: ManualEntry) => boolean): number {
+  const entries = log.manualEntries;
+  if (!entries || entries.length === 0) return 0;
+
+  const joins = (e: ManualEntry): boolean => isAddedEntry(e)
+    || (!!isOwned && !log.pushedAt && isBareDevelopment(e.activity, e.description, e.sourceRef) && !isOwned(e));
+
+  const groups = new Map<string, ManualEntry[]>();
+  for (const entry of entries) {
+    if (!joins(entry)) continue;
+    const group = groups.get(entry.task);
+    if (group) group.push(entry);
+    else groups.set(entry.task, [entry]);
+  }
+
+  let merged = 0;
+  const result: ManualEntry[] = [];
+  for (const entry of entries) {
+    const group = groups.get(entry.task);
+    if (!group || !group.includes(entry)) {
+      result.push(entry);
+      continue;
+    }
+    if (group[0] !== entry) continue; // folded into the group's first slot
+    if (group.length === 1 && entry.added && !entry.sourceSessionId) {
+      result.push(entry);
+      continue;
+    }
+    const first = [...group].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    result.push({
+      id: first.id,
+      task: entry.task,
+      minutes: group.reduce((sum, e) => sum + e.minutes, 0),
+      description: '',
+      activity: DEFAULT_ACTIVITY,
+      createdAt: first.createdAt,
+      added: true,
+    });
+    merged += group.length;
+  }
+
+  if (merged > 0) log.manualEntries = result;
+  return merged;
+}
+
+function assertWithinDayWindow(log: DailyLog, addMs: number, config: AppConfig): void {
+  if (addMs > 0 && computeTotalClaimedMs(log) + addMs > computeBudgetMs(log, config)) {
+    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
+    throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
+  }
+}
+
+/** Write the ticket's manual added total; the caller has validated it. */
+function putAddedMinutes(log: DailyLog, task: string, minutes: number): ManualEntry {
+  if (!log.manualEntries) log.manualEntries = [];
+  const existing = findAddedEntry(log, task);
+  if (existing) {
+    existing.minutes = minutes;
+    return existing;
+  }
+  const entry: ManualEntry = {
+    id: generateSessionId(),
+    task,
+    minutes,
+    description: '',
+    activity: DEFAULT_ACTIVITY,
+    createdAt: new Date().toISOString(),
+    added: true,
+  };
+  log.manualEntries.push(entry);
+  return entry;
+}
+
+/**
+ * Set the ticket's manual added total (absolute). Zero removes the record;
+ * zero with nothing to remove is a no-op. Returns the record, null when the
+ * ticket has none afterwards. Throws on validation failure.
+ */
+export function setAddedMinutes(log: DailyLog, taskInput: string, minutes: number, config: AppConfig): ManualEntry | null {
+  const task = taskInput.trim();
+  if (!task) throw new Error('Task is required');
+  assertValidTask(task);
+
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    throw new Error('Minutes must be zero or positive');
+  }
+  if (minutes > MAX_ENTRY_MINUTES) {
+    throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h) of manual added time per ticket`);
+  }
+
+  collapseAddedEntries(log);
+  const existing = findAddedEntry(log, task);
+  if (minutes === 0) {
+    if (!existing) return null;
+    deleteManualEntry(log, existing.id);
+    return null;
+  }
+
+  assertWithinDayWindow(log, (minutes - (existing?.minutes ?? 0)) * MS_PER_MINUTE, config);
+  unsealForEdit(log);
+  return putAddedMinutes(log, task, minutes);
+}
+
+/**
+ * Add a manual entry — declared time on a task. Standalone entries require
+ * description and activity; a bare Development one (no description) is
+ * manual added time and lands on the ticket's single record instead — the
+ * returned entry is then that record, minutes = its new total.
  * Budget invariant: total claimed ≤ day window. Throws on validation failure.
  */
 export function addManualEntry(
   log: DailyLog,
-  input: { task: string; minutes: number; description: string; activity: string; sourceSessionId?: string; sourceRef?: string },
+  input: { task: string; minutes: number; description: string; activity: string; sourceRef?: string },
   config: AppConfig,
 ): ManualEntry {
   const task = input.task.trim();
@@ -527,21 +655,27 @@ export function addManualEntry(
     throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h)`);
   }
 
-  const sessionBorn = !!input.sourceSessionId;
-  const activity = sessionBorn ? DEFAULT_ACTIVITY : input.activity.trim();
+  const activity = input.activity.trim();
   if (!activity) throw new Error('Activity is required');
 
   // Description is user data; only Development entries may leave it empty.
-  const description = sessionBorn ? '' : input.description.trim();
-  if (!sessionBorn && !description && activity !== DEFAULT_ACTIVITY) {
+  const description = input.description.trim();
+  if (!description && activity !== DEFAULT_ACTIVITY) {
     throw new Error('Description is required (only Development may omit it)');
   }
 
-  const addMs = input.minutes * MS_PER_MINUTE;
-  if (computeTotalClaimedMs(log) + addMs > computeBudgetMs(log, config)) {
-    const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
-    throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
+  if (isBareDevelopment(activity, description, input.sourceRef)) {
+    collapseAddedEntries(log);
+    const total = (findAddedEntry(log, task)?.minutes ?? 0) + input.minutes;
+    if (total > MAX_ENTRY_MINUTES) {
+      throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h) of manual added time per ticket`);
+    }
+    assertWithinDayWindow(log, input.minutes * MS_PER_MINUTE, config);
+    unsealForEdit(log);
+    return putAddedMinutes(log, task, total);
   }
+
+  assertWithinDayWindow(log, input.minutes * MS_PER_MINUTE, config);
 
   unsealForEdit(log);
   if (!log.manualEntries) log.manualEntries = [];
@@ -552,8 +686,7 @@ export function addManualEntry(
     description,
     activity,
     createdAt: new Date().toISOString(),
-    ...(sessionBorn ? { sourceSessionId: input.sourceSessionId } : {}),
-    ...(!sessionBorn && input.sourceRef ? { sourceRef: input.sourceRef } : {}),
+    ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
   };
   log.manualEntries.push(entry);
   return entry;
@@ -598,57 +731,80 @@ export function addImportedEntry(
   return entry;
 }
 
+export interface ManualEntryEdit {
+  readonly entry: ManualEntry;            // the record carrying the time after the edit
+  // Standalone entry retired into manual added — the caller tombstones its
+  // Tempo worklog (recordEntryDeletion).
+  readonly absorbed: ManualEntry | null;
+}
+
 /**
- * Edit a manual entry in place (absolute set of provided fields).
- * Budget re-checked when minutes increase. Throws on validation failure.
+ * Edit a manual entry (absolute set of provided fields). The manual added
+ * record takes minutes only; a standalone entry edited down to bare
+ * Development is absorbed by it. Budget re-checked when minutes increase.
+ * Validates everything before the first write. Throws on validation failure.
  */
 export function editManualEntry(
   log: DailyLog,
   id: string,
   patch: { minutes?: number; description?: string; activity?: string },
   config: AppConfig,
-): void {
+): ManualEntryEdit {
+  collapseAddedEntries(log);
   const entry = findManualEntry(log, id);
   if (!entry) throw new Error(`Manual entry not found: ${id}`);
-  if (entry.sourceSessionId) {
-    throw new Error('Session-born entry is not editable');
-  }
 
+  const minutes = patch.minutes ?? entry.minutes;
   if (patch.minutes !== undefined) {
-    if (!Number.isFinite(patch.minutes) || patch.minutes <= 0) {
+    if (!Number.isFinite(minutes) || minutes <= 0) {
       throw new Error('Minutes must be positive');
     }
-    if (patch.minutes > MAX_ENTRY_MINUTES) {
+    if (minutes > MAX_ENTRY_MINUTES) {
       throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h)`);
     }
-    const deltaMs = (patch.minutes - entry.minutes) * MS_PER_MINUTE;
-    if (deltaMs > 0 && computeTotalClaimedMs(log) + deltaMs > computeBudgetMs(log, config)) {
-      const remainMinutes = Math.floor(getRemainingBudgetMs(log, config) / MS_PER_MINUTE);
-      throw new Error(`Exceeds 24h day window. Remaining: ${remainMinutes}m.`);
-    }
-    entry.minutes = patch.minutes;
   }
 
   // Validate description against the final activity — a patch may change
   // either or both. Only Development may end up with an empty description.
-  if (patch.description !== undefined || patch.activity !== undefined) {
-    const activity = (patch.activity ?? entry.activity).trim();
-    if (!activity) throw new Error('Activity cannot be empty');
-    const description = (patch.description ?? entry.description).trim();
-    if (!description && activity !== DEFAULT_ACTIVITY) {
-      throw new Error('Description is required (only Development may omit it)');
-    }
-    entry.activity = activity;
-    entry.description = description;
+  const activity = (patch.activity ?? entry.activity).trim();
+  if (!activity) throw new Error('Activity cannot be empty');
+  const description = (patch.description ?? entry.description).trim();
+  if (!description && activity !== DEFAULT_ACTIVITY) {
+    throw new Error('Description is required (only Development may omit it)');
   }
 
+  if (isAddedEntry(entry)) {
+    if (activity !== DEFAULT_ACTIVITY || description) {
+      throw new Error('Manual added time takes minutes only — log a described entry instead');
+    }
+    assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
+    entry.minutes = minutes;
+    unsealForEdit(log);
+    return { entry, absorbed: null };
+  }
+
+  // Edited down to bare Development: the entry retires into manual added.
+  if (isBareDevelopment(activity, description, entry.sourceRef)) {
+    const total = (findAddedEntry(log, entry.task)?.minutes ?? 0) + minutes;
+    if (total > MAX_ENTRY_MINUTES) {
+      throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h) of manual added time per ticket`);
+    }
+    assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
+    const absorbed = deleteManualEntry(log, entry.id);
+    return { entry: putAddedMinutes(log, absorbed.task, total), absorbed };
+  }
+
+  assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
+  entry.minutes = minutes;
+  entry.activity = activity;
+  entry.description = description;
   unsealForEdit(log);
+  return { entry, absorbed: null };
 }
 
 /**
- * Delete a manual entry. Session-born entries are deletable too (unlike
- * edit) — removing one just un-claims the extra session time. Throws when
- * the id is unknown.
+ * Delete a manual entry (the manual added record included — removing it
+ * just un-claims the extra time). Throws when the id is unknown.
  */
 export function deleteManualEntry(log: DailyLog, id: string): ManualEntry {
   const entries = log.manualEntries;

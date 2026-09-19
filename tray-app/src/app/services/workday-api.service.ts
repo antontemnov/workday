@@ -18,6 +18,7 @@ import {
   UpdateApplyResponse,
   ActivityTypesResponse,
   ManualEntryResponse,
+  ManualAddedResponse,
   ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
@@ -61,9 +62,9 @@ export abstract class WorkdayApiService {
   abstract pause(repo?: string): Promise<ApiResponse<{ paused: string[] }>>;
   abstract resume(): Promise<ApiResponse<{ resumed: string[] }>>;
   abstract sensitivity(level: SensitivityLevel, repo?: string): Promise<ApiResponse<SensitivityResponse>>;
-  // "+ Add time" on a session card → session-born manual entry: the daemon
-  // takes the task from the session, activity is Development, no description.
-  abstract addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>>;
+  // Set a ticket's manual added total — absolute, 0 removes the record.
+  // Optional date (YYYY-MM-DD) for past days — omitted = the tracked day.
+  abstract setManualAdded(task: string, minutes: number, date?: string): Promise<ApiResponse<ManualAddedResponse>>;
   // Review-time cleanup: delete a closed session. Optional date (YYYY-MM-DD)
   // for past days (timesheets) — omitted = the currently-tracked day.
   abstract deleteSession(target: string, date?: string): Promise<ApiResponse<SessionDeleteResponse>>;

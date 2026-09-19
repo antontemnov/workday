@@ -3,8 +3,10 @@ import { spawn } from 'node:child_process';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig, ensureConfigFiles } from './core/config.js';
-import { readDailyLog, writeDailyLog } from './core/daily-log.js';
+import { readDailyLog, writeDailyLog, collapseAddedEntries } from './core/daily-log.js';
 import { runStartupJanitor } from './core/janitor.js';
+import type { EntryOwnershipCheck } from './core/janitor.js';
+import { loadPushLog, pushLogKey } from './push/push-log.js';
 import { writeStopMarker, clearStopMarker } from './core/stop-marker.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { CalendarCollector } from './collectors/calendar-collector.js';
@@ -67,14 +69,21 @@ export class Daemon {
     this.gitTracker = new GitTracker(this.config);
 
     // Janitor: close orphaned sessions in past files (crash recovery),
-    // prune never-activated noise, delete factless day files.
-    const janitor = runStartupJanitor(this.currentDate);
-    if (janitor.recoveredSessions > 0 || janitor.prunedSessions > 0 || janitor.deletedFiles.length > 0 || janitor.migratedAdjustments > 0) {
-      console.log(`  Janitor: closed ${janitor.recoveredSessions} orphan(s), pruned ${janitor.prunedSessions} never-activated, deleted ${janitor.deletedFiles.length} empty file(s), migrated ${janitor.migratedAdjustments} adjustment(s)`);
+    // prune never-activated noise, delete factless day files, collapse
+    // manual added time to one record per ticket.
+    const pushLog = loadPushLog();
+    const ownsWorklog: EntryOwnershipCheck = (date, entry) => pushLogKey(date, entry.task, entry.id) in pushLog;
+    const janitor = runStartupJanitor(this.currentDate, ownsWorklog);
+    if (janitor.recoveredSessions > 0 || janitor.prunedSessions > 0 || janitor.deletedFiles.length > 0 || janitor.migratedAdjustments > 0 || janitor.collapsedEntries > 0) {
+      console.log(`  Janitor: closed ${janitor.recoveredSessions} orphan(s), pruned ${janitor.prunedSessions} never-activated, deleted ${janitor.deletedFiles.length} empty file(s), migrated ${janitor.migratedAdjustments} adjustment(s), collapsed ${janitor.collapsedEntries} manual added entr${janitor.collapsedEntries === 1 ? 'y' : 'ies'}`);
     }
 
     // Load today's log and close any orphaned sessions
     const existingLog = readDailyLog(this.currentDate) ?? undefined;
+    // The janitor never touches today's file — same collapse, done here.
+    if (existingLog && collapseAddedEntries(existingLog, e => ownsWorklog(this.currentDate, e)) > 0) {
+      writeDailyLog(existingLog);
+    }
     this.sessionTracker = new SessionTracker(this.config, existingLog);
 
     const crashedCount = this.sessionTracker.closeCrashedSessions();

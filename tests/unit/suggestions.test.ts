@@ -412,13 +412,16 @@ test('load prunes keys whose day log is pushed on disk', () => {
 console.log('');
 console.log('sourceRef plumbing & the revive invariant');
 
-test('standalone entry carries sourceRef; session-born ignores it', () => {
+test('an entry with sourceRef stays standalone even as bare Development', () => {
   const config = makeConfig();
   const log = createEmptyLog(DATE, config);
   const standalone = addManualEntry(log, { task: 'ATL-1', minutes: 10, description: 'x', activity: 'Other', sourceRef: 'meeting:u:2026-07-16' }, config);
   assert.equal(standalone.sourceRef, 'meeting:u:2026-07-16');
-  const sessionBorn = addManualEntry(log, { task: 'ATL-1', minutes: 10, description: '', activity: 'Development', sourceSessionId: 's1', sourceRef: 'meeting:u:2026-07-16' }, config);
-  assert.equal(sessionBorn.sourceRef, undefined);
+  // Its presence is what marks the suggestion covered — never folded away.
+  const bare = addManualEntry(log, { task: 'ATL-1', minutes: 10, description: '', activity: 'Development', sourceRef: 'review:2026-07-16:ATL-1' }, config);
+  assert.equal(bare.sourceRef, 'review:2026-07-16:ATL-1');
+  assert.equal(bare.added, undefined);
+  assert.equal(log.manualEntries.length, 2);
 });
 
 test('accept → covered; delete the entry → the suggestion revives', () => {

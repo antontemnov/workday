@@ -12,14 +12,14 @@ import {
   resolveUiDayStart,
   readDailyLog,
   getOpenPause,
-  findManualEntry,
+  isAddedEntry,
   resolveManualEntryTarget,
   listAvailableDates,
 } from './core/daily-log.js';
 import { resolveActivityTypes } from './push/activity-types.js';
 import {
   addEntryOnDate,
-  addSessionEntryOnDate,
+  setAddedOnDate,
   editEntryOnDate,
   deleteEntryOnDate,
   deleteSessionOnDate,
@@ -55,6 +55,7 @@ import {
   TEMPO_TOKEN_SETTINGS_PATH,
   OUTLOOK_SHARED_CALENDARS_URL,
   MS_PER_MINUTE,
+  MS_PER_SECOND,
   MAX_ENTRY_MINUTES,
   DEFAULT_MANUAL_ACTIVITY,
   DEFAULT_REVIEW_MINUTES,
@@ -92,6 +93,7 @@ import type {
   TaskDeleteResponse,
   ManualEntry,
   ManualEntryResponse,
+  ManualAddedResponse,
   ManualEntryDeleteResponse,
   FavoritesResponse,
   FavoriteAddResponse,
@@ -219,6 +221,7 @@ export function buildWatchingCard(
     effectiveDurationMs: 0,
     score: 0,
     normalizedScore: 0,
+    pauseEtaMs: null,
     isLeader: false,
     sensitivity,
     closedBy: null,
@@ -315,6 +318,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/manual-entry/update') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleUpdateManualEntry(body));
+      }
+      if (method === 'POST' && path === '/api/manual-added') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleSetManualAdded(body));
       }
       if (method === 'POST' && path === '/api/manual-entry/delete') {
         const body = await this.readBody(req);
@@ -927,6 +934,7 @@ export class HttpServer {
       minutes: entry.minutes,
       description: entry.description,
       activity: entry.activity,
+      ...(isAddedEntry(entry) ? { added: true as const } : {}),
       date: log.date,
       totalManualMinutes: Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
     };
@@ -943,24 +951,6 @@ export class HttpServer {
     if ('error' in parsed) return { ok: false, error: parsed.error };
     const pastDate = parsed.date;
 
-    // Session-born ("+ Add time" on a card): the session is the source of
-    // truth for the task; activity/description are fixed by the domain rule.
-    const sourceSessionId = typeof body.sourceSessionId === 'string' ? body.sourceSessionId : '';
-    if (sourceSessionId && pastDate) {
-      try {
-        const { entry, log } = addSessionEntryOnDate(pastDate, sourceSessionId, minutes, this.deps.config);
-        return this.toEntryResponse(entry, log);
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
-      }
-    }
-    if (sourceSessionId) {
-      const result = tracker.addSessionEntry(sourceSessionId, minutes);
-      if (!result.ok || !result.entry) return { ok: false, error: result.error };
-      tracker.flush();
-      return this.toEntryResponse(result.entry, tracker.getDailyLog());
-    }
-
     const task = typeof body.task === 'string' ? body.task : '';
     const description = typeof body.description === 'string' ? body.description : '';
     const activity = typeof body.activity === 'string' && body.activity.trim()
@@ -969,9 +959,8 @@ export class HttpServer {
 
     if (!task) return { ok: false, error: 'Missing task' };
     // Description validated in core against the activity rule (required
-    // for everything but Development).
-    // User-picked task must exist in Jira; session-born tasks come from
-    // git and are validated at push time instead.
+    // for everything but Development; a bare Development add lands on the
+    // ticket's manual added record).
     const jiraError = await this.validateTaskInJira(task);
     if (jiraError) return jiraError;
 
@@ -1004,7 +993,8 @@ export class HttpServer {
 
     if (parsed.date) {
       try {
-        const { entry, log } = editEntryOnDate(parsed.date, target, patch, this.deps.config);
+        const { entry, absorbed, log } = editEntryOnDate(parsed.date, target, patch, this.deps.config);
+        if (absorbed) recordEntryDeletion(parsed.date, absorbed.task, absorbed.id);
         this.relearnFromEditedEntry(entry);
         return this.toEntryResponse(entry, log);
       } catch (err) {
@@ -1016,14 +1006,60 @@ export class HttpServer {
     const found = resolveManualEntryTarget(tracker.getDailyLog(), target);
     if (!found) return { ok: false, error: `Manual entry not found: ${target}` };
     const result = tracker.editManualEntry(found.id, patch);
-    if (!result.ok) return { ok: false, error: result.error };
+    if (!result.ok || !result.edit) return { ok: false, error: result.error };
     tracker.flush();
 
     const log = tracker.getDailyLog();
-    const entry = findManualEntry(log, found.id);
-    if (!entry) return { ok: false, error: 'Manual entry not found after update' };
+    const { entry, absorbed } = result.edit;
+    if (absorbed) recordEntryDeletion(log.date, absorbed.task, absorbed.id);
     this.relearnFromEditedEntry(entry);
     return this.toEntryResponse(entry, log);
+  }
+
+  /**
+   * Set a ticket's manual added total (0 removes the record). The record
+   * never owns a Tempo worklog — it rides the task aggregate — so a removal
+   * needs no tombstone.
+   */
+  private async handleSetManualAdded(body: Record<string, unknown>): Promise<ApiResponse<ManualAddedResponse>> {
+    const task = typeof body.task === 'string' ? body.task.trim() : '';
+    if (!task) return { ok: false, error: 'Missing task' };
+    const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
+    const parsed = this.resolveEditDate(body);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+
+    const tracker = this.deps.sessionTracker;
+    // A ticket already on the day came from git or passed the gate earlier.
+    const dayLog = parsed.date ? readDailyLog(parsed.date) : tracker.getDailyLog();
+    const known = !!dayLog && (dayLog.sessions.some(s => s.task === task)
+      || (dayLog.manualEntries ?? []).some(e => e.task === task));
+    if (!known && minutes > 0) {
+      const jiraError = await this.validateTaskInJira(task);
+      if (jiraError) return jiraError;
+    }
+
+    const toData = (entry: ManualEntry | null, log: DailyLog, dayFileDeleted?: boolean): ManualAddedResponse => ({
+      task,
+      minutes: entry?.minutes ?? 0,
+      entryId: entry?.id ?? null,
+      date: log.date,
+      totalManualMinutes: dayFileDeleted ? 0 : Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE),
+      ...(dayFileDeleted ? { dayFileDeleted } : {}),
+    });
+
+    if (parsed.date) {
+      try {
+        const { entry, log, dayFileDeleted } = setAddedOnDate(parsed.date, task, minutes, this.deps.config);
+        return { ok: true, data: toData(entry, log, dayFileDeleted) };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    const result = tracker.setAddedMinutes(task, minutes);
+    if (!result.ok) return { ok: false, error: result.error };
+    tracker.flush();
+    return { ok: true, data: toData(result.entry ?? null, tracker.getDailyLog()) };
   }
 
   /** Editing an accepted meeting re-learns its association (activity always,
@@ -1491,6 +1527,7 @@ export class HttpServer {
       effectiveDurationMs: computeEffectiveDuration(s),
       score: 0,
       normalizedScore: 0,
+      pauseEtaMs: null,
       isLeader: false,
       sensitivity: SensitivityLevel.Normal,
       closedBy: s.closedBy,
@@ -1774,6 +1811,8 @@ export class HttpServer {
     const evalResult = tracker.getLastEvaluatorResult();
     const sessionScore = evalResult?.scores.get(session.id);
     const openPause = getOpenPause(session);
+    const paused = tracker.hasOpenPause(session);
+    const accruing = !paused && session.state === SessionState.Active && (sessionScore?.score ?? 0) > 0;
 
     return {
       id: session.id,
@@ -1784,11 +1823,14 @@ export class HttpServer {
       startedAt: session.startedAt,
       activatedAt: session.activatedAt ?? null,
       lastSeenAt: session.lastSeenAt,
-      paused: tracker.hasOpenPause(session),
+      paused,
       pauseSource: openPause?.source ?? null,
       effectiveDurationMs: computeEffectiveDuration(session),
       score: sessionScore?.score ?? 0,
       normalizedScore: sessionScore?.normalizedScore ?? 0,
+      pauseEtaMs: accruing && sessionScore
+        ? sessionScore.etaTicks * this.deps.config.session.diffPollSeconds * MS_PER_SECOND
+        : null,
       isLeader: evalResult?.leaderId === session.id,
       sensitivity: tracker.getSensitivity(session.repo),
     };

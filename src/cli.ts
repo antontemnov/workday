@@ -30,8 +30,9 @@ import {
   computeDaySummary,
   resolveUiDayStart,
   computeTotalManualEntryMs,
+  isAddedEntry,
 } from './core/daily-log.js';
-import { addEntryOnDate, editEntryOnDate, deleteEntryOnDate, deleteSessionOnDate, deleteTaskOnDate } from './core/day-edit.js';
+import { addEntryOnDate, editEntryOnDate, deleteEntryOnDate, deleteSessionOnDate, deleteTaskOnDate, setAddedOnDate } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
 import { recordEntryDeletion } from './push/push-log.js';
@@ -53,6 +54,7 @@ import type {
   ManualEntry,
   ManualEntryResponse,
   ManualEntryDeleteResponse,
+  ManualAddedResponse,
   ActivityTypesResponse,
   MonthResponse,
   TempoImportResponse,
@@ -202,7 +204,8 @@ function printManualEntries(entries: readonly ManualEntry[]): void {
   if (entries.length === 0) { console.log('No manual entries.'); return; }
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
-    console.log(`  #${i + 1} ${e.id}  ${e.task}  ${e.minutes}m  ${e.activity}  "${e.description}"`);
+    const label = isAddedEntry(e) ? 'manual added' : `"${e.description}"`;
+    console.log(`  #${i + 1} ${e.id}  ${e.task}  ${e.minutes}m  ${e.activity}  ${label}`);
   }
 }
 
@@ -499,7 +502,9 @@ async function handleLog(args: string[]): Promise<void> {
   const result = await apiPost<ManualEntryResponse>('/api/manual-entry', { task, minutes, description, activity });
   if (!result.ok) { console.log(result.error); return; }
   const d = result.data!;
-  console.log(`Logged ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
+  console.log(d.added
+    ? `Logged ${d.task}: +${minutes}m — manual added is now ${d.minutes}m`
+    : `Logged ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
   console.log(`Total manual: ${d.totalManualMinutes}m`);
 }
 
@@ -512,7 +517,9 @@ function handleLogOffline(date: string, task: string, minutes: number, descripti
   }
   try {
     const { entry, log } = addEntryOnDate(date, { task, minutes, description, activity }, config);
-    console.log(`Logged ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
+    console.log(isAddedEntry(entry)
+      ? `Logged ${entry.task} on ${date}: +${minutes}m — manual added is now ${entry.minutes}m`
+      : `Logged ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
     console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m`);
   } catch (err) {
     console.log(err instanceof Error ? err.message : String(err));
@@ -560,14 +567,19 @@ async function handleLogEdit(args: string[]): Promise<void> {
   const result = await apiPost<ManualEntryResponse>('/api/manual-entry/update', { target, ...patch });
   if (!result.ok) { console.log(result.error); return; }
   const d = result.data!;
-  console.log(`Updated ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
+  console.log(d.added
+    ? `Updated ${d.task}: manual added is now ${d.minutes}m`
+    : `Updated ${d.task}: ${d.minutes}m ${d.activity} — "${d.description}"`);
   console.log(`Total manual: ${d.totalManualMinutes}m`);
 }
 
 function handleLogEditOffline(date: string, target: string, patch: { minutes?: number; description?: string; activity?: string }): void {
   try {
-    const { entry } = editEntryOnDate(date, target, patch, loadConfig());
-    console.log(`Updated ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
+    const { entry, absorbed } = editEntryOnDate(date, target, patch, loadConfig());
+    if (absorbed) recordEntryDeletion(date, absorbed.task, absorbed.id);
+    console.log(isAddedEntry(entry)
+      ? `Updated ${entry.task} on ${date}: manual added is now ${entry.minutes}m`
+      : `Updated ${entry.task} on ${date}: ${entry.minutes}m ${entry.activity} — "${entry.description}"`);
   } catch (err) {
     console.log(err instanceof Error ? err.message : String(err));
   }
@@ -606,6 +618,55 @@ function handleLogDeleteOffline(date: string, target: string): void {
     const { deleted, log, dayFileDeleted } = deleteEntryOnDate(date, target);
     recordEntryDeletion(date, deleted.task, deleted.id);
     console.log(`Deleted ${deleted.task} on ${date}: ${deleted.minutes}m`);
+    if (dayFileDeleted) {
+      console.log('Day had no other facts — file removed.');
+      return;
+    }
+    console.log(`Total manual: ${Math.round(computeTotalManualEntryMs(log) / MS_PER_MINUTE)}m`);
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function handleLogAdded(args: string[]): Promise<void> {
+  // workday log-added <task> <minutes> [--date D] — absolute total, 0 removes
+  const dateIdx = args.indexOf('--date');
+  let date: string | null = null;
+  let cmdArgs = args;
+  if (dateIdx !== -1) {
+    date = args[dateIdx + 1];
+    cmdArgs = [...args.slice(0, dateIdx), ...args.slice(dateIdx + 2)];
+  }
+
+  const task = cmdArgs[0];
+  const minutes = parseInt(cmdArgs[1] ?? '', 10);
+  if (!task || isNaN(minutes) || minutes < 0) {
+    console.log('Usage: workday log-added <task> <minutes> [--date YYYY-MM-DD]   (total, not a delta; 0 removes)');
+    return;
+  }
+
+  if (date) {
+    handleLogAddedOffline(date, task, minutes);
+    return;
+  }
+
+  const result = await apiPost<ManualAddedResponse>('/api/manual-added', { task, minutes });
+  if (!result.ok) { console.log(result.error); return; }
+  const d = result.data!;
+  console.log(d.minutes > 0 ? `${d.task}: manual added is now ${d.minutes}m` : `${d.task}: manual added removed`);
+  console.log(`Total manual: ${d.totalManualMinutes}m`);
+}
+
+function handleLogAddedOffline(date: string, task: string, minutes: number): void {
+  const config = loadConfig();
+  const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
+  if (date > today) {
+    console.log(`Cannot log on a future date (${date} > ${today})`);
+    return;
+  }
+  try {
+    const { entry, log, dayFileDeleted } = setAddedOnDate(date, task, minutes, config);
+    console.log(entry ? `${task} on ${date}: manual added is now ${entry.minutes}m` : `${task} on ${date}: manual added removed`);
     if (dayFileDeleted) {
       console.log('Day had no other facts — file removed.');
       return;
@@ -864,6 +925,7 @@ async function handleDay(args: string[]): Promise<void> {
     effectiveDurationMs: computeEffectiveDuration(s),
     score: 0,
     normalizedScore: 0,
+    pauseEtaMs: null,
     isLeader: false,
     sensitivity: SensitivityLevel.Normal,
     closedBy: s.closedBy,
@@ -1661,6 +1723,9 @@ async function main(): Promise<void> {
     case 'log-delete':
       await handleLogDelete(args.slice(1));
       break;
+    case 'log-added':
+      await handleLogAdded(args.slice(1));
+      break;
     case 'log-list':
       await handleLogList(args.slice(1));
       break;
@@ -1751,6 +1816,7 @@ Usage:
   workday log <task> <min> ["<desc>"] --date DATE      Log manual time (past day)
   workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry
   workday log-delete <#|id> [--date D]                 Delete a manual entry
+  workday log-added <task> <min> [--date D]            Set a ticket's manual added total (0 removes)
   workday log-list [--date DATE]                       List manual entries
   workday fav-add <task> <min> "<name>" [--activity T] Add a favorite (log template)
   workday fav-remove <#|id>                            Remove a favorite

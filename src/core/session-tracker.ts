@@ -17,12 +17,14 @@ import {
   addImportedEntry,
   editManualEntry,
   deleteManualEntry,
+  setAddedMinutes,
+  isAddedEntry,
   resolveSessionTarget,
   getOpenPause,
   trimTrailingPauses,
 } from './daily-log.js';
+import type { ManualEntryEdit } from './daily-log.js';
 import { computeWorkingDate, getSensitivityForRepo, resolveSensitivityTicks, writeConfig } from './config.js';
-import { DEFAULT_ACTIVITY } from './constants.js';
 
 /**
  * Manages session lifecycle within a DailyLog.
@@ -289,21 +291,21 @@ export class SessionTracker {
 
   /**
    * Delete a ticket's whole tracked block from today: every CLOSED session
-   * on the task plus its session-born ("+ Add time") entries. An open
+   * on the task plus its manual added record. An open
    * session stays — it is still being observed, and deleting it would only
    * re-birth a candidate on the next tick. Standalone manual entries are
    * separate worklogs and stay.
    */
   public deleteTask(task: string): { ok: boolean; error?: string; sessions?: readonly Session[]; entries?: readonly ManualEntry[]; dayFileDeleted?: boolean } {
     const sessions = this.dailyLog.sessions.filter(s => s.task === task && s.closedBy !== null);
-    const entries = (this.dailyLog.manualEntries ?? []).filter(e => !!e.sourceSessionId && e.task === task);
+    const entries = (this.dailyLog.manualEntries ?? []).filter(e => isAddedEntry(e) && e.task === task);
     if (sessions.length === 0 && entries.length === 0) {
       return { ok: false, error: `No tracked time for ${task} today` };
     }
 
     this.dailyLog.sessions = this.dailyLog.sessions.filter(s => !(s.task === task && s.closedBy !== null));
     if (this.dailyLog.manualEntries) {
-      this.dailyLog.manualEntries = this.dailyLog.manualEntries.filter(e => !(e.sourceSessionId && e.task === task));
+      this.dailyLog.manualEntries = this.dailyLog.manualEntries.filter(e => !(isAddedEntry(e) && e.task === task));
     }
     for (const s of sessions) this.onSessionClosed?.(s.id);
 
@@ -324,26 +326,10 @@ export class SessionTracker {
     return { ok: true, sessions, entries, dayFileDeleted: false };
   }
 
-  /**
-   * "+ Add time" on a session card: a session-born manual entry. Task comes
-   * from the session, activity is Development, no description by design.
-   */
-  public addSessionEntry(target: string, minutes: number): { ok: boolean; error?: string; entry?: ManualEntry } {
-    const session = resolveSessionTarget(this.dailyLog, target);
-    if (!session) {
-      return { ok: false, error: `Session not found: ${target}` };
-    }
-    if (!session.task) {
-      return { ok: false, error: 'Session has no task — log the time with `workday log <task> ...`' };
-    }
+  /** Set a ticket's manual added total in today's log (0 removes the record) */
+  public setAddedMinutes(task: string, minutes: number): { ok: boolean; error?: string; entry?: ManualEntry | null } {
     try {
-      const entry = addManualEntry(this.dailyLog, {
-        task: session.task,
-        minutes,
-        description: '',
-        activity: DEFAULT_ACTIVITY,
-        sourceSessionId: session.id,
-      }, this.config);
+      const entry = setAddedMinutes(this.dailyLog, task, minutes, this.config);
       return { ok: true, entry };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -371,16 +357,16 @@ export class SessionTracker {
   }
 
   /** Edit a manual entry in today's log */
-  public editManualEntry(id: string, patch: { minutes?: number; description?: string; activity?: string }): { ok: boolean; error?: string } {
+  public editManualEntry(id: string, patch: { minutes?: number; description?: string; activity?: string }): { ok: boolean; error?: string; edit?: ManualEntryEdit } {
     try {
-      editManualEntry(this.dailyLog, id, patch, this.config);
-      return { ok: true };
+      const edit = editManualEntry(this.dailyLog, id, patch, this.config);
+      return { ok: true, edit };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
-  /** Delete a manual entry from today's log (session-born included) */
+  /** Delete a manual entry from today's log (the manual added record included) */
   public deleteManualEntry(id: string): { ok: boolean; error?: string; deleted?: ManualEntry } {
     try {
       const deleted = deleteManualEntry(this.dailyLog, id);

@@ -76,6 +76,11 @@ function entry(id: string, task: string, minutes: number,
   return { id, task, minutes, description, activity, createdAt: new Date(nowMs).toISOString() };
 }
 
+// The ticket's manual added record — one per task, the daemon keeps it so.
+function added(id: string, task: string, minutes: number): ManualEntry {
+  return { ...entry(id, task, minutes, DEVELOPMENT_ACTIVITY, ''), added: true };
+}
+
 function session(id: string, task: string, effectiveDurationMs: number): SessionDetail {
   return {
     id, repo: 'repoA', task, branch: `${task}-branch`, state: 'closed',
@@ -181,31 +186,31 @@ test('successful DELETE stays deleted forever', () => {
 
 test('incident: lost card DELETE hides new adds only until the TTL', () => {
   const h = makePanel();
-  const f1 = entry('f1', 'ATL-2', 90, DEVELOPMENT_ACTIVITY, '');
+  const f1 = added('f1', 'ATL-2', 90);
   h.refresh([f1]);
   // Deleting the block's only row is the whole-card delete → task mask.
   (h.comp as never as { deleteEntry(e: ManualEntry): void }).deleteEntry(f1);
   commitDelete();
-  assert.deepEqual(h.deleted, ['f1']);
-  assert.deepEqual(h.taskDeleted, [], 'no tracked material — no task-level DELETE');
+  // The manual added record is the daemon's task-delete material.
+  assert.deepEqual(h.taskDeleted, ['ATL-2']);
+  assert.deepEqual(h.deleted, [], 'no standalone entries — no entry-level DELETE');
 
-  advance(30_000); // DELETE was lost; user retries the add three times
-  const adds = [f1,
-    entry('f2', 'ATL-2', 60, DEVELOPMENT_ACTIVITY, ''),
-    entry('f3', 'ATL-2', 60, DEVELOPMENT_ACTIVITY, ''),
-    entry('f4', 'ATL-2', 60, DEVELOPMENT_ACTIVITY, '')];
+  // DELETE was lost; user retries the add three times — every bare
+  // Development add lands on the surviving record.
+  advance(30_000);
+  const adds = [added('f1', 'ATL-2', 270)];
   h.refresh(adds);
   assert.equal(blockOf(h, 'ATL-2'), undefined, 'inside the TTL the task mask still swallows the adds');
-  assert.equal(h.lastDiff(), -270, 'day total excludes all four entries');
+  assert.equal(h.lastDiff(), -270, 'day total excludes the whole record');
 
   advance(20_000); // ~50s after commit — past the TTL
   h.refresh(adds);
   const block = blockOf(h, 'ATL-2');
   assert.ok(block, 'block resurrects with the ticket mask');
-  assert.equal(block?.folded.length, 4, 'all four foldable entries visible');
-  assert.equal(block?.foldedMinutes, 270);
+  assert.equal(block?.folded.length, 1);
+  assert.equal(block?.foldedMinutes, 270, 'all the retried time is visible');
   assert.equal(h.lastDiff(), 0, 'day total honest again');
-  assert.deepEqual(h.deleted, ['f1'], 'resurrection re-emits nothing');
+  assert.deepEqual(h.taskDeleted, ['ATL-2'], 'resurrection re-emits nothing');
 });
 
 // ─── Tracked session delete ───────────────────────────────────────────────

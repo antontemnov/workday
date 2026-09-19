@@ -533,13 +533,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return blocks;
   }
 
-  // The fold: unnamed manual time is one fact per ticket regardless of how
-  // many times it was poured in (＋Add time on the card, a bare Development
-  // pick in LOG). The evidence — or its absence — is the row's identity, so
-  // an entry with nothing to say joins the aggregate.
+  // The fold: unnamed manual time is one fact per ticket — the daemon keeps
+  // it as a single manual added record, however many times it was poured in.
   private isFoldable(e: ManualEntry): boolean {
-    return !!e.sourceSessionId
-      || (this.displayActivity(e) === DEVELOPMENT_ACTIVITY && this.displayDescription(e).trim() === '');
+    return !!e.added;
   }
 
   trackByBlock(_i: number, b: TicketBlock): string {
@@ -641,7 +638,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   canEdit(e: ManualEntry): boolean {
-    return !e.sourceSessionId && !this.isFresh(e);
+    return !e.added && !this.isFresh(e);
   }
 
   canDelete(e: ManualEntry): boolean {
@@ -1204,11 +1201,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       // The daemon's task-delete addresses tracked material; a block of
       // standalone entries alone has nothing there to delete.
       const hasTracked = this.closedSessions.some(s => (s.task ?? '—') === task)
-        || this.entries.some(e => e.task === task && !!e.sourceSessionId);
+        || this.entries.some(e => e.task === task && !!e.added);
       if (hasTracked) this.taskDeleteCommitted.emit(task);
     }
     for (const e of this.entries) {
-      if (e.task !== task || e.sourceSessionId) continue;
+      if (e.task !== task || e.added) continue;
       if (this.removingIds.has(e.id)) continue; // its own pipeline is committing
       const t = this.deleteTimers.get(e.id);
       if (t) { clearTimeout(t); this.deleteTimers.delete(e.id); }

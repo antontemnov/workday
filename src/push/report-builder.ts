@@ -1,4 +1,4 @@
-import { readDailyLog, computeEffectiveDuration } from '../core/daily-log.js';
+import { readDailyLog, computeEffectiveDuration, isAddedEntry } from '../core/daily-log.js';
 import { formatDate, computeWorkingDate } from '../core/config.js';
 import { ClosedBy } from '../core/types.js';
 import { MS_PER_MINUTE } from '../core/constants.js';
@@ -77,13 +77,12 @@ export function buildReport(from: string, to: string, config: AppConfig): TaskDa
       }
     }
 
-    // Session-born entries ("+ Add time") fold into the task aggregate before
-    // rounding — one Tempo worklog per (date, task), never a separate line.
-    // Merge is by task: a dangling sourceSessionId (session deleted) still
-    // lands the declared minutes on the right worklog.
+    // Manual added time folds into the task aggregate before rounding — one
+    // Tempo worklog per (date, task), never a separate line. Merge is by
+    // task, so a ticket with no session left still ships the declared minutes.
     const standalone: ManualEntry[] = [];
     for (const entry of log.manualEntries ?? []) {
-      if (!entry.sourceSessionId) {
+      if (!isAddedEntry(entry)) {
         standalone.push(entry);
         continue;
       }

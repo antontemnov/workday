@@ -176,23 +176,25 @@ export enum ClosedBy {
 // Declared time on a task. Two kinds:
 // - standalone (via "Log" / `workday log`): meeting, review, planning —
 //   becomes its own Tempo worklog;
-// - session-born (via "+ Add time" on a session card): carries
-//   sourceSessionId, has no description, activity is always Development,
-//   and its minutes fold into the session aggregate worklog at push time.
-//   Not editable — delete-and-redo is the correction path.
+// - manual added (`added`): the ticket's bare Development time, no
+//   description. At most ONE per task per day — every bare Development add
+//   lands on it. Its minutes fold into the task's session aggregate worklog
+//   at push time. Only the minutes are editable.
 export interface ManualEntry {
   readonly id: string;
   readonly task: string;          // any Jira key (PROJECT-NUMBER), e.g. ATL-10
   minutes: number;                // > 0, max MAX_ENTRY_MINUTES
-  description: string;            // → worklog.description ('' for session-born)
+  description: string;            // → worklog.description ('' for manual added)
   activity: string;              // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;     // ISO timestamp
-  // Origin marker only — push merges by task, never by this id, so a
-  // dangling id (session later deleted) is harmless.
+  readonly added?: true;
+  // Legacy (pre-`added`) per-session marker of the same kind. Read as `added`
+  // everywhere; collapseAddedEntries rewrites it away.
   readonly sourceSessionId?: string;
   // Origin marker for accepted suggestions, namespaced: `meeting:<uid>:<date>`
-  // or `review:<date>:<task>`. Same rules as sourceSessionId — never
-  // followed, dangling is harmless. Its presence in a day log is what
+  // or `review:<date>:<task>`. Origin marker only — never followed,
+  // dangling is harmless. An entry carrying it always stays standalone
+  // (never folds into manual added). Its presence in a day log is what
   // marks the suggestion covered (accept is derived, never stored).
   readonly sourceRef?: string;
 }
@@ -746,6 +748,9 @@ export interface SessionSummary {
   readonly effectiveDurationMs: number;
   readonly score: number;
   readonly normalizedScore: number;
+  // Time until auto-pause with no further activity; null unless the
+  // session is accruing (active, unpaused, stamina left).
+  readonly pauseEtaMs: number | null;
   readonly isLeader: boolean;
   readonly sensitivity: SensitivityLevel;
 }
@@ -831,8 +836,21 @@ export interface ManualEntryResponse {
   readonly minutes: number;
   readonly description: string;
   readonly activity: string;
+  // The ticket's manual added record: a bare Development add (or an edit
+  // down to one) landed on it — `minutes` is the record's total.
+  readonly added?: true;
   readonly date: string;                 // day the entry lives on (YYYY-MM-DD)
   readonly totalManualMinutes: number;   // sum of all manual entries that day
+}
+
+export interface ManualAddedResponse {
+  readonly task: string;
+  readonly minutes: number;              // the ticket's manual added total after the set (0 = none)
+  readonly entryId: string | null;       // the record's id, null when the ticket has none
+  readonly date: string;                 // day the record lives on (YYYY-MM-DD)
+  readonly totalManualMinutes: number;   // sum of all manual entries that day
+  // Past-day removal took the day's last fact — file deleted (storage invariant).
+  readonly dayFileDeleted?: boolean;
 }
 
 export interface ManualEntryDeleteResponse {

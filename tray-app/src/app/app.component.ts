@@ -482,11 +482,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ─── Add time ──────────────────────────────────────────────────────────
 
-  // Session-born manual entry: the daemon takes the task from the session,
-  // activity is Development, no description by design. Shows up in Logged
-  // and folds into the session aggregate at push time.
-  async onAddTime(e: { session: SessionDetail; minutes: number }): Promise<void> {
-    await this.runAction(() => this.api.addSessionTime(e.session.id, e.minutes));
+  // The ticket's manual added total (absolute, 0 removes): bare Development
+  // time, one record per ticket — folds into the session aggregate at push.
+  async onSetAdded(e: { task: string; minutes: number }): Promise<void> {
+    await this.runAction(() => this.api.setManualAdded(e.task, e.minutes));
   }
 
   // ─── Manual entries ────────────────────────────────────────────────────

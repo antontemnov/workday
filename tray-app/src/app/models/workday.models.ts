@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 14;
+export const EXPECTED_API_VERSION = 15;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -47,6 +47,8 @@ export interface SessionDetail {
   effectiveDurationMs: number;
   score: number;
   normalizedScore: number;
+  // Time until auto-pause with no further activity; null unless accruing.
+  pauseEtaMs: number | null;
   isLeader: boolean;
   sensitivity: SensitivityLevel;
   closedBy: string | null;
@@ -63,17 +65,18 @@ export interface ActiveInterval {
 }
 
 // Declared time on a task. Mirrors the daemon's ManualEntry. Standalone
-// entries (via "Log") become their own Tempo worklogs; session-born entries
-// (via "+ Add time", sourceSessionId set) fold into the session aggregate at
-// push time and are not editable.
+// entries (via "Log") become their own Tempo worklogs; the manual added
+// record (`added`) is the ticket's bare Development time — at most one per
+// task per day, every bare Development add lands on it, only its minutes
+// are editable, and it folds into the session aggregate at push time.
 export interface ManualEntry {
   readonly id: string;
   readonly task: string;
   readonly minutes: number;
-  readonly description: string;     // '' for session-born
+  readonly description: string;     // '' for manual added
   readonly activity: string;        // Tempo _Activity_ value, e.g. 'CodeReview'
   readonly createdAt: string;
-  readonly sourceSessionId?: string;
+  readonly added?: true;
   // Origin marker of an accepted suggestion: `meeting:<uid>:<date>` or
   // `review:<date>:<task>` — see suggestionSourceRef().
   readonly sourceRef?: string;
@@ -266,7 +269,20 @@ export interface ManualEntryResponse {
   readonly minutes: number;
   readonly description: string;
   readonly activity: string;
+  // The ticket's manual added record: a bare Development add (or an edit
+  // down to one) landed on it — `minutes` is the record's total.
+  readonly added?: true;
   readonly totalManualMinutes: number;
+}
+
+// Returned by POST /api/manual-added.
+export interface ManualAddedResponse {
+  readonly task: string;
+  readonly minutes: number;              // the ticket's total after the set (0 = none)
+  readonly entryId: string | null;       // the record's id, null when the ticket has none
+  readonly date: string;
+  readonly totalManualMinutes: number;
+  readonly dayFileDeleted?: boolean;
 }
 
 // Returned by POST /api/manual-entry/delete.

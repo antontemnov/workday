@@ -21,7 +21,7 @@ export const DEFAULT_API_PORT = 9213;
 // pick it up (they re-check every 6h), THEN npm-publish the daemon —
 // a tray with the old exact-match check meeting a newer apiVersion would
 // reinstall-loop the daemon.
-export const API_VERSION = 14;
+export const API_VERSION = 15;
 
 // ─── Setup links (first-run wizard) ─────────────────────────────────────
 // Vendor-stable URLs only — never instance-specific. The Tempo page is
@@ -197,6 +197,7 @@ export const DAEMON_START_MAX_ATTEMPTS = 25;
 export const DAEMON_START_POLL_MS = 200;
 
 // ─── Time conversions ──────────────────────────────────────────────────
+export const MS_PER_SECOND = 1_000;
 export const MS_PER_MINUTE = 60_000;
 
 // ─── Activity Evaluator algorithm constants ─────────────────────────────

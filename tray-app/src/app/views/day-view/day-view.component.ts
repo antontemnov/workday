@@ -67,7 +67,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() jiraBaseUrl: string | null = null;
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill }>();
-  @Output() addTimeSubmitted = new EventEmitter<{ session: SessionDetail; minutes: number }>();
+  @Output() addedSetSubmitted = new EventEmitter<{ task: string; minutes: number }>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   @Output() entryEditSubmitted = new EventEmitter<{ target: string; patch: ManualEntryPatch }>();

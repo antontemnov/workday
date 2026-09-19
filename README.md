@@ -39,6 +39,7 @@ workday pause [repo]                   Pause sessions
 workday resume                         Resume paused sessions
 workday autopause on|off [repo]        Toggle idle auto-pause
 workday log <task> <min> "<desc>"      Log manual time on a task
+workday log-added <task> <min>         Set a ticket's manual added total (bare Development time; 0 removes)
 workday fav-add <task> <min> "<name>"  Add a favorite (reusable log template)
 workday fav-remove <#|id>              Remove a favorite
 workday fav-list                       List favorites

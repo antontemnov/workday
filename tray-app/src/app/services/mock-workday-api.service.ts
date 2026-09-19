@@ -30,6 +30,7 @@ import {
   ActivityTypesResponse,
   ManualEntry,
   ManualEntryResponse,
+  ManualAddedResponse,
   ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
@@ -117,18 +118,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
       activity: 'CodeReview', createdAt: this.iso(13, 30) },
     { id: 'm3', task: 'APP-1024', minutes: 45, description: 'sprint planning',
       activity: 'Other', createdAt: this.iso(15, 0) },
-    // Session-born add on a ticket with closed sessions — merges into the
-    // ATL-6712 group card between its two sessions.
-    { id: 'm4', task: 'ATL-6712', minutes: 55, description: '',
-      activity: 'Development', createdAt: this.iso(12, 15), sourceSessionId: 'c1' },
-    // Session-born add on a ticket with no closed sessions (s1 is live) —
-    // births its own group card with a manual-only breakdown.
+    // Manual added on a ticket with closed sessions — one record per ticket.
+    { id: 'm4', task: 'ATL-6712', minutes: 85, description: '',
+      activity: 'Development', createdAt: this.iso(12, 15), added: true },
+    // Manual added on a ticket whose only session is live (s1).
     { id: 'm5', task: 'ATL-6781', minutes: 45, description: '',
-      activity: 'Development', createdAt: this.iso(14, 40), sourceSessionId: 's1' },
-    // Unnamed standalone Development (LOG-born, no sourceSessionId) — folds
-    // into the same "manual added" row as the session-born m4.
-    { id: 'm6', task: 'ATL-6712', minutes: 30, description: '',
-      activity: 'Development', createdAt: this.iso(16, 5) },
+      activity: 'Development', createdAt: this.iso(14, 40), added: true },
     // Named entry on the tracked ticket — the canonical 4-row block:
     // observed + manual added + Meeting + Code review.
     { id: 'm7', task: 'ATL-6712', minutes: 30, description: 'sprint planning',
@@ -217,6 +212,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           effectiveDurationMs: 4 * 3600_000 + 12 * 60_000,
           score: 0.62,
           normalizedScore: 0.62,
+          pauseEtaMs: 11 * 60_000,
           isLeader: true,
           sensitivity: SensitivityLevel.Normal,
           closedBy: null,
@@ -238,6 +234,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           effectiveDurationMs: 5 * 60_000,
           score: 0.1,
           normalizedScore: 0.1,
+          pauseEtaMs: null,
           isLeader: false,
           sensitivity: SensitivityLevel.Normal,
           closedBy: null,
@@ -261,6 +258,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           effectiveDurationMs: 22 * 60_000,
           score: 0.18,
           normalizedScore: 0.18,
+          pauseEtaMs: null,
           isLeader: false,
           sensitivity: SensitivityLevel.Patient,
           closedBy: null,
@@ -283,6 +281,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           effectiveDurationMs: 1 * 3600_000 + 27 * 60_000,
           score: 0.6,
           normalizedScore: 0.6,
+          pauseEtaMs: null,
           isLeader: false,
           sensitivity: SensitivityLevel.Normal,
           closedBy: 'idle_timeout',
@@ -306,6 +305,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           effectiveDurationMs: 45 * 60_000,
           score: 0.5,
           normalizedScore: 0.5,
+          pauseEtaMs: null,
           isLeader: false,
           sensitivity: SensitivityLevel.Normal,
           closedBy: 'checkout_other_task',
@@ -327,6 +327,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           effectiveDurationMs: 1 * 3600_000 + 15 * 60_000,
           score: 0.7,
           normalizedScore: 0.7,
+          pauseEtaMs: null,
           isLeader: false,
           sensitivity: SensitivityLevel.Normal,
           closedBy: 'superseded',
@@ -348,6 +349,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           effectiveDurationMs: 20 * 60_000,
           score: 0.2,
           normalizedScore: 0.2,
+          pauseEtaMs: null,
           isLeader: false,
           sensitivity: SensitivityLevel.Patient,
           closedBy: 'manual',
@@ -438,19 +440,28 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: { repo: repo ?? null, level } };
   }
 
-  async addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>> {
+  async setManualAdded(task: string, minutes: number, _date?: string): Promise<ApiResponse<ManualAddedResponse>> {
     await delay(150);
-    const entry: ManualEntry = {
-      id: `m${this.mockEntrySeq++}`,
-      task: 'ATL-6781',
-      minutes,
-      description: '',
-      activity: 'Development',
-      createdAt: this.iso(12, 0),
-      sourceSessionId: sessionId,
+    const entry = minutes > 0 ? this.putMockAdded(task, minutes) : null;
+    if (!entry) this.mockManualEntries = this.mockManualEntries.filter(e => !(e.added && e.task === task));
+    return {
+      ok: true,
+      data: { task, minutes, entryId: entry?.id ?? null, date: this.today,
+              totalManualMinutes: this.mockManualMinutes() },
     };
-    this.mockManualEntries = [...this.mockManualEntries, entry];
-    return { ok: true, data: this.toEntryResponse(entry) };
+  }
+
+  // Mirrors the daemon: one manual added record per ticket, minutes absolute.
+  private putMockAdded(task: string, minutes: number): ManualEntry {
+    const existing = this.mockManualEntries.find(e => e.added && e.task === task);
+    const entry: ManualEntry = existing
+      ? { ...existing, minutes }
+      : { id: `m${this.mockEntrySeq++}`, task, minutes, description: '',
+          activity: DEVELOPMENT_ACTIVITY, createdAt: this.nextCreatedAt(), added: true };
+    this.mockManualEntries = existing
+      ? this.mockManualEntries.map(e => e === existing ? entry : e)
+      : [...this.mockManualEntries, entry];
+    return entry;
   }
 
   async deleteSession(target: string, _date?: string): Promise<ApiResponse<SessionDeleteResponse>> {
@@ -468,8 +479,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
     for (const s of this.buildToday().sessions) {
       if (s.task === task && s.closedBy) this.mockDeletedSessionIds.add(s.id);
     }
-    const entries = this.mockManualEntries.filter(e => e.sourceSessionId && e.task === task);
-    this.mockManualEntries = this.mockManualEntries.filter(e => !(e.sourceSessionId && e.task === task));
+    const entries = this.mockManualEntries.filter(e => e.added && e.task === task);
+    this.mockManualEntries = this.mockManualEntries.filter(e => !(e.added && e.task === task));
     return {
       ok: true,
       data: { task, date: this.today, deletedSessions: 0, deletedEntries: entries.length,
@@ -522,6 +533,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
     if (!input.description.trim() && activity !== DEVELOPMENT_ACTIVITY) {
       return { ok: false, error: 'Description is required (only Development may omit it)' };
     }
+    // Mirrors the daemon: a bare Development add lands on the ticket's record.
+    if (!input.description.trim() && activity === DEVELOPMENT_ACTIVITY) {
+      const total = (this.mockManualEntries.find(e => e.added && e.task === input.task)?.minutes ?? 0) + input.minutes;
+      return { ok: true, data: this.toEntryResponse(this.putMockAdded(input.task, total)) };
+    }
     const entry: ManualEntry = {
       id: `m${this.mockEntrySeq++}`,
       task: input.task,
@@ -567,6 +583,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return {
       id: entry.id, task: entry.task, minutes: entry.minutes,
       description: entry.description, activity: entry.activity,
+      ...(entry.added ? { added: true as const } : {}),
       totalManualMinutes: this.mockManualMinutes(),
     };
   }

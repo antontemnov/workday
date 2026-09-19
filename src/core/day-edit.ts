@@ -13,12 +13,12 @@ import {
   addImportedEntry,
   editManualEntry,
   deleteManualEntry,
-  findManualEntry,
+  setAddedMinutes,
+  isAddedEntry,
   resolveManualEntryTarget,
   resolveSessionTarget,
 } from './daily-log.js';
 import { isEmptyDayLog } from './janitor.js';
-import { DEFAULT_ACTIVITY } from './constants.js';
 import { DayStatus } from './types.js';
 import type { AppConfig, DailyLog, ManualEntry, Session } from './types.js';
 
@@ -60,46 +60,45 @@ export function importEntryOnDate(
 }
 
 /**
- * "+ Add time" on a past day's session: session-born entry, task from the
- * session, Development, no description. Throws when the session (or its
- * task) is missing.
+ * Set a ticket's manual added total on a date (0 removes the record). The
+ * time is a confirmed fact — the day file is created when absent; removing
+ * the day's last fact deletes it. `entry` is null when the ticket has no
+ * record afterwards. Throws on validation failure.
  */
-export function addSessionEntryOnDate(
+export function setAddedOnDate(
   date: string,
-  target: string,
+  task: string,
   minutes: number,
   config: AppConfig,
-): { entry: ManualEntry; log: DailyLog } {
-  const log = requireLog(date);
-  const session = resolveSessionTarget(log, target);
-  if (!session) throw new Error(`Session not found: ${target}`);
-  if (!session.task) {
-    throw new Error('Session has no task — log the time with `workday log <task> ...`');
+): { entry: ManualEntry | null; log: DailyLog; dayFileDeleted: boolean } {
+  const stored = readDailyLog(date);
+  const log = stored ?? createEmptyLog(date, config);
+  const entry = setAddedMinutes(log, task, minutes, config);
+
+  if (isEmptyDayLog(log)) {
+    if (stored) deleteDailyLog(date);
+    return { entry, log, dayFileDeleted: !!stored };
   }
-  const entry = addManualEntry(log, {
-    task: session.task,
-    minutes,
-    description: '',
-    activity: DEFAULT_ACTIVITY,
-    sourceSessionId: session.id,
-  }, config);
   writeDailyLog(log);
-  return { entry, log };
+  return { entry, log, dayFileDeleted: false };
 }
 
-/** Edit a manual entry on a date (target = #index or id). Throws on failure. */
+/**
+ * Edit a manual entry on a date (target = #index or id). `absorbed` is the
+ * standalone entry that retired into manual added, if any. Throws on failure.
+ */
 export function editEntryOnDate(
   date: string,
   target: string,
   patch: { minutes?: number; description?: string; activity?: string },
   config: AppConfig,
-): { entry: ManualEntry; log: DailyLog } {
+): { entry: ManualEntry; absorbed: ManualEntry | null; log: DailyLog } {
   const log = requireLog(date);
   const found = resolveManualEntryTarget(log, target);
   if (!found) throw new Error(`Manual entry not found: ${target}`);
-  editManualEntry(log, found.id, patch, config);
+  const { entry, absorbed } = editManualEntry(log, found.id, patch, config);
   writeDailyLog(log);
-  return { entry: findManualEntry(log, found.id)!, log };
+  return { entry, absorbed, log };
 }
 
 /**
@@ -139,7 +138,7 @@ function finishDayDeletion(date: string, log: DailyLog): boolean {
 
 /**
  * Delete a session on a date (target = #index or id) — review-time cleanup,
- * disk-to-disk. Session-born entries of the ticket survive: manual time is
+ * disk-to-disk. The ticket's manual added time survives: manual time is
  * user intent, not machine noise. Throws when the target is unknown.
  */
 export function deleteSessionOnDate(
@@ -158,8 +157,8 @@ export function deleteSessionOnDate(
 
 /**
  * Delete a ticket's whole tracked block on a date: every session on the task
- * plus its session-born ("+ Add time") entries, one atomic write. Standalone
- * manual entries are separate worklogs and stay. Throws when the task has no
+ * plus its manual added record, one atomic write. Standalone manual entries
+ * are separate worklogs and stay. Throws when the task has no
  * tracked time that day.
  */
 export function deleteTaskOnDate(
@@ -168,7 +167,7 @@ export function deleteTaskOnDate(
 ): { sessions: readonly Session[]; entries: readonly ManualEntry[]; log: DailyLog; dayFileDeleted: boolean; dayWasPushed: boolean } {
   const log = requireLog(date);
   const sessions = log.sessions.filter(s => s.task === task);
-  const entries = (log.manualEntries ?? []).filter(e => !!e.sourceSessionId && e.task === task);
+  const entries = (log.manualEntries ?? []).filter(e => isAddedEntry(e) && e.task === task);
   if (sessions.length === 0 && entries.length === 0) {
     throw new Error(`No tracked time for ${task} on ${date}`);
   }
@@ -176,7 +175,7 @@ export function deleteTaskOnDate(
   const dayWasPushed = !!log.pushedAt;
   log.sessions = log.sessions.filter(s => s.task !== task);
   if (log.manualEntries) {
-    log.manualEntries = log.manualEntries.filter(e => !(e.sourceSessionId && e.task === task));
+    log.manualEntries = log.manualEntries.filter(e => !(isAddedEntry(e) && e.task === task));
   }
   const dayFileDeleted = finishDayDeletion(date, log);
   return { sessions, entries, log, dayFileDeleted, dayWasPushed };

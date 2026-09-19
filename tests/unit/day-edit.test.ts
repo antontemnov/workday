@@ -16,7 +16,7 @@ import {
 } from '../../src/core/daily-log.js';
 import {
   addEntryOnDate,
-  addSessionEntryOnDate,
+  setAddedOnDate,
   editEntryOnDate,
   deleteEntryOnDate,
   deleteSessionOnDate,
@@ -131,26 +131,50 @@ test('deleteEntryOnDate keeps a pushed day file (pushedAt is a fact)', () => {
   assert.equal(disk.status, DayStatus.Draft); // → 'outdated' in the month view
 });
 
-test('addSessionEntryOnDate takes task from the session, folds as session-born', () => {
+test('setAddedOnDate sets the ticket total — one record, absolute', () => {
   const date = '2026-05-08';
   const log = createEmptyLog(date, config);
   log.sessions.push(makeSession('ATL-9'));
   writeDailyLog(log);
 
-  const { entry } = addSessionEntryOnDate(date, 'sess-1', 25, config);
-  assert.equal(entry.task, 'ATL-9');
-  assert.equal(entry.sourceSessionId, 'sess-1');
-  assert.equal(entry.activity, 'Development');
-  assert.equal(entry.description, '');
+  const first = setAddedOnDate(date, 'ATL-9', 25, config);
+  assert.equal(first.entry?.added, true);
+  assert.equal(first.entry?.activity, 'Development');
+  assert.equal(first.entry?.description, '');
+  const second = setAddedOnDate(date, 'ATL-9', 40, config);
+  assert.equal(second.entry?.id, first.entry?.id);
+  const disk = readDailyLog(date)!;
+  assert.equal(disk.manualEntries.length, 1);
+  assert.equal(disk.manualEntries[0].minutes, 40);
 });
 
-test('addSessionEntryOnDate rejects a session without a task', () => {
+test('setAddedOnDate creates the day file; zero removes it with the last fact', () => {
   const date = '2026-05-09';
-  const log = createEmptyLog(date, config);
-  log.sessions.push(makeSession(null));
-  writeDailyLog(log);
+  assert.equal(existsSync(getDailyLogPath(date)), false);
+  // zero on a missing day: nothing to remove, nothing materializes
+  const noop = setAddedOnDate(date, 'ATL-9', 0, config);
+  assert.equal(noop.entry, null);
+  assert.equal(noop.dayFileDeleted, false);
+  assert.equal(existsSync(getDailyLogPath(date)), false);
 
-  assert.throws(() => addSessionEntryOnDate(date, 'sess-1', 25, config), /has no task/);
+  setAddedOnDate(date, 'ATL-9', 30, config);
+  assert.equal(existsSync(getDailyLogPath(date)), true);
+  const removed = setAddedOnDate(date, 'ATL-9', 0, config);
+  assert.equal(removed.entry, null);
+  assert.equal(removed.dayFileDeleted, true);
+  assert.equal(existsSync(getDailyLogPath(date)), false);
+});
+
+test('editEntryOnDate reports the standalone entry absorbed by manual added', () => {
+  const date = '2026-05-19';
+  setAddedOnDate(date, 'ATL-9', 20, config);
+  const { entry: named } = addEntryOnDate(date, { task: 'ATL-9', minutes: 30, description: 'pairing', activity: 'Development' }, config);
+
+  const { entry, absorbed } = editEntryOnDate(date, named.id, { description: '' }, config);
+  assert.equal(absorbed?.id, named.id);
+  assert.equal(entry.added, true);
+  assert.equal(entry.minutes, 50);
+  assert.equal(readDailyLog(date)!.manualEntries.length, 1);
 });
 
 test('mutations on a missing day throw "No data"', () => {
@@ -161,12 +185,12 @@ test('mutations on a missing day throw "No data"', () => {
 console.log('');
 console.log('Day edit — session & task deletes');
 
-test('deleteSessionOnDate removes the session, keeps its session-born adds', () => {
+test('deleteSessionOnDate removes the session, keeps the manual added time', () => {
   const date = '2026-05-10';
   const log = createEmptyLog(date, config);
   log.sessions.push(makeSession('ATL-9'));
   writeDailyLog(log);
-  addSessionEntryOnDate(date, 'sess-1', 25, config);
+  setAddedOnDate(date, 'ATL-9', 25, config);
 
   const result = deleteSessionOnDate(date, '#1');
   assert.equal(result.deleted.id, 'sess-1');
@@ -175,7 +199,7 @@ test('deleteSessionOnDate removes the session, keeps its session-born adds', () 
   assert.equal(disk.sessions.length, 0);
   // manual time is user intent — it survives the machine record's deletion
   assert.equal(disk.manualEntries.length, 1);
-  assert.equal(disk.manualEntries[0].sourceSessionId, 'sess-1');
+  assert.equal(disk.manualEntries[0].added, true);
 });
 
 test('deleteSessionOnDate removes the file with the last fact', () => {
@@ -211,7 +235,7 @@ test('deleteTaskOnDate removes the ticket block, standalone entries stay', () =>
   const log = createEmptyLog(date, config);
   log.sessions.push(makeSession('ATL-9'));
   writeDailyLog(log);
-  addSessionEntryOnDate(date, 'sess-1', 25, config);
+  setAddedOnDate(date, 'ATL-9', 25, config);
   addEntryOnDate(date, { task: 'ATL-9', minutes: 30, description: 'Standup', activity: 'Meeting' }, config);
 
   const result = deleteTaskOnDate(date, 'ATL-9');

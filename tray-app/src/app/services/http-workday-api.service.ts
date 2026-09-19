@@ -24,6 +24,7 @@ import {
   ActivityTypesResponse,
   ManualEntry,
   ManualEntryResponse,
+  ManualAddedResponse,
   ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
@@ -186,8 +187,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/sensitivity', repo ? { level, repo } : { level });
   }
 
-  override async addSessionTime(sessionId: string, minutes: number): Promise<ApiResponse<ManualEntryResponse>> {
-    return this.post('/api/manual-entry', { sourceSessionId: sessionId, minutes });
+  override async setManualAdded(task: string, minutes: number, date?: string): Promise<ApiResponse<ManualAddedResponse>> {
+    return this.post('/api/manual-added', date ? { task, minutes, date } : { task, minutes });
   }
 
   override async deleteSession(target: string, date?: string): Promise<ApiResponse<SessionDeleteResponse>> {
@@ -494,6 +495,7 @@ export class HttpWorkdayApiService extends WorkdayApiService {
       effectiveDurationMs: this.computeEffectiveDuration(s),
       score: 0,
       normalizedScore: 0,
+      pauseEtaMs: null,
       isLeader: false,
       sensitivity: SensitivityLevel.Normal,
       closedBy: s.closedBy ?? null,
