@@ -21,7 +21,7 @@
        [style.--heat]="b.heat || null"
        [class.hot]="b.hot"
        [class.quiet]="b.quiet"
-       [class.one]="b.rowCount <= 1 && draftTask !== b.task"
+       [class.one]="b.rowCount <= 1 && draftTask !== b.task && draftPending?.task !== b.task"
        [class.deleted]="taskDeleted(b.task)"
        [class.removing]="removingTasks.has(b.task)"
        [class.folding]="foldingTasks.has(b.task)"
@@ -59,7 +59,7 @@
         (undoRequested)="undoSessionDelete(s)" />
 
       <!-- 3px of air between the tracked rows and the declared ones -->
-      <div class="rgap" *ngIf="b.sessionRows.length > 0 && (b.folded.length > 0 || b.named.length > 0 || draftTask === b.task)"></div>
+      <div class="rgap" *ngIf="b.sessionRows.length > 0 && (b.folded.length > 0 || b.named.length > 0 || draftTask === b.task || draftPending?.task === b.task)"></div>
 
       <!-- Manual added — the ticket's bare Development time, one record.
            A tag, not a description; only its time is editable. -->
@@ -73,7 +73,7 @@
           <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: m, locked: true }" />
         </ng-container>
         <ng-template #manView>
-          <span class="c-type anc" (click)="onAddedMenu(b, m, $event)">{{ activityLabel(developmentActivity) }}</span>
+          <span class="c-type" [class.anc]="addedMenuReady(b)" (click)="onAddedMenu(b, m, $event)">{{ activityLabel(developmentActivity) }}</span>
           <span class="c-ds man">
             <span>manual added</span>
             <svg class="mg" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true"><circle cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width="0.9"/><line x1="4.5" y1="2.5" x2="4.5" y2="6.5" stroke="currentColor" stroke-width="1.1"/><line x1="2.5" y1="4.5" x2="6.5" y2="4.5" stroke="currentColor" stroke-width="1.1"/></svg>
@@ -105,6 +105,7 @@
            [attr.data-eid]="e.id"
            [class.fresh]="isFresh(e)"
            [class.arrive]="arrivingId === e.id"
+           [class.landed]="landedId === e.id"
            [class.pop]="poppingIds.has(e.id)"
            [style.animation-delay.ms]="popDelayMs.get(e.id)"
            [class.editing]="editingId === e.id"
@@ -117,7 +118,7 @@
           <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: e, locked: false }" />
         </ng-container>
         <ng-template #viewBand>
-          <span class="c-type anc" (click)="onEntryMenu(e, $event)">{{ activityLabel(displayActivity(e)) }}</span>
+          <span class="c-type" [class.anc]="entryMenuReady(e)" (click)="onEntryMenu(e, $event)">{{ activityLabel(displayActivity(e)) }}</span>
           <span class="c-ds" *ngIf="favDoneId !== e.id; else favNote">{{ displayDescription(e) }}</span>
           <ng-template #favNote><span class="c-ds fav-note">★ added to favorites</span></ng-template>
         </ng-template>
@@ -154,6 +155,14 @@
                title="1h 15m · 90 · 45m — wheel: ±15m" />
       </div>
 
+      <!-- The saved draft holds its place as a plain row until the entry
+           lands (or the action fails) — no collapse-and-regrow. -->
+      <div class="wl ent pending" *ngIf="draftPending && draftPending.task === b.task">
+        <span class="c-type">{{ activityLabel(draftPending.activity) }}</span>
+        <span class="c-ds">{{ draftPending.description }}</span>
+        <span class="c-dur">{{ formatDurationHm(draftPending.minutes * 60000) }}</span>
+      </div>
+
     </div>
   </div>
 </div>
@@ -172,6 +181,6 @@
            [disabled]="locked"
            (keydown.enter)="saveForm(e)"
            placeholder="description" />
-    <button type="button" class="le-save" [disabled]="actionPending" (click)="saveForm(e)"><span>Save</span></button>
+    <button type="button" class="le-save" [disabled]="actionPending" (click)="saveForm(e)">Save</button>
   </div>
 </ng-template>

@@ -154,6 +154,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // time draft on a card (draftTask); both share the edit* fields.
   editingId: string | null = null;
   draftTask: string | null = null;
+  // The draft between Save and its landing: shown as a plain row so the card
+  // never collapses and regrows. Cleared by the fresh id or the action's end.
+  draftPending: ManualEntryInput | null = null;
+  // The entry that replaced the pending row in place — no row-in on it.
+  landedId: string | null = null;
   editMinutes = 30;
   editActivity = '';
   editDescription = '';
@@ -227,10 +232,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (changes['freshEntryId'] && !changes['freshEntryId'].firstChange
         && this.freshEntryId) {
       this.freeze(); // a new pick supersedes any still-open draft
+      if (this.draftPending) {
+        this.landedId = this.freshEntryId;
+        this.draftPending = null;
+      }
       this.freshId = this.freshEntryId;
       this.freshMinutes = null;
       this.armFreeze();
     }
+    // The action is over and nothing landed — the add failed; let the row go.
+    if (changes['actionPending'] && !this.actionPending) this.draftPending = null;
     if (changes['entries']) {
       // The fresh entry lands with the refresh that follows the POST — pick up
       // its minutes as the stepper base once it appears.
@@ -679,9 +690,19 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     ]);
   }
 
+  // A handle lights up only while its menu can open: not during the fresh
+  // draft window, not on a struck row.
+  entryMenuReady(e: ManualEntry): boolean {
+    return !this.isFresh(e) && !this.isDeleted(e) && !this.taskDeleted(e.task);
+  }
+
+  addedMenuReady(b: TicketBlock): boolean {
+    return !this.foldedHasFresh(b) && !this.foldedDeleted(b) && !this.taskDeleted(b.task);
+  }
+
   // The type word — an entry's handle.
   onEntryMenu(e: ManualEntry, ev: MouseEvent): void {
-    if (this.isFresh(e) || this.isDeleted(e) || this.taskDeleted(e.task)) return;
+    if (!this.entryMenuReady(e)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       { icon: CTX_ICON.edit, label: 'Edit', action: () => this.onRowDblClick(e) },
       // Hidden only when structurally impossible (no description to name the
@@ -698,7 +719,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // The manual added row: its time is all there is to edit.
   onAddedMenu(b: TicketBlock, m: ManualEntry, ev: MouseEvent): void {
-    if (this.foldedHasFresh(b) || this.foldedDeleted(b) || this.taskDeleted(b.task)) return;
+    if (!this.addedMenuReady(b)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       { icon: CTX_ICON.edit, label: 'Edit time', action: () => this.onRowDblClick(m) },
       { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteFolded(b) },
@@ -966,6 +987,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.freshId = null;
     this.freshMinutes = null;
     this.freshBase = null;
+    this.landedId = null;
     this.recomputeLive();
   }
 
@@ -1033,7 +1055,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       if (this.editMinutes <= 0) return;
       // Bare Development lands on the ticket's manual added record — the
       // daemon's rule; a described one becomes an entry of its own.
-      this.entryAdded.emit({ task, minutes: this.editMinutes, description, activity: this.editActivity });
+      this.draftPending = { task, minutes: this.editMinutes, description, activity: this.editActivity };
+      this.entryAdded.emit(this.draftPending);
       return;
     }
     const patch: ManualEntryPatch = {};

@@ -79,7 +79,6 @@
 
 .m-act { @include feed.glyph-action; }
 .l-undo { @include feed.undo-button; }
-@include feed.need-pulse-keyframes;
 
 // Undo window: the identity of the row is struck, its evidence just dims.
 :host(.deleted), :host(.struck) {
@@ -88,6 +87,11 @@
 }
 
 :host(.struck) .dur { opacity: 0.38; text-decoration: line-through; }
+
+// A struck row opens no menu — its handle stays dark under the pointer.
+:host(.deleted), :host(.struck) {
+  .anc { pointer-events: none; }
+}
 
 // ─── The pill — the type-column label dressed in the candy medallion ──────
 // Text = the type word's typography (10px/700): a closed row wears the same

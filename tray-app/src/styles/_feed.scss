@@ -2,6 +2,8 @@
 // the session row inside it wear the same type word, glyph-button, undo and
 // anchor; one source, two encapsulated components.
 
+@use 'glass';
+
 // Type — a quiet bold label in the first column: same case as the select,
 // no badge, no per-type colour.
 @mixin type-word {
@@ -53,27 +55,28 @@
   &:disabled { pointer-events: none; }
 }
 
-// ↩ undo — takes the row's time slot while the undo window burns. The host
-// stylesheet must also include need-pulse-keyframes (keyframes are scoped).
+// ↩ undo — takes the row's time slot while the undo window burns. The same
+// mauve candy glass as Save and ＋Log. A fixed box exactly as wide as the time
+// column's 48px floor: showing it never resizes the column, nothing jumps.
 @mixin undo-button {
+  @include glass.glass-candy((203 166 247), (228 205 252), #cba6f7);
   grid-column: 6;
   justify-self: end;
-  height: 16px;
+  width: 48px;
+  height: 18px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
-  border: 1px solid rgba(203, 166, 247, 0.5);
-  border-radius: 4px;
-  background: rgba(203, 166, 247, 0.08);
-  color: #cba6f7;
+  justify-content: center;
+  border-radius: 5px;
   font-family: inherit;
   font-size: 10px;
   font-weight: 700;
-  padding: 0 8px;
-  cursor: pointer;
+  line-height: 1;
   white-space: nowrap;
-  animation: need-pulse 1.6s ease-in-out infinite;
+  cursor: pointer;
 
-  &:hover { background: rgba(203, 166, 247, 0.22); }
+  &:hover { --m1: 0.2; --m2: 0.09; --m3: 0.15; }
 }
 
 @mixin need-pulse-keyframes {
