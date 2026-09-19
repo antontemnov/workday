@@ -216,18 +216,18 @@ test('re-mute replaces the window (last-write-wins)', () => {
 
 test('unmute releases the series; a second call is a no-op', () => {
   muteSeries({ uid: 'm4', nowMs: NOW });
-  assert.equal(unmuteSeries('m4'), true);
+  assert.equal(unmuteSeries('m4', NOW), true);
   assert.equal(loadMeetingAssociations(NOW).muted['m4'], undefined);
-  assert.equal(unmuteSeries('m4'), false);
+  assert.equal(unmuteSeries('m4', NOW), false);
 });
 
 test('unmuteAllSeries clears every mute and returns the released uids', () => {
   muteSeries({ uid: 'm5', days: 30, nowMs: NOW });
   muteSeries({ uid: 'm6', nowMs: NOW });
-  const released = unmuteAllSeries();
+  const released = unmuteAllSeries(NOW);
   assert.ok(released.includes('m5') && released.includes('m6'));
   assert.deepEqual(loadMeetingAssociations(NOW).muted, {});
-  assert.deepEqual(unmuteAllSeries(), []);
+  assert.deepEqual(unmuteAllSeries(NOW), []);
 });
 
 console.log('');

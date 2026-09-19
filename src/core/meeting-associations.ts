@@ -213,8 +213,8 @@ export function muteSeries(input: MuteSeriesInput): MutedSeries {
 }
 
 /** Returns false when the series wasn't muted. */
-export function unmuteSeries(uid: string): boolean {
-  const all = loadMeetingAssociations();
+export function unmuteSeries(uid: string, nowMs: number = Date.now()): boolean {
+  const all = loadMeetingAssociations(nowMs);
   if (!all.muted[uid]) return false;
   const muted = { ...all.muted };
   delete muted[uid];
@@ -223,8 +223,8 @@ export function unmuteSeries(uid: string): boolean {
 }
 
 /** The Settings "unmute all" — clears every mute, returns the released uids. */
-export function unmuteAllSeries(): string[] {
-  const all = loadMeetingAssociations();
+export function unmuteAllSeries(nowMs: number = Date.now()): string[] {
+  const all = loadMeetingAssociations(nowMs);
   const uids = Object.keys(all.muted);
   if (uids.length > 0) writeAssociations({ ...all, muted: {} });
   return uids;
