@@ -87,6 +87,11 @@
 }
 
 :host(.struck) .dur { opacity: 0.38; text-decoration: line-through; }
+// The live pill burns with its card: the glass dims, its word is struck.
+:host(.struck) .tb {
+  opacity: 0.5;
+  .k-txt, .k-alt { text-decoration: line-through; }
+}
 
 // A struck row opens no menu — its handle stays dark under the pointer; so
 // does every handle while the daemon answers an action.
