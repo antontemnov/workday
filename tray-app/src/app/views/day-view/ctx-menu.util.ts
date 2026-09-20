@@ -81,6 +81,7 @@ export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]
   if (y + rect.height > window.innerHeight - EDGE_MARGIN) y = y - rect.height;
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
+  snapToDeviceGrid(menu);
 
   mount(menu, null);
 }
@@ -111,8 +112,28 @@ export function openAnchoredMenu(anchor: HTMLElement, items: readonly CtxMenuEnt
   if (y + rect.height > window.innerHeight - EDGE_MARGIN) y = a.top - ANCHOR_GAP - rect.height;
   menu.style.left = `${Math.max(EDGE_MARGIN, x)}px`;
   menu.style.top = `${Math.max(EDGE_MARGIN, y)}px`;
+  snapToDeviceGrid(menu);
 
   mount(menu, anchor);
+}
+
+// Fractional DPI: rows and icons land between device pixels while the text
+// rasterizer snaps glyphs on its own — an icon then sits off its label by a
+// row-dependent half pixel. Every row and every icon is nudged onto the
+// device grid, so all rows of all menus render alike.
+function snapToDeviceGrid(menu: HTMLElement): void {
+  const dpr = window.devicePixelRatio || 1;
+  const offGrid = (v: number): number => Math.round(v * dpr) / dpr - v;
+  // The entrance animation scales the menu — measure the settled layout.
+  const animation = menu.style.animation;
+  menu.style.animation = 'none';
+  for (const row of Array.from(menu.children) as HTMLElement[]) {
+    const rowDy = offGrid(row.getBoundingClientRect().top);
+    row.style.transform = `translateY(${rowDy}px)`;
+    const icon = row.querySelector<HTMLElement>('.ci-ic');
+    if (icon) icon.style.transform = `translateY(${offGrid(icon.getBoundingClientRect().top)}px)`;
+  }
+  menu.style.animation = animation;
 }
 
 function buildMenu(items: readonly CtxMenuEntry[]): HTMLElement {

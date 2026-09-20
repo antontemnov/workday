@@ -706,14 +706,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       ...(b.task !== '—'
         ? [{ icon: CTX_ICON.add, label: 'Add time', action: (): void => this.openDraft(b.task) }] : []),
+      ...(canBrowseTicket(this.jiraBaseUrl, b.task)
+        ? [{ icon: CTX_ICON.globe, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) },
+           { separator: true as const }]
+        : []),
       // A hot card's delete stops its live sessions first — they go with it.
       b.hot
-        ? { icon: CTX_ICON.x, label: 'Stop & Delete', danger: true, action: () => this.deleteTaskCard(b.task, true) }
+        ? { icon: CTX_ICON.x, label: 'Stop and Delete', danger: true, action: () => this.deleteTaskCard(b.task, true) }
         : { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
-      ...(canBrowseTicket(this.jiraBaseUrl, b.task)
-        ? [{ separator: true as const },
-           { icon: CTX_ICON.globe, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) }]
-        : []),
     ]);
   }
 
