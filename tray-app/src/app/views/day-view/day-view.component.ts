@@ -6,8 +6,9 @@ import { LoggedPanelComponent, type ArriveFrom } from './logged-panel/logged-pan
 import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
 import { SuggestionRowComponent, type SuggestionAcceptEvent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
-import { openCtxMenu } from './ctx-menu.util';
+import { closeCtxMenu, currentCtxMenu, openCtxMenu, type CtxMenuItem } from './ctx-menu.util';
 import { FeedSortMode, loadFeedSort, persistFeedSort } from './feed-sort.util';
+import { SUGGESTIONS_MODES, type SuggestionsMode } from './suggestions-mode.util';
 import {
   SessionDetail,
   SensitivityLevel,
@@ -26,6 +27,10 @@ import {
 
 // Ordering bars for the Sort method row — longest to shortest.
 const SORT_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="2" y1="3" x2="10" y2="3"/><line x1="2" y1="6" x2="7.4" y2="6"/><line x1="2" y1="9" x2="4.8" y2="9"/></svg>';
+
+// Calendar leaf — the Suggestions row.
+const SUGGESTIONS_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="2.4" width="8.8" height="7.8" rx="1.6"/><line x1="1.6" y1="5" x2="10.4" y2="5"/><line x1="4" y1="1.4" x2="4" y2="3.2"/><line x1="8" y1="1.4" x2="8" y2="3.2"/></svg>';
+const FETCHING_HINT = 'fetching';
 
 interface SensitivityPillOption {
   readonly key: SensitivityLevel;
@@ -65,6 +70,13 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() suggestionSummaries: Readonly<Record<string, string>> = {};
   // Jira site root (status poll) — null hides the browse links.
   @Input() jiraBaseUrl: string | null = null;
+  // What the feed offers (hidden / as events start / the whole day ahead),
+  // and the all-day read behind it as the menu sees it: busy — a read the
+  // mode rows must wait out (inert); fetching — that read is slow enough to
+  // say so (the calendar feed is being re-fetched).
+  @Input() suggestionsMode: SuggestionsMode = 'started';
+  @Input() allDayBusy = false;
+  @Input() allDayFetching = false;
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill; keepPause?: boolean }>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
@@ -82,6 +94,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Output() suggestionAcceptSubmitted = new EventEmitter<SuggestionAcceptRequest>();
   @Output() suggestionDismissSubmitted = new EventEmitter<{ uid: string; date: string }>();
   @Output() suggestionMuteSubmitted = new EventEmitter<{ uid: string; date: string; days: number | null }>();
+  @Output() suggestionsModeSelected = new EventEmitter<SuggestionsMode>();
 
   @ViewChild('dayHead')
   private dayHeadRef?: ElementRef<HTMLElement>;
@@ -112,6 +125,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['data']) this.checkDayFlash();
+    if (changes['suggestionsMode'] || changes['allDayBusy'] || changes['allDayFetching']) this.syncFeedMenu();
   }
 
   // The panel recomputes its diff inside its own ngOnChanges — Angular is past
@@ -225,6 +239,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     const target = ev.target as HTMLElement | null;
     if (target?.closest('input, textarea, [contenteditable]')) return;
     ev.preventDefault();
+    this.feedMenuHeld = false;
     this.openFeedMenu(ev.clientX, ev.clientY);
   }
 
@@ -232,14 +247,77 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     return mode === 'sum' ? 'Total time' : 'Newest first';
   }
 
-  // The session card's two-stage popover, 1:1: stage 1 carries the Sort
-  // method row with the active mode as a dimmed hint; stage 2 is the picker
+  // The session card's two-stage popover, 1:1: stage 1 carries one row per
+  // preference with the active mode as a dimmed hint; stage 2 is its picker
   // (Back + the modes, ✓ on the active one).
-  private openFeedMenu(x: number, y: number): void {
+  private openFeedMenu(x: number, y: number, instant: boolean = false): void {
     openCtxMenu(x, y, [
       { icon: SORT_ICON, label: 'Sort method', hint: this.sortModeLabel(this.feedSort),
         action: (): void => this.openSortMenu(x, y) },
-    ]);
+      { icon: SUGGESTIONS_ICON, label: 'Suggestions',
+        hint: this.allDayFetching ? FETCHING_HINT : this.suggestionsModeLabel(this.suggestionsMode),
+        hintBusy: this.allDayFetching,
+        hintReserve: this.suggestionsModeLabel(this.suggestionsMode),
+        action: (): void => this.openSuggestionsMenu(x, y) },
+    ], instant);
+    this.feedMenu = { el: currentCtxMenu(), x, y, stage: 'root' };
+  }
+
+  // ─── Suggestions mode ──────────────────────────────────────────────────
+  // Any all-day read may wait seconds for a fresh calendar feed — the first
+  // one after launch, the half-hourly one, the one picking "All, with upcoming" sends.
+  // While it runs the mode rows are inert and the wait is named "fetching"
+  // (on the All, with upcoming row; on the root's Suggestions row too). An open menu
+  // follows the state in place. A picker held up by its own All, with upcoming click
+  // closes on the answer — the rows are in the feed by then.
+
+  private feedMenu: { el: HTMLElement | null; x: number; y: number; stage: 'root' | 'suggestions' } | null = null;
+  private feedMenuHeld: boolean = false;
+
+  private get feedMenuOpen(): boolean {
+    return this.feedMenu?.el != null && currentCtxMenu() === this.feedMenu.el;
+  }
+
+  private suggestionsModeLabel(mode: SuggestionsMode): string {
+    if (mode === 'hidden') return 'None';
+    return mode === 'all' ? 'All, with upcoming' : 'Only started';
+  }
+
+  private openSuggestionsMenu(x: number, y: number, instant: boolean = false): void {
+    openCtxMenu(x, y, [
+      { label: '← Back', action: (): void => this.openFeedMenu(x, y) },
+      { separator: true },
+      ...SUGGESTIONS_MODES.map(mode => this.suggestionsModeItem(mode)),
+    ], instant);
+    this.feedMenu = { el: currentCtxMenu(), x, y, stage: 'suggestions' };
+  }
+
+  private suggestionsModeItem(mode: SuggestionsMode): CtxMenuItem {
+    const fetchingHere = mode === 'all' && this.allDayFetching;
+    return {
+      icon: mode === this.suggestionsMode ? '✓' : ' ',
+      label: this.suggestionsModeLabel(mode),
+      ...(fetchingHere ? { hint: FETCHING_HINT } : { hintReserve: FETCHING_HINT }),
+      busy: this.allDayBusy,
+      // Only the way into All, with upcoming can wait — the picker stays up for it.
+      keepOpen: mode === 'all' && this.suggestionsMode !== 'all',
+      action: (): void => {
+        this.feedMenuHeld = mode === 'all' && this.suggestionsMode !== 'all';
+        this.suggestionsModeSelected.emit(mode);
+      },
+    };
+  }
+
+  private syncFeedMenu(): void {
+    if (!this.feedMenuOpen || !this.feedMenu) { this.feedMenuHeld = false; return; }
+    if (this.feedMenuHeld && !this.allDayBusy) {
+      this.feedMenuHeld = false;
+      closeCtxMenu();
+      return;
+    }
+    const { x, y, stage } = this.feedMenu;
+    if (stage === 'root') this.openFeedMenu(x, y, true);
+    else this.openSuggestionsMenu(x, y, true);
   }
 
   private openSortMenu(x: number, y: number): void {

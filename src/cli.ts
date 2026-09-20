@@ -1511,7 +1511,7 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   }
   console.log(`Suggestions for ${day.date}:`);
   day.suggestions.forEach((s, i) => {
-    const flags = [s.ongoing ? 'ongoing' : null, s.isPrivate ? 'private' : null].filter(Boolean).join(' · ');
+    const flags = [s.ongoing ? 'ongoing' : null, s.upcoming ? 'upcoming' : null, s.isPrivate ? 'private' : null].filter(Boolean).join(' · ');
     const title = s.title || '(no title)';
     // Review rows: title = the checked-out branch, time = the checkout moment.
     const time = s.source === 'review'
@@ -1525,9 +1525,15 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   console.log('Mute:    workday suggestions mute <#N> [--days N]  (no --days = forever)');
 }
 
-/** Resolve `#N` against the day's current list; a raw uid passes through. */
-async function resolveSuggestionTarget(target: string, date: string | null): Promise<{ uid: string; date: string } | null> {
-  const result = await apiGet<SuggestionsResponse>(`/api/suggestions${date ? `?date=${date}` : ''}`);
+function suggestionsPath(date: string | null, includeFuture: boolean): string {
+  const params = [date ? `date=${date}` : null, includeFuture ? 'includeFuture=1' : null].filter(Boolean);
+  return `/api/suggestions${params.length > 0 ? `?${params.join('&')}` : ''}`;
+}
+
+/** Resolve `#N` against the day's current list; a raw uid passes through.
+ *  --all numbers the all-day list, so `#N` resolves against the same one. */
+async function resolveSuggestionTarget(target: string, date: string | null, includeFuture: boolean): Promise<{ uid: string; date: string } | null> {
+  const result = await apiGet<SuggestionsResponse>(suggestionsPath(date, includeFuture));
   if (!result.ok || !result.data) { console.log(result.error); return null; }
   const day = result.data;
   if (!target.startsWith('#')) return { uid: target, date: day.date };
@@ -1551,10 +1557,11 @@ async function handleSuggestions(args: string[]): Promise<void> {
       console.log('--task is optional when the row shows a learned resolution (→ KEY).');
       return;
     }
-    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'));
+    const includeFuture = rest.includes('--all');
+    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'), includeFuture);
     if (!resolved) return;
 
-    const payload: Record<string, unknown> = { uid: resolved.uid, date: resolved.date };
+    const payload: Record<string, unknown> = { uid: resolved.uid, date: resolved.date, includeFuture };
     if (task) payload.task = task;
     const minutesStr = parseArgValue(rest, '--minutes');
     if (minutesStr !== null) {
@@ -1582,9 +1589,10 @@ async function handleSuggestions(args: string[]): Promise<void> {
       console.log('Usage: workday suggestions dismiss <#N|uid> [--date D]');
       return;
     }
-    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'));
+    const includeFuture = rest.includes('--all');
+    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'), includeFuture);
     if (!resolved) return;
-    const result = await apiPost<SuggestionsResponse>('/api/suggestions/dismiss', resolved);
+    const result = await apiPost<SuggestionsResponse>('/api/suggestions/dismiss', { ...resolved, includeFuture });
     if (!result.ok || !result.data) { console.log(result.error); return; }
     console.log(`Dismissed. Pending suggestions left: ${result.data.suggestions.length}`);
     return;
@@ -1603,9 +1611,10 @@ async function handleSuggestions(args: string[]): Promise<void> {
       days = parseInt(daysStr, 10);
       if (isNaN(days) || days <= 0) { console.log('Days must be positive'); return; }
     }
-    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'));
+    const includeFuture = rest.includes('--all');
+    const resolved = await resolveSuggestionTarget(target, parseArgValue(rest, '--date'), includeFuture);
     if (!resolved) return;
-    const payload: Record<string, unknown> = { ...resolved };
+    const payload: Record<string, unknown> = { ...resolved, includeFuture };
     if (days !== undefined) payload.days = days;
     const result = await apiPost<SuggestionsResponse>('/api/suggestions/mute', payload);
     if (!result.ok || !result.data) { console.log(result.error); return; }
@@ -1646,13 +1655,12 @@ async function handleSuggestions(args: string[]): Promise<void> {
     return;
   }
 
-  if (sub !== undefined && sub !== '--date') {
-    console.log('Usage: workday suggestions [--date D] | accept <#N|uid> [--task <KEY>] ... | dismiss <#N|uid> | mute <#N|uid> [--days N] | muted | unmute <uid|--all>');
+  if (sub !== undefined && sub !== '--date' && sub !== '--all') {
+    console.log('Usage: workday suggestions [--date D] [--all] | accept <#N|uid> [--task <KEY>] ... | dismiss <#N|uid> | mute <#N|uid> [--days N] | muted | unmute <uid|--all>');
     return;
   }
 
-  const date = parseArgValue(args, '--date');
-  const result = await apiGet<SuggestionsResponse>(`/api/suggestions${date ? `?date=${date}` : ''}`);
+  const result = await apiGet<SuggestionsResponse>(suggestionsPath(parseArgValue(args, '--date'), args.includes('--all')));
   if (!result.ok || !result.data) { console.log(result.error); return; }
   printSuggestionsDay(result.data);
 }
@@ -1868,7 +1876,7 @@ Usage:
   workday notifications ack <id> <shown|opened|hidden> Acknowledge a notification
   workday calendar                                     Outlook ICS feed status (meeting suggestions)
   workday calendar refresh                             Re-fetch the calendar feed now
-  workday suggestions [--date D]                       Pending meeting suggestions for a day (→ learned ticket)
+  workday suggestions [--date D] [--all]               Pending meeting suggestions for a day (→ learned ticket; --all adds today's upcoming meetings)
   workday suggestions accept <#N|uid> [--task <KEY>]   Log a suggested meeting (--minutes/--desc/--activity/--date)
   workday suggestions dismiss <#N|uid> [--date D]      Dismiss a suggestion (per uid+date, permanent)
   workday suggestions mute <#N|uid> [--days N]         Mute a meeting series (no --days = forever)

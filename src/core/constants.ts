@@ -151,6 +151,14 @@ export const CALENDAR_FETCH_INTERVAL_MS = 3 * 3_600_000;
 export const CALENDAR_MORNING_FETCH_INTERVAL_MS = 3_600_000;
 export const CALENDAR_MORNING_FROM_HOUR = 10; // inclusive, local time
 export const CALENDAR_MORNING_TO_HOUR = 14;   // exclusive
+/**
+ * All-day mode (GET /api/suggestions?includeFuture=1): rows of meetings that
+ * have not started yet go stale faster, so the read itself keeps the feed at
+ * most this old — and waits for the fetch, bounded, instead of serving rows
+ * the next fetch would erase.
+ */
+export const CALENDAR_FUTURE_MODE_MAX_AGE_MS = 30 * 60_000;
+export const CALENDAR_ENSURE_FRESH_WAIT_MS = 5_000;
 /** Outlook answers 417 to non-browser user agents on the legacy /owa/ path */
 export const ICS_BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';

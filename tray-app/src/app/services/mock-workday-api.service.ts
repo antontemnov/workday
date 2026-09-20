@@ -192,7 +192,40 @@ export class MockWorkdayApiService extends WorkdayApiService {
       start: this.iso(11, 40), end: this.iso(11, 40), plannedMinutes: 30,
       ongoing: false, isPrivate: false, source: 'review',
       resolved: { task: 'ATL-4512', activity: 'CodeReview', description: 'code review', level: 'source' } },
+    { uid: 'ev-postmortem', date: this.today, title: 'Incident postmortem',
+      start: this.iso(10, 0), end: this.iso(10, 45), plannedMinutes: 45,
+      ongoing: false, isPrivate: false, source: 'meeting' },
+    { uid: 'ev-demo', date: this.today, title: 'Payments demo dry-run',
+      start: this.iso(14, 30), end: this.iso(15, 0), plannedMinutes: 30,
+      ongoing: false, isPrivate: false, source: 'meeting',
+      resolved: { task: 'ATL-205', activity: 'Other', level: 'title' } },
+    // The rest of the day — served only to all-day reads (includeFuture).
+    { uid: 'ev-1on1', date: this.today, title: '1:1 with the lead',
+      start: this.iso(17, 0), end: this.iso(17, 30), plannedMinutes: 30,
+      ongoing: false, upcoming: true, isPrivate: false, source: 'meeting',
+      resolved: { task: 'ATL-101', activity: 'Other', level: 'series' } },
+    { uid: 'ev-review', date: this.today, title: 'Sprint review',
+      start: this.iso(17, 30), end: this.iso(18, 30), plannedMinutes: 60,
+      ongoing: false, upcoming: true, isPrivate: false, source: 'meeting',
+      candidates: [
+        { task: 'ATL-205', activity: 'Other', lastUsedAt: this.iso(9, 0) },
+        { task: 'ATL-101', activity: 'Other', lastUsedAt: this.iso(8, 0) },
+      ] },
+    { uid: 'ev-guild', date: this.today, title: 'Architecture guild',
+      start: this.iso(18, 30), end: this.iso(19, 30), plannedMinutes: 60,
+      ongoing: false, upcoming: true, isPrivate: false, source: 'meeting' },
+    { uid: 'ev-release', date: this.today, title: 'Release go/no-go',
+      start: this.iso(19, 30), end: this.iso(19, 45), plannedMinutes: 15,
+      ongoing: false, upcoming: true, isPrivate: false, source: 'meeting',
+      resolved: { task: 'ATL-101', activity: 'Other', description: 'Release sync', level: 'series' } },
+    { uid: 'ev-late-private', date: this.today, title: 'Private appointment',
+      start: this.iso(20, 0), end: this.iso(20, 30), plannedMinutes: 30,
+      ongoing: false, upcoming: true, isPrivate: true, source: 'meeting' },
   ];
+  // The daemon's ensureFresh in miniature: an all-day read against a "stale"
+  // feed waits like the real Outlook fetch does. A plain read marks the feed
+  // stale again, so every switch-on of the mode shows the wait.
+  private mockFeedFresh = false;
   private readonly mockDismissed = new Set<string>();
   private mockMuted: MutedSuggestionSeries[] = [];
 
@@ -755,10 +788,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   // Same derivation as the daemon: calendar minus covered (an entry carrying
   // the meeting's sourceRef) minus dismissed.
-  async getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>> {
-    await delay(100);
+  async getSuggestions(date?: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {
+    await delay(includeFuture && !this.mockFeedFresh ? 2800 : 100);
+    this.mockFeedFresh = includeFuture === true;
     const day = date ?? this.today;
-    return { ok: true, data: this.suggestionsDay(day) };
+    return { ok: true, data: this.suggestionsDay(day, includeFuture) };
   }
 
   async acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>> {
@@ -781,25 +815,28 @@ export class MockWorkdayApiService extends WorkdayApiService {
       sourceRef,
     };
     this.mockManualEntries.push(entry);
-    return { ok: true, data: { entry: this.toEntryResponse(entry), day: this.suggestionsDay(meeting.date) } };
+    return { ok: true, data: { entry: this.toEntryResponse(entry), day: this.suggestionsDay(meeting.date, request.includeFuture) } };
   }
 
-  async dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>> {
+  async dismissSuggestion(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {
     await delay(150);
     if (!this.mockMeetings.some(s => s.uid === uid && s.date === date)) {
       return { ok: false, error: 'Meeting not found in the calendar cache' };
     }
     this.mockDismissed.add(`${uid}:${date}`);
-    return { ok: true, data: this.suggestionsDay(date) };
+    return { ok: true, data: this.suggestionsDay(date, includeFuture) };
   }
 
-  private suggestionsDay(date: string): SuggestionsResponse {
+  private suggestionsDay(date: string, includeFuture?: boolean): SuggestionsResponse {
     const suggestions = this.mockMeetings.filter(s =>
       s.date === date
+      && (includeFuture || !s.upcoming)
       && !(s.isPrivate && this.mockCalendar.hidePrivate)
       && !this.mockDismissed.has(`${s.uid}:${s.date}`)
       && !this.mockMuted.some(m => m.uid === s.uid)
-      && !this.mockManualEntries.some(e => e.sourceRef === suggestionSourceRef(s)));
+      && !this.mockManualEntries.some(e => e.sourceRef === suggestionSourceRef(s)))
+      // The daemon's order — the feed places rows exactly as they arrive.
+      .sort((a, b) => a.start.localeCompare(b.start) || a.uid.localeCompare(b.uid));
     return {
       date, state: SuggestionsDayState.Active, suggestions,
       // ATL-118 left unmapped → its candidate chip shows the bare key.
@@ -811,7 +848,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     };
   }
 
-  async muteSuggestion(uid: string, date: string, days?: number): Promise<ApiResponse<SuggestionsResponse>> {
+  async muteSuggestion(uid: string, date: string, days?: number, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {
     await delay(150);
     const meeting = this.mockMeetings.find(s => s.uid === uid);
     if (!meeting) return { ok: false, error: 'Meeting not found in the calendar cache' };
@@ -824,7 +861,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
         title: meeting.title,
       },
     ];
-    return { ok: true, data: this.suggestionsDay(date) };
+    return { ok: true, data: this.suggestionsDay(date, includeFuture) };
   }
 
   async getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>> {

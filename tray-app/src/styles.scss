@@ -95,6 +95,9 @@ html:has(body.toast-window), body.toast-window {
     // states what it's set to without opening its sub-menu.
     .ci-hint { margin-left: auto; padding-left: 18px; color: #6c7086; font-size: 10.5px; }
 
+    .ci-hint.stacked { display: inline-grid; justify-items: end; }
+    .ci-hint.stacked > span { grid-area: 1 / 1; }
+
     .ci-go { color: #585b70; margin-left: 6px; }
     .ci-go.lone { margin-left: auto; padding-left: 18px; }
 
@@ -119,6 +122,20 @@ html:has(body.toast-window), body.toast-window {
       .ci-ic, .ci-hint { color: #45475a; }
       &:hover { background: none; box-shadow: none; color: #585b70; }
       &:hover .ci-ic { color: #45475a; }
+    }
+
+    // A wait the menu is held open for: the row goes inert, its hint breathes.
+    &.busy {
+      cursor: default;
+      &:hover { background: none; box-shadow: none; color: #bac2de; }
+      &:hover .ci-ic { color: #7f849c; }
+    }
+
+    // The card's Log… ink, 1:1 — same amber, same glow.
+    &.busy .ci-hint, .ci-hint.busy {
+      color: color-mix(in srgb, #f9e2af 82%, transparent);
+      text-shadow: 0 0 3px rgb(249 226 175 / 0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+      animation: ctx-busy-breathe 1.6s ease-in-out infinite;
     }
   }
 
@@ -170,10 +187,16 @@ html:has(body.toast-window), body.toast-window {
   }
 }
 
+@keyframes ctx-busy-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 @keyframes ctx-menu-in {
   0% { transform: scale(0.94); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ctx-menu { animation: none; }
+  .ctx-menu .ctx-item.busy .ci-hint, .ctx-menu .ci-hint.busy { animation: none; }
 }

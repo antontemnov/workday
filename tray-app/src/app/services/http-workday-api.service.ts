@@ -363,20 +363,21 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post<CalendarRefreshResponse>('/api/calendar/refresh');
   }
 
-  override async getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>> {
-    return this.get<SuggestionsResponse>(`/api/suggestions${date ? `?date=${date}` : ''}`);
+  override async getSuggestions(date?: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {
+    const params = [date ? `date=${date}` : null, includeFuture ? 'includeFuture=1' : null].filter(Boolean);
+    return this.get<SuggestionsResponse>(`/api/suggestions${params.length > 0 ? `?${params.join('&')}` : ''}`);
   }
 
   override async acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>> {
     return this.post<SuggestionAcceptResponse>('/api/suggestions/accept', request as unknown as Record<string, unknown>);
   }
 
-  override async dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>> {
-    return this.post<SuggestionsResponse>('/api/suggestions/dismiss', { uid, date });
+  override async dismissSuggestion(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {
+    return this.post<SuggestionsResponse>('/api/suggestions/dismiss', { uid, date, ...(includeFuture ? { includeFuture } : {}) });
   }
 
-  override async muteSuggestion(uid: string, date: string, days?: number): Promise<ApiResponse<SuggestionsResponse>> {
-    return this.post<SuggestionsResponse>('/api/suggestions/mute', { uid, date, ...(days ? { days } : {}) });
+  override async muteSuggestion(uid: string, date: string, days?: number, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {
+    return this.post<SuggestionsResponse>('/api/suggestions/mute', { uid, date, ...(days ? { days } : {}), ...(includeFuture ? { includeFuture } : {}) });
   }
 
   override async getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>> {

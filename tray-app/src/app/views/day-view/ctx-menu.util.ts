@@ -18,6 +18,13 @@ export interface CtxMenuItem {
   // inline (native-menu idiom), e.g. the active mode next to a "Mode" row, so
   // it reads without opening the sub-menu.
   readonly hint?: string;
+  // Invisible hint that only holds the width — a row whose hint comes, goes or
+  // changes while the menu is up (busy) must not resize the menu under the
+  // cursor. Next to a visible hint it widens that hint's box to the longer one.
+  readonly hintReserve?: string;
+  // The hint wears the busy ink (breathing amber) while the row stays live —
+  // a navigation row reporting a wait that runs behind it.
+  readonly hintBusy?: boolean;
   readonly danger?: boolean;
   // Rendered dimmed and inert — states a fact ("In favorites") rather than
   // hiding the entry, so the mechanic stays discoverable.
@@ -27,6 +34,11 @@ export interface CtxMenuItem {
   // (chevron), 'back' returns from it. The menu is not closed first — the
   // action's own open call replaces it without a second entrance.
   readonly nav?: 'go' | 'back';
+  // The click leaves the menu up: the action starts something the menu itself
+  // reports on — the owner re-renders the row (busy) and closes it when done.
+  readonly keepOpen?: boolean;
+  // Inert row whose hint breathes — the wait the owner is holding the menu for.
+  readonly busy?: boolean;
   readonly action: () => void;
 }
 
@@ -69,16 +81,27 @@ export function closeCtxMenuWithin(root: HTMLElement): void {
   if (menuAnchor && root.contains(menuAnchor)) closeCtxMenu();
 }
 
-export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]): void {
+/** The live menu element — lets an owner tell "my menu is still up" from
+ *  "the user dismissed it / another one replaced it". */
+export function currentCtxMenu(): HTMLElement | null {
+  return menuEl;
+}
+
+// instant: a re-render of the same menu in place — no second entrance.
+export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[], instant: boolean = false): void {
   closeCtxMenu();
   if (items.length === 0) return;
   const menu = buildMenu(items);
+  if (instant) menu.style.animation = 'none';
   document.body.appendChild(menu);
 
   // Keep the popover on-screen: flip left / above the cursor near the edges.
-  const rect = menu.getBoundingClientRect();
-  if (x + rect.width > window.innerWidth - EDGE_MARGIN) x = window.innerWidth - EDGE_MARGIN - rect.width;
-  if (y + rect.height > window.innerHeight - EDGE_MARGIN) y = y - rect.height;
+  // Layout size, not the bounding rect — the entrance animation starts scaled
+  // down, and a rect taken then under-measures the menu past the edge.
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  if (x + width > window.innerWidth - EDGE_MARGIN) x = window.innerWidth - EDGE_MARGIN - width;
+  if (y + height > window.innerHeight - EDGE_MARGIN) y = y - height;
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
   snapToDeviceGrid(menu);
@@ -151,14 +174,27 @@ function buildMenu(items: readonly CtxMenuEntry[]): HTMLElement {
       continue;
     }
     const el = document.createElement('div');
-    el.className = 'ctx-item' + (item.danger ? ' danger' : '') + (item.disabled ? ' disabled' : '');
+    el.className = 'ctx-item' + (item.danger ? ' danger' : '') + (item.disabled ? ' disabled' : '') + (item.busy ? ' busy' : '');
     if (item.title) el.title = item.title;
     if (item.icon) el.appendChild(iconEl(item.icon));
     el.appendChild(document.createTextNode(item.label));
-    if (item.hint) {
+    const hintText = item.hint ?? item.hintReserve;
+    if (hintText) {
       const hn = document.createElement('span');
-      hn.className = 'ci-hint';
-      hn.textContent = item.hint;
+      hn.className = 'ci-hint' + (item.hintBusy ? ' busy' : '');
+      if (item.hint && item.hintReserve) {
+        // Both share one grid cell: the box is as wide as the longer text.
+        hn.classList.add('stacked');
+        for (const [text, hidden] of [[item.hint, false], [item.hintReserve, true]] as const) {
+          const layer = document.createElement('span');
+          layer.textContent = text;
+          if (hidden) layer.style.visibility = 'hidden';
+          hn.appendChild(layer);
+        }
+      } else {
+        hn.textContent = hintText;
+        if (!item.hint) hn.style.visibility = 'hidden';
+      }
       el.appendChild(hn);
     }
     if (item.nav === 'go') {
@@ -167,9 +203,9 @@ function buildMenu(items: readonly CtxMenuEntry[]): HTMLElement {
       go.textContent = '›';
       el.appendChild(go);
     }
-    if (!item.disabled) {
+    if (!item.disabled && !item.busy) {
       el.addEventListener('click', () => {
-        if (!item.nav) closeCtxMenu();
+        if (!item.nav && !item.keepOpen) closeCtxMenu();
         item.action();
       });
     }

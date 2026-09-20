@@ -2,7 +2,8 @@
 //
 // Meetings: cached calendar instances for the date, minus entry filters
 // (BUSY only, not cancelled, not all-day, private hidden only when
-// configured, a row is born at DTSTART), minus covered (a ManualEntry
+// configured, a row is born at DTSTART — all-day reads lift that gate and
+// mark the early rows `upcoming`), minus covered (a ManualEntry
 // carrying the instance's sourceRef exists in the day log), minus dismissed
 // keys, minus muted series. Each surviving row carries its learned ticket
 // resolution (see meeting-associations.ts). Accepts are never stored.
@@ -63,6 +64,8 @@ export interface DeriveSuggestionsInput {
   // Learned series→ticket memory: filters muted series and attaches
   // resolved/candidates to each row. Absent → plain unresolved rows.
   readonly associations?: MeetingAssociations;
+  // All-day mode: meetings that have not started yet get rows too.
+  readonly includeFuture?: boolean;
 }
 
 export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsResponse {
@@ -86,7 +89,8 @@ export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsRes
     const startMs = Date.parse(instance.start);
     const endMs = Date.parse(instance.end);
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
-    if (startMs > nowMs) continue;
+    const upcoming = startMs > nowMs;
+    if (upcoming && !input.includeFuture) continue;
     if (covered.has(meetingSourceRef(instance.uid, instance.date))) continue;
     if (input.dismissedKeys.has(suggestionKey(instance.uid, instance.date))) continue;
 
@@ -100,7 +104,8 @@ export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsRes
       start: instance.start,
       end: instance.end,
       plannedMinutes: Math.max(1, Math.round((endMs - startMs) / MS_PER_MINUTE)),
-      ongoing: nowMs < endMs,
+      ongoing: !upcoming && nowMs < endMs,
+      ...(upcoming ? { upcoming: true } : {}),
       isPrivate: instance.isPrivate === true,
       source: SUGGESTION_SOURCE_MEETING,
       ...resolution,

@@ -154,12 +154,15 @@ export abstract class WorkdayApiService {
   // a standalone ManualEntry carrying sourceRef; dismiss is permanent per
   // uid+date. Both return the recomputed day. Rows carry the learned ticket
   // resolution (resolved prefill / candidates on a titleKey conflict).
-  abstract getSuggestions(date?: string): Promise<ApiResponse<SuggestionsResponse>>;
+  // includeFuture = the all-day mode: today's meetings that have not started
+  // yet get rows too (`upcoming`); such a read may wait a few seconds for a
+  // fresh feed. Mutations take the same flag — their day comes back in it.
+  abstract getSuggestions(date?: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>>;
   abstract acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>>;
-  abstract dismissSuggestion(uid: string, date: string): Promise<ApiResponse<SuggestionsResponse>>;
+  abstract dismissSuggestion(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>>;
   // Manual series mute (suggestion context menu) — days absent → forever.
   // Muted series feed the Settings→Calendar panel; unmute releases them.
-  abstract muteSuggestion(uid: string, date: string, days?: number): Promise<ApiResponse<SuggestionsResponse>>;
+  abstract muteSuggestion(uid: string, date: string, days?: number, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>>;
   abstract getMutedSuggestions(): Promise<ApiResponse<SuggestionsMutedResponse>>;
   abstract unmuteSuggestion(uid: string): Promise<ApiResponse<SuggestionUnmuteResponse>>;
   abstract unmuteAllSuggestions(): Promise<ApiResponse<SuggestionUnmuteResponse>>;

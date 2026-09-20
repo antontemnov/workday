@@ -22,9 +22,13 @@ import {
   SuggestionAcceptRequest,
 } from './models/workday.models';
 import { DayViewComponent } from './views/day-view/day-view.component';
+import { loadSuggestionsMode, persistSuggestionsMode, type SuggestionsMode } from './views/day-view/suggestions-mode.util';
 import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
 import { SettingsViewComponent } from './views/settings-view/settings-view.component';
 import { SetupViewComponent } from './views/setup-view/setup-view.component';
+
+// An all-day suggestions read longer than this is a calendar re-fetch.
+const ALL_DAY_SLOW_READ_MS = 200;
 
 type TrayKind = 'live' | 'pending' | 'idle' | 'paused' | 'none';
 type ActiveView = 'day' | 'sheet' | 'set' | 'setup';
@@ -111,6 +115,22 @@ export class AppComponent implements OnInit, OnDestroy {
   // on failure — an old daemon without the endpoint simply never fills it,
   // a transient miss self-heals on the next poll.
   private suggestionsDay: SuggestionsResponse | null = null;
+  // What the feed offers (tray-side preference): 'hidden' requests nothing,
+  // 'all' makes reads and mutations carry includeFuture. Reads are ticketed at send time; a mutation answer or a
+  // mode flip raises the floor, and a read sent below it is dropped — a slow
+  // all-day read never repaints the feed with an older picture. Reads never
+  // drop each other: whichever answers first in the current mode is applied.
+  suggestionsMode: SuggestionsMode = loadSuggestionsMode();
+  // An all-day answer is on screen — until then any all-day read is awaited.
+  private allDayShown: boolean = false;
+  // Any all-day read may be held by the daemon for a fresh calendar feed: the
+  // launch one, the half-hourly one, a Show click. A read that outlives the
+  // threshold counts as slow — that is what the menu reports as "fetching";
+  // ordinary millisecond polls never reach it.
+  private allDayReadsInFlight: number = 0;
+  private allDaySlowReads: number = 0;
+  private suggestionsTicket: number = 0;
+  private suggestionsFloor: number = 0;
 
   // Toast + action gate
   actionError: string | null = null;
@@ -330,13 +350,80 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.suggestionsDay?.suggestions ?? [];
   }
 
+  private get allDaySuggestions(): boolean {
+    return this.suggestionsMode === 'all';
+  }
+
   get suggestionSummaries(): Readonly<Record<string, string>> {
     return this.suggestionsDay?.issueSummaries ?? {};
   }
 
+  get allDayFetching(): boolean {
+    return this.allDaySuggestions && this.allDaySlowReads > 0;
+  }
+
+  // The menu row waits out a slow read, and any read while nothing all-day is
+  // on screen yet (launch, a Show click).
+  get allDayBusy(): boolean {
+    return this.allDaySuggestions && this.allDayReadsInFlight > 0
+      && (this.allDaySlowReads > 0 || !this.allDayShown);
+  }
+
   private async refreshSuggestions(): Promise<void> {
-    const res = await this.api.getSuggestions();
-    if (res.ok && res.data) this.suggestionsDay = res.data;
+    if (this.suggestionsMode === 'hidden') return;
+    const ticket = ++this.suggestionsTicket;
+    const allDay = this.allDaySuggestions;
+    const endRead = allDay ? this.beginAllDayRead() : null;
+    try {
+      const res = await this.api.getSuggestions(undefined, allDay);
+      if (ticket <= this.suggestionsFloor) return;
+      if (res.ok && res.data) this.applySuggestionsDay(res.data, false);
+    } finally {
+      endRead?.();
+    }
+  }
+
+  private beginAllDayRead(): () => void {
+    this.allDayReadsInFlight++;
+    let slow = false;
+    const slowTimer = setTimeout(() => { slow = true; this.allDaySlowReads++; }, ALL_DAY_SLOW_READ_MS);
+    return (): void => {
+      clearTimeout(slowTimer);
+      this.allDayReadsInFlight--;
+      if (slow) this.allDaySlowReads--;
+    };
+  }
+
+  // raiseFloor: a mutation answer outdates every read sent before it.
+  private applySuggestionsDay(day: SuggestionsResponse, raiseFloor: boolean = true): void {
+    if (raiseFloor) this.suggestionsFloor = this.suggestionsTicket;
+    this.suggestionsDay = day;
+    if (this.allDaySuggestions) this.allDayShown = true;
+  }
+
+  // Every switch outdates the reads sent before it. Hidden drops the rows and
+  // stops asking; leaving All day drops the upcoming rows at once; the rest
+  // is one read — into All day the daemon may hold it for a fresh feed.
+  // Picking All day again after a read that never answered just reads again.
+  setSuggestionsMode(mode: SuggestionsMode): void {
+    const previous = this.suggestionsMode;
+    if (mode === previous && !(mode === 'all' && !this.allDayShown)) return;
+    this.suggestionsMode = mode;
+    this.allDayShown = false;
+    persistSuggestionsMode(mode);
+    this.suggestionsFloor = this.suggestionsTicket;
+    if (mode === 'hidden') {
+      this.suggestionsDay = null;
+      return;
+    }
+    if (mode === 'started' && previous === 'all' && this.suggestionsDay) {
+      this.suggestionsDay = {
+        ...this.suggestionsDay,
+        suggestions: this.suggestionsDay.suggestions.filter(s => !s.upcoming),
+      };
+      return;
+    }
+    void this.refreshSuggestions();
   }
 
   async refresh(): Promise<void> {
@@ -523,10 +610,10 @@ export class AppComponent implements OnInit, OnDestroy {
   // recalculated day — applied immediately, not left to the next poll.
   async submitSuggestionAccept(req: SuggestionAcceptRequest): Promise<void> {
     await this.runAction(async () => {
-      const res = await this.api.acceptSuggestion(req);
+      const res = await this.api.acceptSuggestion({ ...req, includeFuture: this.allDaySuggestions });
       if (res.ok && res.data) {
         this.freshEntryId = res.data.entry.id;
-        this.suggestionsDay = res.data.day;
+        this.applySuggestionsDay(res.data.day);
       }
       return res;
     });
@@ -534,16 +621,16 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async submitSuggestionDismiss(e: { uid: string; date: string }): Promise<void> {
     await this.runAction(async () => {
-      const res = await this.api.dismissSuggestion(e.uid, e.date);
-      if (res.ok && res.data) this.suggestionsDay = res.data;
+      const res = await this.api.dismissSuggestion(e.uid, e.date, this.allDaySuggestions);
+      if (res.ok && res.data) this.applySuggestionsDay(res.data);
       return res;
     });
   }
 
   async submitSuggestionMute(e: { uid: string; date: string; days: number | null }): Promise<void> {
     await this.runAction(async () => {
-      const res = await this.api.muteSuggestion(e.uid, e.date, e.days ?? undefined);
-      if (res.ok && res.data) this.suggestionsDay = res.data;
+      const res = await this.api.muteSuggestion(e.uid, e.date, e.days ?? undefined, this.allDaySuggestions);
+      if (res.ok && res.data) this.applySuggestionsDay(res.data);
       return res;
     });
   }

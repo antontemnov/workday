@@ -57,6 +57,8 @@ import {
   MS_PER_MINUTE,
   MS_PER_SECOND,
   MAX_ENTRY_MINUTES,
+  CALENDAR_FUTURE_MODE_MAX_AGE_MS,
+  CALENDAR_ENSURE_FRESH_WAIT_MS,
   DEFAULT_MANUAL_ACTIVITY,
   DEFAULT_REVIEW_MINUTES,
   REVIEW_ACTIVITY,
@@ -443,7 +445,7 @@ export class HttpServer {
         return this.sendJson(res, 200, await this.handleCalendarRefresh());
       }
       if (method === 'GET' && path === '/api/suggestions') {
-        return this.sendJson(res, 200, this.handleSuggestions(url));
+        return this.sendJson(res, 200, await this.handleSuggestions(url));
       }
       if (method === 'POST' && path === '/api/suggestions/accept') {
         const body = await this.readBody(req);
@@ -536,7 +538,7 @@ export class HttpServer {
       : readDailyLog(date);
   }
 
-  private computeSuggestions(date: string): SuggestionsResponse {
+  private computeSuggestions(date: string, includeFuture: boolean = false): SuggestionsResponse {
     const day = deriveSuggestions({
       date,
       instances: this.deps.calendarCollector.getInstances(),
@@ -545,6 +547,7 @@ export class HttpServer {
       hidePrivate: this.deps.config.calendar.hidePrivate,
       nowMs: Date.now(),
       associations: loadMeetingAssociations(),
+      includeFuture,
     });
     const keys = day.suggestions.flatMap(s => [
       ...(s.resolved ? [s.resolved.task] : []),
@@ -553,10 +556,16 @@ export class HttpServer {
     return keys.length === 0 ? day : { ...day, issueSummaries: this.cachedSummariesFor(keys, true) };
   }
 
-  private handleSuggestions(url: URL): ApiResponse<SuggestionsResponse> {
+  private async handleSuggestions(url: URL): Promise<ApiResponse<SuggestionsResponse>> {
     const date = url.searchParams.get('date') ?? this.deps.getCurrentDate();
     if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
-    return { ok: true, data: this.computeSuggestions(date) };
+    const includeFuture = url.searchParams.get('includeFuture') === '1';
+    // Only today has a future; the wait keeps a stale cache from showing
+    // rows the very next fetch would erase.
+    if (includeFuture && date === this.deps.getCurrentDate()) {
+      await this.deps.calendarCollector.ensureFresh(CALENDAR_FUTURE_MODE_MAX_AGE_MS, CALENDAR_ENSURE_FRESH_WAIT_MS);
+    }
+    return { ok: true, data: this.computeSuggestions(date, includeFuture) };
   }
 
   private async handleSuggestionAccept(body: Record<string, unknown>): Promise<ApiResponse<SuggestionAcceptResponse>> {
@@ -631,7 +640,7 @@ export class HttpServer {
           ok: true,
           data: {
             entry: this.toEntryData(result.entry, tracker.getDailyLog()),
-            day: this.computeSuggestions(date),
+            day: this.computeSuggestions(date, body.includeFuture === true),
           },
         };
       }
@@ -639,7 +648,7 @@ export class HttpServer {
       learn?.();
       return {
         ok: true,
-        data: { entry: this.toEntryData(entry, log), day: this.computeSuggestions(date) },
+        data: { entry: this.toEntryData(entry, log), day: this.computeSuggestions(date, body.includeFuture === true) },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -655,7 +664,7 @@ export class HttpServer {
       || (this.getLogForDate(date)?.reviewCheckouts?.some(rc => rc.task === uid) ?? false);
     if (!exists) return { ok: false, error: 'Suggestion not found for this uid and date' };
     dismissSuggestionKey(uid, date);
-    return { ok: true, data: this.computeSuggestions(date) };
+    return { ok: true, data: this.computeSuggestions(date, body.includeFuture === true) };
   }
 
   /** Manual series mute (context menu / CLI). `days` absent → forever. */
@@ -676,7 +685,7 @@ export class HttpServer {
       ?? instances.find(i => i.uid === uid);
     if (!instance) return { ok: false, error: 'Meeting not found in the calendar cache' };
     muteSeries({ uid, days, title: instance.title });
-    return { ok: true, data: this.computeSuggestions(date) };
+    return { ok: true, data: this.computeSuggestions(date, body.includeFuture === true) };
   }
 
   private handleSuggestionsMuted(): ApiResponse<SuggestionsMutedResponse> {

@@ -82,7 +82,7 @@ function makeInstance(over: Partial<CalendarInstance> = {}): CalendarInstance {
 
 function derive(
   instances: CalendarInstance[],
-  over: Partial<{ log: DailyLog | null; dismissedKeys: Set<string>; hidePrivate: boolean; nowMs: number; date: string; associations: MeetingAssociations }> = {},
+  over: Partial<{ log: DailyLog | null; dismissedKeys: Set<string>; hidePrivate: boolean; nowMs: number; date: string; associations: MeetingAssociations; includeFuture: boolean }> = {},
 ): ReturnType<typeof deriveSuggestions> {
   return deriveSuggestions({
     date: over.date ?? DATE,
@@ -92,6 +92,7 @@ function derive(
     hidePrivate: over.hidePrivate ?? false,
     nowMs: over.nowMs ?? NOW,
     associations: over.associations,
+    includeFuture: over.includeFuture,
   });
 }
 
@@ -174,6 +175,72 @@ test('a pushed day is silenced entirely', () => {
   const log = createEmptyLog(DATE, config);
   log.pushedAt = '2026-07-16T18:00:00.000Z';
   const day = derive([makeInstance()], { log });
+  assert.equal(day.state, SuggestionsDayState.Pushed);
+  assert.equal(day.suggestions.length, 0);
+});
+
+console.log('');
+console.log('Derivation — all-day mode (includeFuture)');
+
+const MID_MEETING = Date.parse('2026-07-16T10:15:00.000Z');
+const FUTURE_SLOT = { start: '2026-07-16T11:00:00.000Z', end: '2026-07-16T11:30:00.000Z' };
+
+test('upcoming meetings get rows, flagged; started rows carry no flag', () => {
+  const day = derive([
+    makeInstance({ uid: 'started' }),
+    makeInstance({ uid: 'future', ...FUTURE_SLOT }),
+  ], { nowMs: MID_MEETING, includeFuture: true });
+  assert.deepEqual(day.suggestions.map(s => s.uid), ['started', 'future']);
+  assert.equal(day.suggestions[0].ongoing, true);
+  assert.equal('upcoming' in day.suggestions[0], false);
+  assert.equal(day.suggestions[1].upcoming, true);
+  assert.equal(day.suggestions[1].ongoing, false);
+  assert.equal(day.suggestions[1].plannedMinutes, 30);
+});
+
+test('the same row walks upcoming → ongoing → past, never duplicated', () => {
+  const instances = [makeInstance({ uid: 'future', ...FUTURE_SLOT })];
+  const at = (iso: string): ReturnType<typeof derive>['suggestions'] =>
+    derive(instances, { nowMs: Date.parse(iso), includeFuture: true }).suggestions;
+  const before = at('2026-07-16T10:15:00.000Z');
+  const during = at('2026-07-16T11:10:00.000Z');
+  const after = at('2026-07-16T12:00:00.000Z');
+  assert.deepEqual([before.length, during.length, after.length], [1, 1, 1]);
+  assert.deepEqual([before[0].upcoming, before[0].ongoing], [true, false]);
+  assert.deepEqual([during[0].upcoming, during[0].ongoing], [undefined, true]);
+  assert.deepEqual([after[0].upcoming, after[0].ongoing], [undefined, false]);
+});
+
+test('every other filter holds for upcoming rows', () => {
+  const config = makeConfig();
+  const log = createEmptyLog(DATE, config);
+  addManualEntry(log, { task: 'ATL-1', minutes: 30, description: 'Early accept', activity: 'Other', sourceRef: meetingSourceRef('covered', DATE) }, config);
+  const associations: MeetingAssociations = {
+    ...emptyMeetingAssociations(),
+    muted: { muted: { mutedAt: '2026-07-01T10:00:00.000Z' } },
+  };
+  const day = derive([
+    makeInstance({ uid: 'covered', ...FUTURE_SLOT }),
+    makeInstance({ uid: 'dismissed', ...FUTURE_SLOT }),
+    makeInstance({ uid: 'muted', ...FUTURE_SLOT }),
+    makeInstance({ uid: 'cancelled', cancelled: true, ...FUTURE_SLOT }),
+    makeInstance({ uid: 'tomorrow', date: '2026-07-17', start: '2026-07-17T10:00:00.000Z', end: '2026-07-17T10:30:00.000Z' }),
+    makeInstance({ uid: 'kept', ...FUTURE_SLOT }),
+  ], {
+    log,
+    associations,
+    dismissedKeys: new Set([suggestionKey('dismissed', DATE)]),
+    nowMs: MID_MEETING,
+    includeFuture: true,
+  });
+  assert.deepEqual(day.suggestions.map(s => s.uid), ['kept']);
+});
+
+test('a pushed day stays silenced in all-day mode', () => {
+  const config = makeConfig();
+  const log = createEmptyLog(DATE, config);
+  log.pushedAt = '2026-07-16T09:00:00.000Z';
+  const day = derive([makeInstance({ uid: 'future', ...FUTURE_SLOT })], { log, nowMs: MID_MEETING, includeFuture: true });
   assert.equal(day.state, SuggestionsDayState.Pushed);
   assert.equal(day.suggestions.length, 0);
 });

@@ -60,7 +60,7 @@ workday notifications test [minutes]   Inject a test notification (pipeline chec
 workday notifications ack <id> <act>   Acknowledge (shown|opened|hidden)
 workday calendar                       Outlook ICS feed status (meeting suggestions)
 workday calendar refresh               Re-fetch the calendar feed now
-workday suggestions [--date D]         Pending meeting suggestions for a day (→ learned ticket)
+workday suggestions [--date D] [--all] Pending meeting suggestions for a day (--all adds today's upcoming meetings)
 workday suggestions accept <#N|uid>    Log a suggested meeting (--task optional once learned)
 workday suggestions dismiss <#N|uid>   Dismiss a suggestion (permanent per meeting+day)
 workday suggestions mute <#N|uid>      Mute a meeting series (--days N, default forever)
@@ -134,7 +134,11 @@ all-day) becomes an offer to log a manual entry, until it is accepted or
 dismissed. Accepts are never stored — the created entry carries a
 `sourceRef` marker, so deleting it revives the suggestion; dismissals live
 in `data/suggestions-state.json`. A day pushed to Tempo is silenced for
-good. Feed re-fetches hourly during the 10:00–14:00 morning window, every
+good. An all-day read (`workday suggestions --all`,
+`GET /api/suggestions?includeFuture=1`) also offers today's meetings that
+have not started yet, marked `upcoming`; such a read keeps the feed at most
+30 min old and waits for the fetch (5s at most) rather than serve rows the
+next fetch would erase. Feed re-fetches hourly during the 10:00–14:00 morning window, every
 ~3h otherwise; `calendar.enabled: false` in config.json switches it off,
 `calendar.hidePrivate: true` hides CLASS:PRIVATE meetings from suggestions.
 

@@ -96,6 +96,10 @@
       (suggestionAcceptSubmitted)="submitSuggestionAccept($event)"
       (suggestionDismissSubmitted)="submitSuggestionDismiss($event)"
       (suggestionMuteSubmitted)="submitSuggestionMute($event)"
+      [suggestionsMode]="suggestionsMode"
+      [allDayBusy]="allDayBusy"
+      [allDayFetching]="allDayFetching"
+      (suggestionsModeSelected)="setSuggestionsMode($event)"
       (settingsRequested)="setView('set')"
       (retryInstall)="retryDaemonInstall()" />
 

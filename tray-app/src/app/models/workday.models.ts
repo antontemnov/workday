@@ -160,6 +160,7 @@ export interface Suggestion {
   readonly end: string;            // ISO UTC
   readonly plannedMinutes: number;
   readonly ongoing: boolean;
+  readonly upcoming?: boolean;     // not started yet — all-day reads only
   readonly isPrivate: boolean;
   readonly source: 'meeting' | 'review';
   readonly resolved?: SuggestionResolved;
@@ -188,6 +189,7 @@ export interface SuggestionAcceptRequest {
   readonly minutes?: number;       // default: plannedMinutes (capped)
   readonly description?: string;   // default: resolved.description → title (empty for private)
   readonly activity?: string;      // default: resolved.activity → Other
+  readonly includeFuture?: boolean; // the returned day is recomputed in the same mode
 }
 
 export interface SuggestionAcceptResponse {

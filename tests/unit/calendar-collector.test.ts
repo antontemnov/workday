@@ -72,14 +72,14 @@ function busyEvent(uid: string, startUtc: string, endUtc: string): string {
 
 interface Harness {
   collector: CalendarCollector;
-  feed: { text: string; error: string | null };
+  feed: { text: string; error: string | null; hold: Promise<void> | null };
   nowRef: { value: number };
   fetches: { count: number };
 }
 
 function makeCollector(over?: { enabled?: boolean; url?: string | null }): Harness {
   rmSync(join(getDataDir(), CALENDAR_CACHE_FILE), { force: true });
-  const feed = { text: ics(), error: null as string | null };
+  const feed = { text: ics(), error: null as string | null, hold: null as Promise<void> | null };
   const nowRef = { value: Date.UTC(2026, 6, 16, 12, 0, 0) }; // 2026-07-16 12:00Z
   const fetches = { count: 0 };
   const config = makeConfig(over);
@@ -89,6 +89,7 @@ function makeCollector(over?: { enabled?: boolean; url?: string | null }): Harne
     now: () => nowRef.value,
     fetchIcs: async () => {
       fetches.count++;
+      if (feed.hold) await feed.hold;
       if (feed.error) throw new Error(feed.error);
       return feed.text;
     },
@@ -234,6 +235,64 @@ void test('cadence: hourly inside 10–14 local, 3-hourly outside', async () => 
   h.collector.maybeScheduledRefresh();
   await settle();
   assert.equal(h.fetches.count, 5);
+});
+
+// ─── ensureFresh (all-day reads) ─────────────────────────────────────────
+
+const MAX_AGE = 30 * 60_000;
+
+void test('ensureFresh: a recent attempt serves the cache, an old one is awaited', async () => {
+  const h = makeCollector();
+  await h.collector.refresh();
+  assert.equal(h.fetches.count, 1);
+
+  h.nowRef.value += 29 * 60_000;
+  await h.collector.ensureFresh(MAX_AGE, 1_000);
+  assert.equal(h.fetches.count, 1);
+
+  h.feed.text = ics(busyEvent('late', '20260716T150000', '20260716T153000'));
+  h.nowRef.value += 2 * 60_000;
+  await h.collector.ensureFresh(MAX_AGE, 1_000);
+  assert.equal(h.fetches.count, 2);
+  assert.deepEqual(h.collector.getInstances().map(i => i.uid), ['late']);
+});
+
+void test('ensureFresh: a failed fetch never rejects and is not retried per read', async () => {
+  const h = makeCollector();
+  await h.collector.refresh();
+  h.feed.error = 'HTTP 417';
+  h.nowRef.value += 31 * 60_000;
+  await h.collector.ensureFresh(MAX_AGE, 1_000);
+  assert.equal(h.fetches.count, 2);
+
+  h.nowRef.value += 10_000;
+  await h.collector.ensureFresh(MAX_AGE, 1_000);
+  assert.equal(h.fetches.count, 2);
+});
+
+void test('ensureFresh: the wait is capped; later reads join the fetch in flight', async () => {
+  const h = makeCollector();
+  await h.collector.refresh();
+  let release: () => void = () => undefined;
+  h.feed.hold = new Promise<void>(resolve => { release = resolve; });
+  h.feed.text = ics(busyEvent('slow', '20260716T150000', '20260716T153000'));
+  h.nowRef.value += 31 * 60_000;
+
+  await h.collector.ensureFresh(MAX_AGE, 20);
+  assert.equal(h.fetches.count, 2);
+  assert.deepEqual(h.collector.getInstances(), []);   // capped out — still the old cache
+
+  const joined = h.collector.ensureFresh(MAX_AGE, 1_000);
+  release();
+  await joined;
+  assert.equal(h.fetches.count, 2);
+  assert.deepEqual(h.collector.getInstances().map(i => i.uid), ['slow']);
+});
+
+void test('ensureFresh: unconfigured collector is a no-op', async () => {
+  const h = makeCollector({ url: null });
+  await h.collector.ensureFresh(MAX_AGE, 1_000);
+  assert.equal(h.fetches.count, 0);
 });
 
 // ─── Summary ─────────────────────────────────────────────────────────────

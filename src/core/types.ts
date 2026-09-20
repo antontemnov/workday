@@ -686,6 +686,7 @@ export interface Suggestion {
   readonly end: string;            // ISO UTC
   readonly plannedMinutes: number; // DTEND − DTSTART; accept may override
   readonly ongoing: boolean;       // started but DTEND not reached yet
+  readonly upcoming?: boolean;     // not started yet — all-day reads only
   readonly isPrivate: boolean;
   readonly source: 'meeting' | 'review';
   readonly resolved?: SuggestionResolved;

@@ -5,7 +5,8 @@
 // Cadence (checked from the daemon's 60s day-boundary timer): daemon start,
 // manual POST /api/calendar/refresh, and a schedule — hourly during the
 // 10:00–14:00 local morning window (re-shuffles are most likely at the start
-// of the day), every ~3h otherwise.
+// of the day), every ~3h otherwise. All-day suggestion reads tighten it to
+// 30 min through ensureFresh() — driven by the reads, so no reader, no fetch.
 //
 // Reconciliation on every fetch (the DTEND watershed): an instance that
 // vanished from the feed after its DTEND had passed is kept frozen — it
@@ -140,6 +141,25 @@ export class CalendarCollector {
     void this.refresh().catch(err => {
       console.warn(`[calendar] scheduled refresh failed: ${err instanceof Error ? err.message : String(err)}`);
     });
+  }
+
+  /**
+   * Read-driven freshness for the all-day mode: a feed attempt older than
+   * maxAgeMs is re-fetched and awaited, waitCapMs at most — a slower fetch
+   * finishes in the background and the caller serves the cache. Gated on the
+   * last attempt, not the cache age: a failed fetch is not retried per poll.
+   */
+  public async ensureFresh(maxAgeMs: number, waitCapMs: number): Promise<void> {
+    if (!this.isConfigured()) return;
+    if (!this.refreshPromise && this.now() - this.lastAttemptAt < maxAgeMs) return;
+    const settled = this.refresh().then(() => undefined, () => undefined);
+    let capTimer: ReturnType<typeof setTimeout> | undefined;
+    const cap = new Promise<void>(resolve => { capTimer = setTimeout(resolve, waitCapMs); });
+    try {
+      await Promise.race([settled, cap]);
+    } finally {
+      clearTimeout(capTimer);
+    }
   }
 
   private currentIntervalMs(now: number): number {
