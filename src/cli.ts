@@ -34,7 +34,7 @@ import {
 } from './core/daily-log.js';
 import { addEntryOnDate, editEntryOnDate, deleteEntryOnDate, deleteSessionOnDate, deleteTaskOnDate, setAddedOnDate } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
-import { isJiraConfigured, searchIssues, checkIssueExists } from './push/jira-client.js';
+import { isJiraConfigured, searchIssues, fetchInProgressIssues, checkIssueExists } from './push/jira-client.js';
 import { recordEntryDeletion } from './push/push-log.js';
 import type {
   ApiResponse,
@@ -782,6 +782,27 @@ async function handleJiraSearch(args: string[]): Promise<void> {
     const hits = await searchIssues(query, secrets, loadConfig().search.projectKeys);
     if (hits.length === 0) {
       console.log('No matches.');
+      return;
+    }
+    for (const hit of hits) {
+      console.log(`  ${hit.key.padEnd(12)} ${hit.summary}`);
+    }
+  } catch (err) {
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function handleJiraInProgress(): Promise<void> {
+  const secrets = tryLoadSecrets();
+  if (!secrets || !isJiraConfigured(secrets)) {
+    console.log('Jira API is not configured — fill Jira_* fields in secrets.json');
+    return;
+  }
+
+  try {
+    const hits = await fetchInProgressIssues(secrets);
+    if (hits.length === 0) {
+      console.log('Nothing in progress.');
       return;
     }
     for (const hit of hits) {
@@ -1774,6 +1795,9 @@ async function main(): Promise<void> {
     case 'jira-search':
       await handleJiraSearch(args.slice(1));
       break;
+    case 'jira-in-progress':
+      await handleJiraInProgress();
+      break;
     case 'projects':
       await handleProjects(args.slice(1));
       break;
@@ -1858,6 +1882,7 @@ Usage:
   workday fav-remove <#|id>                            Remove a favorite
   workday fav-list                                     List favorites
   workday jira-search "<query>"                        Live Jira issue search (key + summary)
+  workday jira-in-progress                             My Jira issues in status In Progress
   workday projects [refresh | set <KEY...>]            Show / refresh / set the search-scope projects
   workday activities [refresh | set <VALUE...>]        Show / refresh / scope Tempo activity types
   workday tempo                                        Show report (1st of month → today)

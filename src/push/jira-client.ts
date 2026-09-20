@@ -6,6 +6,9 @@ import {
   ISSUE_SUMMARY_TTL_MS,
   JIRA_SEARCH_CACHE_TTL_MS,
   JIRA_SEARCH_CACHE_MAX_ENTRIES,
+  JIRA_IN_PROGRESS_JQL,
+  JIRA_IN_PROGRESS_TTL_MS,
+  JIRA_IN_PROGRESS_TIMEOUT_MS,
   JQL_SEARCH_MAX_RESULTS,
   SEARCH_MAX_HITS,
   SEARCH_PICKER_FILL_THRESHOLD,
@@ -52,7 +55,7 @@ function saveCache(cache: Record<string, unknown>): void {
 }
 
 /** GET request to Jira REST API */
-async function jiraGet(path: string, secrets: Secrets): Promise<unknown> {
+async function jiraGet(path: string, secrets: Secrets, timeoutMs?: number): Promise<unknown> {
   const url = new URL(path, secrets.Jira_BaseUrl);
   const auth = Buffer.from(`${secrets.Jira_Email}:${secrets.Jira_Token}`).toString('base64');
 
@@ -62,6 +65,7 @@ async function jiraGet(path: string, secrets: Secrets): Promise<unknown> {
       'Authorization': `Basic ${auth}`,
       'Accept': 'application/json',
     },
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
   });
 
   if (!res.ok) {
@@ -176,11 +180,12 @@ export async function searchIssues(
 }
 
 /** Enhanced JQL search (bounded). Candidates keep the ORDER BY updated order. */
-async function jqlSearch(jql: string, secrets: Secrets): Promise<SearchCandidate[]> {
+async function jqlSearch(jql: string, secrets: Secrets, timeoutMs?: number): Promise<SearchCandidate[]> {
   const data = await jiraGet(
     `/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}`
       + `&fields=summary&maxResults=${JQL_SEARCH_MAX_RESULTS}`,
     secrets,
+    timeoutMs,
   ) as { issues?: ReadonlyArray<{ key?: string; fields?: { summary?: string } }> };
 
   const out: SearchCandidate[] = [];
@@ -188,6 +193,39 @@ async function jqlSearch(jql: string, secrets: Secrets): Promise<SearchCandidate
     if (it.key) out.push({ key: it.key, summary: it.fields?.summary ?? '', projectKey: projectKeyOf(it.key), rank: i });
   });
   return out;
+}
+
+// One slot, keyed by the Jira identity — a credentials change drops it.
+let inProgressCache: { owner: string; hits: JiraSearchHit[]; fetchedAt: number } | null = null;
+let inProgressFlight: Promise<JiraSearchHit[]> | null = null;
+
+/**
+ * Issues assigned to the current user in status "In Progress", newest first.
+ * Fresh cache → no network; concurrent callers share one request; a failed
+ * refresh serves the previous list (throws only when there is none).
+ */
+export async function fetchInProgressIssues(secrets: Secrets): Promise<JiraSearchHit[]> {
+  const owner = `${secrets.Jira_BaseUrl}\u0000${secrets.Jira_Email}`;
+  if (inProgressCache && inProgressCache.owner !== owner) inProgressCache = null;
+  if (inProgressCache && Date.now() - inProgressCache.fetchedAt < JIRA_IN_PROGRESS_TTL_MS) {
+    return inProgressCache.hits;
+  }
+  if (inProgressFlight) return inProgressFlight;
+
+  inProgressFlight = (async (): Promise<JiraSearchHit[]> => {
+    try {
+      const candidates = await jqlSearch(JIRA_IN_PROGRESS_JQL, secrets, JIRA_IN_PROGRESS_TIMEOUT_MS);
+      const hits = candidates.map(c => ({ key: c.key, summary: c.summary }));
+      inProgressCache = { owner, hits, fetchedAt: Date.now() };
+      return hits;
+    } catch (err) {
+      if (inProgressCache) return inProgressCache.hits;
+      throw err;
+    } finally {
+      inProgressFlight = null;
+    }
+  })();
+  return inProgressFlight;
 }
 
 /**

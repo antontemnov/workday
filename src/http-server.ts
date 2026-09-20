@@ -27,7 +27,7 @@ import {
 } from './core/day-edit.js';
 import { loadFavorites, saveFavorites, addFavorite, removeFavorite } from './core/favorites.js';
 import {
-  isJiraConfigured, searchIssues, checkIssueExists,
+  isJiraConfigured, searchIssues, fetchInProgressIssues, checkIssueExists,
   loadCachedSummaries, backfillIssueSummaries, fetchProjects,
   fetchMyself, JiraApiError,
 } from './push/jira-client.js';
@@ -350,6 +350,9 @@ export class HttpServer {
       if (method === 'GET' && path === '/api/jira/search') {
         const query = url.searchParams.get('q') ?? '';
         return this.sendJson(res, 200, await this.handleJiraSearch(query));
+      }
+      if (method === 'GET' && path === '/api/jira/in-progress') {
+        return this.sendJson(res, 200, await this.handleJiraInProgress());
       }
       if (method === 'GET' && path === '/api/jira/projects') {
         return this.sendJson(res, 200, this.handleGetJiraProjects());
@@ -1218,6 +1221,23 @@ export class HttpServer {
     try {
       const hits = await searchIssues(trimmed, secrets, this.deps.config.search.projectKeys);
       return { ok: true, data: { hits } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async handleJiraInProgress(): Promise<ApiResponse<JiraSearchResponse>> {
+    const secrets = tryLoadSecrets();
+    if (!secrets || !isJiraConfigured(secrets)) {
+      return {
+        ok: false,
+        error: 'Jira API is not configured — set the token in Settings',
+        errorCode: ApiErrorCode.JiraNotConfigured,
+      };
+    }
+
+    try {
+      return { ok: true, data: { hits: await fetchInProgressIssues(secrets) } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

@@ -702,6 +702,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: { hits } };
   }
 
+  async getJiraInProgress(): Promise<ApiResponse<JiraSearchResponse>> {
+    await delay(250);
+    return { ok: true, data: { hits: MockWorkdayApiService.MOCK_JIRA_ISSUES.slice(0, 4) } };
+  }
+
   async getJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>> {
     await delay(120);
     return { ok: true, data: { projects: this.mockKnownProjects.map(p => ({ ...p })), selected: [...this.mockProjectKeys] } };

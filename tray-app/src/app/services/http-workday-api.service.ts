@@ -315,6 +315,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.get<JiraSearchResponse>(`/api/jira/search?q=${encodeURIComponent(query)}`);
   }
 
+  override async getJiraInProgress(): Promise<ApiResponse<JiraSearchResponse>> {
+    return this.get<JiraSearchResponse>('/api/jira/in-progress');
+  }
+
   override async getJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>> {
     return this.get<JiraProjectsResponse>('/api/jira/projects');
   }

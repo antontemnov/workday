@@ -119,6 +119,10 @@ export abstract class WorkdayApiService {
   // a Settings link; debounce/min-length live on the UI side.
   abstract searchJira(query: string): Promise<ApiResponse<JiraSearchResponse>>;
 
+  // My issues in status In Progress (log-cloud top block). The daemon caches
+  // for a minute; the UI keeps its last list and swaps on response.
+  abstract getJiraInProgress(): Promise<ApiResponse<JiraSearchResponse>>;
+
   // Search-scope projects (Settings): cached catalog + selection, and a live
   // refresh that re-fetches the catalog from Jira and persists it.
   abstract getJiraProjects(): Promise<ApiResponse<JiraProjectsResponse>>;

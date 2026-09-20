@@ -1,5 +1,5 @@
 import {
-  Component, ElementRef, EventEmitter, HostBinding, HostListener, Input, OnChanges, OnDestroy,
+  Component, ElementRef, EventEmitter, HostBinding, HostListener, Input, OnChanges, OnDestroy, OnInit,
   Output, SimpleChanges, ViewChild,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -48,6 +48,7 @@ const FAV_FEEDBACK_MS = 1200;
 // Removed favorite chips shrink away (staggered in batch) before the emit.
 const SHRINK_STAGGER_MS = 40;
 const SHRINK_ANIM_MS = 180;
+const IN_PROGRESS_STORAGE_KEY = 'wd.logCloud.inProgress';
 
 /**
  * Log cloud — the chip overlay that opens from the day header's Log capsule.
@@ -63,15 +64,15 @@ const SHRINK_ANIM_MS = 180;
   templateUrl: './log-cloud.component.html',
   styleUrl: './log-cloud.component.scss',
 })
-export class LogCloudComponent implements OnChanges, OnDestroy {
+export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   @Input() open = false;
   @Input() favorites: readonly Favorite[] = [];
   @Input() activityTypes: readonly ActivityType[] = [];
   @Input() activityAllowed: readonly string[] = [];
   @Input() actionPending = false;
   // Accept mode (meeting suggestion resolve): the cloud is a pure ticket
-  // picker — favorites lose their instant-log/template role, batch and edit
-  // go dark, and any pick emits acceptPicked instead of morphing into the
+  // picker — favorites lose their instant-log/template role, batch goes
+  // dark, and any pick emits acceptPicked instead of morphing into the
   // form (the row hosts the accept form inline, twin of the logged edit).
   @Input() acceptTarget: Suggestion | null = null;
   // Jira summaries for the candidate tickets (daemon name cache; misses
@@ -85,7 +86,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @Output() formSubmitted = new EventEmitter<ManualEntryInput>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   // Favorites management: right-click a Jira result → save a template;
-  // ✎ edit-mode batch → remove (ids).
+  // batch footer → remove the collected ones (ids).
   @Output() favoriteSaved = new EventEmitter<FavoriteInput>();
   @Output() favoritesRemoved = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();
@@ -102,17 +103,12 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   @HostBinding('class.form-mode') get isFormMode(): boolean { return this.mode === 'form'; }
   @HostBinding('class.review-mode') get isReviewMode(): boolean { return this.mode === 'review'; }
   @HostBinding('class.batch-mode') get isBatchMode(): boolean { return this.batch && this.mode === 'chips'; }
-  @HostBinding('class.edit-mode') get isEditMode(): boolean { return this.editMode && this.mode === 'chips'; }
   @HostBinding('class.accept-mode') get isAcceptMode(): boolean { return this.acceptTarget !== null; }
 
   filter = '';
   mode: CloudMode = 'chips';
   batch = false;
   basket: BasketItem[] = [];
-
-  // ✎ edit mode — mark superfluous favorites, remove them in one batch.
-  editMode = false;
-  marked = new Set<string>();
 
   // "★ saved to favorites" feedback on a Jira chip (its key), ~1.2s.
   savedJiraKey: string | null = null;
@@ -127,6 +123,11 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   private jiraTimer: ReturnType<typeof setTimeout> | null = null;
   private jiraSeq = 0;
 
+  // My in-progress Jira issues. Outlives open/close: the cloud paints the
+  // last list at once, every open re-pulls and swaps only on a real change.
+  inProgress: readonly JiraSearchHit[] = [];
+  private inProgressSeq = 0;
+
   // Form morph (Jira result only) — the ticket is a fixed label.
   formTask = '';
   formMinutes = DEFAULT_FORM_MINUTES;
@@ -138,10 +139,16 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
 
   public constructor(private api: WorkdayApiService) {}
 
+  ngOnInit(): void {
+    this.inProgress = this.loadStoredInProgress();
+    void this.refreshInProgress();
+  }
+
   ngOnChanges(changes: SimpleChanges): void {
     if (!changes['open']) return;
     if (this.open) {
       this.resetState();
+      void this.refreshInProgress();
       this.spawn = true;
       if (this.spawnTimer) clearTimeout(this.spawnTimer);
       this.spawnTimer = setTimeout(() => this.spawn = false, SPAWN_MS);
@@ -161,8 +168,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     this.mode = 'chips';
     this.batch = false;
     this.basket = [];
-    this.editMode = false;
-    this.marked.clear();
     this.cancelJira();
   }
 
@@ -187,12 +192,56 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
       f.name.toLowerCase().includes(q) || f.task.toLowerCase().includes(q));
   }
 
+  get filteredInProgress(): readonly JiraSearchHit[] {
+    const q = this.query;
+    if (!q) return this.inProgress;
+    return this.inProgress.filter(h =>
+      h.key.toLowerCase().includes(q) || h.summary.toLowerCase().includes(q));
+  }
+
+  get showFavoritesLabel(): boolean {
+    if (this.filteredFavorites.length === 0) return false;
+    return this.filteredInProgress.length > 0 || (this.isAcceptMode && this.acceptCandidates.length > 0);
+  }
+
+  private async refreshInProgress(): Promise<void> {
+    const seq = ++this.inProgressSeq;
+    const res = await this.api.getJiraInProgress();
+    // A failure keeps the last list — the block never blinks out on a hiccup.
+    if (seq !== this.inProgressSeq) return;
+    if (res.errorCode === ApiErrorCode.JiraNotConfigured) { this.setInProgress([]); return; }
+    if (!res.ok || !res.data) return;
+    const hits = res.data.hits;
+    const same = hits.length === this.inProgress.length
+      && hits.every((h, i) => h.key === this.inProgress[i].key && h.summary === this.inProgress[i].summary);
+    if (!same) this.setInProgress(hits);
+  }
+
+  private setInProgress(hits: readonly JiraSearchHit[]): void {
+    this.inProgress = hits;
+    try {
+      localStorage.setItem(IN_PROGRESS_STORAGE_KEY, JSON.stringify(hits));
+    } catch { /* storage is a convenience — the block works without it */ }
+  }
+
+  // Last list from the previous run: the first open after a restart paints
+  // at once instead of growing a block when Jira answers.
+  private loadStoredInProgress(): readonly JiraSearchHit[] {
+    try {
+      const raw: unknown = JSON.parse(localStorage.getItem(IN_PROGRESS_STORAGE_KEY) ?? '[]');
+      if (!Array.isArray(raw)) return [];
+      return raw.filter((h): h is JiraSearchHit =>
+        typeof h?.key === 'string' && typeof h?.summary === 'string');
+    } catch {
+      return [];
+    }
+  }
+
   onFilterInput(value: string): void {
     this.filter = value;
     const q = this.query;
     this.cancelJira();
-    if (this.editMode) return; // edit mode: local favorites filter only
-    if (!q || this.filteredFavorites.length > 0) return; // stage 1 covers it
+    if (!q || this.filteredFavorites.length > 0 || this.filteredInProgress.length > 0) return; // stage 1 covers it
     if (q.length < JIRA_MIN_QUERY) {
       this.jiraZone = 'short';
       return;
@@ -228,10 +277,6 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   pickFavorite(f: Favorite, ev: MouseEvent): void {
     if (this.isAcceptMode) {
       this.acceptPicked.emit({ task: f.task });
-      return;
-    }
-    if (this.editMode) {
-      this.toggleMarked(f);
       return;
     }
     if (this.collectOnPick(ev)) {
@@ -274,8 +319,10 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   // Jira results → first one into the form. Batch: collect the first chip,
   // clear the filter for the next pick; empty filter + basket → review.
   onFilterEnter(): void {
-    if (this.editMode) return; // edit mode: clicks mark chips, Enter is idle
+    // Enter takes the first chip on screen: in-progress sits above favorites.
+    const top = this.filteredInProgress[0];
     if (this.isAcceptMode) {
+      if (top) { this.acceptPicked.emit({ task: top.key }); return; }
       const fav = this.filteredFavorites[0];
       if (fav) { this.acceptPicked.emit({ task: fav.task }); return; }
       if (this.jiraZone === 'results' && this.jiraHits.length > 0) {
@@ -296,6 +343,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
       }
       return;
     }
+    if (top) { this.enterForm(top); return; }
     if (this.actionPending) return;
     const fav = this.filteredFavorites[0];
     if (fav) {
@@ -308,6 +356,8 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
   }
 
   private firstEnterBasketItem(): BasketItem | null {
+    const top = this.filteredInProgress[0];
+    if (top) return this.jiraBasketItem(top);
     const fav = this.filteredFavorites[0];
     if (fav) return this.favBasketItem(fav);
     if (this.jiraZone === 'results' && this.jiraHits.length > 0) return this.jiraBasketItem(this.jiraHits[0]);
@@ -321,7 +371,7 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     this.emitPick(entry, label, rect);
   }
 
-  // Esc unwinds one layer at a time: review → form → filter text → edit →
+  // Esc unwinds one layer at a time: review → form → filter text →
   // batch → close. A typed query is a layer of its own — the first Esc only
   // clears it.
   @HostListener('document:keydown.escape')
@@ -330,49 +380,35 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     if (this.mode === 'review') { this.exitReview(); return; }
     if (this.mode === 'form') { this.exitForm(); return; }
     if (this.filter !== '') { this.onFilterInput(''); this.focusFilter(0); return; }
-    if (this.editMode) { this.setEditMode(false); this.focusFilter(0); return; }
     if (this.batch) { this.setBatch(false); this.focusFilter(0); return; }
     this.closed.emit();
   }
 
-  // ─── Favorites management (✎ edit mode + Jira save context menu) ────────
+  // ─── Favorites management (batch removal + Jira save context menu) ─────
 
-  toggleEditMode(): void {
-    this.setEditMode(!this.editMode);
-    this.focusFilter(0);
+  // Collected favorites double as a removal selection.
+  get pickedFavoriteIds(): readonly string[] {
+    return this.favorites.filter(f => this.isFavPicked(f)).map(f => f.id);
   }
 
-  private setEditMode(v: boolean): void {
-    this.editMode = v;
-    if (v) {
-      this.setBatch(false);
-      this.cancelJira(); // favorites-only surface: Jira goes dark
-    } else {
-      this.marked.clear();
-    }
+  // Remove is offered only for a favorites-only selection — its count must
+  // read the same as the basket counter next to it.
+  get canRemovePicked(): boolean {
+    return this.basket.length > 0 && this.basket.every(b => b.src === 'fav');
   }
 
-  private toggleMarked(f: Favorite): void {
-    if (this.marked.has(f.id)) this.marked.delete(f.id);
-    else this.marked.add(f.id);
-  }
-
-  isMarked(f: Favorite): boolean {
-    return this.marked.has(f.id);
-  }
-
-  removeMarked(): void {
-    if (this.marked.size === 0) return;
-    const all = [...this.marked];
-    // Shrink the visible marked chips in order, staggered; then emit + exit.
-    const visible = this.filteredFavorites.filter(f => this.marked.has(f.id));
+  removePickedFavorites(): void {
+    const all = this.pickedFavoriteIds;
+    if (!this.canRemovePicked || this.actionPending) return;
+    // Shrink the visible picked chips in order, staggered; then emit.
+    const visible = this.filteredFavorites.filter(f => all.includes(f.id));
     visible.forEach((f, i) => {
       this.shrinkTimers.push(setTimeout(() => this.shrinkingIds.add(f.id), i * SHRINK_STAGGER_MS));
     });
     const total = Math.max(0, visible.length - 1) * SHRINK_STAGGER_MS + SHRINK_ANIM_MS;
     this.shrinkTimers.push(setTimeout(() => {
       this.favoritesRemoved.emit(all);
-      this.setEditMode(false);
+      this.basket = this.basket.filter(b => b.src !== 'fav');
       this.shrinkingIds.clear();
       this.focusFilter(0);
     }, total));
@@ -603,10 +639,14 @@ export class LogCloudComponent implements OnChanges, OnDestroy {
     return `${30 + i * 12}ms`;
   }
 
+  jiraTitle(h: JiraSearchHit): string {
+    return `${h.key} · ${h.summary} · right-click: save as favorite`;
+  }
+
   // Accept mode neutralizes the chip hints — picks only choose the ticket.
   favTitle(f: Favorite): string {
     if (this.isAcceptMode) return '';
-    return this.isEditMode ? 'click — mark for removal' : f.activity + ' · Ctrl+click: collect';
+    return f.activity + ' · Ctrl+click: collect';
   }
 
   formatMinutes(minutes: number): string {

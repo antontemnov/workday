@@ -44,6 +44,7 @@ workday fav-add <task> <min> "<name>"  Add a favorite (reusable log template)
 workday fav-remove <#|id>              Remove a favorite
 workday fav-list                       List favorites
 workday jira-search "<query>"          Live Jira issue search (key + summary)
+workday jira-in-progress               My Jira issues in status In Progress
 workday session-stop <target>          Stop an open session now (live or frozen)
 workday session-delete <target>        Delete a junk session (add --date for past days)
 workday task-delete <KEY>              Delete a ticket's tracked block: sessions + manual adds (add --date for past days)

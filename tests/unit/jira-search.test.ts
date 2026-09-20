@@ -12,11 +12,13 @@ import { mkdirSync } from 'node:fs';
 import {
   isJiraConfigured,
   searchIssues,
+  fetchInProgressIssues,
   checkIssueExists,
   JiraApiError,
   fetchProjects,
   parseProjectSearchPage,
 } from '../../src/push/jira-client.js';
+import { JIRA_IN_PROGRESS_TTL_MS } from '../../src/core/constants.js';
 import { getDataDir, deriveProjectKeysFromTaskPattern } from '../../src/core/config.js';
 import type { Secrets } from '../../src/core/types.js';
 
@@ -242,6 +244,39 @@ async function main(): Promise<void> {
     const projects = await fetchProjects(secrets);
     assert.deepEqual(projects.map(p => p.key), ['ATL']);
     assert.equal(fetchCalls.length, 2);
+  });
+
+  await test('fetchInProgressIssues caches for the TTL, then serves the old list on a failed refresh', async () => {
+    const realNow = Date.now;
+    let now = realNow();
+    Date.now = (): number => now;
+    try {
+      stubFetch({ status: 200, body: { issues: [
+        { key: 'ATL-21', fields: { summary: 'Checkout retry' } },
+        { key: 'ATL-20', fields: { summary: 'Import cleanup' } },
+      ] } });
+      const first = await fetchInProgressIssues(secrets);
+      assert.deepEqual(first.map(h => h.key), ['ATL-21', 'ATL-20']);
+      assert.ok(decodeURIComponent(fetchCalls[0]).includes('assignee = currentUser() AND status = "In Progress"'));
+
+      await fetchInProgressIssues(secrets);
+      assert.equal(fetchCalls.length, 1);
+
+      now += JIRA_IN_PROGRESS_TTL_MS + 1;
+      stubFetch({ status: 503, body: {} });
+      const stale = await fetchInProgressIssues(secrets);
+      assert.equal(fetchCalls.length, 1);
+      assert.deepEqual(stale.map(h => h.key), ['ATL-21', 'ATL-20']);
+
+      // Another Jira identity never sees the previous owner's list.
+      stubFetch({ status: 503, body: {} });
+      await assert.rejects(
+        () => fetchInProgressIssues(makeSecrets({ Jira_Email: 'other@example.com' })),
+        JiraApiError,
+      );
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   console.log('');

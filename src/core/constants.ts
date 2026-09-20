@@ -96,6 +96,12 @@ export const JIRA_SEARCH_MIN_QUERY_LENGTH = 2;
 // persisted to disk.
 export const JIRA_SEARCH_CACHE_TTL_MS = 5 * 60_000;
 export const JIRA_SEARCH_CACHE_MAX_ENTRIES = 50;
+// "My in-progress" chip block of the log cloud. A warm Jira call is ~250ms, so
+// the cache only absorbs open/close bursts; the tray paints its last list first.
+export const JIRA_IN_PROGRESS_JQL = 'assignee = currentUser() AND status = "In Progress" ORDER BY updated DESC';
+export const JIRA_IN_PROGRESS_TTL_MS = 60_000;
+// A hung Jira call must not pin the shared in-flight request forever.
+export const JIRA_IN_PROGRESS_TIMEOUT_MS = 8_000;
 // JQL page size for a live search, and the max ranked hits handed back.
 export const JQL_SEARCH_MAX_RESULTS = 20;
 export const SEARCH_MAX_HITS = 10;
