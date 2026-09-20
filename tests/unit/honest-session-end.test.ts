@@ -8,9 +8,10 @@ import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before 
 import assert from 'node:assert/strict';
 import { SessionTracker } from '../../src/core/session-tracker.js';
 import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
-import { trimTrailingPauses, computeEffectiveDuration } from '../../src/core/daily-log.js';
+import { readFileSync } from 'node:fs';
+import { trimTrailingPauses, computeEffectiveDuration, getDailyLogPath } from '../../src/core/daily-log.js';
 import { ClosedBy, PauseSource, SensitivityLevel } from '../../src/core/types.js';
-import type { AppConfig, PollResult, Session, Pause } from '../../src/core/types.js';
+import type { AppConfig, DailyLog, PollResult, Session, Pause } from '../../src/core/types.js';
 
 const POLL_SECONDS = 30;
 const HOUR_MS = 3_600_000;
@@ -339,6 +340,51 @@ test('stopSession rejects a closed or unknown session', () => {
   tracker.stopSession(session.id);
   assert.equal(tracker.stopSession(session.id).ok, false);
   assert.equal(tracker.stopSession('nope').ok, false);
+});
+
+test('a stopped session stays in the day file, closed', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  tracker.stopSession(session.id);
+  const onDisk = JSON.parse(readFileSync(getDailyLogPath(tracker.getDailyLog().date), 'utf-8')) as DailyLog;
+  const saved = onDisk.sessions.find(s => s.id === session.id);
+  assert.ok(saved, 'session is kept');
+  assert.equal(saved.closedBy, ClosedBy.ManualStop);
+});
+
+console.log('\nStop & Delete');
+
+test('deleteTask leaves an open session alone by default', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  assert.equal(tracker.deleteTask('ATL-1').ok, false);
+  assert.equal(tracker.getOpenSessions().length, 1);
+});
+
+test('deleteTask with includeOpen stops and removes the live session', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  tracker.setAddedMinutes('ATL-2', 10); // keeps the day file alive
+  const session = tracker.getOpenSessions()[0];
+  const result = tracker.deleteTask('ATL-1', true);
+  assert.equal(result.ok, true);
+  assert.equal(result.sessions?.length, 1);
+  assert.equal(result.sessions?.[0].closedBy, ClosedBy.ManualStop);
+  assert.equal(tracker.getDailyLog().sessions.length, 0);
+  const onDisk = JSON.parse(readFileSync(getDailyLogPath(tracker.getDailyLog().date), 'utf-8')) as DailyLog;
+  assert.equal(onDisk.sessions.some(s => s.id === session.id), false);
+});
+
+test('a stop-deleted task is reborn only by fresh activity', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  tracker.deleteTask('ATL-1', true);
+  for (let i = 0; i < 10; i++) tick(false);
+  assert.equal(tracker.getOpenSessions().length, 0);
+  assert.equal(tracker.getCandidates().length, 0);
+  tick(true);
+  assert.equal(tracker.getOpenSessions().length, 1);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

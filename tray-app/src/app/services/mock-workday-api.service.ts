@@ -489,10 +489,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
     };
   }
 
-  async deleteTask(task: string, _date?: string): Promise<ApiResponse<TaskDeleteResponse>> {
+  async deleteTask(task: string, _date?: string, includeOpen?: boolean): Promise<ApiResponse<TaskDeleteResponse>> {
     await delay(150);
     for (const s of this.buildToday().sessions) {
-      if (s.task === task && s.closedBy) this.mockDeletedSessionIds.add(s.id);
+      if (s.task === task && (s.closedBy || includeOpen || this.mockStoppedSessionIds.has(s.id))) this.mockDeletedSessionIds.add(s.id);
     }
     const entries = this.mockManualEntries.filter(e => e.added && e.task === task);
     this.mockManualEntries = this.mockManualEntries.filter(e => !(e.added && e.task === task));

@@ -312,11 +312,18 @@ export class SessionTracker {
   /**
    * Delete a ticket's whole tracked block from today: every CLOSED session
    * on the task plus its manual added record. An open
-   * session stays — it is still being observed, and deleting it would only
-   * re-birth a candidate on the next tick. Standalone manual entries are
+   * session stays — it is still being observed — unless includeOpen: then
+   * the user's Stop & Delete stops it first and it goes with the block (only
+   * fresh activity births a new one). Standalone manual entries are
    * separate worklogs and stay.
    */
-  public deleteTask(task: string): { ok: boolean; error?: string; sessions?: readonly Session[]; entries?: readonly ManualEntry[]; dayFileDeleted?: boolean } {
+  public deleteTask(task: string, includeOpen = false): { ok: boolean; error?: string; sessions?: readonly Session[]; entries?: readonly ManualEntry[]; dayFileDeleted?: boolean } {
+    if (includeOpen) {
+      const now = new Date().toISOString();
+      for (const s of this.dailyLog.sessions) {
+        if (s.task === task && !s.closedBy) this.closeSession(s, ClosedBy.ManualStop, now);
+      }
+    }
     const sessions = this.dailyLog.sessions.filter(s => s.task === task && s.closedBy !== null);
     const entries = (this.dailyLog.manualEntries ?? []).filter(e => isAddedEntry(e) && e.task === task);
     if (sessions.length === 0 && entries.length === 0) {

@@ -235,6 +235,48 @@ test('lost session DELETE: the tracked row returns after the TTL', () => {
   assert.equal(h.lastDiff(), 0);
 });
 
+// ─── Stop & Delete of a hot block ─────────────────────────────────────────
+
+type CardDelete = { deleteTaskCard(task: string, stopLive?: boolean): void };
+const liveSession = (id: string, task: string, ms: number): SessionDetail =>
+  ({ ...session(id, task, ms), state: 'active', closedBy: null });
+
+function setLive(h: Harness, live: readonly SessionDetail[]): void {
+  h.comp.openSessions = live;
+  h.comp.ngOnChanges({ openSessions: change(live) } as never);
+}
+
+test('Stop & Delete: a live-only block commits and its live row is masked', () => {
+  const h = makePanel();
+  const stopDeleted: string[] = [];
+  h.comp.taskStopDeleteCommitted.subscribe((t: string) => stopDeleted.push(t));
+  const l1 = liveSession('l1', 'ATL-7', 20 * 60_000);
+  h.refresh([], []);
+  setLive(h, [l1]);
+  (h.comp as never as CardDelete).deleteTaskCard('ATL-7', true);
+  assert.equal(h.comp.taskDeleted('ATL-7'), true, 'undo window holds on live rows alone');
+  commitDelete();
+  assert.deepEqual(stopDeleted, ['ATL-7']);
+  assert.deepEqual(h.taskDeleted, [], 'no plain task-delete beside it');
+  setLive(h, [l1]); // stale read — the daemon has not answered yet
+  assert.equal(blockOf(h, 'ATL-7'), undefined, 'live row masked');
+  setLive(h, [liveSession('l2', 'ATL-7', 60_000)]);
+  assert.equal(blockOf(h, 'ATL-7')?.sessionRows.length, 1, 'a reborn session shows');
+});
+
+test('Stop & Delete: undo keeps the session running, a later Delete is plain', () => {
+  const h = makePanel();
+  const stopDeleted: string[] = [];
+  h.comp.taskStopDeleteCommitted.subscribe((t: string) => stopDeleted.push(t));
+  h.refresh([], []);
+  setLive(h, [liveSession('l3', 'ATL-8', 60_000)]);
+  (h.comp as never as CardDelete).deleteTaskCard('ATL-8', true);
+  h.comp.undoTaskDelete('ATL-8', { stopPropagation(): void {} } as MouseEvent);
+  commitDelete();
+  assert.deepEqual(stopDeleted, []);
+  assert.equal(blockOf(h, 'ATL-8')?.sessionRows.length, 1);
+});
+
 Date.now = realDateNow;
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 16;
+export const EXPECTED_API_VERSION = 17;
 
 export enum SensitivityLevel {
   Low = 'low',

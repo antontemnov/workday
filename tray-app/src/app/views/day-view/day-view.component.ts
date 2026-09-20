@@ -74,6 +74,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Output() sessionStopSubmitted = new EventEmitter<string>();
   @Output() sessionDeleteSubmitted = new EventEmitter<string>();
   @Output() taskDeleteSubmitted = new EventEmitter<string>();
+  @Output() taskStopDeleteSubmitted = new EventEmitter<string>();
   @Output() favoriteAddSubmitted = new EventEmitter<FavoriteInput>();
   @Output() favoritesRemoveSubmitted = new EventEmitter<readonly string[]>();
   @Output() settingsRequested = new EventEmitter<void>();

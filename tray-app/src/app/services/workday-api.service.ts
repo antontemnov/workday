@@ -72,8 +72,9 @@ export abstract class WorkdayApiService {
   // for past days (timesheets) — omitted = the currently-tracked day.
   abstract deleteSession(target: string, date?: string): Promise<ApiResponse<SessionDeleteResponse>>;
   // Delete a ticket's whole tracked block: closed sessions + session-born
-  // "+ Add time" entries. Standalone manual entries stay.
-  abstract deleteTask(task: string, date?: string): Promise<ApiResponse<TaskDeleteResponse>>;
+  // "+ Add time" entries. Standalone manual entries stay. includeOpen (today
+  // only) — Stop & Delete: open sessions are stopped and go with the block.
+  abstract deleteTask(task: string, date?: string, includeOpen?: boolean): Promise<ApiResponse<TaskDeleteResponse>>;
   abstract stop(): Promise<ApiResponse<unknown>>;
   abstract startDaemon(): Promise<void>;
 

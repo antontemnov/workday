@@ -47,6 +47,7 @@ workday jira-search "<query>"          Live Jira issue search (key + summary)
 workday session-stop <target>          Stop an open session now (live or frozen)
 workday session-delete <target>        Delete a junk session (add --date for past days)
 workday task-delete <KEY>              Delete a ticket's tracked block: sessions + manual adds (add --date for past days)
+workday task-delete <KEY> --stop       Same, open sessions are stopped and deleted too
 workday tempo                          Show report (month to date)
 workday tempo --push                   Push to Tempo
 workday month [YYYY-MM]                Month view: day statuses vs Tempo

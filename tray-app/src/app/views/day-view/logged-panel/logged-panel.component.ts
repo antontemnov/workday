@@ -137,6 +137,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Same contract for a closed session (id) and a whole ticket block (task).
   @Output() sessionDeleteCommitted = new EventEmitter<string>();
   @Output() taskDeleteCommitted = new EventEmitter<string>();
+  // Stop & Delete of a hot block (task): its open sessions are stopped and go too.
+  @Output() taskStopDeleteCommitted = new EventEmitter<string>();
   @Output() favoriteAdded = new EventEmitter<FavoriteInput>();
   // Add time on a card: a new entry for that ticket (the ＋Log path).
   @Output() entryAdded = new EventEmitter<ManualEntryInput>();
@@ -195,6 +197,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private taskDeleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   removingTasks = new Set<string>();
   private hiddenTasks = new Map<string, number>();
+  // Blocks whose pending delete takes the live sessions too (Stop & Delete),
+  // and the live rows already committed that way — masked until the daemon
+  // confirms (a session reborn by fresh activity has a new id and shows).
+  private stopDeleteTasks = new Set<string>();
+  private stoppedLiveIds = new Map<string, number>();
   private taskRemoveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // Blocks mid whole-card fold: deleting the block's last content collapses
   // the card in ONE motion (the ctx-menu delete's collapse) — the row's own
@@ -508,8 +515,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       if (!b) { b = { live: [], sessions: [], folded: [], named: [] }; byTask.set(task, b); }
       return b;
     };
-    // A live session always shows — no delete mask can hide running time.
-    for (const s of this.openSessions) bucketOf(s.task ?? '—').live.push(s);
+    // A live session always shows — no delete mask can hide running time,
+    // except the rows a Stop & Delete has just sent to the daemon.
+    for (const s of this.openSessions) {
+      if (!this.stoppedLiveIds.has(s.id)) bucketOf(s.task ?? '—').live.push(s);
+    }
     for (const s of this.closedSessions) {
       const task = s.task ?? '—';
       if (this.hiddenTasks.has(task) || this.sesHiddenIds.has(s.id)) continue;
@@ -628,6 +638,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     for (const s of this.closedSessions) {
       if (this.sesGone(s.id) || this.taskGone(s.task ?? '—')) ms += s.effectiveDurationMs;
     }
+    for (const s of this.openSessions) {
+      const task = s.task ?? '—';
+      if (this.stoppedLiveIds.has(s.id) || (this.stopDeleteTasks.has(task) && this.taskGone(task))) {
+        ms += s.effectiveDurationMs;
+      }
+    }
     let minutes = ms / 60_000;
     for (const e of this.entries) {
       if (this.taskGone(e.task) && !this.isGoneLocally(e.id)) minutes += e.minutes;
@@ -690,9 +706,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       ...(b.task !== '—'
         ? [{ icon: CTX_ICON.add, label: 'Add time', action: (): void => this.openDraft(b.task) }] : []),
-      // A running session can't be deleted — and it would resurrect the card.
+      // A hot card's delete stops its live sessions first — they go with it.
       b.hot
-        ? { icon: CTX_ICON.x, label: 'Delete', hint: 'live', disabled: true, action: (): void => {} }
+        ? { icon: CTX_ICON.x, label: 'Stop & Delete', danger: true, action: () => this.deleteTaskCard(b.task, true) }
         : { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
       ...(canBrowseTicket(this.jiraBaseUrl, b.task)
         ? [{ separator: true as const },
@@ -910,8 +926,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     for (const [task, hiddenAt] of [...this.hiddenTasks]) {
       if (!aliveTasks.has(task) || now - hiddenAt > HIDDEN_TTL_MS) this.hiddenTasks.delete(task);
     }
+    const liveIds = new Set(this.openSessions.map(s => s.id));
+    for (const [id, hiddenAt] of [...this.stoppedLiveIds]) {
+      if (!liveIds.has(id) || now - hiddenAt > HIDDEN_TTL_MS) this.stoppedLiveIds.delete(id);
+    }
     for (const [task, timer] of [...this.taskDeleteTimers]) {
-      if (!aliveTasks.has(task)) {
+      // A Stop & Delete block may hold nothing but its live rows.
+      if (!aliveTasks.has(task) && !(this.stopDeleteTasks.has(task) && this.hasLiveSession(task))) {
         clearTimeout(timer);
         this.taskDeleteTimers.delete(task);
       }
@@ -1242,8 +1263,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.taskDeleteTimers.has(task) || this.removingTasks.has(task);
   }
 
-  private deleteTaskCard(task: string): void {
+  private deleteTaskCard(task: string, stopLive = false): void {
     if (this.taskDeleted(task)) return;
+    if (stopLive) this.stopDeleteTasks.add(task);
     this.taskDeleteTimers.set(task, setTimeout(() => this.startTaskRemove(task), UNDO_WINDOW_MS));
     this.recomputeLive();
   }
@@ -1254,6 +1276,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (!timer) return;
     clearTimeout(timer);
     this.taskDeleteTimers.delete(task);
+    this.stopDeleteTasks.delete(task);
     this.recomputeLive();
   }
 
@@ -1301,6 +1324,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       for (const s of this.closedSessions) {
         if ((s.task ?? '—') === '—') this.sessionDeleteCommitted.emit(s.id);
       }
+    } else if (this.stopDeleteTasks.delete(task) && this.hasLiveSession(task)) {
+      const now = Date.now();
+      for (const s of this.openSessions) {
+        if ((s.task ?? '—') === task) this.stoppedLiveIds.set(s.id, now);
+      }
+      this.taskStopDeleteCommitted.emit(task);
     } else {
       // The daemon's task-delete addresses tracked material; a block of
       // standalone entries alone has nothing there to delete.

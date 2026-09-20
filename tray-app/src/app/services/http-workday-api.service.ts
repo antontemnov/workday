@@ -200,8 +200,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/session/delete', date ? { target, date } : { target });
   }
 
-  override async deleteTask(task: string, date?: string): Promise<ApiResponse<TaskDeleteResponse>> {
-    return this.post('/api/task/delete', date ? { task, date } : { task });
+  override async deleteTask(task: string, date?: string, includeOpen?: boolean): Promise<ApiResponse<TaskDeleteResponse>> {
+    return this.post('/api/task/delete', { task, ...(date ? { date } : {}), ...(includeOpen ? { includeOpen } : {}) });
   }
 
   override async stop(): Promise<ApiResponse<unknown>> {

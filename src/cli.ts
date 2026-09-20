@@ -443,7 +443,9 @@ function handleSessionDeleteOffline(date: string, target: string): void {
 // ─── Task delete (whole tracked block) ────────────────────────────────────
 
 async function handleTaskDelete(args: string[]): Promise<void> {
-  // workday task-delete <KEY> [--date YYYY-MM-DD]
+  // workday task-delete <KEY> [--stop] [--date YYYY-MM-DD]
+  const includeOpen = args.includes('--stop');
+  args = args.filter(a => a !== '--stop');
   const dateIdx = args.indexOf('--date');
   let date: string | null = null;
   let cmdArgs = args;
@@ -454,7 +456,7 @@ async function handleTaskDelete(args: string[]): Promise<void> {
 
   const task = cmdArgs[0];
   if (!task) {
-    console.log('Usage: workday task-delete <KEY> [--date YYYY-MM-DD]');
+    console.log('Usage: workday task-delete <KEY> [--stop] [--date YYYY-MM-DD]');
     return;
   }
 
@@ -471,7 +473,7 @@ async function handleTaskDelete(args: string[]): Promise<void> {
     return;
   }
 
-  const result = await apiPost<TaskDeleteResponse>('/api/task/delete', { task });
+  const result = await apiPost<TaskDeleteResponse>('/api/task/delete', includeOpen ? { task, includeOpen } : { task });
   if (!result.ok) { console.log(result.error); return; }
   const d = result.data!;
   console.log(`Deleted ${d.task} — ${d.deletedSessions} session(s), ${d.deletedEntries} manual add(s), ${formatDuration(d.removedMs)} total`);
@@ -1837,6 +1839,7 @@ Usage:
   workday session-stop <target>                        Stop an open session now (live or frozen)
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
   workday task-delete <KEY> [--date DATE]              Delete a ticket's tracked block (sessions + manual adds)
+  workday task-delete <KEY> --stop                     Same, open sessions are stopped and deleted too
   workday log <task> <min> ["<desc>"] [--activity T]   Log manual time (today; desc optional for Development)
   workday log <task> <min> ["<desc>"] --date DATE      Log manual time (past day)
   workday log-edit <#|id> [--minutes N] [--desc ..] [--activity T] [--date D]   Edit a manual entry

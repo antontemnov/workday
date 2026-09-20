@@ -314,7 +314,7 @@ export class HttpServer {
       }
       if (method === 'POST' && path === '/api/task/delete') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, this.handleTaskDelete(body));
+        return this.sendJson(res, 200, await this.handleTaskDelete(body));
       }
       if (method === 'POST' && path === '/api/manual-entry') {
         const body = await this.readBody(req);
@@ -887,7 +887,7 @@ export class HttpServer {
     };
   }
 
-  private handleTaskDelete(body: Record<string, unknown>): ApiResponse<TaskDeleteResponse> {
+  private async handleTaskDelete(body: Record<string, unknown>): Promise<ApiResponse<TaskDeleteResponse>> {
     const task = typeof body.task === 'string' ? body.task.trim() : '';
     if (!task) return { ok: false, error: 'Missing task' };
     const parsed = this.resolveEditDate(body);
@@ -917,10 +917,14 @@ export class HttpServer {
 
     const tracker = this.deps.sessionTracker;
     const wasPushed = tracker.getDailyLog().pushedAt !== null;
-    const result = tracker.deleteTask(task);
+    // { includeOpen: true } — Stop & Delete: open sessions are stopped and go too.
+    const includeOpen = body.includeOpen === true;
+    const result = tracker.deleteTask(task, includeOpen);
     if (!result.ok || !result.sessions || !result.entries) {
       return { ok: false, error: result.error };
     }
+    // Re-run evaluator so the remaining sessions settle leadership now.
+    if (includeOpen) await this.deps.forceTick();
     return {
       ok: true,
       data: {
