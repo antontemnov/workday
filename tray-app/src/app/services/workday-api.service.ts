@@ -6,6 +6,7 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   SessionDeleteResponse,
+  SessionStopResponse,
   TaskDeleteResponse,
   DaysResponse,
   MonthResponse,
@@ -65,6 +66,8 @@ export abstract class WorkdayApiService {
   // Set a ticket's manual added total — absolute, 0 removes the record.
   // Optional date (YYYY-MM-DD) for past days — omitted = the tracked day.
   abstract setManualAdded(task: string, minutes: number, date?: string): Promise<ApiResponse<ManualAddedResponse>>;
+  // Stop an open session now — live or frozen; the tracked time stays.
+  abstract stopSession(target: string): Promise<ApiResponse<SessionStopResponse>>;
   // Review-time cleanup: delete a closed session. Optional date (YYYY-MM-DD)
   // for past days (timesheets) — omitted = the currently-tracked day.
   abstract deleteSession(target: string, date?: string): Promise<ApiResponse<SessionDeleteResponse>>;

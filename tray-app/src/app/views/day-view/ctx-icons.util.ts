@@ -11,6 +11,7 @@ export const CTX_ICON = {
   star: svg('<path d="M6 1.5l1.4 2.85 3.1.45-2.25 2.2.53 3.1L6 8.62 3.22 10.1l.53-3.1L1.5 4.8l3.1-.45z"/>'),
   copy: svg('<rect x="4.2" y="4.2" width="6" height="6" rx="1.2"/><path d="M7.8 2.5a.9.9 0 0 0-.9-.9H2.6a.9.9 0 0 0-.9.9v4.3a.9.9 0 0 0 .9.9"/>'),
   pause: svg('<rect x="2.6" y="2" width="2.5" height="8" rx=".8" fill="currentColor" stroke="none"/><rect x="6.9" y="2" width="2.5" height="8" rx=".8" fill="currentColor" stroke="none"/>'),
+  stop: svg('<rect x="2.5" y="2.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none"/>'),
   play: svg('<path d="M3.2 1.9l6.6 4.1-6.6 4.1z" fill="currentColor" stroke="none"/>'),
   add: svg('<circle cx="6" cy="6" r="4.5"/><path d="M6 3.8v4.4M3.8 6h4.4"/>'),
   globe: svg('<circle cx="6" cy="6" r="4.6"/><ellipse cx="6" cy="6" rx="2.1" ry="4.6"/><line x1="1.4" y1="6" x2="10.6" y2="6"/>'),

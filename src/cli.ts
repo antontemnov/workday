@@ -45,6 +45,7 @@ import type {
   StopResponse,
   SensitivityResponse,
   SessionDeleteResponse,
+  SessionStopResponse,
   TaskDeleteResponse,
   SessionDetail,
   SessionSummary,
@@ -379,6 +380,22 @@ async function handleSensitivity(args: string[]): Promise<void> {
 
   const target = result.data!.repo ?? 'global default';
   console.log(`Sensitivity for ${target}: ${result.data!.level}.`);
+}
+
+// ─── Session stop ─────────────────────────────────────────────────────────
+
+async function handleSessionStop(args: string[]): Promise<void> {
+  // workday session-stop <#index|id>
+  const target = args[0];
+  if (!target) {
+    console.log('Usage: workday session-stop <#index|id>');
+    return;
+  }
+
+  const result = await apiPost<SessionStopResponse>('/api/session/stop', { target });
+  if (!result.ok) { console.log(result.error); return; }
+  const d = result.data!;
+  console.log(`Stopped session ${d.id} — ${d.repo} (${d.task ?? '—'}), ${formatDuration(d.effectiveDurationMs)} tracked`);
 }
 
 // ─── Session delete ───────────────────────────────────────────────────────
@@ -1708,6 +1725,9 @@ async function main(): Promise<void> {
     case 'sensitivity':
       await handleSensitivity(args.slice(1));
       break;
+    case 'session-stop':
+      await handleSessionStop(args.slice(1));
+      break;
     case 'session-delete':
       await handleSessionDelete(args.slice(1));
       break;
@@ -1814,6 +1834,7 @@ Usage:
   workday sensitivity <level>             Set global default (low|normal|patient)
   workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday sensitivity <level> <repo> --keep-pause   Same, a manually paused session stays paused
+  workday session-stop <target>                        Stop an open session now (live or frozen)
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)
   workday task-delete <KEY> [--date DATE]              Delete a ticket's tracked block (sessions + manual adds)
   workday log <task> <min> ["<desc>"] [--activity T]   Log manual time (today; desc optional for Development)

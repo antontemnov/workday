@@ -90,6 +90,7 @@ import type {
   StopResponse,
   SensitivityResponse,
   SessionDeleteResponse,
+  SessionStopResponse,
   TaskDeleteResponse,
   ManualEntry,
   ManualEntryResponse,
@@ -302,6 +303,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/sensitivity') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleSensitivity(body));
+      }
+      if (method === 'POST' && path === '/api/session/stop') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleSessionStop(body));
       }
       if (method === 'POST' && path === '/api/session/delete') {
         const body = await this.readBody(req);
@@ -814,6 +819,24 @@ export class HttpServer {
     await this.deps.forceTick();
 
     return { ok: true, data: { resumed: before.map(s => s.repo) } };
+  }
+
+  private async handleSessionStop(body: Record<string, unknown>): Promise<ApiResponse<SessionStopResponse>> {
+    const target = typeof body.target === 'string' ? body.target : '';
+    if (!target) return { ok: false, error: 'Missing target (session index or id)' };
+
+    const result = this.deps.sessionTracker.stopSession(target);
+    if (!result.ok || !result.stopped) {
+      return { ok: false, error: result.error };
+    }
+    // Re-run evaluator so the remaining sessions settle leadership now.
+    await this.deps.forceTick();
+
+    const s = result.stopped;
+    return {
+      ok: true,
+      data: { id: s.id, repo: s.repo, task: s.task, effectiveDurationMs: computeEffectiveDuration(s) },
+    };
   }
 
   private handleSessionDelete(body: Record<string, unknown>): ApiResponse<SessionDeleteResponse> {

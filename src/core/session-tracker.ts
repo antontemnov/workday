@@ -255,6 +255,26 @@ export class SessionTracker {
   }
 
   /**
+   * Stop an open session by hand — the user's Stop, live or frozen. It
+   * closes with the honest end (a trailing pause chain is trimmed). No hold
+   * is kept: only fresh activity in the repo births a new candidate.
+   */
+  public stopSession(target: string): { ok: boolean; error?: string; stopped?: Session } {
+    const session = resolveSessionTarget(this.dailyLog, target);
+    if (!session) {
+      return { ok: false, error: `Session not found: ${target}` };
+    }
+    if (session.closedBy) {
+      return { ok: false, error: `Session already closed: ${target}` };
+    }
+
+    this.closeSession(session, ClosedBy.ManualStop, new Date().toISOString());
+    this.pruneEmptySessions();
+    this.flush();
+    return { ok: true, stopped: session };
+  }
+
+  /**
    * Delete a session from today's log — a user decision at review time
    * (junk from a stray touch), never automatic. The record is removed
    * entirely; if the day loses its last confirmed fact the file goes too

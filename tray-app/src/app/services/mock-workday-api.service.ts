@@ -7,6 +7,7 @@ import {
   SensitivityResponse,
   SensitivityLevel,
   SessionDeleteResponse,
+  SessionStopResponse,
   TaskDeleteResponse,
   DaysResponse,
   MonthResponse,
@@ -132,6 +133,8 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockEntrySeq = 8;
   // Sessions "removed" via deleteSession/deleteTask — filtered out of getToday.
   private mockDeletedSessionIds = new Set<string>();
+  // Open sessions closed via stopSession — shown as closed in getToday.
+  private mockStoppedSessionIds = new Set<string>();
   // Per-repo manual pause / sensitivity overrides, so the live rows react.
   private mockManualPaused = new Set<string>();
   private mockRepoSensitivity = new Map<string, SensitivityLevel>();
@@ -392,6 +395,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     const day = this.buildToday();
     const sessions = day.sessions
       .filter(s => !this.mockDeletedSessionIds.has(s.id))
+      .map(s => this.mockStoppedSessionIds.has(s.id) ? { ...s, closedBy: 'manual_stop' } : s)
       .map(s => s.closedBy ? s : {
         ...s,
         sensitivity: this.mockRepoSensitivity.get(s.repo) ?? s.sensitivity,
@@ -467,6 +471,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
       ? this.mockManualEntries.map(e => e === existing ? entry : e)
       : [...this.mockManualEntries, entry];
     return entry;
+  }
+
+  async stopSession(target: string): Promise<ApiResponse<SessionStopResponse>> {
+    await delay(150);
+    this.mockStoppedSessionIds.add(target);
+    return { ok: true, data: { id: target, repo: 'mock', task: null, effectiveDurationMs: 0 } };
   }
 
   async deleteSession(target: string, _date?: string): Promise<ApiResponse<SessionDeleteResponse>> {

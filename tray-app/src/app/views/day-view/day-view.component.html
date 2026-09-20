@@ -103,6 +103,7 @@
     [jiraBaseUrl]="jiraBaseUrl"
     (patchCommitted)="onPanelPatch($event)"
     (deleteCommitted)="entryDeleteSubmitted.emit($event)"
+    (sessionStopRequested)="sessionStopSubmitted.emit($event)"
     (sessionDeleteCommitted)="sessionDeleteSubmitted.emit($event)"
     (taskDeleteCommitted)="taskDeleteSubmitted.emit($event)"
     (favoriteAdded)="favoriteAddSubmitted.emit($event)"

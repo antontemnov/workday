@@ -281,5 +281,65 @@ test('keepPause changes the mode under a session that stays paused', () => {
   assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Low);
 });
 
+console.log('\nManual stop');
+
+test('stopSession closes a live session with ManualStop', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  const result = tracker.stopSession(session.id);
+  assert.equal(result.ok, true);
+  assert.equal(session.closedBy, ClosedBy.ManualStop);
+  assert.equal(tracker.getOpenSessions().length, 0);
+});
+
+test('stopSession ends a frozen session where its pause chain began', () => {
+  const { tracker, session, pause } = makeIdleSession(3);
+  assert.equal(tracker.stopSession(session.id).ok, true);
+  assert.equal(session.closedBy, ClosedBy.ManualStop);
+  assert.equal(session.lastSeenAt, pause.from);
+});
+
+test('stopSession ends a manually paused session at the pause start', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  tracker.pauseRepoSession(session.repo);
+  const pauseFrom = session.pauses[session.pauses.length - 1].from;
+  assert.equal(tracker.stopSession(session.id).ok, true);
+  assert.equal(session.lastSeenAt, pauseFrom);
+});
+
+test('a stopped session is not reborn by quiet ticks', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  tracker.stopSession(tracker.getOpenSessions()[0].id);
+  for (let i = 0; i < 10; i++) tick(false);
+  assert.equal(tracker.getOpenSessions().length, 0);
+  assert.equal(tracker.getCandidates().length, 0);
+  assert.equal(tracker.getDailyLog().sessions.length, 1);
+});
+
+test('fresh activity after a stop births a new session', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const stopped = tracker.getOpenSessions()[0];
+  tracker.stopSession(stopped.id);
+  tick(true);
+  const open = tracker.getOpenSessions();
+  assert.equal(open.length, 1);
+  assert.notEqual(open[0].id, stopped.id);
+  assert.equal(stopped.closedBy, ClosedBy.ManualStop);
+});
+
+test('stopSession rejects a closed or unknown session', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  tracker.stopSession(session.id);
+  assert.equal(tracker.stopSession(session.id).ok, false);
+  assert.equal(tracker.stopSession('nope').ok, false);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

@@ -554,6 +554,10 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.runAction(() => this.api.deleteManualEntry(target));
   }
 
+  async submitSessionStop(target: string): Promise<void> {
+    await this.runAction(() => this.api.stopSession(target));
+  }
+
   async submitSessionDelete(target: string): Promise<void> {
     await this.runAction(() => this.api.deleteSession(target));
   }

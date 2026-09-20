@@ -1,6 +1,6 @@
 // Mirrors the daemon HTTP API response types
 
-export const EXPECTED_API_VERSION = 15;
+export const EXPECTED_API_VERSION = 16;
 
 export enum SensitivityLevel {
   Low = 'low',
@@ -215,6 +215,13 @@ export interface SuggestionUnmuteResponse {
 export interface SensitivityResponse {
   repo: string | null;
   level: SensitivityLevel;
+}
+
+export interface SessionStopResponse {
+  readonly id: string;
+  readonly repo: string;
+  readonly task: string | null;
+  readonly effectiveDurationMs: number;
 }
 
 export interface SessionDeleteResponse {

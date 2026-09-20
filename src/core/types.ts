@@ -807,6 +807,14 @@ export interface SensitivityResponse {
   readonly level: SensitivityLevel;
 }
 
+// An open session closed by the user's Stop (ClosedBy.ManualStop).
+export interface SessionStopResponse {
+  readonly id: string;
+  readonly repo: string;
+  readonly task: string | null;
+  readonly effectiveDurationMs: number;
+}
+
 export interface SessionDeleteResponse {
   readonly id: string;
   readonly repo: string;
