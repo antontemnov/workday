@@ -7,7 +7,7 @@
          [ngModel]="filter"
          (ngModelChange)="onFilterInput($event)"
          (keydown.enter)="onFilterEnter()"
-         [placeholder]="isAcceptMode ? 'pick a ticket — favorites · no match → Jira' : 'favorites · no match → search Jira'"
+         [placeholder]="isAcceptMode ? 'pick a ticket — no match → search Jira' : 'no match → search Jira'"
          autocomplete="off" />
   <button type="button"
           *ngIf="!isAcceptMode"
