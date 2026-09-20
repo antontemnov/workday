@@ -13,6 +13,7 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  ResolveReposResponse,
   BrowsersResponse,
   OpenUrlResponse,
   UpdateCheckResponse,
@@ -168,6 +169,7 @@ export abstract class WorkdayApiService {
   abstract updateSettings(patch: SettingsPatch): Promise<ApiResponse<unknown>>;
   // Repo list edits — separate endpoints so the daemon can validate paths.
   abstract addRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
+  abstract resolveRepos(paths: readonly string[]): Promise<ApiResponse<ResolveReposResponse>>;
   abstract removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>>;
 
   // Link opening — installed-browser inventory (Settings dropdown) and the

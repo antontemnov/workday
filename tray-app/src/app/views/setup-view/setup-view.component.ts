@@ -2,6 +2,7 @@ import { Component, EventEmitter, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
+import { RepoPickerService } from '../../services/repo-picker.service';
 import {
   BrowserInfo,
   ProjectRef,
@@ -62,7 +63,7 @@ export class SetupViewComponent implements OnInit {
   savingCalendar = false;
   meetingsFound: number | null = null;
 
-  public constructor(private api: WorkdayApiService) {}
+  public constructor(private api: WorkdayApiService, private repoPicker: RepoPickerService) {}
 
   ngOnInit(): void {
     void this.load();
@@ -268,32 +269,10 @@ export class SetupViewComponent implements OnInit {
   }
 
   async addRepo(): Promise<void> {
-    const path = await this.pickRepoPath();
-    if (!path?.trim()) return;
-    const res = await this.api.addRepo(path.trim());
-    if (res.ok && res.data) {
-      this.repos = res.data.repos;
-      this.stepError = null;
-    } else {
-      this.stepError = res.error ?? 'Failed to add repository';
-    }
-  }
-
-  // Same idiom as settings-view: native folder dialog inside Tauri, prompt
-  // fallback in browser dev mode (the plugin module doesn't resolve there).
-  private async pickRepoPath(): Promise<string | null> {
-    const isInTauri = !!(window as unknown as Record<string, unknown>)['__TAURI_INTERNALS__'];
-    if (isInTauri) {
-      try {
-        const dialog = await import('@tauri-apps/plugin-dialog');
-        const selected = await dialog.open({ directory: true, multiple: false, title: 'Select repository folder' });
-        return typeof selected === 'string' ? selected : null;
-      } catch (e) {
-        console.error('Folder picker failed', e);
-        return window.prompt('Absolute path to a git repository:') ?? null;
-      }
-    }
-    return window.prompt('Absolute path to a git repository:');
+    const outcome = await this.repoPicker.pickAndAdd();
+    if (!outcome) return;
+    if (outcome.repos) this.repos = outcome.repos;
+    this.stepError = outcome.error;
   }
 
   async removeRepo(path: string): Promise<void> {

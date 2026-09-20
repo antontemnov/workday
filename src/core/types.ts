@@ -1114,6 +1114,16 @@ export interface AddRepoResponse {
   readonly repos: readonly string[];
 }
 
+// Picked folders expanded to addable repos: a repo stays itself, any other
+// folder is scanned for repos inside.
+export interface ResolveReposResponse {
+  readonly repos: readonly string[];
+  readonly alreadyAdded: number;
+  // True when at least one picked folder was a root, not a repo.
+  readonly scanned: boolean;
+  readonly truncated: boolean;
+}
+
 // ─── Setup (first-run wizard) ───────────────────────────────────────────
 
 export interface SetupLinks {

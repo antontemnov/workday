@@ -23,6 +23,13 @@ export const DEFAULT_API_PORT = 9213;
 // reinstall-loop the daemon.
 export const API_VERSION = 17;
 
+// ─── Repo folder scan (bulk add) ────────────────────────────────────────
+export const REPO_SCAN_MAX_DEPTH = 3;
+export const REPO_SCAN_MAX_RESULTS = 50;
+/** Directory visit cap — keeps a mis-picked drive root from crawling the disk */
+export const REPO_SCAN_MAX_DIRS = 5_000;
+export const REPO_SCAN_SKIP_DIRS: readonly string[] = ['node_modules', 'bin', 'obj', 'dist', 'target', 'System Volume Information'];
+
 // ─── Setup links (first-run wizard) ─────────────────────────────────────
 // Vendor-stable URLs only — never instance-specific. The Tempo page is
 // instance-relative: resolved against secrets.Jira_BaseUrl at request time

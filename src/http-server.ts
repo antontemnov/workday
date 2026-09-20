@@ -107,6 +107,7 @@ import type {
   Secrets,
   SettingsResponse,
   AddRepoResponse,
+  ResolveReposResponse,
   UpdateCheckResponse,
   UpdateApplyResponse,
   WatchingRepo,
@@ -133,6 +134,7 @@ import type {
   SetupValidateResponse,
   SetupProbeResult,
 } from './core/types.js';
+import { isGitRepo, repoPathKey, scanForRepos } from './collectors/repo-scanner.js';
 import { listInstalledBrowsers, openUrlInBrowser } from './core/browser-registry.js';
 import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
 
@@ -417,6 +419,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/repo') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleAddRepo(body));
+      }
+      if (method === 'POST' && path === '/api/repo/resolve') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleResolveRepos(body));
       }
       if (method === 'POST' && path === '/api/repo/remove') {
         const body = await this.readBody(req);
@@ -1511,6 +1517,38 @@ export class HttpServer {
     const r = await this.deps.addRepo(path);
     if (!r.ok) return { ok: false, error: r.error };
     return { ok: true, data: { repos: [...this.deps.config.repos] } };
+  }
+
+  private async handleResolveRepos(body: Record<string, unknown>): Promise<ApiResponse<ResolveReposResponse>> {
+    const paths = Array.isArray(body.paths)
+      ? body.paths.filter((p): p is string => typeof p === 'string').map(p => p.trim()).filter(p => p !== '')
+      : [];
+    if (paths.length === 0) return { ok: false, error: 'Missing paths' };
+    const relative = paths.find(p => !isAbsolute(p));
+    if (relative) return { ok: false, error: `Path must be absolute: ${relative}` };
+
+    const known = new Set(this.deps.config.repos.map(repoPathKey));
+    const repos: string[] = [];
+    let alreadyAdded = 0;
+    let scanned = false;
+    let truncated = false;
+
+    const take = (repoPath: string): void => {
+      const key = repoPathKey(repoPath);
+      if (known.has(key)) { alreadyAdded++; return; }
+      known.add(key);
+      repos.push(repoPath);
+    };
+
+    for (const path of paths) {
+      if (await isGitRepo(path)) { take(path); continue; }
+      scanned = true;
+      const found = await scanForRepos(path);
+      truncated = truncated || found.truncated;
+      found.repos.forEach(take);
+    }
+
+    return { ok: true, data: { repos, alreadyAdded, scanned, truncated } };
   }
 
   private async handleRemoveRepo(body: Record<string, unknown>): Promise<ApiResponse<AddRepoResponse>> {

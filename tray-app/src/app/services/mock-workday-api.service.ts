@@ -24,6 +24,7 @@ import {
   SettingsResponse,
   SettingsPatch,
   AddRepoResponse,
+  ResolveReposResponse,
   BrowsersResponse,
   OpenUrlResponse,
   UpdateCheckResponse,
@@ -987,6 +988,20 @@ export class MockWorkdayApiService extends WorkdayApiService {
     if (this.mockRepos.includes(path)) return { ok: false, error: 'Already added' };
     this.mockRepos.push(path);
     return { ok: true, data: { repos: [...this.mockRepos] } };
+  }
+
+  // A path ending in "projects" plays a root folder with three repos inside.
+  async resolveRepos(paths: readonly string[]): Promise<ApiResponse<ResolveReposResponse>> {
+    await delay(150);
+    const isRoot = (path: string): boolean => /projects[\/]?$/i.test(path);
+    const expanded = paths.flatMap(path => isRoot(path)
+      ? ['api', 'web', 'tools'].map(name => `${path.replace(/[\/]$/, '')}/${name}`)
+      : [path]);
+    const repos = expanded.filter(path => !this.mockRepos.includes(path));
+    return {
+      ok: true,
+      data: { repos, alreadyAdded: expanded.length - repos.length, scanned: paths.some(isRoot), truncated: false },
+    };
   }
 
   async removeRepo(path: string): Promise<ApiResponse<AddRepoResponse>> {

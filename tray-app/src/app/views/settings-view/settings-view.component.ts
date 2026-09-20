@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, S
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
+import { RepoPickerService } from '../../services/repo-picker.service';
 import {
   ActivityType, BrowserInfo, CalendarFeedStatus, MutedSuggestionSeries, ProjectRef, SensitivityLevel,
   SettingsConfigSubset, SettingsResponse, TrackingConfig,
@@ -84,7 +85,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   private inFlight = false;
   private savedFlashTimer: number | null = null;
 
-  constructor(private api: WorkdayApiService) {}
+  constructor(private api: WorkdayApiService, private repoPicker: RepoPickerService) {}
 
   async ngOnInit(): Promise<void> {
     this.autoStartWithOs = await this.api.getAutostartEnabled();
@@ -474,34 +475,16 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   async addRepo(): Promise<void> {
-    const path = await this.pickRepoPath();
-    if (!path) return;
-    this.setIndicator('saving', 'Saving...');
-    const res = await this.api.addRepo(path);
-    if (res.ok && res.data) {
-      this.applyLocal(c => ({ ...c, repos: [...res.data!.repos] }));
-      this.setIndicator('saved', 'Saved');
-      this.scheduleSavedFlash();
-    } else {
-      this.setIndicator('error', res.error ?? 'Failed to add repo');
+    const outcome = await this.repoPicker.pickAndAdd();
+    if (!outcome) return;
+    const repos = outcome.repos;
+    if (repos) this.applyLocal(c => ({ ...c, repos: [...repos] }));
+    if (outcome.error) {
+      this.setIndicator('error', outcome.error);
+      return;
     }
-  }
-
-  private async pickRepoPath(): Promise<string | null> {
-    const isInTauri = !!(window as unknown as Record<string, unknown>)['__TAURI_INTERNALS__'];
-    if (isInTauri) {
-      try {
-        // Dynamic import keeps the browser bundle from failing to resolve the
-        // plugin module in mock / dev-server mode.
-        const dialog = await import('@tauri-apps/plugin-dialog');
-        const selected = await dialog.open({ directory: true, multiple: false, title: 'Select repository folder' });
-        return typeof selected === 'string' ? selected : null;
-      } catch (e) {
-        console.error('Folder picker failed', e);
-        return window.prompt('Enter absolute path to git repository:') ?? null;
-      }
-    }
-    return window.prompt('Enter absolute path to git repository:');
+    this.setIndicator('saved', outcome.added > 1 ? `Added ${outcome.added} repos` : 'Saved');
+    this.scheduleSavedFlash();
   }
 
   // ─── Token editing (explicit commit on Enter / ✓) ─────────────────────
