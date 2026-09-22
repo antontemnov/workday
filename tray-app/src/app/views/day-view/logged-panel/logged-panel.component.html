@@ -44,8 +44,7 @@
 
       <!-- Sessions — one row each: live ones wear the pill (Tracking /
            Paused / Waiting), closed ones the type word. The left cell is the
-           row's anchor (its menu); a closed row's ⊸ doubles as the delete,
-           the undo takes the time slot. -->
+           row's anchor (its menu); the undo takes the time slot. -->
       <app-session-row
         *ngFor="let s of b.sessionRows; trackBy: trackBySession"
         [session]="s"
@@ -56,7 +55,6 @@
         [locked]="actionPending"
         [class.removing]="sesRemovingIds.has(s.id)"
         (menuRequested)="onSessionMenu(s, $event)"
-        (deleteRequested)="deleteSessionRow(s)"
         (undoRequested)="undoSessionDelete(s)" />
 
       <!-- Manual added — the ticket's bare Development time, one record.

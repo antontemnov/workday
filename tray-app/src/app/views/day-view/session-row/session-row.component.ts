@@ -44,7 +44,6 @@ export class SessionRowComponent {
   @Input() locked = false;
 
   @Output() menuRequested = new EventEmitter<HTMLElement>();
-  @Output() deleteRequested = new EventEmitter<void>();
   @Output() undoRequested = new EventEmitter<void>();
 
   @HostBinding('class.sr')
@@ -107,11 +106,6 @@ export class SessionRowComponent {
     ev.stopPropagation();
     if (this.deleted || this.struck || this.locked) return;
     this.menuRequested.emit(ev.currentTarget as HTMLElement);
-  }
-
-  onDeleteClick(ev: MouseEvent): void {
-    ev.stopPropagation();
-    this.deleteRequested.emit();
   }
 
   onUndoClick(ev: MouseEvent): void {

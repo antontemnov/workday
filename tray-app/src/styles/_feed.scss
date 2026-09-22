@@ -29,32 +29,6 @@
   &:hover, &.armed { color: #cdd6f4; }
 }
 
-// The glyph-as-button (⊸ on a closed session, ⊕ on the manual added row):
-// hover morphs it into ✕, click starts the shared undo pipeline.
-@mixin glyph-action {
-  width: 13px;
-  height: 18px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: #7f849c;
-  cursor: pointer;
-
-  svg { display: block; opacity: 0.7; }
-  .g-x { display: none; color: rgba(243, 139, 168, 0.9); opacity: 1; }
-
-  &:hover:not(:disabled) {
-    .g-plus { display: none; }
-    .g-x { display: block; }
-  }
-
-  &:disabled { pointer-events: none; }
-}
-
 // ↩ undo — takes the row's time slot while the undo window burns. The same
 // mauve candy glass as Save and ＋Log. A fixed box exactly as wide as the time
 // column's 48px floor: showing it never resizes the column, nothing jumps.

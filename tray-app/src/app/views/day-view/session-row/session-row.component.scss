@@ -77,7 +77,6 @@
 :host(.frost) .sc .plus, :host(.frost) .sc .minus { color: #7f849c; }
 :host(.paused) .repo, :host(.paused) .sc, :host(.paused) .dur { opacity: 0.75; }
 
-.m-act { @include feed.glyph-action; }
 .l-undo { @include feed.undo-button; }
 
 // Undo window: the identity of the row is struck, its evidence just dims.
