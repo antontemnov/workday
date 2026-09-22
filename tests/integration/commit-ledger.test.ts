@@ -309,6 +309,29 @@ async function main(): Promise<void> {
     assert.equal(ev.linesAdded, 10, `linesAdded = ${ev.linesAdded}`);
   });
 
+  // ── Commit, then switch branches inside the same tick ──────────────────
+  // The commit lands in the reflog together with the checkout. It belongs
+  // to the session being closed (farewell replay); the next session — born
+  // on a branch cut from that very tip — must seed it as pre-session.
+  appendFileSync(join(REPO, 'mixed.ts'), 'late\n'.repeat(5));
+  git('add .');
+  git('commit -m "ATL-3 late commit"');
+  git('checkout -b atemnov/ATL-4-next');
+  await tick();
+
+  check('a commit made right before the checkout stays with the closing session', () => {
+    const closed = sessions.getDailyLog().sessions.find(s => s.task === 'ATL-3' && s.closedBy !== null);
+    assert.ok(closed, 'expected the ATL-3 session to be closed');
+    assert.equal(closed.evidence.commits, 2, `commits = ${closed.evidence.commits}`);
+    assert.equal(closed.evidence.linesAdded, 15, `linesAdded = ${closed.evidence.linesAdded}`);
+  });
+
+  check('the next session born on the new branch seeds that commit as pre-session', () => {
+    const ev = evidence();
+    assert.equal(ev.commits, 0, `commits = ${ev.commits}`);
+    assert.equal(ev.linesAdded, 0, `linesAdded = ${ev.linesAdded}`);
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
 }

@@ -18,7 +18,7 @@ import { createEmptyLog, getDailyLogPath, writeDailyLog } from '../../src/core/d
 import { computeWorkingDate, getDataDir } from '../../src/core/config.js';
 import { selectWatchingRepos, buildWatchingCard } from '../../src/http-server.js';
 import { SessionState, ClosedBy, SensitivityLevel } from '../../src/core/types.js';
-import type { AppConfig, PollResult, EvidenceSnapshot, DailyLog, WatchingRepo } from '../../src/core/types.js';
+import type { AppConfig, PollResult, EvidenceSnapshot, DailyLog, WatchingRepo, CommitMeta, LedgerUpdate } from '../../src/core/types.js';
 
 const POLL_SECONDS = 30;
 
@@ -74,6 +74,8 @@ interface PollSpec {
   prevSnap?: EvidenceSnapshot | null;
   mergeBase?: string | null;
   head?: string;
+  ledger?: LedgerUpdate | null;
+  farewell?: LedgerUpdate | null;
 }
 
 function poll(spec: PollSpec = {}): PollResult {
@@ -107,7 +109,8 @@ function poll(spec: PollSpec = {}): PollResult {
     evidenceBasis: spec.snap ? 'merge_base' : null,
     mergeBaseSha: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
     prevEvidenceSnapshot: spec.prevSnap ?? null,
-    ledgerUpdate: null,
+    ledgerUpdate: spec.ledger ?? null,
+    farewellLedgerUpdate: spec.farewell ?? null,
     reanchored: false,
     uncommitted: { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
     prevUncommitted: null,
@@ -416,6 +419,55 @@ test('buildWatchingCard: synthetic PENDING card with zeros and real sensitivity'
   assert.equal(card.closedBy, null);
   assert.equal(card.sensitivity, SensitivityLevel.Patient);
   assert.equal(card.evidence.commits, 0);
+});
+
+console.log('\nFarewell ledger (commit, then checkout inside one tick)');
+
+function commitMeta(sha: string, ts: number, linesAdded: number): CommitMeta {
+  return {
+    sha, tree: `tree-${sha}`, parentCount: 1, authorEmail: 'dev@example.com', authorTs: ts, committerTs: ts,
+    lines: { linesAdded, linesRemoved: 0, filesChanged: 1 },
+  };
+}
+
+test('a commit made right before the checkout stays with the closing session; the next one seeds it as pre-session', () => {
+  wipeDataDir();
+  const { tracker, tick } = makeHarness();
+  const nowSec = Math.floor(Date.now() / 1000);
+  // ATL-1: born from a commit, ledger seeded at zero
+  tick([poll({ commit: true, snap: snap(0, 0, 0, 0), ledger: { kind: 'seed', commits: [], pointer: { sha: 'p0', ts: nowSec - 100 } } })]);
+  const first = tracker.getOpenSessions()[0];
+  assert.ok(first, 'ATL-1 session expected');
+  // the late commit and the checkout to ATL-2 (a branch cut from the ATL-1 tip) land in one tick
+  const late = commitMeta('late', nowSec, 40);
+  tick([poll({
+    task: 'ATL-2', branch: 'atemnov/ATL-2-next', commit: true, checkout: true,
+    snap: snap(1, 40, 0, 1),
+    farewell: { kind: 'transitions', transitions: [{ ts: nowSec, removedShas: [], added: [late] }], pointer: { sha: 'late', ts: nowSec } },
+    ledger: { kind: 'seed', commits: [late], pointer: { sha: 'late', ts: nowSec } },
+  })]);
+  assert.equal(first.closedBy, ClosedBy.CheckoutOtherTask);
+  assert.deepEqual([first.evidence.commits, first.evidence.linesAdded], [1, 40],
+    `closing session evidence = ${JSON.stringify(first.evidence)}`);
+  const second = tracker.getOpenSessions()[0];
+  assert.ok(second && second.task === 'ATL-2', 'ATL-2 session expected');
+  assert.deepEqual([second.evidence.commits, second.evidence.linesAdded], [0, 0],
+    `next session evidence = ${JSON.stringify(second.evidence)}`);
+});
+
+test('a farewell without transitions leaves the closing session untouched', () => {
+  wipeDataDir();
+  const { tracker, tick } = makeHarness();
+  const nowSec = Math.floor(Date.now() / 1000);
+  tick([poll({ commit: true, snap: snap(1, 25, 0, 1), ledger: { kind: 'seed', commits: [commitMeta('own', nowSec - 10, 25)], pointer: { sha: 'own', ts: nowSec - 10 } } })]);
+  const first = tracker.getOpenSessions()[0];
+  assert.deepEqual([first.evidence.commits, first.evidence.linesAdded], [1, 25]);
+  tick([poll({
+    task: 'ATL-2', branch: 'atemnov/ATL-2-next', checkout: true, snap: snap(1, 25, 0, 1),
+    farewell: { kind: 'transitions', transitions: [], pointer: { sha: 'own', ts: nowSec - 10 } },
+  })]);
+  assert.equal(first.closedBy, ClosedBy.CheckoutOtherTask);
+  assert.deepEqual([first.evidence.commits, first.evidence.linesAdded], [1, 25]);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

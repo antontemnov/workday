@@ -246,6 +246,7 @@ function poll(dyn: boolean): PollResult {
     mergeBaseSha: null,
     prevEvidenceSnapshot: null,
     ledgerUpdate: null,
+    farewellLedgerUpdate: null,
     reanchored: false,
     uncommitted: { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
     prevUncommitted: null,

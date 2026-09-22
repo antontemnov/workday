@@ -53,8 +53,45 @@ export async function collectLedgerUpdate(
     return buildResync(gitClient, repoPath, mergeBaseSha, defaultBranchRef, query, currentPointer);
   }
 
+  const transitions = await buildTransitions(gitClient, repoPath, reflog, pointerIndex, query.pointer.sha, defaultBranchRef);
+  return { kind: 'transitions', transitions, pointer: currentPointer };
+}
+
+/**
+ * Farewell update for the branch the repo just left. A branch reflog is
+ * readable after a checkout, so commits made right before the switch (they
+ * land in the same tick) are replayed into the session that made them
+ * before it closes — instead of seeding the next session as its own work.
+ * Transitions only: without HEAD context there is no seed or resync, so a
+ * pointer outside the window (or a deleted branch) yields null.
+ */
+export async function collectFarewellLedgerUpdate(
+  gitClient: GitClient,
+  repoPath: string,
+  defaultBranchRef: string,
+  query: LedgerQuery,
+): Promise<LedgerUpdate | null> {
+  const pointer = query.pointer;
+  if (pointer === null) return null;
+  const reflog = await gitClient.getBranchReflog(repoPath, query.branch, REFLOG_WINDOW);
+  if (reflog.length === 0) return null;
+  const pointerIndex = reflog.findIndex(e => e.sha === pointer.sha && e.ts === pointer.ts);
+  if (pointerIndex === -1) return null;
+  const transitions = await buildTransitions(gitClient, repoPath, reflog, pointerIndex, pointer.sha, defaultBranchRef);
+  return { kind: 'transitions', transitions, pointer: { sha: reflog[0].sha, ts: reflog[0].ts } };
+}
+
+/** Entries above the pointer, oldest first, as old→new transitions with metadata. */
+async function buildTransitions(
+  gitClient: GitClient,
+  repoPath: string,
+  reflog: ReadonlyArray<{ readonly sha: string; readonly ts: number }>,
+  pointerIndex: number,
+  pointerSha: string,
+  defaultBranchRef: string,
+): Promise<BranchTransition[]> {
   const transitions: BranchTransition[] = [];
-  let oldSha = query.pointer.sha;
+  let oldSha = pointerSha;
   for (let i = pointerIndex - 1; i >= 0; i--) {
     const entry = reflog[i];
     if (entry.sha !== oldSha) {
@@ -65,8 +102,7 @@ export async function collectLedgerUpdate(
     }
     oldSha = entry.sha;
   }
-
-  return { kind: 'transitions', transitions, pointer: currentPointer };
+  return transitions;
 }
 
 /**

@@ -477,6 +477,7 @@ function poll(spec: PollSpec): PollResult {
     uncommitted: spec.uncommitted ?? { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
     prevUncommitted: null,
     ledgerUpdate: spec.ledger ?? null,
+    farewellLedgerUpdate: null,
     foreignCheckouts: [],
   };
 }

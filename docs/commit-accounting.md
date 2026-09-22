@@ -108,6 +108,20 @@ changes or git moves the tip (`PollResult.reanchored`), the counters so far
 fold into a per-session carry (`evidenceCarry`) and the baseline restarts
 at the new totals — only edits move the counters.
 
+### Farewell on checkout
+
+A commit made seconds before a checkout lands in the same poll tick as the
+switch, when the repo already reads as the new branch. The branch reflog
+of the branch just left is still readable, so the collector replays its
+entries above the session's pointer into the session that is about to
+close (transitions only — no seed or resync without HEAD context; a
+pointer outside the window yields nothing). The closing session's lines
+are then re-derived from its ledger: whatever stayed uncommitted went
+along to the new branch. The next session, often born on a branch cut from
+that very tip, finds the commit in the earlier ledger and seeds it as
+pre-session (the 2026-09-22 case: three [ATL-8521] commits credited to the
+ATL-8434 session born 19 seconds later on a branch created from their tip).
+
 ### Degradation ladder
 
 - Pointer fell out of the reflog window (very long downtime) → **resync**:

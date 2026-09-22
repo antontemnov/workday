@@ -146,6 +146,7 @@ export class SessionTracker {
     if (result.task === null) {
       // Not on developer's branch → close session, evaporate candidate
       if (openSession) {
+        this.applyFarewellLedger(openSession, result);
         this.closeSession(openSession, ClosedBy.CheckoutOtherTask, now);
       }
       this.dropCandidate(repoName);
@@ -154,6 +155,7 @@ export class SessionTracker {
 
     if (openSession && openSession.task !== result.task) {
       // Task changed → close old; a new candidate may be born below
+      this.applyFarewellLedger(openSession, result);
       this.closeSession(openSession, ClosedBy.CheckoutOtherTask, now);
       openSession = null;
     }
@@ -1022,15 +1024,23 @@ export class SessionTracker {
       return true;
     }
 
-    // "Created in this session" = BOTH author and committer timestamps after
-    // the session opened — minus a two-tick slack, so the commit that itself
-    // triggered the session (made just before the opening poll) still counts
-    // — AND not already accounted for by an earlier session's ledger today
-    // (a commit from a session closed moments ago falls inside the slack of
-    // the next one; the SHA-set check keeps it from being recounted). A
-    // rebase pick, amend, reword or cherry-pick refreshes the committer
-    // timestamp but keeps the author timestamp: git moving an old commit
-    // around is never new work, lineage or not.
+    applyLedgerUpdate(session.ledger, update, this.buildCountsAsSession(session));
+    session.evidence.commits = countSessionCommits(session.ledger);
+    return true;
+  }
+
+  /**
+   * "Created in this session" = BOTH author and committer timestamps after
+   * the session opened — minus a two-tick slack, so the commit that itself
+   * triggered the session (made just before the opening poll) still counts
+   * — AND not already accounted for by an earlier session's ledger today
+   * (a commit from a session closed moments ago falls inside the slack of
+   * the next one; the SHA-set check keeps it from being recounted). A
+   * rebase pick, amend, reword or cherry-pick refreshes the committer
+   * timestamp but keeps the author timestamp: git moving an old commit
+   * around is never new work, lineage or not.
+   */
+  private buildCountsAsSession(session: Session): (meta: { readonly sha: string; readonly authorTs: number; readonly committerTs: number }) => boolean {
     const slackSeconds = this.config.session.diffPollSeconds * 2;
     const sessionStartTs = Date.parse(session.startedAt) / 1000 - slackSeconds;
     const priorShas = new Set<string>();
@@ -1038,12 +1048,27 @@ export class SessionTracker {
       if (s === session || s.repo !== session.repo || !s.ledger) continue;
       for (const c of s.ledger.commits) priorShas.add(c.sha);
     }
-    const countsAsSession = (meta: { readonly sha: string; readonly authorTs: number; readonly committerTs: number }): boolean =>
-      meta.committerTs >= sessionStartTs && meta.authorTs >= sessionStartTs && !priorShas.has(meta.sha);
+    return (meta) => meta.committerTs >= sessionStartTs && meta.authorTs >= sessionStartTs && !priorShas.has(meta.sha);
+  }
 
-    applyLedgerUpdate(session.ledger, update, countsAsSession);
+  /**
+   * Replay the reflog entries of the branch being left into the session
+   * that is about to close. A commit made seconds before a checkout lands
+   * in the same tick as the switch; without this the closing session never
+   * sees it and the next session's seed adopts it as its own. Lines are
+   * re-derived from the ledger: whatever stayed uncommitted went along to
+   * the new branch and is not this session's any more.
+   */
+  private applyFarewellLedger(session: Session, result: PollResult): void {
+    const update = result.farewellLedgerUpdate;
+    if (update === null || update.kind !== 'transitions' || update.transitions.length === 0) return;
+    if (session.ledger === null) return;
+    applyLedgerUpdate(session.ledger, update, this.buildCountsAsSession(session));
     session.evidence.commits = countSessionCommits(session.ledger);
-    return true;
+    const committed = countSessionLines(session.ledger);
+    session.evidence.linesAdded = committed.linesAdded;
+    session.evidence.linesRemoved = committed.linesRemoved;
+    session.evidence.filesChanged = committed.filesChanged;
   }
 
   private zeroLineEvidence(session: Session): void {

@@ -611,6 +611,12 @@ export interface PollResult {
   // Null when the branch reflog (or a merge-base) is unavailable — the
   // session then falls back to the positive-jump commit counter.
   readonly ledgerUpdate: LedgerUpdate | null;
+  // Ledger transitions for the branch the repo just left — present only
+  // when the open session's branch differs from the current one and the
+  // task changed. Applied to that session before it closes, so a commit
+  // made right before the checkout (same tick) stays with the session that
+  // made it instead of seeding the next session as its own work.
+  readonly farewellLedgerUpdate: LedgerUpdate | null;
   // Checkouts onto foreign ticket branches seen in the reflog window — ALL
   // parsed entries, not only new ones: the daily-log dedup by (task, date)
   // makes re-reporting idempotent, so same-day facts survive daemon restarts.

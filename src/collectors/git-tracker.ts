@@ -18,7 +18,7 @@ import { GitClient } from './git-client.js';
 import { ReflogParser } from './reflog-parser.js';
 import { SnapshotParser } from './snapshot-parser.js';  // static methods only
 import { buildChurnFiles } from './churn-scanner.js';
-import { collectLedgerUpdate } from './ledger-collector.js';
+import { collectFarewellLedgerUpdate, collectLedgerUpdate } from './ledger-collector.js';
 
 /**
  * Final fallback list when no config and no `origin/HEAD` are available.
@@ -305,6 +305,16 @@ export class GitTracker {
       );
     }
 
+    // Farewell for the branch just left: the open session there closes this
+    // tick (task changed) — replay its last reflog entries into it first, so
+    // a commit made seconds before the checkout is its work, not the next
+    // session's (which is seeded from a branch that may contain it).
+    let farewellLedgerUpdate: LedgerUpdate | null = null;
+    if (ledgerQuery !== null && ledgerQuery.branch !== raw.branch && defaultBranchRef !== null
+      && extractTask(ledgerQuery.branch, this.config.tracking, this.config.genericBranches) !== task) {
+      farewellLedgerUpdate = await collectFarewellLedgerUpdate(this.gitClient, repoPath, defaultBranchRef, ledgerQuery);
+    }
+
     return {
       repoPath,
       branch: raw.branch,
@@ -321,6 +331,7 @@ export class GitTracker {
       uncommitted,
       prevUncommitted,
       ledgerUpdate,
+      farewellLedgerUpdate,
       foreignCheckouts,
     };
   }
