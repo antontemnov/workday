@@ -315,6 +315,10 @@ export interface DiffDynamicsSignal {
   readonly type: SignalType.DiffDynamics;
   readonly repo: string;
   readonly delta: { readonly added: number; readonly removed: number; readonly untracked?: number };
+  // Per-file churn line-equivalents behind the signal (absent in logs written
+  // before 0.50.1). Flat totals with real churn = rewrite-in-place; the number
+  // is what tells a genuine 0/0/0 tick from a re-anchoring at review time.
+  readonly magnitude?: number;
 }
 
 export interface CommitSignal {
@@ -374,6 +378,12 @@ export interface DailyLog {
 
 export interface GitSnapshot {
   readonly branch: string;
+  // Ref the churn map is anchored at: the fresh merge-base, else the
+  // session's sticky baseSha, else null (plain worktree diff). Churn is
+  // comparable between ticks only under the same anchor — a fetch that lets
+  // the default branch absorb this branch's ancestry moves the merge-base and
+  // re-anchors the whole map without a single edit (the 2026-09-22 phantom).
+  readonly evidenceBase: string | null;
   readonly trackedLines: { readonly added: number; readonly removed: number };
   readonly trackedFileCount: number;
   readonly untrackedCount: number;

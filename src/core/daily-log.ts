@@ -863,6 +863,7 @@ export function addSignal(log: DailyLog, signal: Signal, deduplicationSeconds: n
             removed: prev.delta.removed + signal.delta.removed,
             untracked: (prev.delta.untracked ?? 0) + (signal.delta.untracked ?? 0),
           },
+          magnitude: (prev.magnitude ?? 0) + (signal.magnitude ?? 0),
         };
         return;
       }

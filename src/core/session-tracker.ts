@@ -990,6 +990,7 @@ export class SessionTracker {
           removed: result.delta.removedDelta,
           untracked: result.delta.untrackedDelta,
         },
+        magnitude: result.delta.magnitude,
       }, dedup);
     }
 

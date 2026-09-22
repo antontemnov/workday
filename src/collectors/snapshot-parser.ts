@@ -16,17 +16,20 @@ export class SnapshotParser {
    * diff --numstat format: "added\tremoved\tfilename" per line
    * status --porcelain: "?? filename" for untracked files
    * churnFiles: built by churn-scanner from the evidence diff + untracked files
+   * evidenceBase: ref the churn map is anchored at (merge-base / baseSha / null)
    */
   public static parseSnapshot(
     raw: RawGitOutput,
     timestamp: number,
     churnFiles: ReadonlyMap<string, ChurnFile> = new Map(),
+    evidenceBase: string | null = null,
   ): GitSnapshot {
     const { added, removed, fileCount } = SnapshotParser.parseDiffNumstat(raw.diffNumstat).totals;
     const untrackedCount = SnapshotParser.parseUntrackedCount(raw.statusPorcelain);
 
     return {
       branch: raw.branch,
+      evidenceBase,
       trackedLines: { added, removed },
       trackedFileCount: fileCount,
       untrackedCount,
@@ -45,13 +48,16 @@ export class SnapshotParser {
    * - a file leaving counts its last known size (revert / re-anchor);
    * - a flat file whose content hash changed counts IN_PLACE_CHURN_LINES.
    *
-   * Returns null delta (hasDynamics=false) if previous is null (first tick after start)
-   * or the branch changed — churn maps are anchored per branch (evidence diff vs
-   * merge-base), so a cross-branch comparison would count the union of both diffs
-   * as activity and a bare checkout would birth a session.
+   * Returns null delta (hasDynamics=false) if previous is null (first tick after
+   * start), the branch changed, or the evidence anchor moved — churn maps are
+   * anchored per branch AND per merge-base (evidence diff vs merge-base). A
+   * cross-branch comparison would count the union of both diffs as activity (a
+   * bare checkout would birth a session); a merge-base jump after a fetch shrinks
+   * the map wholesale (files "leaving" would sum into a phantom magnitude with
+   * nothing edited). Both are baseline ticks: the new map becomes the reference.
    */
   public static computeDelta(previous: GitSnapshot | null, current: GitSnapshot): GitDelta {
-    if (previous === null || previous.branch !== current.branch) {
+    if (previous === null || previous.branch !== current.branch || previous.evidenceBase !== current.evidenceBase) {
       // Baseline tick, no dynamics
       return { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 };
     }

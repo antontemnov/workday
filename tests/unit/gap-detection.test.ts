@@ -65,6 +65,7 @@ function poll(repoPath: string, task: string, dyn: boolean): PollResult {
       trackedFileCount: 0,
       untrackedCount: 0,
       timestamp: Date.now(),
+      evidenceBase: null,
       churnFiles: new Map(),
     },
     delta: {

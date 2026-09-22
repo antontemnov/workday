@@ -292,6 +292,30 @@ The gain formula in the evaluator is unchanged:
 `min(VOLUME_GAIN_MAX, deltaMagnitude / LINES_PER_GAIN_TICK)` — at most +8 per
 30s tick, reached at 32 churn line-equivalents.
 
+### Baseline ticks: branch guard and anchor guard
+
+Two consecutive churn maps are comparable only under the same **branch and
+evidence anchor** (the merge-base the diff is taken against). Two events
+swap the map wholesale without a single edit:
+
+- **Checkout** — the map of another branch (the 2026-07-28 empty-session
+  bug: the union of both diffs summed into a phantom magnitude).
+- **Merge-base jump** — a `fetch` that lets the default branch absorb the
+  task branch's ancestry (the release branch it was cut from got merged
+  into develop). The map shrinks from a hundred upstream files to the
+  branch's own few; every file "leaving" would count its last size (the
+  2026-09-22 empty-session bug: 117 files → 2, a 0m session born and closed
+  by the next tick).
+
+Both are **baseline ticks**: `hasDynamics = false`, `magnitude = 0`, the new
+map becomes the reference. The previous tick's evidence snapshot (A-3
+seeding of a newborn candidate's baseline) is dropped on both events as
+well — it is anchored elsewhere. An edit that lands on the same tick is
+picked up by the next one (the worktree keeps it). The `diff_dynamics`
+signal in the daily log carries the `magnitude` behind it, so a flat
+`0/0/0` delta can be told apart at review time: real rewrite-in-place churn
+versus a re-anchoring that slipped through.
+
 ### Why per-file churn, not netted totals?
 
 The previous source was `|Δadded| + |Δremoved|` of the *summed worktree

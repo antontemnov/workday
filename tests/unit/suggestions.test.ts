@@ -386,6 +386,7 @@ function makeForeignPoll(foreignCheckouts: ForeignCheckout[]): PollResult {
       trackedFileCount: 0,
       untrackedCount: 0,
       timestamp: Date.now(),
+      evidenceBase: null,
       churnFiles: new Map(),
     },
     delta: { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 },

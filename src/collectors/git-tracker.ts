@@ -25,6 +25,10 @@ import { collectLedgerUpdate } from './ledger-collector.js';
  */
 const DEFAULT_BRANCH_FALLBACK_NAMES: readonly string[] = ['main', 'master', 'develop'];
 
+function shortRef(sha: string | null | undefined): string {
+  return sha ? sha.slice(0, 7) : 'none';
+}
+
 /**
  * Main git activity tracker.
  * Orchestrates GitClient, ReflogParser, SnapshotParser.
@@ -192,7 +196,7 @@ export class GitTracker {
     );
 
     // Parse snapshot and compute delta
-    const snapshot = SnapshotParser.parseSnapshot(raw, now, churnFiles);
+    const snapshot = SnapshotParser.parseSnapshot(raw, now, churnFiles, evidenceBase ?? null);
     const delta = SnapshotParser.computeDelta(state.previousSnapshot, snapshot);
 
     // Parse reflog, filter to new entries only
@@ -216,7 +220,16 @@ export class GitTracker {
     // Branch-guard for prev-snapshot seeding (A-3): a snapshot taken on
     // another branch must never seed a newborn candidate's baseline.
     const branchChanged = state.currentBranch !== null && state.currentBranch !== raw.branch;
-    const prevEvidenceSnapshot = branchChanged ? null : state.prevEvidenceSnapshot;
+    // Anchor-guard: a fetch that lets the default branch absorb this branch's
+    // ancestry moves the merge-base — evidence diff and churn map shrink
+    // wholesale with nothing edited. computeDelta already made this a
+    // baseline tick; the previous evidence snapshot is anchored elsewhere too.
+    const previousAnchor = state.previousSnapshot === null ? undefined : state.previousSnapshot.evidenceBase;
+    const anchorChanged = !branchChanged && previousAnchor !== undefined && previousAnchor !== snapshot.evidenceBase;
+    if (anchorChanged) {
+      console.log(`[GitTracker] ${basename(repoPath)}: evidence anchor moved ${shortRef(previousAnchor)} → ${shortRef(snapshot.evidenceBase)}, baseline tick`);
+    }
+    const prevEvidenceSnapshot = branchChanged || anchorChanged ? null : state.prevEvidenceSnapshot;
 
     // Update stored state
     state.previousSnapshot = snapshot;

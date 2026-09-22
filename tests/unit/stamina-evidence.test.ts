@@ -314,12 +314,17 @@ test('mixed sensitivities: Patient and Normal compete on equal terms', () => {
 
 console.log('\nChurn magnitude (per-file deltas + content hashes + untracked)');
 
-function churnSnap(files: Record<string, [number, number, string | null]>, branch = 'b'): GitSnapshot {
+function churnSnap(
+  files: Record<string, [number, number, string | null]>,
+  branch = 'b',
+  evidenceBase: string | null = 'mb1',
+): GitSnapshot {
   const churnFiles = new Map<string, ChurnFile>(
     Object.entries(files).map(([p, [added, removed, hash]]) => [p, { added, removed, hash }]),
   );
   return {
     branch,
+    evidenceBase,
     trackedLines: { added: 0, removed: 0 },
     trackedFileCount: 0,
     untrackedCount: 0,
@@ -387,6 +392,26 @@ test('same branch after the guard still reports dynamics normally', () => {
   assert.equal(d.hasDynamics, true);
 });
 
+test('evidence anchor move (fetch shifted the merge-base) is a baseline tick — no phantom session', () => {
+  // 2026-09-22: a fetch let develop absorb the release branch the task branch
+  // was cut from; the merge-base jumped and the churn map shrank from 117
+  // files to the branch's own 2 with nothing edited. Files "leaving" the map
+  // would sum into a phantom magnitude → candidate → 0m session.
+  const prev = churnSnap({ 'a.ts': [40, 10, 'h1'], 'b.ts': [10, 0, null], 'c.ts': [300, 5, null] }, 'ATL-8757', 'af3cf68');
+  const cur = churnSnap({ 'a.ts': [2, 4, null] }, 'ATL-8757', 'f52ec85');
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 0);
+  assert.equal(d.hasDynamics, false);
+});
+
+test('anchor appearing (fallback baseSha captured at birth) is a baseline tick too', () => {
+  const prev = churnSnap({ 'a.ts': [10, 0, null] }, 'ATL-1', null);
+  const cur = churnSnap({ 'a.ts': [10, 0, null], 'b.ts': [50, 0, null] }, 'ATL-1', 'head1');
+  const d = SnapshotParser.computeDelta(prev, cur);
+  assert.equal(d.magnitude, 0);
+  assert.equal(d.hasDynamics, false);
+});
+
 // ─── Evidence tracking ───────────────────────────────────────────────────
 
 console.log('\nEvidence (SessionTracker, merge-base + baseline-delta)');
@@ -427,6 +452,7 @@ function poll(spec: PollSpec): PollResult {
     task: spec.task === undefined ? 'ATL-1' : spec.task,
     snapshot: {
       branch: 'feature/dev/ATL-1',
+      evidenceBase: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
       trackedLines: { added: 0, removed: 0 },
       trackedFileCount: 0,
       untrackedCount: 0,
