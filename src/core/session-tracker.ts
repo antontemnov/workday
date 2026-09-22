@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
 import { SessionState, ClosedBy, DayStatus, SignalType, PauseSource, SensitivityLevel } from './types.js';
-import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery } from './types.js';
-import { applyLedgerUpdate, countSessionCommits, createEmptyLedger } from './commit-ledger.js';
+import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery, LineStats, CommitLedgerState } from './types.js';
+import { applyLedgerUpdate, countSessionCommits, countSessionLines, createEmptyLedger } from './commit-ledger.js';
 import { isDayMaterialized } from './day-lifecycle.js';
 import {
   generateSessionId,
@@ -87,6 +87,15 @@ export class SessionTracker {
       if (session.baseSha === undefined) session.baseSha = null;
       if (session.mergeBaseSha === undefined) session.mergeBaseSha = null;
       if (session.evidenceBaseline === undefined) session.evidenceBaseline = null;
+      if (session.evidenceCarry === undefined) session.evidenceCarry = null;
+      if (session.uncommittedBaseline === undefined) session.uncommittedBaseline = null;
+      if (session.ledger) {
+        for (const commit of session.ledger.commits) {
+          if (commit.sessionLines === undefined) {
+            (commit as { sessionLines: LineStats }).sessionLines = { linesAdded: 0, linesRemoved: 0, filesChanged: 0 };
+          }
+        }
+      }
       if (session.lastBranchCommits === undefined) session.lastBranchCommits = null;
       if (session.ledger === undefined) session.ledger = null;
     }
@@ -762,6 +771,8 @@ export class SessionTracker {
       baseSha: null,
       mergeBaseSha: null,
       evidenceBaseline: null,
+      evidenceCarry: null,
+      uncommittedBaseline: null,
       lastBranchCommits: null,
       ledger: null,
     };
@@ -878,12 +889,36 @@ export class SessionTracker {
    * First tick (baseline == null): seeded from the PREVIOUS tick's snapshot
    * when available (A-3) — a candidate born from a burst would otherwise
    * bake that burst into the baseline and lose it from the line counters.
-   * The prev snapshot is branch-guarded by GitTracker: null when the branch
-   * changed this tick, so edits carried over a checkout are never counted.
+   * The prev snapshot is re-anchoring-guarded by GitTracker: null when the
+   * branch changed, the merge-base moved or git moved the tip this tick, so
+   * edits carried over a checkout / upstream lines pulled in by a rebase are
+   * never counted.
+   *
+   * Re-anchoring mid-session: the tracker saw the branch / merge-base / tip
+   * move, or the session's own recorded merge-base differs from this tick's
+   * (a move the tracker could not pair). Branch totals are no longer
+   * comparable with the baseline — the counters so far fold into the carry
+   * and the baseline restarts at the new totals. Evidence is invariant
+   * under git moving things; only edits move it.
    */
   private applyMergeBaseEvidence(session: Session, snap: EvidenceSnapshot, result: PollResult): void {
     // Commit ledger first: a seed also delivers the day-start line baseline.
     const ledgerActive = this.applyLedger(session, result);
+
+    if (ledgerActive && session.ledger !== null) {
+      // Ledger mode: lines come from the ledger plus the uncommitted diff vs
+      // HEAD — anchor-free, so a re-anchoring changes nothing here.
+      this.applyLedgerLines(session, session.ledger, result);
+      session.lastBranchCommits = snap.commits;
+      session.mergeBaseSha = result.mergeBaseSha;
+      if (session.baseSha === null) session.baseSha = result.currentHead;
+      return;
+    }
+
+    const anchorMoved = session.mergeBaseSha !== null
+      && result.mergeBaseSha !== null
+      && session.mergeBaseSha !== result.mergeBaseSha;
+    const reanchored = result.reanchored || anchorMoved;
 
     let base = session.evidenceBaseline;
     if (base === null) {
@@ -899,16 +934,28 @@ export class SessionTracker {
       base.linesAdded = Math.min(base.linesAdded, snap.linesAdded);
       base.linesRemoved = Math.min(base.linesRemoved, snap.linesRemoved);
       base.filesChanged = Math.min(base.filesChanged, snap.filesChanged);
+    } else if (reanchored) {
+      session.evidenceCarry = {
+        linesAdded: session.evidence.linesAdded,
+        linesRemoved: session.evidence.linesRemoved,
+        filesChanged: session.evidence.filesChanged,
+      };
+      base = { linesAdded: snap.linesAdded, linesRemoved: snap.linesRemoved, filesChanged: snap.filesChanged };
+      session.evidenceBaseline = base;
     } else {
       base.linesAdded = Math.min(base.linesAdded, snap.linesAdded);
       base.linesRemoved = Math.min(base.linesRemoved, snap.linesRemoved);
       base.filesChanged = Math.min(base.filesChanged, snap.filesChanged);
     }
-    session.evidence.linesAdded = snap.linesAdded - base.linesAdded;
-    session.evidence.linesRemoved = snap.linesRemoved - base.linesRemoved;
-    session.evidence.filesChanged = snap.filesChanged - base.filesChanged;
+    const carry = session.evidenceCarry;
+    session.evidence.linesAdded = (carry?.linesAdded ?? 0) + snap.linesAdded - base.linesAdded;
+    session.evidence.linesRemoved = (carry?.linesRemoved ?? 0) + snap.linesRemoved - base.linesRemoved;
+    session.evidence.filesChanged = (carry?.filesChanged ?? 0) + snap.filesChanged - base.filesChanged;
 
-    if (!ledgerActive && session.lastBranchCommits !== null && snap.commits > session.lastBranchCommits) {
+    // Positive-jump fallback counter: a re-anchoring tick can change the
+    // branch commit count without a single new commit (rebase onto a base
+    // holding commits the default branch lacks) — only resync the reference.
+    if (!ledgerActive && !reanchored && session.lastBranchCommits !== null && snap.commits > session.lastBranchCommits) {
       session.evidence.commits += snap.commits - session.lastBranchCommits;
     }
     session.lastBranchCommits = snap.commits;
@@ -918,6 +965,34 @@ export class SessionTracker {
     if (session.baseSha === null) {
       session.baseSha = result.currentHead;
     }
+  }
+
+  /**
+   * Ledger-mode line evidence: the session's live commits carry exact,
+   * attributable line counts (squash / amend / rebase pick inherit them),
+   * plus the uncommitted diff vs HEAD beyond what was already dirty when
+   * the session opened. No anchor anywhere: a rebase moves HEAD but not the
+   * diff against it, upstream commits are never session-created, a dropped
+   * session commit takes its lines with it. The uncommitted baseline seeds
+   * from the previous tick (A-3: the birth burst counts) and ratchets down
+   * as dirty lines get committed or reverted.
+   */
+  private applyLedgerLines(session: Session, ledger: CommitLedgerState, result: PollResult): void {
+    const cur = result.uncommitted;
+    let base = session.uncommittedBaseline;
+    if (base === null) {
+      const seed = result.prevUncommitted ?? cur;
+      base = { linesAdded: seed.linesAdded, linesRemoved: seed.linesRemoved, filesChanged: seed.filesChanged };
+      session.uncommittedBaseline = base;
+    }
+    base.linesAdded = Math.min(base.linesAdded, cur.linesAdded);
+    base.linesRemoved = Math.min(base.linesRemoved, cur.linesRemoved);
+    base.filesChanged = Math.min(base.filesChanged, cur.filesChanged);
+
+    const committed = countSessionLines(ledger);
+    session.evidence.linesAdded = committed.linesAdded + cur.linesAdded - base.linesAdded;
+    session.evidence.linesRemoved = committed.linesRemoved + cur.linesRemoved - base.linesRemoved;
+    session.evidence.filesChanged = committed.filesChanged + cur.filesChanged - base.filesChanged;
   }
 
   /**
@@ -947,12 +1022,15 @@ export class SessionTracker {
       return true;
     }
 
-    // "Created in this session" = committer timestamp after the session
-    // opened — minus a two-tick slack, so the commit that itself triggered
-    // the session (made just before the opening poll) still counts — AND
-    // not already accounted for by an earlier session's ledger today (a
-    // commit from a session closed moments ago falls inside the slack of
-    // the next one; the SHA-set check keeps it from being recounted).
+    // "Created in this session" = BOTH author and committer timestamps after
+    // the session opened — minus a two-tick slack, so the commit that itself
+    // triggered the session (made just before the opening poll) still counts
+    // — AND not already accounted for by an earlier session's ledger today
+    // (a commit from a session closed moments ago falls inside the slack of
+    // the next one; the SHA-set check keeps it from being recounted). A
+    // rebase pick, amend, reword or cherry-pick refreshes the committer
+    // timestamp but keeps the author timestamp: git moving an old commit
+    // around is never new work, lineage or not.
     const slackSeconds = this.config.session.diffPollSeconds * 2;
     const sessionStartTs = Date.parse(session.startedAt) / 1000 - slackSeconds;
     const priorShas = new Set<string>();
@@ -960,8 +1038,8 @@ export class SessionTracker {
       if (s === session || s.repo !== session.repo || !s.ledger) continue;
       for (const c of s.ledger.commits) priorShas.add(c.sha);
     }
-    const countsAsSession = (meta: { readonly sha: string; readonly committerTs: number }): boolean =>
-      meta.committerTs >= sessionStartTs && !priorShas.has(meta.sha);
+    const countsAsSession = (meta: { readonly sha: string; readonly authorTs: number; readonly committerTs: number }): boolean =>
+      meta.committerTs >= sessionStartTs && meta.authorTs >= sessionStartTs && !priorShas.has(meta.sha);
 
     applyLedgerUpdate(session.ledger, update, countsAsSession);
     session.evidence.commits = countSessionCommits(session.ledger);

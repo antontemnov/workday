@@ -7,6 +7,9 @@ import { GIT_BATCH_SEPARATOR, GIT_MAX_BUFFER_BYTES } from '../core/constants.js'
 
 const execAsync = promisify(exec);
 
+// `git show` header: sha | tree | parents | author email | author ts | committer ts
+const SHOW_FORMAT = '%H|%T|%P|%ae|%at|%ct';
+
 /**
  * Low-level git command executor.
  * Runs batched git calls and returns raw output split by sections.
@@ -20,8 +23,9 @@ export class GitClient {
 
   /**
    * Execute batched git command for a single repo.
-   * Always: branch name, current HEAD SHA, working-tree diff, untracked status,
-   * reflog, and the branch name again as the last section (see branchAfter).
+   * Always: branch name, current HEAD SHA, working-tree diff (vs index and
+   * vs HEAD), untracked status, reflog, and the branch name again as the
+   * last section (see branchAfter).
    * When baseSha is provided: also a diff and commit count vs that base — used
    * for PR-equivalent evidence stats on the open session. The caller passes the
    * fresh merge-base with the default branch here when available (rebase-stable),
@@ -42,6 +46,8 @@ export class GitClient {
       `git -C "${repoPath}" rev-parse HEAD`,
       `echo ${GIT_BATCH_SEPARATOR}`,
       `git -C "${repoPath}" diff --numstat`,
+      `echo ${GIT_BATCH_SEPARATOR}`,
+      `git -C "${repoPath}" diff HEAD --numstat`,
       `echo ${GIT_BATCH_SEPARATOR}`,
       `git -C "${repoPath}" status --porcelain`,
       `echo ${GIT_BATCH_SEPARATOR}`,
@@ -201,49 +207,77 @@ export class GitClient {
   }
 
   /**
-   * Batched commit metadata. Works for unreachable SHAs too (squashed-away
-   * commits stay in the object db until gc — reflog entries protect them),
-   * which is exactly what transition replay needs. SHAs whose objects are
-   * gone are silently omitted.
+   * Batched commit metadata with per-commit numstat (vs the first parent).
+   * Works for unreachable SHAs too (squashed-away commits stay in the
+   * object db until gc — reflog entries protect them), which is exactly
+   * what transition replay needs. SHAs whose objects are gone are silently
+   * omitted.
    */
   public async getCommitsMeta(repoPath: string, shas: readonly string[]): Promise<CommitMeta[]> {
     if (shas.length === 0) return [];
     const metas: CommitMeta[] = [];
+    const show = (refs: string): string =>
+      `git -C "${repoPath}" show --numstat --format="${SHOW_FORMAT}" ${refs}`;
     // Chunk to keep the command line comfortably short.
     for (let i = 0; i < shas.length; i += 50) {
       const chunk = shas.slice(i, i + 50);
       let stdout: string;
       try {
-        ({ stdout } = await execAsync(
-          `git -C "${repoPath}" show -s --format="%H|%T|%P|%ae|%at|%ct" ${chunk.join(' ')}`,
-          { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
-        ));
+        ({ stdout } = await execAsync(show(chunk.join(' ')), { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true }));
       } catch {
         // One bad SHA fails the whole batch — retry individually, skip the dead.
         stdout = '';
         for (const sha of chunk) {
           try {
-            const single = await execAsync(
-              `git -C "${repoPath}" show -s --format="%H|%T|%P|%ae|%at|%ct" ${sha}`,
-              { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true },
-            );
+            const single = await execAsync(show(sha), { maxBuffer: GIT_MAX_BUFFER_BYTES, windowsHide: true });
             stdout += single.stdout + '\n';
           } catch { /* object gone — skip */ }
         }
       }
-      for (const line of stdout.split('\n')) {
-        const parts = line.trim().split('|');
-        if (parts.length !== 6 || !/^[0-9a-f]{40}$/.test(parts[0])) continue;
-        metas.push({
+      metas.push(...GitClient.parseShowOutput(stdout));
+    }
+    return metas;
+  }
+
+  /** One header line per commit followed by its numstat lines (blank-separated). */
+  private static parseShowOutput(stdout: string): CommitMeta[] {
+    const metas: CommitMeta[] = [];
+    let head: Omit<CommitMeta, 'lines'> | null = null;
+    let added = 0;
+    let removed = 0;
+    let files = 0;
+    const flush = (): void => {
+      if (head !== null) {
+        metas.push({ ...head, lines: { linesAdded: added, linesRemoved: removed, filesChanged: files } });
+      }
+      head = null;
+      added = 0;
+      removed = 0;
+      files = 0;
+    };
+    for (const rawLine of stdout.split('\n')) {
+      const line = rawLine.replace(/\r$/, '');
+      const parts = line.trim().split('|');
+      if (parts.length === 6 && /^[0-9a-f]{40}$/.test(parts[0]) && /^[0-9a-f]{40}$/.test(parts[1])) {
+        flush();
+        head = {
           sha: parts[0],
           tree: parts[1],
           parentCount: parts[2] === '' ? 0 : parts[2].split(' ').length,
           authorEmail: parts[3],
           authorTs: parseInt(parts[4], 10),
           committerTs: parseInt(parts[5], 10),
-        });
+        };
+        continue;
+      }
+      const numstat = line.match(/^(\d+)\t(\d+)\t/);
+      if (numstat && head !== null) {
+        added += parseInt(numstat[1], 10);
+        removed += parseInt(numstat[2], 10);
+        files++;
       }
     }
+    flush();
     return metas;
   }
 
@@ -286,7 +320,7 @@ export class GitClient {
     // Windows echo may add trailing space: "---WORKDAY-SEP--- \n"
     const sections = normalized.split(new RegExp(GIT_BATCH_SEPARATOR + '\\s*\\n'));
 
-    let idx = 6; // fixed: branch, head, diff, status, reflog, untracked
+    let idx = 7; // fixed: branch, head, diff, diff vs HEAD, status, reflog, untracked
     const diffSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
     const commitsSinceBase = withBase ? (sections[idx++] ?? '').trim() : undefined;
     const branchAfter = (sections[idx++] ?? '').trim();
@@ -295,9 +329,10 @@ export class GitClient {
       branch: (sections[0] ?? '').trim(),
       currentHead: (sections[1] ?? '').trim(),
       diffNumstat: (sections[2] ?? '').trim(),
-      statusPorcelain: (sections[3] ?? '').trim(),
-      reflog: (sections[4] ?? '').trim(),
-      untrackedFiles: (sections[5] ?? '').trim(),
+      diffHeadNumstat: (sections[3] ?? '').trim(),
+      statusPorcelain: (sections[4] ?? '').trim(),
+      reflog: (sections[5] ?? '').trim(),
+      untrackedFiles: (sections[6] ?? '').trim(),
       diffSinceBase,
       commitsSinceBase,
       branchAfter,

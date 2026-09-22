@@ -17,15 +17,18 @@ export class SnapshotParser {
    * status --porcelain: "?? filename" for untracked files
    * churnFiles: built by churn-scanner from the evidence diff + untracked files
    * evidenceBase: ref the churn map is anchored at (merge-base / baseSha / null)
+   * confirmedUntracked: debounced untracked count from GitTracker; without it
+   * the raw `status --porcelain` count is used
    */
   public static parseSnapshot(
     raw: RawGitOutput,
     timestamp: number,
     churnFiles: ReadonlyMap<string, ChurnFile> = new Map(),
     evidenceBase: string | null = null,
+    confirmedUntracked?: number,
   ): GitSnapshot {
     const { added, removed, fileCount } = SnapshotParser.parseDiffNumstat(raw.diffNumstat).totals;
-    const untrackedCount = SnapshotParser.parseUntrackedCount(raw.statusPorcelain);
+    const untrackedCount = confirmedUntracked ?? SnapshotParser.parseUntrackedCount(raw.statusPorcelain);
 
     return {
       branch: raw.branch,
@@ -58,8 +61,7 @@ export class SnapshotParser {
    */
   public static computeDelta(previous: GitSnapshot | null, current: GitSnapshot): GitDelta {
     if (previous === null || previous.branch !== current.branch || previous.evidenceBase !== current.evidenceBase) {
-      // Baseline tick, no dynamics
-      return { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 };
+      return SnapshotParser.baselineDelta();
     }
 
     const addedDelta = current.trackedLines.added - previous.trackedLines.added;
@@ -71,6 +73,11 @@ export class SnapshotParser {
     const hasDynamics = magnitude > 0 || addedDelta !== 0 || removedDelta !== 0 || untrackedDelta !== 0;
 
     return { addedDelta, removedDelta, untrackedDelta, hasDynamics, magnitude };
+  }
+
+  /** The no-dynamics delta of a baseline tick: the current map becomes the reference. */
+  public static baselineDelta(): GitDelta {
+    return { addedDelta: 0, removedDelta: 0, untrackedDelta: 0, hasDynamics: false, magnitude: 0 };
   }
 
   private static computeChurnMagnitude(

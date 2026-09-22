@@ -278,13 +278,24 @@ export interface Session {
   // Informational — evidence is computed against the *fresh* merge-base
   // each tick, so rebases / upstream pulls can't inflate it.
   mergeBaseSha: string | null;
-  // Branch totals (diff vs merge-base) captured at session open, or
-  // inherited from a prior session on the same repo+task today. Evidence
-  // lines/files = current branch totals − this baseline; stable across
-  // rebases because both sides move together. Ratcheted down when totals
-  // drop below it (own work merged upstream / dropped). Null until the
-  // first merge-base tick.
+  // Fallback mode only (no commit ledger): branch totals (diff vs
+  // merge-base) captured at session open. Evidence lines/files = current
+  // branch totals − this baseline, ratcheted down when totals drop below
+  // it, restarted at every re-anchoring with the counters so far folded
+  // into evidenceCarry. Null until the first merge-base tick. In ledger
+  // mode the lines come from the ledger instead (see uncommittedBaseline).
   evidenceBaseline: EvidenceBaseline | null;
+  // Ledger mode: uncommitted diff vs HEAD the branch already carried when
+  // the session opened, ratcheted down as it gets committed or reverted.
+  // Line evidence = session commits' lines (ledger) + uncommitted beyond
+  // this. Null until the first ledger tick / in fallback mode.
+  uncommittedBaseline: EvidenceBaseline | null;
+  // Line evidence accumulated under earlier anchors of this session. Every
+  // re-anchoring (merge-base move, rebase, reset, own work merged upstream)
+  // folds the current counters in here and restarts the baseline at the new
+  // branch totals — upstream lines pulled in by a rebase never count, lines
+  // merged away never vanish. Null on old logs (= zero).
+  evidenceCarry: EvidenceBaseline | null;
   // Branch commit count (`rev-list merge-base..HEAD`) seen on the previous
   // tick. Fallback only (repos where the branch reflog is unavailable):
   // evidence.commits then accumulates only positive jumps of this counter.
@@ -423,6 +434,13 @@ export interface GitDelta {
 // identities. See docs/commit-accounting.md.
 
 /** Immutable metadata of a single commit, readable even for unreachable SHAs. */
+/** Line totals of a diff: added / removed / files touched. */
+export interface LineStats {
+  readonly linesAdded: number;
+  readonly linesRemoved: number;
+  readonly filesChanged: number;
+}
+
 export interface CommitMeta {
   readonly sha: string;
   readonly tree: string;
@@ -430,6 +448,7 @@ export interface CommitMeta {
   readonly authorEmail: string;
   readonly authorTs: number;    // unix seconds
   readonly committerTs: number; // unix seconds
+  readonly lines: LineStats;    // numstat vs the first parent
 }
 
 /** One branch-tip move taken from the branch reflog (old → new). */
@@ -460,6 +479,10 @@ export interface LedgerCommit {
   // Seeded pre-session commits and commits made while the daemon was down
   // are false — the counter is strictly bounded by the session's lifetime.
   readonly sessionCreated: boolean;
+  // Lines attributable to this session inside this commit: own numstat for
+  // a commit the session made (or amended / rebased), the sum over the
+  // absorbed chain for a squash, zero for pre-session and merge commits.
+  readonly sessionLines: LineStats;
   // Still exists: reachable from the branch tip or merged into the default
   // branch. Squashed/dropped/reset-away commits flip to false.
   live: boolean;
@@ -517,6 +540,8 @@ export interface RawGitOutput {
   readonly branch: string;
   readonly currentHead: string;
   readonly diffNumstat: string;
+  // `git diff HEAD --numstat` — worktree + index vs HEAD (uncommitted work).
+  readonly diffHeadNumstat: string;
   readonly statusPorcelain: string;
   readonly reflog: string;
   // `git ls-files --others --exclude-standard` — untracked files, one per line.
@@ -564,10 +589,24 @@ export interface PollResult {
   // Fresh `merge-base(HEAD, default branch)` for this tick. Null when no
   // default branch resolves.
   readonly mergeBaseSha: string | null;
+  // The churn map and evidence diff were re-anchored this tick: the branch
+  // changed, the merge-base moved, or git itself moved the tip (rebase,
+  // reset, merge, cherry-pick, pull — any non-commit reflog entry). Such a
+  // tick carries no dynamics and never seeds a baseline from the previous
+  // snapshot; an open session carries its line evidence across it.
+  readonly reanchored: boolean;
   // Previous tick's evidence snapshot (merge-base basis, same branch only —
   // null when the branch changed this tick or no prior merge-base tick
   // exists). Seeds a newborn candidate's baseline so the birth burst counts.
   readonly prevEvidenceSnapshot: EvidenceSnapshot | null;
+  // Uncommitted work: worktree + index vs HEAD. Anchor-free — a rebase moves
+  // HEAD but not the diff against it. Ledger-mode line evidence = session
+  // commits' lines + this beyond the session's uncommitted baseline.
+  readonly uncommitted: LineStats;
+  // Previous tick's uncommitted totals (same branch, not re-anchored) —
+  // seeds a newborn candidate's uncommitted baseline so the birth burst
+  // counts (A-3 for the ledger-mode line path).
+  readonly prevUncommitted: LineStats | null;
   // Commit-ledger input for this tick: seed / reflog transitions / resync.
   // Null when the branch reflog (or a merge-base) is unavailable — the
   // session then falls back to the positive-jump commit counter.
@@ -599,6 +638,12 @@ export interface RepoTracker {
   // Nulled on branch change — a baseline from another branch would count the
   // whole branch diff as today's work (the forbidden v0.4.3 bug class).
   prevEvidenceSnapshot: EvidenceSnapshot | null;
+  // Previous tick's uncommitted totals — A-3 seed for the ledger line path.
+  prevUncommitted: LineStats | null;
+  // Untracked paths listed on the previous tick. A path enters the churn map
+  // only when it is listed twice in a row — build artifacts that appear and
+  // vanish inside one tick never register as activity.
+  previousUntracked: ReadonlySet<string> | null;
 }
 
 // Live view of a configured repo sitting on a task branch with no session —

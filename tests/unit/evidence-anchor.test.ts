@@ -5,6 +5,10 @@
  * wholesale with nothing edited — that tick must not report dynamics.
  * The 2026-09-22 phantom: 117-file map → 2 files, 0m session born.
  *
+ * Also covers the two sibling rules: git moving the tip (reset, rebase,
+ * merge, cherry-pick, pull — any non-commit reflog entry) is a baseline
+ * tick, and an untracked path counts only once it survives two ticks.
+ *
  * Run: npx tsx tests/unit/evidence-anchor.test.ts
  */
 import assert from 'node:assert/strict';
@@ -110,6 +114,51 @@ await (async () => {
   check('an edit after the re-anchoring is reported normally', () => {
     assert.equal(edited.delta.hasDynamics, true);
     assert.ok(edited.delta.magnitude > 0, `magnitude = ${edited.delta.magnitude}`);
+  });
+
+  // ── git moving the tip is not work ────────────────────────────────────
+  git('commit -q -am "[ATL-1] more work"');
+  const committed = await tick();
+  check('a commit tick is activity, not a re-anchoring', () => {
+    assert.equal(committed.newReflogEntries.some(e => e.type === 'commit'), true, 'precondition: commit seen');
+    assert.equal(committed.reanchored, false);
+  });
+
+  git('reset -q --hard HEAD~1');
+  const reset = await tick();
+  check('reset --hard is a baseline tick — the shrunken map is not activity', () => {
+    assert.equal(reset.reanchored, true, 'a non-commit reflog entry re-anchors');
+    assert.equal(reset.delta.hasDynamics, false);
+    assert.equal(reset.delta.magnitude, 0);
+    assert.equal(reset.prevEvidenceSnapshot, null);
+  });
+
+  appendFileSync(join(REPO, 'work.txt'), 'line 5\n');
+  const afterReset = await tick();
+  check('an edit after the reset is reported normally', () => {
+    assert.equal(afterReset.delta.hasDynamics, true);
+  });
+
+  // ── untracked debounce ────────────────────────────────────────────────
+  writeFileSync(join(REPO, 'scratch.txt'), 'a\nb\nc\n');
+  const pending = await tick();
+  check('a new untracked file is pending on its first tick', () => {
+    assert.equal(pending.delta.hasDynamics, false);
+    assert.equal(pending.snapshot.churnFiles.has('scratch.txt'), false);
+  });
+  const confirmed = await tick();
+  check('…and counts whole once it survives a second tick', () => {
+    assert.equal(confirmed.delta.hasDynamics, true);
+    assert.equal(confirmed.delta.magnitude, 3);
+    assert.equal(confirmed.delta.untrackedDelta, 1);
+  });
+  writeFileSync(join(REPO, 'transient.tmp'), 'x\n');
+  const transientSeen = await tick();
+  rmSync(join(REPO, 'transient.tmp'));
+  const transientGone = await tick();
+  check('a build artifact that appears and vanishes within a tick never registers', () => {
+    assert.equal(transientSeen.delta.hasDynamics, false);
+    assert.equal(transientGone.delta.hasDynamics, false);
   });
 })().catch(err => {
   failed++;

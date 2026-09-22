@@ -278,7 +278,9 @@ difference of summed totals:
    they're listed via `git ls-files --others --exclude-standard` (added to
    the same git batch) and read from disk: their line count is their "added".
    An agent dumping a 300-line new file registers 300 line-equivalents
-   immediately. Binary and oversized (> `CHURN_MAX_FILE_BYTES` = 2 MB) files
+   on the tick after it appears — a path enters the map only when it is
+   listed on two consecutive ticks, so build artifacts that appear and
+   vanish inside one tick never register. Binary and oversized (> `CHURN_MAX_FILE_BYTES` = 2 MB) files
    are skipped; the whole scan is capped at `CHURN_MAX_FILES` = 100 files
    per tick.
 3. **Rewrite-in-place detection** — a file whose diff numbers are flat
@@ -306,12 +308,21 @@ swap the map wholesale without a single edit:
   branch's own few; every file "leaving" would count its last size (the
   2026-09-22 empty-session bug: 117 files → 2, a 0m session born and closed
   by the next tick).
+- **Git moving the tip** — any new HEAD-reflog entry that is not a commit:
+  rebase, reset, merge, cherry-pick, pull. A rebase along the release
+  branch a task branch was cut from leaves the merge-base with the default
+  branch where it was, yet pulls every new release commit into the
+  evidence diff (the 2026-09-22 ATL-8434 case: +626/−1668 upstream lines
+  and 7 re-timestamped commits credited to a session the rebase itself had
+  born). Commits stay activity (`hasCommit`).
 
-Both are **baseline ticks**: `hasDynamics = false`, `magnitude = 0`, the new
-map becomes the reference. The previous tick's evidence snapshot (A-3
-seeding of a newborn candidate's baseline) is dropped on both events as
-well — it is anchored elsewhere. An edit that lands on the same tick is
-picked up by the next one (the worktree keeps it). The `diff_dynamics`
+All three are **baseline ticks** (`PollResult.reanchored`): `hasDynamics =
+false`, `magnitude = 0`, the new map becomes the reference. The previous
+tick's evidence snapshot (A-3 seeding of a newborn candidate's baseline) is
+dropped on every re-anchoring as well — it is anchored elsewhere — and an
+open session carries its line counters across it (see
+`commit-accounting.md`). An edit that lands on the same tick is picked up
+by the next one (the worktree keeps it). The `diff_dynamics`
 signal in the daily log carries the `magnitude` behind it, so a flat
 `0/0/0` delta can be told apart at review time: real rewrite-in-place churn
 versus a re-anchoring that slipped through.
@@ -873,10 +884,12 @@ development. The volume cap (`VOLUME_GAIN_MAX` = 6) limits the stamina impact
 of any single burst to a few ticks.
 
 Evidence counters (commits / lines on the session) are rebase-stable by
-construction: they're computed against the *fresh* merge-base with the default
-branch each tick, with a baseline-delta per session (see session-tracker).
-Squash, amend, drop, and cherry-pick don't corrupt them either — commits are
-accumulated from positive jumps of the branch commit count only.
+construction: both come from the commit ledger (see `commit-accounting.md`)
+— a rebase pick inherits its original's membership and lines, upstream
+commits are never session-created, and uncommitted work is measured against
+HEAD, which a rebase moves without changing the diff against it. Squash,
+amend, drop and cherry-pick are replayed from the branch reflog one
+transition at a time.
 
 ### Session in Pending state
 

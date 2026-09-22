@@ -182,6 +182,7 @@ async function main(): Promise<void> {
 
   // Brand-new untracked file with hundreds of lines (invisible to git diff)
   writeFileSync(join(REPO, 'generated.ts'), 'new line\n'.repeat(240));
+  await tick(); // untracked debounce: a path counts once it survives a second tick
   const newFileTick = await tick();
   check('new untracked file counts whole into magnitude', () => {
     assert.ok((newFileTick?.delta.magnitude ?? 0) >= 240,

@@ -82,6 +82,9 @@ function poll(repoPath: string, task: string, dyn: boolean): PollResult {
     mergeBaseSha: null,
     prevEvidenceSnapshot: null,
     ledgerUpdate: null,
+    reanchored: false,
+    uncommitted: { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
+    prevUncommitted: null,
     foreignCheckouts: [],
   };
 }

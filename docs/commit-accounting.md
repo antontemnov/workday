@@ -8,9 +8,11 @@ Goal: each session's counters answer two questions *exactly*:
   session's work survived, inside a rewritten commit. Dropped / hard-reset
   commits stop counting; commits merged into the default branch keep
   counting.
-- **lines** — how many lines does the session's work amount to right now
-  (branch totals vs the merge-base, minus everything the branch already had
-  when the session opened).
+- **lines** — how many lines does the session's work amount to right now:
+  the lines of the session's live commits (exact per-commit numstat; a
+  squash inherits the session's share of the absorbed chain, an amend or
+  rebase pick takes its own numstat) plus the uncommitted diff vs HEAD
+  beyond what was already dirty when the session opened.
 
 Counters are **strictly session-scoped**. A session opens at zero, its
 counters freeze the moment it closes, and nothing done outside a session —
@@ -67,20 +69,44 @@ not-yet-absorbed ledger entries:
    amend / reword: git preserves the author timestamp through these, so the
    rewrite inherits the original's membership. Rebasing pre-session commits
    does *not* recount them.
-4. **No match** → genuinely new; counts when its committer timestamp falls
-   after the session opened (minus a two-tick slack, so the commit that
-   itself triggered the session counts) AND its SHA is not already recorded
-   in an earlier session's ledger today (a commit made moments before a
-   close/reopen falls inside the next session's slack — the SHA-set check
-   keeps it from being recounted). Merge commits never count.
+4. **No match** → genuinely new; counts when both its committer **and
+   author** timestamps fall after the session opened (minus a two-tick
+   slack, so the commit that itself triggered the session counts) AND its
+   SHA is not already recorded in an earlier session's ledger today (a
+   commit made moments before a close/reopen falls inside the next
+   session's slack — the SHA-set check keeps it from being recounted). A
+   rebase pick, amend, reword or cherry-pick refreshes the committer
+   timestamp but keeps the author timestamp — git moving an old commit
+   around is never new work, even with no lineage to match. Merge commits
+   never count.
 
 ### Seeding
 
 When a session opens, the ledger seeds from every commit between the
 merge-base and HEAD — all marked pre-session, so the counter starts at
-zero. The line baseline is captured from the branch totals on the first
-tick: lines the branch already had (including uncommitted work made before
-the session) are excluded.
+zero; the only exception is rule 4's author-and-committer test, which lets
+the commit that itself triggered the session count. Commits a rebase
+re-timestamped seconds before the session opened keep their old author
+date and stay pre-session (the 2026-09-22 case: a session born by the
+rebase itself started at 7 commits). The line baseline is captured from the
+branch totals on the first tick: lines the branch already had (including
+uncommitted work made before the session) are excluded.
+
+### Lines: anchor-free by construction
+
+In ledger mode the line counters never look at a merge-base: a rebase moves
+HEAD but not the uncommitted diff against it, upstream commits pulled in by
+a rebase onto a newer base are never session-created, a dropped session
+commit takes its lines with it, and own commits merged upstream stay live.
+The uncommitted baseline (dirty lines the branch carried at open) seeds
+from the previous tick so a birth burst counts, and ratchets down as those
+lines get committed or reverted.
+
+Without a ledger (fallback mode) the lines are branch totals vs the
+merge-base minus a baseline. There, when the merge-base moves, the branch
+changes or git moves the tip (`PollResult.reanchored`), the counters so far
+fold into a per-session carry (`evidenceCarry`) and the baseline restarts
+at the new totals — only edits move the counters.
 
 ### Degradation ladder
 
@@ -98,14 +124,15 @@ the session) are excluded.
   doesn't retro-decrement the closed session's frozen counter (each number
   is honest for its own window, but the sum can differ from what finally
   survives on the branch).
-- Line totals are branch-state based; when the branch is merged into the
-  default branch mid-session, branch totals collapse and the line counters
-  ratchet from a new base (the commit counter is unaffected — merged commits
-  stay counted).
+- Pre-session dirty lines that get committed inside the session become part
+  of a session commit's numstat and count from then on — the uncommitted
+  baseline excluded them only while they stayed uncommitted.
+- Fallback mode only: counters carried across a re-anchoring are frozen
+  numbers — a later revert of those lines can no longer decrement them.
 - A squash performed with extra edits staged (tree no longer equals any
   removed commit's tree) falls through to rule 4: the result counts as one
-  new session commit — the net count is still correct when the squashed
-  chain was the session's work.
+  new session commit when the chain's first commit was authored inside the
+  session (a squash keeps the first author date), and not at all otherwise.
 - `git reflog expire` or disabling reflogs removes the journal — the ledger
   then degrades as described above.
 

@@ -12,6 +12,9 @@ import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
 import { SnapshotParser } from '../../src/collectors/snapshot-parser.js';
 import type {
+  CommitMeta,
+  LedgerUpdate,
+  LineStats,
   AppConfig,
   PollResult,
   EvidenceSnapshot,
@@ -443,6 +446,10 @@ interface PollSpec {
   reflog?: ReflogEntry[];
   // Lazy sessions: the poll that births a session must carry activity.
   dyn?: boolean;
+  // GitTracker saw the branch / merge-base / tip move this tick.
+  reanchored?: boolean;
+  ledger?: LedgerUpdate | null;
+  uncommitted?: LineStats;
 }
 
 function poll(spec: PollSpec): PollResult {
@@ -465,8 +472,11 @@ function poll(spec: PollSpec): PollResult {
     evidenceSnapshot: spec.snap ?? null,
     evidenceBasis: spec.snap ? (spec.basis ?? 'merge_base') : null,
     mergeBaseSha: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
+    reanchored: spec.reanchored ?? false,
     prevEvidenceSnapshot: null,
-    ledgerUpdate: null,
+    uncommitted: spec.uncommitted ?? { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
+    prevUncommitted: null,
+    ledgerUpdate: spec.ledger ?? null,
     foreignCheckouts: [],
   };
 }
@@ -528,19 +538,22 @@ test('squash in Rider: commit count drop is ignored, next commit counts again', 
   assert.equal(openEvidence(tracker).commits, 3, 'commits after squash must keep counting');
 });
 
-test('own work merged upstream: baseline ratchets down, counters restart from zero', () => {
+test('own work merged upstream: evidence carries across the re-anchoring, new work adds on top', () => {
   const tracker = new SessionTracker(config);
   tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
   tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
-  // PR squash-merged into master; rebase leaves only fresh work on the branch
-  tracker.processPollResult(poll({ snap: snap(0, 20, 5, 3), mergeBase: 'mb3' }));
-  const ev = openEvidence(tracker);
-  assert.deepEqual([ev.linesAdded, ev.linesRemoved, ev.filesChanged], [0, 0, 0]);
+  // PR squash-merged into master; rebase leaves only fresh work on the branch —
+  // the merge-base moves and branch totals collapse, the session's lines do not
+  tracker.processPollResult(poll({ snap: snap(0, 20, 5, 3), mergeBase: 'mb3', reanchored: true }));
+  let ev = openEvidence(tracker);
+  assert.deepEqual([ev.linesAdded, ev.linesRemoved, ev.filesChanged], [50, 10, 2],
+    `evidence after merge = ${JSON.stringify(ev)}`);
   assert.equal(ev.commits, 2, 'already-counted commits stay');
-  // new work counts from the lowered baseline
+  // new work counts from the new baseline, on top of the carry
   tracker.processPollResult(poll({ snap: snap(1, 50, 5, 4), mergeBase: 'mb3' }));
-  assert.equal(openEvidence(tracker).linesAdded, 30);
-  assert.equal(openEvidence(tracker).commits, 3);
+  ev = openEvidence(tracker);
+  assert.deepEqual([ev.linesAdded, ev.linesRemoved, ev.filesChanged], [80, 10, 3]);
+  assert.equal(ev.commits, 3);
 });
 
 test('amend does not double-count (branch commit count unchanged)', () => {
@@ -588,6 +601,113 @@ test('fallback mode (no default branch): snapshot applied as-is, rebase re-ancho
   ev = openEvidence(tracker);
   // …so the legacy path re-anchors and zeroes instead of showing unreal numbers
   assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [0, 0, 0, 0]);
+});
+
+test('rebase along the release base (merge-base unchanged): upstream lines and commits never enter the counters', () => {
+  // 2026-09-22 ATL-8434: a rebase onto a newer release/13.0 pulled 626/1668
+  // upstream lines (release vs develop) and 7 re-timestamped commits into
+  // the branch totals — none of it is today's work.
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
+  tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
+  tracker.processPollResult(poll({
+    snap: snap(12, 900, 1700, 90),
+    reanchored: true,
+    head: 'head-rebased',
+    reflog: [{ ts: Date.now(), type: 'rebase', message: 'rebase (finish): returning to refs/heads/feature/dev/ATL-1' }],
+  }));
+  let ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [2, 50, 10, 2],
+    `evidence after rebase = ${JSON.stringify(ev)}`);
+  tracker.processPollResult(poll({ snap: snap(13, 910, 1700, 91) }));
+  ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved, ev.filesChanged], [3, 60, 10, 3],
+    `evidence after new work = ${JSON.stringify(ev)}`);
+});
+
+test('a merge-base move the tracker could not pair (session record differs) carries too', () => {
+  const tracker = new SessionTracker(config);
+  tracker.processPollResult(poll({ snap: snap(3, 100, 10, 5), dyn: true }));
+  tracker.processPollResult(poll({ snap: snap(5, 150, 20, 7) }));
+  tracker.processPollResult(poll({ snap: snap(9, 700, 300, 40), mergeBase: 'mb-moved' }));
+  const ev = openEvidence(tracker);
+  assert.deepEqual([ev.linesAdded, ev.linesRemoved, ev.filesChanged], [50, 10, 2]);
+});
+
+function commitMeta(sha: string, authorTs: number, committerTs: number, linesAdded = 10): CommitMeta {
+  return {
+    sha, tree: `tree-${sha}`, parentCount: 1, authorEmail: 'dev@example.com', authorTs, committerTs,
+    lines: { linesAdded, linesRemoved: 0, filesChanged: 1 },
+  };
+}
+
+test('ledger mode: a rebase that pulls upstream commits and re-timestamps own ones leaves lines and commits untouched', () => {
+  const tracker = new SessionTracker(config);
+  const nowSec = Math.floor(Date.now() / 1000);
+  tracker.processPollResult(poll({
+    snap: snap(0, 0, 0, 0), dyn: true,
+    ledger: { kind: 'seed', commits: [], pointer: { sha: 'p0', ts: nowSec - 100 } },
+  }));
+  tracker.processPollResult(poll({
+    snap: snap(1, 30, 0, 1),
+    ledger: { kind: 'transitions', transitions: [{ ts: nowSec - 50, removedShas: [], added: [commitMeta('own', nowSec - 50, nowSec - 50, 30)] }], pointer: { sha: 'own', ts: nowSec - 50 } },
+  }));
+  let ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded], [1, 30]);
+  // rebase onto a newer release base: own commit replayed (same author ts,
+  // fresh committer ts), 600 upstream lines enter the branch totals
+  tracker.processPollResult(poll({
+    snap: snap(3, 630, 400, 40), reanchored: true, head: 'head-rebased',
+    reflog: [{ ts: Date.now(), type: 'rebase', message: 'rebase (finish): returning to refs/heads/feature/dev/ATL-1' }],
+    ledger: { kind: 'transitions', transitions: [{ ts: nowSec, removedShas: ['own'], added: [
+      commitMeta('upstream-1', nowSec - 90_000, nowSec - 90_000, 600),
+      commitMeta('own-rebased', nowSec - 50, nowSec, 30),
+    ] }], pointer: { sha: 'own-rebased', ts: nowSec } },
+  }));
+  ev = openEvidence(tracker);
+  assert.deepEqual([ev.commits, ev.linesAdded, ev.linesRemoved], [1, 30, 0],
+    `evidence after rebase = ${JSON.stringify(ev)}`);
+  // uncommitted edits on top still count
+  tracker.processPollResult(poll({ snap: snap(3, 635, 400, 40), uncommitted: { linesAdded: 5, linesRemoved: 0, filesChanged: 1 } }));
+  assert.equal(openEvidence(tracker).linesAdded, 35);
+});
+
+test('ledger seed right after a rebase: re-timestamped old commits stay pre-session (author ts is old)', () => {
+  const tracker = new SessionTracker(config);
+  const nowSec = Math.floor(Date.now() / 1000);
+  tracker.processPollResult(poll({
+    snap: snap(3, 100, 10, 5),
+    dyn: true,
+    ledger: {
+      kind: 'seed',
+      commits: [
+        commitMeta('old-rebased-1', nowSec - 86_400, nowSec - 20), // yesterday's commit, replayed 20s ago
+        commitMeta('old-rebased-2', nowSec - 80_000, nowSec - 18),
+        commitMeta('fresh', nowSec - 15, nowSec - 15),            // the commit that just triggered the session
+      ],
+      pointer: { sha: 'fresh', ts: nowSec - 15 },
+    },
+  }));
+  assert.equal(openEvidence(tracker).commits, 1, 'only the freshly authored commit counts');
+});
+
+test('cherry-pick of an old commit during a session is not new work (author ts is old)', () => {
+  const tracker = new SessionTracker(config);
+  const nowSec = Math.floor(Date.now() / 1000);
+  tracker.processPollResult(poll({
+    snap: snap(0, 0, 0, 0), dyn: true,
+    ledger: { kind: 'seed', commits: [], pointer: { sha: 'p0', ts: nowSec - 100 } },
+  }));
+  tracker.processPollResult(poll({
+    snap: snap(1, 30, 0, 2),
+    ledger: { kind: 'transitions', transitions: [{ ts: nowSec, removedShas: [], added: [commitMeta('picked', nowSec - 90_000, nowSec)] }], pointer: { sha: 'picked', ts: nowSec } },
+  }));
+  assert.equal(openEvidence(tracker).commits, 0, 'cherry-picked old commit must not count');
+  tracker.processPollResult(poll({
+    snap: snap(2, 60, 0, 3),
+    ledger: { kind: 'transitions', transitions: [{ ts: nowSec + 1, removedShas: [], added: [commitMeta('new', nowSec + 1, nowSec + 1)] }], pointer: { sha: 'new', ts: nowSec + 1 } },
+  }));
+  assert.equal(openEvidence(tracker).commits, 1, 'a freshly authored commit counts');
 });
 
 // ─── Summary ─────────────────────────────────────────────────────────────

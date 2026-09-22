@@ -108,6 +108,9 @@ function poll(spec: PollSpec = {}): PollResult {
     mergeBaseSha: spec.mergeBase !== undefined ? spec.mergeBase : 'mb1',
     prevEvidenceSnapshot: spec.prevSnap ?? null,
     ledgerUpdate: null,
+    reanchored: false,
+    uncommitted: { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
+    prevUncommitted: null,
     foreignCheckouts: [],
   };
 }

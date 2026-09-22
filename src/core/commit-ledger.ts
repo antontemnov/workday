@@ -4,7 +4,22 @@ import type {
   CommitMeta,
   LedgerCommit,
   LedgerUpdate,
+  LineStats,
 } from './types.js';
+
+const ZERO_LINES: LineStats = { linesAdded: 0, linesRemoved: 0, filesChanged: 0 };
+
+function sumLines(items: readonly LineStats[]): LineStats {
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  let filesChanged = 0;
+  for (const item of items) {
+    linesAdded += item.linesAdded;
+    linesRemoved += item.linesRemoved;
+    filesChanged += item.filesChanged;
+  }
+  return { linesAdded, linesRemoved, filesChanged };
+}
 
 /**
  * Commit ledger — exact accounting of "how many commits did this session
@@ -33,8 +48,10 @@ import type {
  *      commit inherits the original's membership. Rebasing pre-session
  *      commits does NOT count them (committer ts is fresh but the author
  *      identity says "old").
- *   3. No match             → genuinely new commit; counts when its
- *      committer timestamp falls after the session started (`isSessionTs`).
+ *   3. No match             → genuinely new commit; counts when both its
+ *      author and committer timestamps fall after the session started
+ *      (`countsAsSession`) — a cherry-pick or a rebase pick with no lineage
+ *      keeps its old author timestamp and stays out.
  *
  * Commits merged into the default branch never appear as "removed" (the
  * collector excludes ^defaultRef), so merged work stays counted — it is
@@ -51,11 +68,22 @@ export function countSessionCommits(state: CommitLedgerState): number {
 }
 
 /**
+ * Lines the session's live commits amount to. Anchor-free by construction:
+ * a rebase pick carries its own numstat, a squash the sum over the absorbed
+ * chain, upstream commits are never session-created, and a dropped session
+ * commit takes its lines with it.
+ */
+export function countSessionLines(state: CommitLedgerState): LineStats {
+  return sumLines(state.commits.filter(c => c.live && c.sessionCreated).map(c => c.sessionLines));
+}
+
+/**
  * Apply one poll's ledger update. `countsAsSession(meta)` decides whether an
- * unmatched commit was created by this session — typically: committer
- * timestamp after the session opened (minus a small slack, so the commit
- * that itself triggered the session counts) and not already accounted for
- * by an earlier session's ledger.
+ * unmatched commit was created by this session — typically: author AND
+ * committer timestamps after the session opened (minus a small slack, so
+ * the commit that itself triggered the session counts; a rebase refreshes
+ * only the committer timestamp) and not already accounted for by an earlier
+ * session's ledger.
  */
 export function applyLedgerUpdate(
   state: CommitLedgerState,
@@ -136,7 +164,10 @@ function applyTransition(
       const chain = pool.filter(c => c.removedAtSeq === treeMatch.removedAtSeq);
       const inherited = chain.some(c => c.sessionCreated);
       for (const absorbed of chain) absorbed.absorbedBy = meta.sha;
-      state.commits.push(newLedgerCommit(meta, inherited));
+      // The squash's own numstat spans the whole chain, pre-session parts
+      // included — only the session's share of the chain is inherited.
+      const inheritedLines = sumLines(chain.filter(c => c.sessionCreated).map(c => c.sessionLines));
+      state.commits.push(newLedgerCommit(meta, inherited, inheritedLines));
       continue;
     }
 
@@ -193,7 +224,11 @@ function findCommit(state: CommitLedgerState, sha: string): LedgerCommit | undef
   return state.commits.find(c => c.sha === sha);
 }
 
-function newLedgerCommit(meta: CommitMeta, sessionCreated: boolean): LedgerCommit {
+function newLedgerCommit(
+  meta: CommitMeta,
+  sessionCreated: boolean,
+  sessionLines: LineStats = sessionCreated ? meta.lines : ZERO_LINES,
+): LedgerCommit {
   return {
     sha: meta.sha,
     tree: meta.tree,
@@ -201,6 +236,7 @@ function newLedgerCommit(meta: CommitMeta, sessionCreated: boolean): LedgerCommi
     authorTs: meta.authorTs,
     committerTs: meta.committerTs,
     sessionCreated,
+    sessionLines: sessionCreated ? sessionLines : ZERO_LINES,
     live: true,
     removedAtSeq: null,
     absorbedBy: null,

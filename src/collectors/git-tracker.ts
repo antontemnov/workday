@@ -11,6 +11,7 @@ import type {
   ForeignCheckout,
   LedgerQuery,
   LedgerUpdate,
+  LineStats,
 } from '../core/types.js';
 import { buildTaskPattern, extractForeignTask, extractTask, getConfiguredDefaultBranchName } from '../core/config.js';
 import { GitClient } from './git-client.js';
@@ -180,28 +181,42 @@ export class GitTracker {
 
     const state = this.getOrCreateRepoState(repoPath);
 
+    // Parse reflog, filter to new entries only
+    const allEntries = this.reflogParser.parseEntries(raw.reflog);
+    const newEntries = this.filterNewReflogEntries(allEntries, state);
+
     // Churn sources: per-file evidence diff (sees committed + staged +
     // worktree; falls back to the plain worktree diff when no base yet)
     // and untracked files (invisible to any git diff — read from disk).
+    // Untracked paths are debounced: a path counts only when the previous
+    // tick listed it too, so build artifacts that appear and vanish inside
+    // one tick never register. The first tick takes them all — it is a
+    // baseline tick anyway.
     const evidenceDiff = raw.diffSinceBase !== undefined
       ? SnapshotParser.parseDiffNumstatFiles(raw.diffSinceBase)
       : null;
     const churnSource = evidenceDiff ?? SnapshotParser.parseDiffNumstatFiles(raw.diffNumstat);
     const untrackedPaths = SnapshotParser.parseUntrackedList(raw.untrackedFiles);
+    const previousUntracked = state.previousUntracked;
+    const confirmedUntracked = previousUntracked === null
+      ? untrackedPaths
+      : untrackedPaths.filter(path => previousUntracked.has(path));
     const churnFiles = await buildChurnFiles(
       repoPath,
       churnSource.files,
-      untrackedPaths,
+      confirmedUntracked,
       state.previousSnapshot?.churnFiles ?? null,
     );
 
-    // Parse snapshot and compute delta
-    const snapshot = SnapshotParser.parseSnapshot(raw, now, churnFiles, evidenceBase ?? null);
-    const delta = SnapshotParser.computeDelta(state.previousSnapshot, snapshot);
-
-    // Parse reflog, filter to new entries only
-    const allEntries = this.reflogParser.parseEntries(raw.reflog);
-    const newEntries = this.filterNewReflogEntries(allEntries, state);
+    // Parse snapshot and compute delta. Git moving the tip — rebase, reset,
+    // merge, cherry-pick, pull: any non-commit reflog entry — re-anchors the
+    // churn map exactly like a checkout or a merge-base move does. Such a
+    // tick is a baseline tick, not activity; commits stay activity.
+    const snapshot = SnapshotParser.parseSnapshot(raw, now, churnFiles, evidenceBase ?? null, confirmedUntracked.length);
+    const gitOps = newEntries.filter(e => e.type !== 'commit');
+    const delta = gitOps.length > 0
+      ? SnapshotParser.baselineDelta()
+      : SnapshotParser.computeDelta(state.previousSnapshot, snapshot);
 
     // Review-suggestion signal: checkouts onto colleague ticket branches.
     // Scanned over ALL entries every tick (not only new) — the daily-log
@@ -217,22 +232,39 @@ export class GitTracker {
       }
     }
 
-    // Branch-guard for prev-snapshot seeding (A-3): a snapshot taken on
-    // another branch must never seed a newborn candidate's baseline.
+    // Re-anchoring guard for prev-snapshot seeding (A-3, generalized): a
+    // snapshot taken on another branch, against another merge-base (a fetch
+    // let the default branch absorb this branch's ancestry) or before git
+    // moved the tip must never seed a newborn candidate's baseline — the
+    // difference would be counted as today's work.
     const branchChanged = state.currentBranch !== null && state.currentBranch !== raw.branch;
-    // Anchor-guard: a fetch that lets the default branch absorb this branch's
-    // ancestry moves the merge-base — evidence diff and churn map shrink
-    // wholesale with nothing edited. computeDelta already made this a
-    // baseline tick; the previous evidence snapshot is anchored elsewhere too.
     const previousAnchor = state.previousSnapshot === null ? undefined : state.previousSnapshot.evidenceBase;
     const anchorChanged = !branchChanged && previousAnchor !== undefined && previousAnchor !== snapshot.evidenceBase;
     if (anchorChanged) {
       console.log(`[GitTracker] ${basename(repoPath)}: evidence anchor moved ${shortRef(previousAnchor)} → ${shortRef(snapshot.evidenceBase)}, baseline tick`);
     }
-    const prevEvidenceSnapshot = branchChanged || anchorChanged ? null : state.prevEvidenceSnapshot;
+    if (gitOps.length > 0) {
+      const kinds = [...new Set(gitOps.map(e => e.type === 'other' ? e.message.split(':')[0] : e.type))].join(', ');
+      console.log(`[GitTracker] ${basename(repoPath)}: git moved the tip (${kinds}), baseline tick`);
+    }
+    const reanchored = branchChanged || anchorChanged || gitOps.length > 0;
+    const prevEvidenceSnapshot = reanchored ? null : state.prevEvidenceSnapshot;
+
+    // Uncommitted work (worktree + index vs HEAD) — the anchor-free half of
+    // the ledger-mode line evidence; the previous tick's totals seed a
+    // newborn candidate's baseline (A-3) unless this tick re-anchored.
+    const headTotals = SnapshotParser.parseDiffNumstatFiles(raw.diffHeadNumstat).totals;
+    const uncommitted: LineStats = {
+      linesAdded: headTotals.added,
+      linesRemoved: headTotals.removed,
+      filesChanged: headTotals.fileCount,
+    };
+    const prevUncommitted = reanchored ? null : state.prevUncommitted;
 
     // Update stored state
     state.previousSnapshot = snapshot;
+    state.previousUntracked = new Set(untrackedPaths);
+    state.prevUncommitted = uncommitted;
     state.currentBranch = raw.branch;
     state.currentTask = task;
     // First poll: set baseline from all entries so next poll can filter correctly
@@ -284,7 +316,10 @@ export class GitTracker {
       evidenceSnapshot,
       evidenceBasis,
       mergeBaseSha,
+      reanchored,
       prevEvidenceSnapshot,
+      uncommitted,
+      prevUncommitted,
       ledgerUpdate,
       foreignCheckouts,
     };
@@ -356,6 +391,8 @@ export class GitTracker {
         previousSnapshot: null,
         lastReflogTs: 0,
         prevEvidenceSnapshot: null,
+        prevUncommitted: null,
+        previousUntracked: null,
       };
       this.repoStates.set(repoPath, state);
     }

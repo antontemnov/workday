@@ -271,6 +271,7 @@ async function main(): Promise<void> {
   // Untracked scratch file = genuine activity that births the session while
   // staying invisible to the evidence diff (evidence must seed at zero).
   writeFileSync(join(REPO, 'scratch.txt'), 'wip\n');
+  await tick(); // untracked debounce: the file is pending on its first tick
   await tick(); // session born, ledger seeds with the pre-session commit
   rmSync(join(REPO, 'scratch.txt'));
 
