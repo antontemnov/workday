@@ -3,6 +3,8 @@
 // owns the drag, the timesheets drawers read the same layout so both tables
 // look identical.
 
+import { readPref, writePref } from '../../services/tray-prefs.store';
+
 export interface LoggedCols {
   readonly name: number;
   readonly type: number;
@@ -15,7 +17,7 @@ const COL_STORAGE_KEY = 'workday.logged.cols';
 
 export function loadLoggedCols(): LoggedCols {
   try {
-    const raw = localStorage.getItem(COL_STORAGE_KEY);
+    const raw = readPref(COL_STORAGE_KEY);
     if (!raw) return LOGGED_COL_DEFAULT;
     const v = JSON.parse(raw) as { name?: number; type?: number };
     return {
@@ -28,7 +30,5 @@ export function loadLoggedCols(): LoggedCols {
 }
 
 export function persistLoggedCols(cols: LoggedCols): void {
-  try {
-    localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(cols));
-  } catch { /* storage unavailable — keep the in-memory widths */ }
+  writePref(COL_STORAGE_KEY, JSON.stringify(cols));
 }

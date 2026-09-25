@@ -230,7 +230,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
 
   // ─── Feed sort — the window's own menu on free content space ────────────
 
-  // A tray-side display preference (localStorage): the daemon knows nothing
+  // A tray-side display preference (tray prefs file): the daemon knows nothing
   // about presentation. Default and fallback — newest first.
   feedSort: FeedSortMode = loadFeedSort();
 

@@ -239,6 +239,43 @@ fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     }
 }
 
+/// Tray display preferences as one flat JSON object in the tray's own config
+/// dir. Not WebView2 localStorage: one torn record in its LevelDB log makes
+/// Chromium drop every later write on each launch, silently.
+fn prefs_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join("prefs.json"))
+        .map_err(|e| e.to_string())
+}
+
+/// None = no file yet (first run, or migration from localStorage pending).
+#[tauri::command]
+async fn load_prefs(app: AppHandle) -> Result<Option<String>, String> {
+    let path = prefs_path(&app)?;
+    match fs::read_to_string(&path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("read {}: {}", path.display(), e)),
+    }
+}
+
+/// tmp + fsync + rename: a crash mid-write leaves the previous file intact.
+#[tauri::command]
+async fn save_prefs(app: AppHandle, json: String) -> Result<(), String> {
+    use std::io::Write;
+    let path = prefs_path(&app)?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    file.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    drop(file);
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
 /// Physical tray icon size: Windows draws the notification area at 16 logical
 /// px scaled by the primary monitor's DPI. Rendering the vector at exactly
 /// that size skips the shell's blurry downscale.
@@ -349,7 +386,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart-launch"]),
         ))
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, daemon_installed, node_version, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, daemon_installed, node_version, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, load_prefs, save_prefs, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

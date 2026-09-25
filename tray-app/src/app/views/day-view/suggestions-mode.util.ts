@@ -5,6 +5,8 @@
 // not-yet-started meetings of today too (reads carry includeFuture). Same
 // storage idiom as the feed sort.
 
+import { readPref, writePref } from '../../services/tray-prefs.store';
+
 export type SuggestionsMode = 'hidden' | 'started' | 'all';
 
 export const SUGGESTIONS_MODES: readonly SuggestionsMode[] = ['hidden', 'started', 'all'];
@@ -13,16 +15,10 @@ export const SUGGESTIONS_MODE_DEFAULT: SuggestionsMode = 'started';
 const MODE_STORAGE_KEY = 'workday.suggestions.mode';
 
 export function loadSuggestionsMode(): SuggestionsMode {
-  try {
-    const stored = localStorage.getItem(MODE_STORAGE_KEY) as SuggestionsMode | null;
-    return stored !== null && SUGGESTIONS_MODES.includes(stored) ? stored : SUGGESTIONS_MODE_DEFAULT;
-  } catch {
-    return SUGGESTIONS_MODE_DEFAULT;
-  }
+  const stored = readPref(MODE_STORAGE_KEY) as SuggestionsMode | null;
+  return stored !== null && SUGGESTIONS_MODES.includes(stored) ? stored : SUGGESTIONS_MODE_DEFAULT;
 }
 
 export function persistSuggestionsMode(mode: SuggestionsMode): void {
-  try {
-    localStorage.setItem(MODE_STORAGE_KEY, mode);
-  } catch { /* storage unavailable — keep the in-memory mode */ }
+  writePref(MODE_STORAGE_KEY, mode);
 }
