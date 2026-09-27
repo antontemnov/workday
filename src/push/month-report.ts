@@ -1,4 +1,6 @@
 import { readDailyLog, computeTotalClaimedMs } from '../core/daily-log.js';
+import { computeWorkingDate } from '../core/config.js';
+import { toStoredSessionDetail } from '../core/session-detail.js';
 import { DayStatus } from '../core/types.js';
 import { MonthDayStatus } from '../core/types.js';
 import type {
@@ -10,10 +12,16 @@ import type {
   TaskDayReport,
   TempoWorklog,
 } from '../core/types.js';
-import { buildReport } from './report-builder.js';
+import { buildReport, clampPastOpenSession } from './report-builder.js';
 import { loadPushLog, loadTombstones } from './push-log.js';
 import { loadMonthSnapshot } from './tempo-snapshot.js';
 import { computeDayDrift } from './reconcile.js';
+import { buildMonthModel } from './sync-state.js';
+
+export interface MonthBuildOptions {
+  // Today, while a session is open: the day reads as tracking.
+  readonly trackingDate?: string | null;
+}
 
 /** First/last calendar day of a month as YYYY-MM-DD. */
 export function getMonthRange(year: number, month: number): { from: string; to: string } {
@@ -70,18 +78,26 @@ function toMonthDayTask(entry: TaskDayReport): MonthDayTask {
  * Tempo calls, works offline. The caller is responsible for flushing today's
  * live log to disk first when the month includes today.
  */
-export function buildMonthResponse(year: number, month: number, config: AppConfig): MonthResponse {
+export function buildMonthResponse(year: number, month: number, config: AppConfig, options: MonthBuildOptions = {}): MonthResponse {
   const { from, to } = getMonthRange(year, month);
 
+  const report = buildReport(from, to, config);
   const tasksByDate = new Map<string, MonthDayTask[]>();
   const entriesByDate = new Map<string, TaskDayReport[]>();
-  for (const entry of buildReport(from, to, config)) {
+  for (const entry of report) {
     const list = tasksByDate.get(entry.date) ?? [];
     list.push(toMonthDayTask(entry));
     tasksByDate.set(entry.date, list);
     const raw = entriesByDate.get(entry.date) ?? [];
     raw.push(entry);
     entriesByDate.set(entry.date, raw);
+  }
+
+  const lastDay = parseInt(to.slice(8), 10);
+  const logs: { date: string; log: DailyLog | null }[] = [];
+  for (let dayNum = 1; dayNum <= lastDay; dayNum++) {
+    const date = `${from.slice(0, 8)}${String(dayNum).padStart(2, '0')}`;
+    logs.push({ date, log: readDailyLog(date) });
   }
 
   // With a Tempo snapshot on disk the statuses come from the actual diff;
@@ -92,15 +108,13 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
     : null;
   const pushLog = snapshot ? loadPushLog() : {};
   const tombstones = snapshot ? loadTombstones() : [];
+  const model = buildMonthModel({ days: logs, report, pushLog, tombstones, snapshot, trackingDate: options.trackingDate ?? null });
 
-  // Foreign worklogs — in Tempo but not ours (unowned and not pending
-  // delete): read-only mirror rows, counted into the day totals. They never
-  // affect day statuses or the push.
+  // Foreign worklogs — in Tempo, owned by nobody and claimed by no line (an
+  // identity twin or a ticket move is ours): read-only mirror rows, counted
+  // into the day totals. They never affect day statuses or the push.
   if (snapshot) {
-    const ownedIds = new Set(Object.values(pushLog).map(e => e.tempoWorklogId));
-    const tombstoneIds = new Set(tombstones.map(t => t.tempoWorklogId));
-    for (const wl of snapshot.worklogs) {
-      if (ownedIds.has(wl.tempoWorklogId) || tombstoneIds.has(wl.tempoWorklogId)) continue;
+    for (const wl of model.foreign) {
       const list = tasksByDate.get(wl.startDate) ?? [];
       list.push({
         task: snapshot.issueKeys?.[String(wl.issueId)] ?? `issue #${wl.issueId}`,
@@ -125,11 +139,9 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
     pushedDays: 0,
   };
   let lastPushAt: string | null = null;
+  const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
 
-  const lastDay = parseInt(to.slice(8), 10);
-  for (let dayNum = 1; dayNum <= lastDay; dayNum++) {
-    const date = `${from.slice(0, 8)}${String(dayNum).padStart(2, '0')}`;
-    const log = readDailyLog(date);
+  for (const { date, log } of logs) {
     const tasks = tasksByDate.get(date) ?? [];
     const claimedMs = log ? computeTotalClaimedMs(log) : 0;
     const reportedSeconds = tasks.reduce((sum, t) => sum + t.seconds, 0);
@@ -158,6 +170,12 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
       tasks,
       pushedAt: log?.pushedAt ?? null,
       ...(drift !== null ? { drift } : {}),
+      syncState: model.days.get(date)!.state,
+      conflicts: model.days.get(date)!.conflicts,
+      // Past days end an unclosed session where it was last seen — the same
+      // clamp the report applies, so the card's sums match the push lines.
+      sessions: (log?.sessions ?? []).map(s => toStoredSessionDetail(clampPastOpenSession(s, date < today))),
+      entries: log?.manualEntries ?? [],
     });
 
     totals.claimedMs += claimedMs;
@@ -171,5 +189,9 @@ export function buildMonthResponse(year: number, month: number, config: AppConfi
     }
   }
 
-  return { year, month, from, to, days, totals, lastPushAt, syncedAt: snapshot?.fetchedAt ?? null };
+  return {
+    year, month, from, to, days, totals, lastPushAt,
+    syncedAt: snapshot?.fetchedAt ?? null,
+    roundingMinutes: config.report.roundingMinutes,
+  };
 }

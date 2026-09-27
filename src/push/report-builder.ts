@@ -43,7 +43,7 @@ export function getDefaultToDate(config: AppConfig): string {
  * its open pause closed at lastSeenAt). Today's live sessions still count
  * to now.
  */
-function clampPastOpenSession(session: Session, isPastDay: boolean): Session {
+export function clampPastOpenSession(session: Session, isPastDay: boolean): Session {
   if (!isPastDay || session.closedBy !== null) return session;
   return {
     ...session,

@@ -16,6 +16,7 @@ import {
   resolveManualEntryTarget,
   listAvailableDates,
 } from './core/daily-log.js';
+import { toStoredSessionDetail } from './core/session-detail.js';
 import { resolveActivityTypes } from './push/activity-types.js';
 import {
   addEntryOnDate,
@@ -716,14 +717,7 @@ export class HttpServer {
     const tracker = this.deps.sessionTracker;
     const log = tracker.getDailyLog();
     const config = this.deps.config;
-
-    const toDetail = (s: Session): SessionDetail => ({
-      ...this.toSessionSummary(s, tracker),
-      closedBy: s.closedBy,
-      evidence: s.evidence,
-      pauseCount: s.pauses.length,
-      totalPauseDurationMs: computeTotalPauseDuration(s),
-    });
+    const toDetail = (s: Session): SessionDetail => this.toLiveSessionDetail(s);
 
     // Live view: real sessions (log order) → candidates → watching cards.
     // Totals below are computed from log.sessions only — synthetics and
@@ -755,6 +749,17 @@ export class HttpServer {
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
         issueSummaries: this.buildIssueSummaries(log),
       },
+    };
+  }
+
+  // A session of today's live log, with the tracker's live fields.
+  private toLiveSessionDetail(s: Session): SessionDetail {
+    return {
+      ...this.toSessionSummary(s, this.deps.sessionTracker),
+      closedBy: s.closedBy,
+      evidence: s.evidence,
+      pauseCount: s.pauses.length,
+      totalPauseDurationMs: computeTotalPauseDuration(s),
     };
   }
 
@@ -1607,28 +1612,7 @@ export class HttpServer {
       return { ok: false, error: `No data for ${date}` };
     }
 
-    const sessions: SessionDetail[] = log.sessions.map(s => ({
-      id: s.id,
-      repo: s.repo,
-      task: s.task,
-      branch: s.branch,
-      state: s.state,
-      startedAt: s.startedAt,
-      activatedAt: s.activatedAt,
-      lastSeenAt: s.lastSeenAt,
-      paused: false,
-      pauseSource: null,
-      effectiveDurationMs: computeEffectiveDuration(s),
-      score: 0,
-      normalizedScore: 0,
-      pauseEtaMs: null,
-      isLeader: false,
-      sensitivity: SensitivityLevel.Normal,
-      closedBy: s.closedBy,
-      evidence: s.evidence,
-      pauseCount: s.pauses.length,
-      totalPauseDurationMs: computeTotalPauseDuration(s),
-    }));
+    const sessions: SessionDetail[] = log.sessions.map(toStoredSessionDetail);
 
     const totalEffectiveMs = log.sessions.reduce(
       (sum, s) => sum + computeEffectiveDuration(s), 0,
@@ -1681,16 +1665,25 @@ export class HttpServer {
     const { year, month } = parsed;
 
     // Today's log lives in memory — flush so the disk aggregate sees it.
+    const today = this.deps.getCurrentDate();
     const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
-    if (this.deps.getCurrentDate().startsWith(monthPrefix)) {
-      this.deps.sessionTracker.flush();
-    }
-    const data = buildMonthResponse(year, month, this.deps.config);
+    const tracker = this.deps.sessionTracker;
+    const holdsToday = today.startsWith(monthPrefix);
+    if (holdsToday) tracker.flush();
+    const tracking = holdsToday && tracker.getOpenSessions().length > 0;
+    const built = buildMonthResponse(year, month, this.deps.config, { trackingDate: tracking ? today : null });
+    // Today's card is a live snapshot: sessions with the tracker's fields.
+    const data = holdsToday
+      ? { ...built, days: built.days.map(d => d.date === today
+        ? { ...d, sessions: tracker.getDailyLog().sessions.map(s => this.toLiveSessionDetail(s)) }
+        : d) }
+      : built;
     // Ticket names for the drawer rows — real issue keys only (foreign lines
     // can carry an "issue #123" placeholder when the key isn't cached yet).
-    const keys = data.days
-      .flatMap(d => d.tasks.map(t => t.task))
-      .filter(t => /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t));
+    const keys = [
+      ...data.days.flatMap(d => d.tasks.map(t => t.task)),
+      ...data.days.flatMap(d => d.conflicts.map(c => c.tempo?.task ?? '')),
+    ].filter(t => /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t));
     return { ok: true, data: { ...data, issueSummaries: this.cachedSummariesFor(keys) } };
   }
 

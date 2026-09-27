@@ -11,7 +11,7 @@ import { createEmptyLog, writeDailyLog, readDailyLog } from '../../src/core/dail
 import { buildMonthResponse, getMonthRange, parseYearMonth } from '../../src/push/month-report.js';
 import { savePushLog, saveTombstones } from '../../src/push/push-log.js';
 import { saveMonthSnapshot } from '../../src/push/tempo-snapshot.js';
-import { DayStatus, MonthDayStatus, SensitivityLevel } from '../../src/core/types.js';
+import { ConflictField, ConflictKind, DayStatus, MonthDayStatus, MonthSyncState, SensitivityLevel } from '../../src/core/types.js';
 import type { AppConfig, DailyLog, ManualEntry, TempoWorklog } from '../../src/core/types.js';
 
 let passed = 0;
@@ -300,6 +300,93 @@ test('unresolved issue id falls back to issue #id', () => {
   assert.equal(day.tasks.length, 1);
   assert.equal(day.tasks[0].kind, 'foreign');
   assert.equal(day.tasks[0].task, 'issue #99');
+});
+
+console.log('');
+console.log('Month report — timesheets v2 day words');
+
+test('no snapshot: words from the pushed flag', () => {
+  assert.equal(byDate.get('2026-06-01')!.syncState, MonthSyncState.None);
+  assert.equal(byDate.get('2026-06-02')!.syncState, MonthSyncState.Unpushed);
+  assert.equal(byDate.get('2026-06-03')!.syncState, MonthSyncState.Pushed);
+  assert.equal(byDate.get('2026-06-04')!.syncState, MonthSyncState.Unpushed);
+});
+
+test('the day card material: entries, sessions, rounding', () => {
+  const day = byDate.get('2026-06-02')!;
+  assert.equal(day.entries.length, 2);
+  assert.deepEqual(day.sessions, []);
+  assert.deepEqual(day.conflicts, []);
+  assert.equal(month.roundingMinutes, 15);
+});
+
+test('snapshot: parity with a foreign row → pushed', () => {
+  assert.equal(julyByDate.get('2026-07-01')!.syncState, MonthSyncState.Pushed);
+  assert.equal(julyByDate.get('2026-07-02')!.syncState, MonthSyncState.Pushed);
+});
+
+test('snapshot: changed in Tempo only → conflict naming the time', () => {
+  const day = julyByDate.get('2026-07-03')!;
+  assert.equal(day.syncState, MonthSyncState.Conflict);
+  assert.equal(day.conflicts.length, 1);
+  assert.equal(day.conflicts[0].entryId, 'm3');
+  assert.equal(day.conflicts[0].kind, ConflictKind.Edited);
+  assert.deepEqual(day.conflicts[0].fields, [ConflictField.Time]);
+  assert.equal(day.conflicts[0].tempo?.seconds, 7200);
+  assert.equal(day.status, MonthDayStatus.Outdated); // the old word stays for older trays
+});
+
+test('snapshot: never pushed / alive tombstone → unpushed; foreign only → pushed', () => {
+  assert.equal(julyByDate.get('2026-07-04')!.syncState, MonthSyncState.Unpushed);
+  assert.equal(julyByDate.get('2026-07-05')!.syncState, MonthSyncState.Unpushed);
+  assert.equal(julyByDate.get('2026-07-06')!.syncState, MonthSyncState.Pushed);
+});
+
+test('today with an open session reads as tracking', () => {
+  const tracked = buildMonthResponse(2026, 7, config, { trackingDate: '2026-07-04' });
+  assert.equal(tracked.days.find(d => d.date === '2026-07-04')!.syncState, MonthSyncState.Tracking);
+});
+
+// August: a never-pushed entry whose exact twin already sits in Tempo, and
+// an owned entry Tempo moved to another ticket (a new worklog, same content).
+writeDay(config, '2026-08-03', log => {
+  log.manualEntries.push(makeEntry({ id: 'a1', task: 'ATL-1', minutes: 30 }));
+});
+writeDay(config, '2026-08-04', log => {
+  log.manualEntries.push(makeEntry({ id: 'a2', task: 'ATL-1', minutes: 30 }));
+  log.status = DayStatus.Pushed;
+  log.pushedAt = '2026-08-04T18:00:00.000Z';
+});
+savePushLog({
+  '2026-08-04|ATL-1|m:a2': { tempoWorklogId: 951, timeSpentSeconds: 1800, pushedAt: 'x', description: 'Daily standup', activity: 'Meeting' },
+});
+saveTombstones([]);
+saveMonthSnapshot({
+  month: '2026-08',
+  accountId: 'acc',
+  fetchedAt: '2026-08-05T10:00:00.000Z',
+  worklogs: [
+    snapWl(950, '2026-08-03', 1800),
+    snapWl(952, '2026-08-04', 1800, { issueId: 2 }),
+  ],
+  issueKeys: { '1': 'ATL-1', '2': 'IN-2' },
+});
+const august = buildMonthResponse(2026, 8, config);
+const augustByDate = new Map(august.days.map(d => [d.date, d]));
+
+test('an exact twin in Tempo is the entry itself: pushed, no foreign row', () => {
+  const day = augustByDate.get('2026-08-03')!;
+  assert.equal(day.syncState, MonthSyncState.Pushed);
+  assert.ok(!day.tasks.some(t => t.kind === 'foreign'));
+});
+
+test('moved to another ticket in Tempo → Ticket differs, the new worklog is no foreign row', () => {
+  const day = augustByDate.get('2026-08-04')!;
+  assert.equal(day.syncState, MonthSyncState.Conflict);
+  assert.equal(day.conflicts[0].kind, ConflictKind.Ticket);
+  assert.deepEqual(day.conflicts[0].fields, [ConflictField.Ticket]);
+  assert.equal(day.conflicts[0].tempo?.task, 'IN-2');
+  assert.ok(!day.tasks.some(t => t.kind === 'foreign'));
 });
 
 console.log('');

@@ -1026,6 +1026,12 @@ export interface MonthDaySummary {
   // Present only when the month has a Tempo snapshot: what exactly diverges
   // from Tempo, one human line per drift (empty array = verified parity).
   readonly drift?: readonly string[];
+  // Timesheets v2: the day's one word, its manual-entry conflicts and the
+  // raw material of the day card. `status` above stays for older trays.
+  readonly syncState: MonthSyncState;
+  readonly conflicts: readonly EntryConflict[];
+  readonly sessions: readonly SessionDetail[];
+  readonly entries: readonly ManualEntry[];
 }
 
 // tracking — today with an open session; conflict — a manual entry changed
@@ -1098,6 +1104,8 @@ export interface MonthResponse {
   // Ticket summaries (task key → Jira summary) across the month's task lines,
   // cached lookups only — same contract as DayResponse.issueSummaries.
   readonly issueSummaries?: Readonly<Record<string, string>>;
+  // Tracked time rounds to this block in Tempo (config.report).
+  readonly roundingMinutes: number;
 }
 
 // ─── Tempo month meta (schedule / approvals proxies) ────────────────────
