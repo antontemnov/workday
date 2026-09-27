@@ -24,7 +24,7 @@ function timeDrifts(a: number, b: number): boolean {
 // description — the placeholder and an empty description are the same thing.
 // Without this a pushed empty-description entry drifts forever: our PUT sends
 // '' and Tempo immediately re-inserts the placeholder.
-function normalizeDescription(description: string | undefined, task: string): string {
+export function normalizeDescription(description: string | undefined, task: string): string {
   const desc = description ?? '';
   return desc === `Working on work item ${task}` ? '' : desc;
 }

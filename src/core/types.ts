@@ -1028,6 +1028,52 @@ export interface MonthDaySummary {
   readonly drift?: readonly string[];
 }
 
+// tracking — today with an open session; conflict — a manual entry changed
+// in Tempo without us (both sides, or Tempo alone where no fast-forward
+// applies) or deleted there; unpushed — the push would change Tempo;
+// pushed — Tempo holds exactly what we have.
+export enum MonthSyncState {
+  None = 'none',
+  Tracking = 'tracking',
+  Conflict = 'conflict',
+  Unpushed = 'unpushed',
+  Pushed = 'pushed',
+}
+
+export enum ConflictField {
+  Ticket = 'ticket',
+  Date = 'date',
+  Time = 'time',
+  Activity = 'activity',
+  Description = 'description',
+}
+
+// Moved to another ticket = a new worklog in Tempo, paired back to ours by
+// the content of the last sync (Tempo recreates on a ticket change).
+export enum ConflictKind {
+  Edited = 'edited',
+  Moved = 'moved',
+  Ticket = 'ticket',
+  Deleted = 'deleted',
+}
+
+// One side of a manual entry, as a worklog.
+export interface WorklogVersion {
+  readonly task: string;
+  readonly date: string;
+  readonly seconds: number;
+  readonly description: string;
+  readonly activity: string;
+}
+
+export interface EntryConflict {
+  readonly entryId: string;
+  readonly task: string;                        // the entry's local ticket
+  readonly kind: ConflictKind;
+  readonly fields: readonly ConflictField[];    // mine vs Tempo; empty when deleted
+  readonly tempo: WorklogVersion | null;        // Tempo's current version, null = deleted
+}
+
 export interface MonthTotals {
   readonly claimedMs: number;
   readonly reportedSeconds: number;
@@ -1361,6 +1407,9 @@ export interface PushLogEntry {
   readonly pushedAt: string;
   readonly description?: string;   // snapshot of last pushed text — manual entries (drift detection)
   readonly activity?: string;      // snapshot of last pushed _Activity_ value
+  // The base's day when it is not the key's day: a conflict resolved as
+  // Mine on a worklog Tempo moved — the push moves it back.
+  readonly startDate?: string;
 }
 
 // A pushed manual entry deleted locally: its Tempo worklog must eventually be
