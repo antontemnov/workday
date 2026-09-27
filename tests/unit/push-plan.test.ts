@@ -144,17 +144,33 @@ test('worklog dragged to another day in Tempo → update restores date + conflic
   assert.equal(plan[0].date, DATE); // PUT will restore startDate
 });
 
-test('session remote time edit → update + conflict, remote text preserved', () => {
+test('session remote time edit → update, never a conflict (tracked time is ours), remote text preserved', () => {
   const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
   const plan = buildPushPlan(
     [session()], jiraMap, pushLog,
     [worklog(100, 7200, { description: 'note added in Tempo', activity: 'CodeReview' })],
   );
   assert.equal(plan[0].action, 'update');
-  assert.equal(plan[0].conflict, true);
+  assert.equal(plan[0].conflict, undefined);
   // Session updates never wipe Tempo-side cosmetics.
   assert.equal(plan[0].description, 'note added in Tempo');
   assert.equal(plan[0].activity, 'CodeReview');
+});
+
+test('session worklog dragged to another day in Tempo → update restores the day, no conflict', () => {
+  const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
+  const plan = buildPushPlan([session()], jiraMap, pushLog, [worklog(100, 3600, { startDate: '2026-06-14' })]);
+  assert.equal(plan[0].action, 'update');
+  assert.equal(plan[0].date, DATE);
+  assert.equal(plan[0].conflict, undefined);
+});
+
+test('manual base remembering Tempo\'s day (Mine on a move) → update restores, no conflict', () => {
+  const pushLog = { [`${DATE}|ATL-10|m:e1`]: { ...manualLog(100, 1800, 'Daily standup', 'Other'), startDate: '2026-06-14' } };
+  const plan = buildPushPlan([manual()], jiraMap, pushLog, [manualWorklog(100, 1800, { startDate: '2026-06-14' })]);
+  assert.equal(plan[0].action, 'update');
+  assert.equal(plan[0].date, DATE);
+  assert.equal(plan[0].conflict, undefined);
 });
 
 console.log('\nbuildPushPlan — orphan re-adoption (bug B)');
@@ -195,12 +211,31 @@ test('two unowned candidates NOT summing → error, never a blind create', () =>
   assert.match(plan[0].detail, /Ambiguous/);
 });
 
-test('owned worklog on another issue → error, never guessed', () => {
+test('owned session worklog on another issue → deleted there, recreated on ours', () => {
   const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
   const plan = buildPushPlan([session()], jiraMap, pushLog, [worklog(100, 3600, { issueId: 111 })]);
+  const ours = plan.filter(p => p.task === 'ATL-10');
+  assert.deepEqual(ours.map(p => p.action), ['delete', 'create']);
+  assert.equal(ours[0].existingWorklogId, 100);
+  assert.match(ours[0].detail, /another issue/);
+  assert.equal(ours[1].issueId, ISSUE);
+  assert.ok(!plan.some(p => p.conflict));
+});
+
+test('owned manual worklog on another issue → error, never guessed', () => {
+  const pushLog = { [`${DATE}|ATL-10|m:e1`]: manualLog(100, 1800, 'Daily standup', 'Other') };
+  const plan = buildPushPlan([manual()], jiraMap, pushLog, [manualWorklog(100, 1800, { issueId: 111 })]);
   const ours = plan.find(p => p.task === 'ATL-10');
   assert.equal(ours?.action, 'error');
   assert.match(ours!.detail, /another issue/);
+});
+
+test('session worklog deleted in Tempo → recreated, no conflict', () => {
+  const pushLog = { [`${DATE}|ATL-10`]: sessionLog(100, 3600) };
+  const plan = buildPushPlan([session()], jiraMap, pushLog, []);
+  assert.equal(plan[0].action, 'create');
+  assert.equal(plan[0].conflict, undefined);
+  assert.match(plan[0].detail, /Deleted in Tempo/);
 });
 
 console.log('\nbuildPushPlan — isolation & legacy invariants');

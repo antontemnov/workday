@@ -34,10 +34,10 @@ function manualTextDrifts(entry: TaskDayReport, wl: TempoWorklog): boolean {
     || (wl.activity ?? '') !== (entry.activity ?? '');
 }
 
-/** The worklog no longer matches what we sent — someone edited it in Tempo. */
+/** The worklog no longer matches the base — someone edited it in Tempo. */
 function remoteChanged(own: PushLogEntry, wl: TempoWorklog, entryDate: string, kind: TaskDayReport['kind'], task: string): boolean {
   if (own.timeSpentSeconds !== wl.timeSpentSeconds) return true;
-  if (wl.startDate !== entryDate) return true;
+  if (wl.startDate !== (own.startDate ?? entryDate)) return true;
   if (kind === 'manual') {
     return normalizeDescription(own.description, task) !== normalizeDescription(wl.description, task)
       || (own.activity ?? '') !== (wl.activity ?? '');
@@ -125,7 +125,15 @@ export function buildPushPlan(
       accounted.add(wl.tempoWorklogId);
 
       if (wl.issueId !== jira.issueId) {
-        // Same id on a different issue — identity is confused; never guess.
+        if (entry.kind === 'session') {
+          // Tracked time is ours. Tempo cannot re-home a worklog in place (a
+          // PUT ignores issueId), so it goes back as a new one on our ticket.
+          plan.push({ ...base, action: 'delete', targetSeconds: wl.timeSpentSeconds, existingWorklogId: wl.tempoWorklogId, detail: `Sits on another issue in Tempo → recreating on ${entry.task}` });
+          plan.push({ ...base, action: 'create', detail: `New (${formatHours(entry.totalSeconds)})`, description: wl.description, activity: wl.activity });
+          continue;
+        }
+        // A manual entry with the same id on a different issue — identity is
+        // confused; never guess.
         plan.push({ ...base, action: 'error', existingWorklogId: wl.tempoWorklogId, detail: `Worklog #${wl.tempoWorklogId} sits on another issue in Tempo — resolve manually` });
         continue;
       }
@@ -153,7 +161,8 @@ export function buildPushPlan(
         // manage — carry the current remote values through the PUT untouched.
         description: entry.kind === 'manual' ? entry.description : wl.description,
         activity: entry.kind === 'manual' ? entry.activity : wl.activity,
-        ...(remoteChanged(own, wl, entry.date, entry.kind, entry.task) ? { conflict: true } : {}),
+        // Tracked time never conflicts — the push simply overwrites Tempo.
+        ...(entry.kind === 'manual' && remoteChanged(own, wl, entry.date, entry.kind, entry.task) ? { conflict: true } : {}),
       });
       continue;
     }
@@ -216,7 +225,8 @@ export function buildPushPlan(
           plan.push({ ...base, action: 'error', detail: `Ambiguous: ${ids.length} unowned worklogs (${formatHours(sum)}) vs local ${formatHours(entry.totalSeconds)} — resolve in Tempo`, extraWorklogIds: ids });
         }
       } else {
-        plan.push({ ...base, action: 'create', detail: `New (${formatHours(entry.totalSeconds)})`, ...(hadOwnership ? { conflict: true } : {}) });
+        // Deleted in Tempo: tracked time is ours — recreated, no conflict.
+        plan.push({ ...base, action: 'create', detail: hadOwnership ? `Deleted in Tempo → recreating (${formatHours(entry.totalSeconds)})` : `New (${formatHours(entry.totalSeconds)})` });
       }
     }
   }
