@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GitTracker } from '../../src/collectors/git-tracker.js';
 import type { AppConfig, PollResult } from '../../src/core/types.js';
+import { waitForNextReflogSecond } from '../helpers/git-clock.js';
 
 let passed = 0;
 let failed = 0;
@@ -117,6 +118,7 @@ await (async () => {
   });
 
   // ── git moving the tip is not work ────────────────────────────────────
+  await waitForNextReflogSecond();
   git('commit -q -am "[ATL-1] more work"');
   const committed = await tick();
   check('a commit tick is activity, not a re-anchoring', () => {
@@ -124,6 +126,7 @@ await (async () => {
     assert.equal(committed.reanchored, false);
   });
 
+  await waitForNextReflogSecond();
   git('reset -q --hard HEAD~1');
   const reset = await tick();
   check('reset --hard is a baseline tick — the shrunken map is not activity', () => {
