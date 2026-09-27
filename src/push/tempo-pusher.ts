@@ -1,14 +1,14 @@
-import { readFileSync } from 'node:fs';
-import { loadConfig, loadSecrets } from '../core/config.js';
+import { readFileSync, unlinkSync } from 'node:fs';
 import { readDailyLog, writeDailyLog } from '../core/daily-log.js';
-import { DayStatus, type AppConfig, type Secrets, type TaskDayReport, type PushLogEntry, type PushPlanEntry, type PushResult, type PushResponse } from '../core/types.js';
-import { buildReport, buildReportResponse, getDefaultFromDate, getDefaultToDate } from './report-builder.js';
+import { DayStatus, type AdoptedEntry, type AppConfig, type Secrets, type TaskDayReport, type PushFailure, type PushLogEntry, type PushPlanEntry, type PushResult, type PushResponse, type TempoMonthSnapshot, type TempoWorklog } from '../core/types.js';
+import { buildReport, getDefaultToDate } from './report-builder.js';
 import { getAccountId, resolveIssueIds } from './jira-client.js';
-import { TempoClient } from './tempo-client.js';
+import { TempoClient, tempoRefusalReason } from './tempo-client.js';
 import { invalidateApprovalCache, resolveMonthApproval } from './tempo-approvals.js';
 import { loadPushLog, savePushLog, pushLogKey, loadTombstones, removeTombstonesByWorklogIds } from './push-log.js';
 import { acquirePushLock } from './push-lock.js';
-import { refreshSnapshotsInRange } from './tempo-snapshot.js';
+import { fetchMonthSnapshot, getSnapshotPath } from './tempo-snapshot.js';
+import { applyMonthSync, readMonthModel, type LiveToday } from './tempo-sync.js';
 import { buildPushPlan, formatHours } from './reconcile.js';
 
 // ─── Push plan ───────────────────────────────────────────────────────────
@@ -23,18 +23,28 @@ export async function executePlan(
   plan: readonly PushPlanEntry[],
   tempoClient: TempoClient,
   accountId: string,
-): Promise<PushResult> {
+): Promise<PushResult & { readonly failures: readonly PushFailure[] }> {
   // Push-log deltas (null = drop key), applied to a fresh read right before
   // the final save. Holding a full copy across the Tempo calls and saving it
   // whole would resurrect keys dropped by a concurrent recordEntryDeletion —
   // entry deletes run outside the push lock.
   const pushLogDeltas = new Map<string, PushLogEntry | null>();
   const deletedWorklogIds = new Set<number>();
+  const failures: PushFailure[] = [];
   let posted = 0;
   let updated = 0;
   let deleted = 0;
   let skipped = 0;
   let failed = 0;
+
+  const fail = (entry: PushPlanEntry, reason: string): void => {
+    failed++;
+    failures.push({
+      date: entry.date, task: entry.task, kind: entry.kind,
+      ...(entry.entryId !== undefined ? { entryId: entry.entryId } : {}),
+      action: entry.action, reason,
+    });
+  };
 
   for (const entry of plan) {
     const key = pushLogKey(entry.date, entry.task, entry.kind === 'manual' ? entry.entryId : undefined);
@@ -45,7 +55,7 @@ export async function executePlan(
         break;
 
       case 'create': {
-        if (!entry.issueId) { failed++; break; }
+        if (!entry.issueId) { fail(entry, 'Unresolved in Jira'); break; }
         try {
           const result = await tempoClient.createWorklog({
             issueId: entry.issueId,
@@ -65,14 +75,14 @@ export async function executePlan(
           posted++;
           console.log(`  POST ${entry.date} ${entry.task} ${formatHours(entry.targetSeconds)}`);
         } catch (err) {
-          failed++;
+          fail(entry, tempoRefusalReason(err));
           console.error(`  FAIL POST ${entry.date} ${entry.task}: ${err instanceof Error ? err.message : String(err)}`);
         }
         break;
       }
 
       case 'update': {
-        if (!entry.issueId || !entry.existingWorklogId) { failed++; break; }
+        if (!entry.issueId || !entry.existingWorklogId) { fail(entry, 'Unresolved in Jira'); break; }
         try {
           const result = await tempoClient.updateWorklog(entry.existingWorklogId, {
             issueId: entry.issueId,
@@ -92,14 +102,14 @@ export async function executePlan(
           updated++;
           console.log(`  PUT  ${entry.date} ${entry.task} ${entry.detail}`);
         } catch (err) {
-          failed++;
+          fail(entry, tempoRefusalReason(err));
           console.error(`  FAIL PUT ${entry.date} ${entry.task}: ${err instanceof Error ? err.message : String(err)}`);
         }
         break;
       }
 
       case 'delete': {
-        if (!entry.existingWorklogId) { failed++; break; }
+        if (!entry.existingWorklogId) { fail(entry, 'No worklog to delete'); break; }
         try {
           await tempoClient.deleteWorklog(entry.existingWorklogId);
           pushLogDeltas.set(key, null);              // stray ownership, if any
@@ -107,14 +117,14 @@ export async function executePlan(
           deleted++;
           console.log(`  DEL  ${entry.date} ${entry.task} ${formatHours(entry.targetSeconds)}`);
         } catch (err) {
-          failed++;
+          fail(entry, tempoRefusalReason(err));
           console.error(`  FAIL DEL ${entry.date} ${entry.task}: ${err instanceof Error ? err.message : String(err)}`);
         }
         break;
       }
 
       case 'error':
-        failed++;
+        fail(entry, entry.detail);
         break;
     }
   }
@@ -132,40 +142,39 @@ export async function executePlan(
   if (deletedWorklogIds.size > 0) {
     removeTombstonesByWorklogIds(deletedWorklogIds);
   }
-  return { posted, updated, deleted, skipped, failed };
+  return { posted, updated, deleted, skipped, failed, failures };
 }
 
 // ─── Mark daily logs as pushed ───────────────────────────────────────────
 
-/** Dates in [from, to] whose local day file exists — the stray-delete guard. */
-function collectDatesWithData(from: string, to: string): Set<string> {
-  const dates = new Set<string>();
+function* datesInRange(from: string, to: string): Generator<string> {
   const current = new Date(from + 'T12:00:00Z');
   const end = new Date(to + 'T12:00:00Z');
   while (current <= end) {
-    const date = current.toISOString().slice(0, 10);
-    if (readDailyLog(date)) dates.add(date);
+    yield current.toISOString().slice(0, 10);
     current.setUTCDate(current.getUTCDate() + 1);
+  }
+}
+
+/** Dates in [from, to] whose local day file exists — the stray-delete guard. */
+function collectDatesWithData(from: string, to: string): Set<string> {
+  const dates = new Set<string>();
+  for (const date of datesInRange(from, to)) {
+    if (readDailyLog(date)) dates.add(date);
   }
   return dates;
 }
 
-function markDaysPushed(from: string, to: string): void {
-  const current = new Date(from + 'T12:00:00Z');
-  const end = new Date(to + 'T12:00:00Z');
-  while (current <= end) {
-    const y = current.getUTCFullYear();
-    const m = String(current.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(current.getUTCDate()).padStart(2, '0');
-    const date = `${y}-${m}-${d}`;
-
+/** Seal the range's days as pushed — all but the ones whose worklogs did not go. */
+export function markDaysPushed(from: string, to: string, except: ReadonlySet<string> = new Set()): void {
+  for (const date of datesInRange(from, to)) {
+    if (except.has(date)) continue;
     const log = readDailyLog(date);
     if (log && log.status !== DayStatus.Pushed) {
       log.status = DayStatus.Pushed;
       log.pushedAt = new Date().toISOString();
       writeDailyLog(log);
     }
-    current.setUTCDate(current.getUTCDate() + 1);
   }
 }
 
@@ -181,11 +190,14 @@ interface RunPushOptions {
   // Overwrite Tempo-side edits (conflict entries). Without it a commit push
   // containing conflicts is refused so the caller can confirm the choice.
   readonly force?: boolean;
+  // The working date: adoption stops there. Defaults to the calendar today.
+  readonly today?: string;
+  // Today's log writer (the live tracker) — without it today is not adopted.
+  readonly live?: LiveToday | null;
+  // Stop tracking & push: runs once the read passed the gates, before the
+  // report is built — the push then carries today whole.
+  readonly stopTracking?: () => Promise<void>;
 }
-
-// A submitted timesheet is on the reviewer's desk — mutating worklogs under
-// review (or after approval) is never what the user meant.
-const APPROVAL_BLOCKED_STATUSES = new Set(['IN_REVIEW', 'APPROVED']);
 
 function* monthsInRange(from: string, to: string): Generator<{ year: number; month: number }> {
   let year = Number(from.slice(0, 4));
@@ -199,15 +211,15 @@ function* monthsInRange(from: string, to: string): Generator<{ year: number; mon
   }
 }
 
-/** Refuse commit pushes into IN_REVIEW/APPROVED months. Unavailable approval
- *  (no scope, Tempo down) never blocks — the check is a live safety gate,
- *  not a dependency. */
+/** Refuse commit pushes into any month that is not OPEN in Tempo — nothing
+ *  can change there, here or in Tempo. Unavailable approval (no scope, Tempo
+ *  down) never blocks — the check is a live safety gate, not a dependency. */
 async function assertRangePushable(from: string, to: string, secrets: Secrets): Promise<void> {
   for (const { year, month } of monthsInRange(from, to)) {
     const approval = await resolveMonthApproval(year, month, secrets, true);
-    if (approval.available && approval.statusKey && APPROVAL_BLOCKED_STATUSES.has(approval.statusKey)) {
+    if (approval.available && approval.statusKey && approval.statusKey !== 'OPEN') {
       const key = `${year}-${String(month).padStart(2, '0')}`;
-      throw new Error(`Timesheet ${key} is ${approval.statusKey} in Tempo — pushing is disabled until the reviewer releases it`);
+      throw new Error(`Timesheet ${key} is ${approval.statusKey} in Tempo — a month that is not open is left alone`);
     }
   }
 }
@@ -217,24 +229,35 @@ export async function runPush(options: RunPushOptions): Promise<PushResponse> {
   // Dry runs are read-only. Commit pushes take the cross-process lock, so a
   // second push cannot plan against the same pre-push Tempo state and create
   // every pending worklog twice.
-  if (!options.commit) return runPushPipeline(options);
+  if (!options.commit) {
+    const accountId = await accountIdOf(options.secrets);
+    const tempoWorklogs = await new TempoClient(options.secrets.Tempo_Token).getUserWorklogs(accountId, options.from, options.to);
+    return { dryRun: true, plan: await planRange(options, tempoWorklogs) };
+  }
   const releaseLock = acquirePushLock('push');
   try {
     await assertRangePushable(options.from, options.to, options.secrets);
-    return await runPushPipeline(options);
+    return await runCommitPush(options);
   } finally {
     releaseLock();
   }
 }
 
-async function runPushPipeline(options: RunPushOptions): Promise<PushResponse> {
-  const { from, to, commit, config, secrets, filePath, force } = options;
+async function accountIdOf(secrets: Secrets): Promise<string> {
+  try {
+    return await getAccountId(secrets);
+  } catch (err) {
+    throw new Error(`Jira auth failed (check secrets.json): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
-  // Step 1: Build or load report
+/** The desired report (disk or file) against the given Tempo worklogs. */
+async function planRange(options: RunPushOptions, tempoWorklogs: readonly TempoWorklog[]): Promise<PushPlanEntry[]> {
+  const { from, to, config, secrets, filePath } = options;
+
   let report: TaskDayReport[];
   if (filePath) {
-    const raw = readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(raw) as { entries: TaskDayReport[] };
+    const parsed = JSON.parse(readFileSync(filePath, 'utf-8')) as { entries: TaskDayReport[] };
     report = parsed.entries;
     console.log(`Loaded ${report.length} entries from ${filePath}`);
   } else {
@@ -250,91 +273,138 @@ async function runPushPipeline(options: RunPushOptions): Promise<PushResponse> {
     const date = k.slice(0, 10);
     return date >= from && date <= to;
   });
+  if (report.length === 0 && rangeTombstones.length === 0 && !hasRangeOwnership) return [];
 
-  if (report.length === 0 && rangeTombstones.length === 0 && !hasRangeOwnership) {
-    return { dryRun: !commit, plan: [], result: { posted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0 } };
-  }
-
-  // Step 2: Resolve Jira issue IDs
   const uniqueTasks = [...new Set(report.map(e => e.task))];
   console.log(`Resolving ${uniqueTasks.length} Jira issue(s)...`);
   const jiraMap = await resolveIssueIds(uniqueTasks, secrets);
 
-  // Step 3: Get Jira accountId + existing Tempo worklogs
-  let accountId: string;
-  try {
-    accountId = await getAccountId(secrets);
-  } catch (err) {
-    throw new Error(`Jira auth failed (check secrets.json): ${err instanceof Error ? err.message : String(err)}`);
-  }
-  console.log(`Account: ${accountId}`);
-
-  const tempoClient = new TempoClient(secrets.Tempo_Token);
-  console.log(`Fetching Tempo worklogs (${from} → ${to})...`);
-  const tempoWorklogs = await tempoClient.getUserWorklogs(accountId, from, to);
-  console.log(`Found ${tempoWorklogs.length} existing worklog(s)`);
-
-  // Step 4: Build plan. Tombstones whose worklog is already gone from Tempo
-  // (deleted remotely too) have nothing left to do — purge them silently.
+  // Tombstones whose worklog is already gone from Tempo (deleted remotely
+  // too) have nothing left to do — purge them silently.
   const aliveIds = new Set(tempoWorklogs.map(w => w.tempoWorklogId));
   const deadTombstones = rangeTombstones.filter(t => !aliveIds.has(t.tempoWorklogId));
   if (deadTombstones.length > 0) {
     removeTombstonesByWorklogIds(new Set(deadTombstones.map(t => t.tempoWorklogId)));
   }
 
-  const plan = buildPushPlan(report, jiraMap, pushLog, tempoWorklogs, {
+  return buildPushPlan(report, jiraMap, pushLog, tempoWorklogs, {
     tombstones: rangeTombstones.filter(t => aliveIds.has(t.tempoWorklogId)),
     from,
     to,
     datesWithData: collectDatesWithData(from, to),
   });
+}
 
-  if (!commit) {
-    return { dryRun: true, plan };
+/** Read Tempo for every month of the range and sync the mirror with it. */
+async function syncRange(options: RunPushOptions, accountId: string): Promise<{ snapshots: TempoMonthSnapshot[]; adopted: AdoptedEntry[] }> {
+  const { config, secrets } = options;
+  const today = options.today ?? getDefaultToDate(config);
+  const snapshots: TempoMonthSnapshot[] = [];
+  const adopted: AdoptedEntry[] = [];
+  for (const { year, month } of monthsInRange(options.from, options.to)) {
+    const snapshot = await fetchMonthSnapshot(year, month, secrets, accountId);
+    adopted.push(...applyMonthSync(snapshot, { config, today, live: options.live ?? null }).adopted);
+    snapshots.push(snapshot);
   }
+  return { snapshots, adopted };
+}
+
+function conflictsInRange(snapshots: readonly TempoMonthSnapshot[], options: RunPushOptions): number {
+  let count = 0;
+  for (const snapshot of snapshots) {
+    for (const [date, day] of readMonthModel(snapshot, options.config).days) {
+      if (date >= options.from && date <= options.to) count += day.conflicts.length;
+    }
+  }
+  return count;
+}
+
+async function runCommitPush(options: RunPushOptions): Promise<PushResponse> {
+  const { from, to, secrets, force } = options;
+  const accountId = await accountIdOf(secrets);
+  console.log(`Account: ${accountId}`);
+
+  // Never blind: the push reads Tempo first — a sync. Worklogs created there
+  // without us are adopted and shown before anything is sent.
+  console.log(`Reading Tempo (${from} → ${to})...`);
+  const { snapshots, adopted } = await syncRange(options, accountId);
+  if (adopted.length > 0) {
+    console.log(`Push stopped: ${adopted.length} worklog(s) created in Tempo were adopted — look at them first.`);
+    return { dryRun: false, plan: [], adopted, blockedByAdoption: true };
+  }
+
+  const inRange = (): TempoWorklog[] => snapshots.flatMap(s => s.worklogs).filter(w => w.startDate >= from && w.startDate <= to);
+  let plan = await planRange(options, inRange());
 
   // Conflict gate: "local wins" is a choice, not a default. A commit push
   // that would overwrite Tempo-side edits stops here until the caller
   // explicitly forces it — nothing (conflicted or not) is executed.
-  if (!force) {
-    const conflicted = plan.filter(e => e.conflict);
-    if (conflicted.length > 0) {
-      console.log(`Push blocked: ${conflicted.length} worklog(s) edited in Tempo since our push.`);
-      return { dryRun: false, plan, blockedByConflicts: true };
-    }
+  if (!force && (conflictsInRange(snapshots, options) > 0 || plan.some(e => e.conflict))) {
+    console.log('Push blocked: manual entries were changed in Tempo — resolve the conflicts first.');
+    return { dryRun: false, plan, blockedByConflicts: true };
   }
 
-  // Step 5: Execute
+  if (options.stopTracking) {
+    await options.stopTracking();
+    plan = await planRange(options, inRange());
+  }
+
   const actionable = plan.filter(e => e.action === 'create' || e.action === 'update' || e.action === 'delete');
+  const errors = plan.filter(e => e.action === 'error');
   if (actionable.length === 0) {
     console.log('Nothing to push.');
     // Parity with Tempo is still a successful sync — seal the days, or an
     // edited-then-reverted day stays Outdated forever (no mutation ever
-    // triggers the seal below). Plan errors (unresolved Jira) block it.
-    if (!plan.some(e => e.action === 'error')) {
-      markDaysPushed(from, to);
-    }
-    return { dryRun: false, plan, result: { posted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0 } };
+    // triggers the seal below). A plan error keeps its day open.
+    const failed = new Set(errors.map(e => e.date));
+    markDaysPushed(from, to, failed);
+    const failures: PushFailure[] = errors.map(e => ({
+      date: e.date, task: e.task, kind: e.kind,
+      ...(e.entryId !== undefined ? { entryId: e.entryId } : {}),
+      action: e.action, reason: e.detail,
+    }));
+    return {
+      dryRun: false, plan,
+      result: { posted: 0, updated: 0, deleted: 0, skipped: plan.length - errors.length, failed: errors.length },
+      ...(failures.length > 0 ? { failures } : {}),
+    };
   }
 
   console.log(`Executing ${actionable.length} mutation(s)...`);
-  const result = await executePlan(plan, tempoClient, accountId);
+  const { failures, ...result } = await executePlan(plan, new TempoClient(secrets.Tempo_Token), accountId);
 
-  // Tempo-side state changed: approval cache is stale; worklog snapshots are
-  // refetched right away so month statuses turn diff-based after every push.
+  // Tempo changed: the approval cache is stale, and the month is read again —
+  // a sync, so worklogs created there meanwhile are adopted (and reported).
+  let adoptedAfter: AdoptedEntry[] = [];
   if (result.posted > 0 || result.updated > 0 || result.deleted > 0) {
     invalidateApprovalCache();
-    await refreshSnapshotsInRange(from, to, secrets, accountId);
+    adoptedAfter = await resyncAfterPush(options, accountId);
   }
 
-  // Seal the day only on a clean push. A failed mutation (network, Jira limit, etc.)
-  // must NOT mark the day pushed, or it would silently drop out of future syncs.
-  if (result.failed === 0) {
-    markDaysPushed(from, to);
-  } else {
-    console.log(`Not sealing days as pushed: ${result.failed} mutation(s) failed — re-run push.`);
-  }
+  // Each day seals on its own: a worklog Tempo refused keeps its day open,
+  // the rest of the push stands.
+  markDaysPushed(from, to, new Set(failures.map(f => f.date)));
+  if (failures.length > 0) console.log(`Not sealing ${new Set(failures.map(f => f.date)).size} day(s): ${failures.length} worklog(s) did not go — re-run push.`);
 
-  return { dryRun: false, plan, result };
+  return {
+    dryRun: false, plan, result,
+    ...(failures.length > 0 ? { failures } : {}),
+    ...(adoptedAfter.length > 0 ? { adopted: adoptedAfter } : {}),
+  };
 }
 
+// A month that fails to read after the push drops its stale snapshot —
+// it must never lie about the post-push state.
+async function resyncAfterPush(options: RunPushOptions, accountId: string): Promise<AdoptedEntry[]> {
+  const adopted: AdoptedEntry[] = [];
+  const today = options.today ?? getDefaultToDate(options.config);
+  for (const { year, month } of monthsInRange(options.from, options.to)) {
+    try {
+      const snapshot = await fetchMonthSnapshot(year, month, options.secrets, accountId);
+      adopted.push(...applyMonthSync(snapshot, { config: options.config, today, live: options.live ?? null }).adopted);
+    } catch {
+      try { unlinkSync(getSnapshotPath(year, month)); } catch { /* absent is fine */ }
+    }
+  }
+  return adopted;
+}

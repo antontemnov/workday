@@ -141,7 +141,7 @@ import type {
 } from './core/types.js';
 import { isGitRepo, repoPathKey, scanForRepos } from './collectors/repo-scanner.js';
 import { listInstalledBrowsers, openUrlInBrowser } from './core/browser-registry.js';
-import { ApiErrorCode, DayStatus, ResolveSide, SensitivityLevel, SessionState } from './core/types.js';
+import { ApiErrorCode, ClosedBy, DayStatus, ResolveSide, SensitivityLevel, SessionState } from './core/types.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1726,6 +1726,9 @@ export class HttpServer {
     const to = typeof body.to === 'string' ? body.to : getDefaultToDate(config);
     const dryRun = body.dryRun === true;
     const force = body.force === true;
+    // Stop tracking & push: today's open sessions close once the read has
+    // passed the gates, and the push carries today whole.
+    const stopTracking = body.stopTracking === true;
     if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
       return { ok: false, error: 'Invalid from/to. Use YYYY-MM-DD' };
     }
@@ -1737,9 +1740,21 @@ export class HttpServer {
     }
 
     // Report reads from disk — make sure today's live log is there.
-    this.deps.sessionTracker.flush();
+    const tracker = this.deps.sessionTracker;
+    tracker.flush();
     try {
-      const response = await runPush({ from, to, commit: !dryRun, config, secrets, force });
+      const response = await runPush({
+        from, to, commit: !dryRun, config, secrets, force,
+        today: this.deps.getCurrentDate(),
+        live: this.liveToday(),
+        ...(stopTracking ? {
+          stopTracking: async (): Promise<void> => {
+            tracker.closeAllSessions(ClosedBy.ManualStop);
+            tracker.flush();
+            await this.deps.forceTick();
+          },
+        } : {}),
+      });
 
       // markDaysPushed sealed today's file behind the in-memory log — re-sync
       // so the next flush doesn't revert the day to draft.

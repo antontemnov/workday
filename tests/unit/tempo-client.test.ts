@@ -7,7 +7,7 @@
  * Exit code: 0 = all pass, 1 = any fail
  */
 import assert from 'node:assert/strict';
-import { TempoClient } from '../../src/push/tempo-client.js';
+import { TempoApiError, TempoClient, tempoRefusalReason } from '../../src/push/tempo-client.js';
 
 let passed = 0;
 let failed = 0;
@@ -86,6 +86,25 @@ await test('empty page with stray next → terminates (no infinite loop)', async
   const result = await client.getUserWorklogs('acc', '2026-07-01', '2026-07-31');
   assert.equal(result.length, 0);
   assert.equal(calls.urls.length, 1);
+});
+
+console.log('\ntempoRefusalReason — Tempo\'s own words');
+
+await test('errors[].message joins into the reason', async () => {
+  const err = new TempoApiError(400, 'Tempo API 400 POST /4/worklogs: …', '{"errors":[{"message":"The issue is closed for time logging"},{"message":"Activity is required"}]}');
+  assert.equal(tempoRefusalReason(err), 'The issue is closed for time logging; Activity is required');
+});
+
+await test('a bare message field is taken too', async () => {
+  assert.equal(tempoRefusalReason(new TempoApiError(403, 'x', '{"message":"Forbidden to log here"}')), 'Forbidden to log here');
+});
+
+await test('a body that is not JSON → the status in words', async () => {
+  assert.equal(tempoRefusalReason(new TempoApiError(502, 'x', '<html>Bad gateway</html>')), 'Tempo answered HTTP 502');
+});
+
+await test('a network failure keeps its own message', async () => {
+  assert.equal(tempoRefusalReason(new Error('fetch failed')), 'fetch failed');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

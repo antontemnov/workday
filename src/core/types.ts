@@ -1471,6 +1471,23 @@ export interface PushResponse {
   // Commit push refused: the plan contains conflict entries (edited in Tempo
   // since our push) and force was not set. Nothing was executed.
   readonly blockedByConflicts?: boolean;
+  // Timesheets v2 — a commit push reads Tempo first (a sync). When that
+  // read adopted worklogs created there without us, nothing is sent: they
+  // are shown before any push. Adopted by the read after a push = new rows
+  // that appeared meanwhile, the push itself went out.
+  readonly blockedByAdoption?: boolean;
+  readonly adopted?: readonly AdoptedEntry[];
+  // Worklogs that did not go, with Tempo's own words (or the plan's reason).
+  readonly failures?: readonly PushFailure[];
+}
+
+export interface PushFailure {
+  readonly date: string;
+  readonly task: string;
+  readonly kind: ReportEntryKind;
+  readonly entryId?: string;
+  readonly action: PushActionType;
+  readonly reason: string;
 }
 
 // ─── Activity Evaluator ─────────────────────────────────────────────────

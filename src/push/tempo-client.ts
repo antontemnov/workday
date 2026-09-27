@@ -47,11 +47,31 @@ export function mapTempoWorklog(raw: RawTempoWorklog): TempoWorklog {
 /** Tempo HTTP failure with the status preserved — 403 means "scope missing". */
 export class TempoApiError extends Error {
   public readonly status: number;
+  // Raw response body — Tempo explains a refusal there in its own words.
+  public readonly body: string;
 
-  public constructor(status: number, message: string) {
+  public constructor(status: number, message: string, body: string = '') {
     super(message);
     this.status = status;
+    this.body = body;
   }
+}
+
+/**
+ * Why Tempo refused, in its own words: the messages of its error body
+ * ({errors: [{message}]} or {message}); otherwise the bare error.
+ */
+export function tempoRefusalReason(err: unknown): string {
+  if (err instanceof TempoApiError) {
+    try {
+      const parsed = JSON.parse(err.body) as { errors?: ReadonlyArray<{ message?: string }>; message?: string };
+      const messages = (parsed.errors ?? []).map(e => e.message).filter((m): m is string => !!m);
+      if (messages.length > 0) return messages.join('; ');
+      if (parsed.message) return parsed.message;
+    } catch { /* not JSON — fall through */ }
+    return `Tempo answered HTTP ${err.status}`;
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Raw /4/user-schedule day (DaySchedule in the Tempo OpenAPI spec). */
@@ -110,7 +130,7 @@ export class TempoClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new TempoApiError(res.status, `Tempo API ${res.status} ${method} ${path}: ${text.slice(0, 300)}`);
+      throw new TempoApiError(res.status, `Tempo API ${res.status} ${method} ${path}: ${text.slice(0, 300)}`, text);
     }
 
     // DELETE returns 204 No Content

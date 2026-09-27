@@ -1118,21 +1118,39 @@ async function handleTempo(args: string[]): Promise<void> {
     const secrets = loadSecrets();
     let response;
     try {
-      response = await runPush({ from, to, commit: true, config, secrets, filePath: filePath ?? undefined, force });
+      // In-process: today's log belongs to the daemon — without its live
+      // tracker today is not adopted into.
+      response = await runPush({
+        from, to, commit: true, config, secrets, filePath: filePath ?? undefined, force,
+        today: computeWorkingDate(Date.now(), config.boundaryHour, config.timezone),
+        live: null,
+      });
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    if (response.blockedByAdoption) {
+      console.log('');
+      console.log('Push stopped: these worklogs were created in Tempo without us — now local entries. Look at them, then push again:');
+      for (const a of response.adopted ?? []) console.log(`  + ${a.date} ${a.task} → manual entry ${a.entryId}`);
       return;
     }
     printPushPlan(response.plan);
     if (response.blockedByConflicts) {
       console.log('');
-      console.log('Push blocked: the ⚠ entries above were edited in Tempo after our last push.');
-      console.log('Re-run with --force to overwrite them (local wins), or align the local data first.');
+      console.log('Push blocked: manual entries were changed in Tempo too (see `workday month`).');
+      console.log('Resolve each with `workday tempo-resolve`, or re-run with --force to overwrite them (local wins).');
       return;
     }
     if (response.result) {
       console.log('');
       console.log(`Result: ${response.result.posted} posted, ${response.result.updated} updated, ${response.result.deleted} deleted, ${response.result.skipped} skipped, ${response.result.failed} failed`);
+    }
+    for (const f of response.failures ?? []) {
+      console.log(`  ✗ ${f.date} ${f.task}: ${f.reason}`);
+    }
+    for (const a of response.adopted ?? []) {
+      console.log(`  + adopted after the push: ${a.date} ${a.task} → manual entry ${a.entryId}`);
     }
   } else if (filePath) {
     // Save report to file
