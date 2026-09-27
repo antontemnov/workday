@@ -37,11 +37,13 @@ import {
   JiraSearchResponse,
   JiraProjectsResponse,
   PushResponse,
+  ResolveSide,
   TempoScheduleResponse,
   TempoApprovalResponse,
   TempoSyncResponse,
   TempoImportRequest,
   TempoImportResponse,
+  TempoResolveResponse,
   NotificationsResponse,
   NotificationAckAction,
   NotificationAckResponse,
@@ -56,7 +58,10 @@ import {
   SetupValidateResponse,
 } from '../models/workday.models';
 
-const BASE_URL = 'http://127.0.0.1:9213';
+// Browser preview override: ?port=9313 points the UI at a sandbox daemon.
+// No effect in the Tauri runtime (no query string there).
+const PORT_OVERRIDE = typeof location !== 'undefined' ? /[?&]port=(\d{2,5})\b/.exec(location.search)?.[1] : undefined;
+const BASE_URL = `http://127.0.0.1:${PORT_OVERRIDE ?? '9213'}`;
 
 @Injectable()
 export class HttpWorkdayApiService extends WorkdayApiService {
@@ -333,8 +338,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.get<MonthResponse>(`/api/month?year=${year}&month=${month}`);
   }
 
-  override async pushToTempo(from: string, to: string, force = false): Promise<ApiResponse<PushResponse>> {
-    return this.post<PushResponse>('/api/push', { from, to, force });
+  override async pushToTempo(from: string, to: string, force = false, stopTracking = false): Promise<ApiResponse<PushResponse>> {
+    return this.post<PushResponse>('/api/push', { from, to, force, ...(stopTracking ? { stopTracking } : {}) });
   }
 
   override async getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>> {
@@ -351,6 +356,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async importTempo(request: TempoImportRequest): Promise<ApiResponse<TempoImportResponse>> {
     return this.post<TempoImportResponse>('/api/tempo-import', request as Record<string, unknown>);
+  }
+
+  override async resolveConflict(date: string, entryId: string, side: ResolveSide): Promise<ApiResponse<TempoResolveResponse>> {
+    return this.post<TempoResolveResponse>('/api/tempo/resolve', { date, entryId, side });
   }
 
   // ─── Notifications ───────────────────────────────────────────────────

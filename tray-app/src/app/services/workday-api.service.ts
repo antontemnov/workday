@@ -31,11 +31,13 @@ import {
   JiraSearchResponse,
   JiraProjectsResponse,
   PushResponse,
+  ResolveSide,
   TempoScheduleResponse,
   TempoApprovalResponse,
   TempoSyncResponse,
   TempoImportRequest,
   TempoImportResponse,
+  TempoResolveResponse,
   NotificationsResponse,
   NotificationAckAction,
   NotificationAckResponse,
@@ -96,9 +98,9 @@ export abstract class WorkdayApiService {
   abstract getSetup(): Promise<ApiResponse<SetupResponse>>;
   abstract validateSetup(request: SetupValidateRequest): Promise<ApiResponse<SetupValidateResponse>>;
 
-  // Manual entries — standalone time on a task. add targets the currently-
-  // tracked day; update/delete take an optional date (YYYY-MM-DD) for past
-  // days (timesheets drawer) — omitted = the currently-tracked day.
+  // Manual entries — standalone time on a task. add / update / delete take an
+  // optional date (YYYY-MM-DD) for past days (Timesheets; add via input.date)
+  // — omitted = the currently-tracked day. A day in a closed month is refused.
   abstract getActivityTypes(): Promise<ApiResponse<ActivityTypesResponse>>;
   // Force-refetch the _Activity_ catalog from Tempo (Settings) — the Jira
   // projects refresh's twin.
@@ -132,14 +134,20 @@ export abstract class WorkdayApiService {
   abstract getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>>;
   // Trigger the Tempo push for a date range; daemon side wraps runPush().
   // force overwrites Tempo-side edits after the user confirmed the conflicts.
-  abstract pushToTempo(from: string, to: string, force?: boolean): Promise<ApiResponse<PushResponse>>;
+  // stopTracking — Stop tracking & push: open sessions stop once the push
+  // passes its gates (read-first sync, conflicts), never before.
+  abstract pushToTempo(from: string, to: string, force?: boolean, stopTracking?: boolean): Promise<ApiResponse<PushResponse>>;
   // Tempo-side month meta — cached daemon-side, {available:false} degrades
   // the UI silently (missing token scope / network failure).
   abstract getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>>;
   abstract getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>>;
-  // Refetch the month's Tempo snapshot so day statuses reflect the actual
-  // remote state. Read-only pull — never required for (and never blocks) push.
+  // Read the month from Tempo — a sync: worklogs created there without us are
+  // adopted (listed in the answer), changes made only there are taken. A
+  // month closed in Tempo is skipped.
   abstract syncTempo(year: number, month: number): Promise<ApiResponse<TempoSyncResponse>>;
+  // One manual-entry conflict, one side: Mine (the next push overwrites
+  // Tempo) or Tempo (the entry takes Tempo's version, may move day/ticket).
+  abstract resolveConflict(date: string, entryId: string, side: ResolveSide): Promise<ApiResponse<TempoResolveResponse>>;
   // Adopt foreign (Tempo-only) worklogs as local manual entries with
   // ownership — they become editable/deletable mirror citizens.
   abstract importTempo(request: TempoImportRequest): Promise<ApiResponse<TempoImportResponse>>;

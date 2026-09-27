@@ -281,6 +281,7 @@ export interface ManualEntryResponse {
   // The ticket's manual added record: a bare Development add (or an edit
   // down to one) landed on it — `minutes` is the record's total.
   readonly added?: true;
+  readonly date?: string;           // the entry's day
   readonly totalManualMinutes: number;
 }
 
@@ -308,6 +309,7 @@ export interface ManualEntryInput {
   readonly minutes: number;
   readonly description: string;
   readonly activity: string;
+  readonly date?: string;           // YYYY-MM-DD, a past day (Timesheets ＋Log); omitted = the tracked day
 }
 
 export type ManualEntryPatch = Partial<Pick<ManualEntryInput, 'minutes' | 'description' | 'activity'>>;
@@ -447,6 +449,58 @@ export interface MonthDaySummary {
   // Present only when the month has a Tempo snapshot: what exactly diverges
   // from Tempo, one human line per drift (empty array = verified parity).
   readonly drift?: readonly string[];
+  // Timesheets v2 — the day's one word, its manual-entry conflicts and the
+  // raw material of the day card. Absent on daemons < 0.52.0.
+  readonly syncState?: MonthSyncState;
+  readonly conflicts?: readonly EntryConflict[];
+  readonly sessions?: readonly SessionDetail[];
+  readonly entries?: readonly ManualEntry[];
+}
+
+// tracking — today with an open session; conflict — a manual entry changed
+// in Tempo without us (both sides, or Tempo alone where no fast-forward
+// applies) or deleted there; unpushed — the push would change Tempo;
+// pushed — Tempo holds exactly what we have.
+export enum MonthSyncState {
+  None = 'none',
+  Tracking = 'tracking',
+  Conflict = 'conflict',
+  Unpushed = 'unpushed',
+  Pushed = 'pushed',
+}
+
+export enum ConflictField {
+  Ticket = 'ticket',
+  Date = 'date',
+  Time = 'time',
+  Activity = 'activity',
+  Description = 'description',
+}
+
+// Moved to another ticket = a new worklog in Tempo, paired back to ours by
+// the content of the last sync (Tempo recreates on a ticket change).
+export enum ConflictKind {
+  Edited = 'edited',
+  Moved = 'moved',
+  Ticket = 'ticket',
+  Deleted = 'deleted',
+}
+
+// One side of a manual entry, as a worklog.
+export interface WorklogVersion {
+  readonly task: string;
+  readonly date: string;
+  readonly seconds: number;
+  readonly description: string;
+  readonly activity: string;
+}
+
+export interface EntryConflict {
+  readonly entryId: string;
+  readonly task: string;                        // the entry's local ticket
+  readonly kind: ConflictKind;
+  readonly fields: readonly ConflictField[];    // mine vs Tempo; empty when deleted
+  readonly tempo: WorklogVersion | null;        // Tempo's current version, null = deleted
 }
 
 export interface MonthTotals {
@@ -473,13 +527,50 @@ export interface MonthResponse {
   // Ticket summaries (task key → Jira summary) across the month's task lines,
   // cached lookups only. Absent on older daemons → the name column stays empty.
   readonly issueSummaries?: Readonly<Record<string, string>>;
+  // Tracked time rounds to this block in Tempo. Absent on daemons < 0.52.0.
+  readonly roundingMinutes?: number;
 }
 
 // POST /api/tempo-sync — refresh the month's Tempo snapshot on demand.
 export interface TempoSyncResponse {
   readonly month: string;          // YYYY-MM
-  readonly syncedAt: string;       // snapshot fetchedAt
+  readonly syncedAt: string;       // snapshot fetchedAt ('' when a closed month has none)
   readonly worklogCount: number;
+  // Timesheets v2 (absent on daemons < 0.52.0) — every read of Tempo is a
+  // sync: worklogs created there without us are adopted (these, one per new
+  // entry), changes made only there are taken (fast-forward), lost ownership
+  // is restored (linked).
+  readonly adopted?: readonly AdoptedEntry[];
+  readonly fastForwarded?: number;
+  readonly linked?: number;
+  readonly conflicts?: number;     // manual-entry conflicts left in the month
+  // A month closed in Tempo is never read nor written.
+  readonly skipped?: 'closed';
+}
+
+export interface AdoptedEntry {
+  readonly date: string;
+  readonly task: string;
+  readonly entryId: string;
+  readonly tempoWorklogId: number;
+}
+
+export enum ResolveSide {
+  Mine = 'mine',
+  Tempo = 'tempo',
+}
+
+// POST /api/tempo/resolve — one conflict, one side. Where the entry lives
+// afterwards: Tempo's side can move it to another day or ticket (a new
+// entry id), or delete it (entryIdAfter null).
+export interface TempoResolveResponse {
+  readonly date: string;
+  readonly entryId: string;
+  readonly side: ResolveSide;
+  readonly kind: ConflictKind;
+  readonly dateAfter: string;
+  readonly taskAfter: string;
+  readonly entryIdAfter: string | null;
 }
 
 // POST /api/tempo-import — adopt foreign worklogs into local manual entries
@@ -534,7 +625,10 @@ export interface TempoApprovalResponse {
   readonly available: boolean;
   readonly reason?: TempoMetaUnavailableReason;
   readonly period: { readonly from: string; readonly to: string } | null;
-  readonly statusKey: string | null;        // OPEN | IN_REVIEW | APPROVED
+  readonly statusKey: string | null;        // OPEN | IN_REVIEW | APPROVED | REJECTED
+  // Nothing in the month changes, here or in Tempo (the daemon refuses every
+  // edit). Absent on daemons < 0.52.0.
+  readonly closed?: boolean;
   readonly requiredSeconds: number | null;
   readonly timeSpentSeconds: number | null; // Tempo-side logged total
   readonly canSubmit: boolean;
@@ -570,6 +664,23 @@ export interface PushResponse {
   // Commit push refused: the plan contains conflict entries (edited in Tempo
   // since our push) and force was not set. Nothing was executed.
   readonly blockedByConflicts?: boolean;
+  // Timesheets v2 (daemon ≥ 0.52.0) — a commit push reads Tempo first (a
+  // sync). When that read adopted worklogs created there without us, nothing
+  // is sent: they are shown before any push. Adopted by the read after a push
+  // = new rows that appeared meanwhile, the push itself went out.
+  readonly blockedByAdoption?: boolean;
+  readonly adopted?: readonly AdoptedEntry[];
+  // Worklogs that did not go, with Tempo's own words (or the plan's reason).
+  readonly failures?: readonly PushFailure[];
+}
+
+export interface PushFailure {
+  readonly date: string;
+  readonly task: string;
+  readonly kind: ReportEntryKind;
+  readonly entryId?: string;
+  readonly action: PushActionType;
+  readonly reason: string;
 }
 
 // ─── Notifications (desktop toasts) ──────────────────────────────────────

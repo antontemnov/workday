@@ -14,12 +14,19 @@ import {
   MonthDaySummary,
   MonthDayStatus,
   MonthDayTask,
+  MonthSyncState,
+  ConflictField,
+  ConflictKind,
+  EntryConflict,
+  ResolveSide,
+  SessionDetail,
   ScheduleDay,
   TempoScheduleResponse,
   TempoApprovalResponse,
   TempoSyncResponse,
   TempoImportRequest,
   TempoImportResponse,
+  TempoResolveResponse,
   PushResponse,
   SettingsResponse,
   SettingsPatch,
@@ -721,10 +728,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   async getMonth(year: number, month: number): Promise<ApiResponse<MonthResponse>> {
     await delay(200);
-    return { ok: true, data: buildMockMonth(year, month, this.today) };
+    return { ok: true, data: buildMockMonth(year, month, this.today, this.mockResolved) };
   }
 
-  async pushToTempo(_from: string, _to: string, _force = false): Promise<ApiResponse<PushResponse>> {
+  async pushToTempo(_from: string, _to: string, _force = false, _stopTracking = false): Promise<ApiResponse<PushResponse>> {
     await delay(400);
     return {
       ok: true,
@@ -735,7 +742,28 @@ export class MockWorkdayApiService extends WorkdayApiService {
   async syncTempo(year: number, month: number): Promise<ApiResponse<TempoSyncResponse>> {
     await delay(600);
     const mm = `${year}-${String(month).padStart(2, '0')}`;
-    return { ok: true, data: { month: mm, syncedAt: new Date().toISOString(), worklogCount: 42 } };
+    const conflicts = buildMockMonth(year, month, this.today, this.mockResolved).days
+      .reduce((sum, d) => sum + (d.conflicts?.length ?? 0), 0);
+    return {
+      ok: true,
+      data: { month: mm, syncedAt: new Date().toISOString(), worklogCount: 42, adopted: [], fastForwarded: 0, linked: 0, conflicts },
+    };
+  }
+
+  // Resolved conflicts: "date|entryId" → the side taken (the month rebuilds from it).
+  private readonly mockResolved = new Map<string, ResolveSide>();
+
+  async resolveConflict(date: string, entryId: string, side: ResolveSide): Promise<ApiResponse<TempoResolveResponse>> {
+    await delay(300);
+    const [year, month] = date.split('-').map(Number);
+    const conflict = buildMockMonth(year, month, this.today, this.mockResolved).days
+      .find(d => d.date === date)?.conflicts?.find(c => c.entryId === entryId);
+    if (!conflict) return { ok: false, error: `No conflict on ${date} for entry ${entryId}` };
+    this.mockResolved.set(`${date}|${entryId}`, side);
+    return {
+      ok: true,
+      data: { date, entryId, side, kind: conflict.kind, dateAfter: date, taskAfter: conflict.task, entryIdAfter: entryId },
+    };
   }
 
   async importTempo(request: TempoImportRequest): Promise<ApiResponse<TempoImportResponse>> {
@@ -770,6 +798,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
         available: true,
         period: null,
         statusKey: isFuture ? null : (isPast ? 'APPROVED' : 'OPEN'),
+        closed: isPast,
         requiredSeconds: null,
         timeSpentSeconds: null,
         canSubmit: false,
@@ -1109,7 +1138,12 @@ function mockDow(year: number, month: number, day: number): number {
   return new Date(year, month - 1, day).getDay(); // 0=Sun..6=Sat
 }
 
-function buildMockMonth(year: number, month: number, today: string): MonthResponse {
+function buildMockMonth(
+  year: number,
+  month: number,
+  today: string,
+  resolved: ReadonlyMap<string, ResolveSide> = new Map(),
+): MonthResponse {
   const lastDay = new Date(year, month, 0).getDate();
   const from = mockIso(year, month, 1);
   const to = mockIso(year, month, lastDay);
@@ -1127,7 +1161,8 @@ function buildMockMonth(year: number, month: number, today: string): MonthRespon
     const empty = isWeekend || date > today || (d === HOLIDAY_DAY && d % 2 === 0);
     if (empty) {
       days.push({ date, dayType: null, status: MonthDayStatus.None, claimedMs: 0,
-                  reportedSeconds: 0, taskCount: 0, tasks: [], pushedAt: null });
+                  reportedSeconds: 0, taskCount: 0, tasks: [], pushedAt: null,
+                  syncState: MonthSyncState.None, conflicts: [], sessions: [], entries: [] });
       continue;
     }
 
@@ -1147,6 +1182,26 @@ function buildMockMonth(year: number, month: number, today: string): MonthRespon
           { task: 'ATL-6892', seconds: 1800, kind: 'manual', sessionCount: 0,
             entryId: `mock-${date}-review`, description: 'review: saga retries', activity: 'CodeReview' },
         ];
+    // v2: the outdated day's entry was edited on both sides — a conflict
+    // until resolved; Tempo's side takes Tempo's version.
+    const manualAt = tasks.findIndex(t => t.kind === 'manual');
+    const edited = tasks[manualAt];
+    const side = status === MonthDayStatus.Outdated ? resolved.get(`${date}|${edited.entryId}`) : undefined;
+    const tempoVersion = { task: edited.task, date, seconds: edited.seconds + 900,
+                           description: `${edited.description ?? ''} + retro`, activity: edited.activity ?? 'Other' };
+    const conflicts: EntryConflict[] = status === MonthDayStatus.Outdated && !side
+      ? [{ entryId: edited.entryId!, task: edited.task, kind: ConflictKind.Edited,
+           fields: [ConflictField.Time, ConflictField.Description], tempo: tempoVersion }]
+      : [];
+    if (side === ResolveSide.Tempo) {
+      tasks[manualAt] = { ...edited, seconds: tempoVersion.seconds, description: tempoVersion.description };
+    }
+    const syncState = date === today ? MonthSyncState.Tracking
+      : conflicts.length > 0 ? MonthSyncState.Conflict
+      : status === MonthDayStatus.Pushed || side === ResolveSide.Tempo ? MonthSyncState.Pushed
+      : MonthSyncState.Unpushed;
+    const manual = tasks.filter(t => t.kind === 'manual');
+
     const reportedSeconds = tasks.reduce((s, t) => s + t.seconds, 0);
     const pushedAt = status === MonthDayStatus.Pending ? null : `${date}T18:40:00.000Z`;
 
@@ -1156,6 +1211,13 @@ function buildMockMonth(year: number, month: number, today: string): MonthRespon
       reportedSeconds,
       taskCount: new Set(tasks.map(t => t.task)).size,
       tasks, pushedAt,
+      syncState, conflicts,
+      sessions: tasks.filter(t => t.kind === 'session')
+        .flatMap(t => Array.from({ length: t.sessionCount }, (_, i) => mockStoredSession(date, t.task, i, t.seconds * 1000 / t.sessionCount))),
+      entries: manual.map(t => ({
+        id: t.entryId!, task: t.task, minutes: t.seconds / 60,
+        description: t.description ?? '', activity: t.activity ?? 'Other', createdAt: `${date}T12:00:00.000Z`,
+      })),
     });
 
     totals.claimedMs += reportedSeconds * 1000 - 600_000;
@@ -1169,12 +1231,40 @@ function buildMockMonth(year: number, month: number, today: string): MonthRespon
 
   return {
     year, month, from, to, days, totals, lastPushAt,
+    roundingMinutes: 15,
     issueSummaries: {
       'ATL-6781': 'Daily standup and team sync',
       'ATL-6442': 'Existing Transaction: reactive save for Policy Dictionaries',
       'ATL-6892': 'Saga retries: harden the outbox dispatcher',
       // ATL-10 left unmapped → its drawer row shows an empty name column
     },
+  };
+}
+
+// A closed session as the daemon stores it — no live fields.
+function mockStoredSession(date: string, task: string, index: number, durationMs: number): SessionDetail {
+  const start = Date.parse(`${date}T${String(9 + index * 3).padStart(2, '0')}:00:00.000Z`);
+  return {
+    id: `mock-${date}-${task}-${index}`,
+    repo: index % 2 === 0 ? 'D:/work/web-frontend' : 'D:/work/api-backend',
+    task,
+    branch: `${task}-jdoe-work`,
+    state: 'active',
+    startedAt: new Date(start).toISOString(),
+    activatedAt: new Date(start + 60_000).toISOString(),
+    lastSeenAt: new Date(start + 60_000 + durationMs).toISOString(),
+    paused: false,
+    pauseSource: null,
+    effectiveDurationMs: durationMs,
+    score: 0,
+    normalizedScore: 0,
+    pauseEtaMs: null,
+    isLeader: false,
+    sensitivity: SensitivityLevel.Normal,
+    closedBy: 'idle_timeout',
+    evidence: { commits: 2, reflogEvents: 3, linesAdded: 120, linesRemoved: 30, filesChanged: 6 },
+    pauseCount: 0,
+    totalPauseDurationMs: 0,
   };
 }
 

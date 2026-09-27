@@ -1342,7 +1342,7 @@ export interface TempoSyncResponse {
   readonly fastForwarded: number;
   readonly linked: number;
   readonly conflicts: number;      // manual-entry conflicts left in the month
-  // A month that is not OPEN in Tempo is never read nor written.
+  // A month closed in Tempo is never read nor written.
   readonly skipped?: 'closed';
 }
 
