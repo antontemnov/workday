@@ -22,6 +22,7 @@ import { SessionTracker } from '../../src/core/session-tracker.js';
 import { ActivityEvaluator } from '../../src/core/activity-evaluator.js';
 import { ClosedBy } from '../../src/core/types.js';
 import type { AppConfig, PollResult } from '../../src/core/types.js';
+import { waitForNextReflogSecond } from '../helpers/git-clock.js';
 
 const TEST_DIR = join(tmpdir(), `workday-ledger-test-${randomBytes(4).toString('hex')}`);
 const REPO = join(TEST_DIR, 'repo');
@@ -313,6 +314,7 @@ async function main(): Promise<void> {
   // The commit lands in the reflog together with the checkout. It belongs
   // to the session being closed (farewell replay); the next session — born
   // on a branch cut from that very tip — must seed it as pre-session.
+  await waitForNextReflogSecond();
   appendFileSync(join(REPO, 'mixed.ts'), 'late\n'.repeat(5));
   git('add .');
   git('commit -m "ATL-3 late commit"');
