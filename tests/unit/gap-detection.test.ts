@@ -194,7 +194,8 @@ test('long gap (≥ idleCloseHours): session closes at the pre-gap end', () => {
 });
 
 test('long gap: the sleep never counts into effective duration', () => {
-  const { tracker, session } = makeActiveSession(3);
+  const { tracker, tick, session } = makeActiveSession(3);
+  tick(true); // the birth tick can stamp lastSeenAt before activatedAt
   const preGapLastSeen = session.lastSeenAt;
   tracker.applyGapPauses();
   tracker.closeIdleSessions(Date.parse(preGapLastSeen) + 8 * HOUR_MS);
