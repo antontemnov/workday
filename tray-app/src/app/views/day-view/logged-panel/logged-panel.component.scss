@@ -415,6 +415,151 @@
   100% { transform: none; opacity: 1; }
 }
 
+// ─── Timesheets card (sheet) — the tickets of one open day ────────────────
+// The day is one glass (the host draws it, the day row is its lid); a ticket
+// is a line of it, not a card of its own: the lid (key · name · Σ) opens the
+// body, a hairline parts the neighbours.
+:host(.sheet) {
+  .lp-table { padding-bottom: 0; }
+
+  .blk, .blk.one {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    padding: 0 8px;
+
+    &::after { content: none; }
+    &:last-child { padding-bottom: 2px; }
+  }
+
+  .blk-id {
+    position: relative;
+    margin: 0 -8px;
+    padding: 0 8px;
+    background: none;
+    border-radius: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .blk + .blk .blk-id { box-shadow: inset 0 1px 0 rgba(205, 214, 244, 0.06); }
+  .blk.open .blk-id { background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)); }
+  .blk.open .blk-body { padding-bottom: 5px; }
+  .blk:last-child .blk-id { border-radius: 0 0 8px 8px; }
+  .blk.open:last-child .blk-id { border-radius: 0; }
+  .c-nm { cursor: inherit; }
+  .c-ds.note { color: #cba6f7; font-style: normal; }
+
+  // Conflict or refusal — the whole ticket turns to red glass, no label on
+  // it. The slab is drawn inside the ticket's own box, so the key column,
+  // the names and Σ stay on their neighbours' verticals.
+  .blk.cf {
+    padding: 3px 8px 5px;
+
+    > * { position: relative; z-index: 1; }
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 1px 3px 2px;
+      border-radius: 8px;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(115deg, rgba(255, 255, 255, 0.05), transparent 38%, rgba(255, 255, 255, 0.02) 72%, transparent 90%),
+        linear-gradient(180deg, rgba(243, 139, 168, 0.15), rgba(243, 139, 168, 0.07) 40%, rgba(243, 139, 168, 0.055));
+      box-shadow: inset 0 0 0 1px rgba(243, 139, 168, 0.3), inset 0 1px 0 rgba(255, 214, 224, 0.16);
+    }
+
+    .blk-id {
+      margin: 0 -5px;
+      padding: 0 5px;
+      border-radius: 7px 7px 0 0;
+      background: linear-gradient(180deg, rgba(243, 139, 168, 0.1), rgba(243, 139, 168, 0.02));
+      box-shadow: none;
+    }
+
+    .c-nm { color: #f5e0e8; }
+  }
+
+  .blk.cf + .blk .blk-id { box-shadow: none; }
+
+  // Seek — the ticket the Push button led to lights up, then fades.
+  .blk.cf::after, .blk.in::after {
+    content: '';
+    position: absolute;
+    inset: 1px 3px 2px;
+    border-radius: 8px;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 1.6s ease;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  .blk.cf::after { background: rgba(243, 139, 168, 0.24); }
+  .blk.in::after { background: rgba(137, 180, 250, 0.2); }
+  .blk.cf.seek::after, .blk.in.seek::after { opacity: 1; transition: none; }
+
+  // R1 — both versions of the record, one pill each.
+  .cfb {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+
+    .wl { height: 24px; }
+    .cf-cap { height: 21px; }
+  }
+
+  .cf-say { color: #a6adc8; font-style: normal; }
+
+  .side {
+    justify-self: start;
+    height: 18px;
+    min-width: 62px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    span { position: relative; z-index: 3; }
+    &:hover { filter: brightness(1.18); }
+    &.mine { @include glass.glass-candy((203 166 247), (228 205 252), #cba6f7); }
+    &.tempo { @include glass.glass-candy((137 180 250), (200 220 252), #89b4fa); }
+  }
+
+  // A closed month names the sides, it does not offer them.
+  .side-w {
+    justify-self: start;
+    min-width: 62px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #7f849c;
+    text-align: center;
+  }
+
+  .v {
+    font-style: normal;
+    color: #7f849c;
+
+    i { font-style: italic; }
+    .ty { font-weight: 700; font-size: 10px; }
+    .df { color: #f4f6ff; }
+    .gone { color: #f5c2d0; font-style: italic; }
+  }
+
+  .cf-side .c-dur { color: #7f849c; }
+  .cf-side .c-dur.df { color: #f4f6ff; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

@@ -1,9 +1,10 @@
-import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, EventEmitter, HostBinding, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import {
-  ActivityType, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, ManualEntry, ManualEntryInput, ManualEntryPatch,
+  ActivityType, ConflictField, ConflictKind, DEVELOPMENT_ACTIVITY, EntryConflict, Favorite, FavoriteInput,
+  ManualEntry, ManualEntryInput, ManualEntryPatch, MonthDayTask, PushFailure, ResolveSide,
   SensitivityLevel, SensitivityPill, SessionDetail, normalizeFavName,
 } from '../../../models/workday.models';
 import { activityLabel, activityOptions } from '../activity.util';
@@ -68,9 +69,50 @@ interface TicketBlock {
   readonly heat: string;                        // the accruing session's temperature (rim colour)
   readonly folded: readonly ManualEntry[];      // unnamed adds behind one row
   readonly named: readonly ManualEntry[];       // described entries, oldest first
+  readonly foreign: readonly MonthDayTask[];    // sheet: Tempo worklogs we do not own
   readonly rowCount: number;
-  readonly totalMs: number;                     // header Σ
+  readonly totalMs: number;                     // header Σ (sheet: what Tempo gets)
   readonly foldedMinutes: number;               // manual added row share
+}
+
+// One side of a conflict as the card prints it: the fields that differ lit,
+// the equal ones muted.
+export interface ConflictSideView {
+  readonly gone: boolean;                       // Tempo deleted it — nothing to show
+  readonly task: string | null;                 // only when the sides sit on different tickets
+  readonly date: string | null;                 // only when the sides sit on different days
+  readonly type: string;
+  readonly description: string;
+  readonly duration: string;
+  readonly litType: boolean;
+  readonly litDescription: boolean;
+  readonly litDuration: boolean;
+}
+
+interface ConflictPick {
+  readonly side: ResolveSide;
+  readonly conflict: EntryConflict;
+}
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// '2026-09-17' → '17 Sep'.
+function shortDate(iso: string): string {
+  return `${Number(iso.slice(8, 10))} ${MONTH_ABBR[Number(iso.slice(5, 7)) - 1] ?? ''}`;
+}
+
+// What the chosen side does, in words — the row says it while ↩ burns.
+function resolvedNoteText(pick: ConflictPick): string {
+  const c = pick.conflict;
+  if (pick.side === ResolveSide.Mine) {
+    if (c.kind === ConflictKind.Deleted) return '✓ mine — the push recreates it in Tempo';
+    if (c.kind === ConflictKind.Moved || c.kind === ConflictKind.Ticket) return '✓ mine — the push moves it back';
+    return '✓ mine — the push overwrites Tempo';
+  }
+  if (c.kind === ConflictKind.Deleted) return '✓ Tempo — deleted here too';
+  if (c.kind === ConflictKind.Moved && c.tempo) return `✓ Tempo — moves to ${shortDate(c.tempo.date)}`;
+  if (c.kind === ConflictKind.Ticket && c.tempo) return `✓ Tempo — moves to ${c.tempo.task}`;
+  return '✓ Tempo — its version taken';
 }
 
 // A suggestion accept in flight: the entry it creates (matched by the
@@ -125,6 +167,25 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Jira site root — null (older daemon / no secrets) hides Open in browser.
   @Input() jiraBaseUrl: string | null = null;
 
+  // ─── Sheet — the Timesheets card of one day ────────────────────────────
+  // Tickets are lines of the day's glass: the lid opens the body, Σ is what
+  // Tempo gets (tracked time rounded), no hot zone, no favorites, taskless
+  // sessions stay out.
+  @Input() sheet = false;
+  // No edits: today's snapshot (edits live on the Day tab) or a closed month.
+  @Input() readOnly = false;
+  // A month closed in Tempo: conflicts show both sides, neither is offered.
+  @Input() locked = false;
+  @Input() date = '';
+  @Input() roundingMinutes = 0;
+  @Input() conflicts: readonly EntryConflict[] = [];
+  // Worklogs Tempo refused on the last push — their ticket says why.
+  @Input() refusals: readonly PushFailure[] = [];
+  // Tempo worklogs we do not own (a closed month, a ticket without a key).
+  @Input() foreign: readonly MonthDayTask[] = [];
+  // Rows adopted from Tempo the user has not been shown yet.
+  @Input() unseen: ReadonlySet<string> = new Set<string>();
+
   // Pause / resume / mode of a live session — the day view's pill channel:
   // 'pause' → pause API, a level → sensitivity API (which also resumes).
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill; keepPause?: boolean }>();
@@ -145,8 +206,26 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Uncommitted + unconfirmed local minutes vs the server data — the parent
   // adds it to the Day total so it moves together with the feed.
   @Output() liveDiffChanged = new EventEmitter<number>();
+  // Sheet: a conflict side taken — fired when its undo window closes.
+  @Output() resolveCommitted = new EventEmitter<{ entryId: string; side: ResolveSide }>();
+  // Sheet: the day's Σ as the card shows it (ms) — the lid prints it.
+  @Output() dayTotalChanged = new EventEmitter<number>();
 
   public constructor(private host: ElementRef<HTMLElement>, private cdr: ChangeDetectorRef, private jiraLink: JiraLinkService) {}
+
+  @HostBinding('class.sheet')
+  get isSheet(): boolean { return this.sheet; }
+
+  // Sheet: tickets whose body is open — the lid toggles it; what needs the
+  // user (a new conflict, a refusal, an unseen adopted row) opens it once.
+  readonly openTasks = new Set<string>();
+  private readonly attended = new Set<string>();
+  // Sheet: a side taken burns a ↩ for the undo window, then the resolve goes
+  // out; the row keeps saying the choice until the data drops the conflict
+  // (or HIDDEN_TTL_MS says the call was lost and the conflict honestly returns).
+  private readonly pickTimers = new Map<string, ConflictPick & { readonly timer: ReturnType<typeof setTimeout> }>();
+  private readonly resolving = new Map<string, ConflictPick & { readonly at: number }>();
+  private lastEmittedTotal = -1;
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
@@ -282,6 +361,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (changes['feedSort'] && !changes['feedSort'].firstChange) {
       setTimeout(() => this.playReorder(false));
     }
+    if (this.sheet) {
+      if (changes['conflicts'] || changes['refusals'] || changes['unseen'] || changes['entries']) this.openAttention();
+      if (changes['conflicts'] || changes['entries']) this.reconcileResolving();
+      this.emitSheetTotal();
+    }
   }
 
   ngOnDestroy(): void {
@@ -305,6 +389,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.commitTaskDelete(task);
     }
     this.taskDeleteTimers.clear();
+    // A side taken is the user's choice too.
+    for (const [id, pick] of [...this.pickTimers]) {
+      clearTimeout(pick.timer);
+      this.commitPick(id);
+    }
     if (this.favDoneTimer) clearTimeout(this.favDoneTimer);
     if (this.mergeTimer !== null) clearTimeout(this.mergeTimer);
     if (this.reorderTimer !== null) clearTimeout(this.reorderTimer);
@@ -424,7 +513,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // stands on its newest fact. Sum: biggest day total first, recency breaks
   // ties.
   private sortTasks(blocks: readonly TicketBlock[]): string[] {
-    const zone = (b: TicketBlock): number => !b.hot ? 2 : b.quiet ? 1 : 0;
+    const zone = (b: TicketBlock): number => this.sheet || !b.hot ? 2 : b.quiet ? 1 : 0;
     return [...blocks]
       .sort((a, b) => zone(a) - zone(b)
         || (!a.hot && this.feedSort === 'sum'
@@ -508,21 +597,23 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   private buildBlocks(): TicketBlock[] {
-    interface Bucket { live: SessionDetail[]; sessions: SessionDetail[]; folded: ManualEntry[]; named: ManualEntry[] }
+    interface Bucket { live: SessionDetail[]; sessions: SessionDetail[]; folded: ManualEntry[]; named: ManualEntry[]; foreign: MonthDayTask[] }
     const byTask = new Map<string, Bucket>();
     const bucketOf = (task: string): Bucket => {
       let b = byTask.get(task);
-      if (!b) { b = { live: [], sessions: [], folded: [], named: [] }; byTask.set(task, b); }
+      if (!b) { b = { live: [], sessions: [], folded: [], named: [], foreign: [] }; byTask.set(task, b); }
       return b;
     };
+    // The Timesheets tab has no place for time without a ticket.
+    const shown = (task: string | null): boolean => !this.sheet || task !== null;
     // A live session always shows — no delete mask can hide running time,
     // except the rows a Stop & Delete has just sent to the daemon.
     for (const s of this.openSessions) {
-      if (!this.stoppedLiveIds.has(s.id)) bucketOf(s.task ?? '—').live.push(s);
+      if (!this.stoppedLiveIds.has(s.id) && shown(s.task)) bucketOf(s.task ?? '—').live.push(s);
     }
     for (const s of this.closedSessions) {
       const task = s.task ?? '—';
-      if (this.hiddenTasks.has(task) || this.sesHiddenIds.has(s.id)) continue;
+      if (this.hiddenTasks.has(task) || this.sesHiddenIds.has(s.id) || !shown(s.task)) continue;
       bucketOf(task).sessions.push(s);
     }
     for (const e of this.entries) {
@@ -530,6 +621,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       const b = bucketOf(e.task);
       if (this.isFoldable(e)) b.folded.push(e);
       else b.named.push(e);
+    }
+    if (this.sheet) {
+      for (const f of this.foreign) bucketOf(f.task).foreign.push(f);
     }
     const blocks: TicketBlock[] = [];
     for (const [task, b] of byTask) {
@@ -545,25 +639,35 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
       const namedMinutes = b.named.reduce(
         (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
+      const foreignMs = b.foreign.reduce((sum, f) => sum + f.seconds * 1000, 0);
       const at = [
         ...b.live.map(s => s.lastSeenAt),
         ...b.sessions.map(s => s.lastSeenAt),
         ...b.folded.map(e => e.createdAt),
         ...b.named.map(e => e.createdAt),
       ].sort().pop() ?? '';
+      // Sheet Σ = what Tempo gets: the tracked aggregate rounded, entries and
+      // foreign worklogs exact.
+      const trackedAlive = b.live.length > 0
+        || b.sessions.some(s => !this.sesGone(s.id))
+        || b.folded.some(e => !this.isGoneLocally(e.id));
+      const totalMs = this.sheet
+        ? this.roundTracked(liveMs + trkMs + foldedMinutes * 60_000, trackedAlive) + namedMinutes * 60_000 + foreignMs
+        : liveMs + trkMs + (foldedMinutes + namedMinutes) * 60_000;
       blocks.push({
         task,
         at,
         live: b.live,
         sessions: b.sessions,
         sessionRows: [...b.live, ...b.sessions],
-        hot: b.live.length > 0,
+        hot: !this.sheet && b.live.length > 0,
         quiet: b.live.length > 0 && !leader,
         heat: leader ? staminaHeat(leader.normalizedScore) : '',
         folded: b.folded,
         named: b.named,
-        rowCount: b.live.length + b.sessions.length + (b.folded.length > 0 ? 1 : 0) + b.named.length,
-        totalMs: liveMs + trkMs + (foldedMinutes + namedMinutes) * 60_000,
+        foreign: b.foreign,
+        rowCount: b.live.length + b.sessions.length + (b.folded.length > 0 ? 1 : 0) + b.named.length + b.foreign.length,
+        totalMs,
         foldedMinutes,
       });
     }
@@ -659,6 +763,163 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.lastEmittedDiff = diff;
       this.liveDiffChanged.emit(diff);
     }
+    this.emitSheetTotal();
+  }
+
+  // ─── Sheet ───────────────────────────────────────────────────────────────
+
+  // Tracked time lands in Tempo rounded to the block — the nearest one, never
+  // under one while there is tracked time at all (the daemon's rule).
+  private roundTracked(ms: number, hasTracked: boolean): number {
+    if (!hasTracked) return 0;
+    if (this.roundingMinutes <= 0) return ms;
+    const blockSeconds = this.roundingMinutes * 60;
+    return Math.max(Math.round(Math.round(ms / 1000) / blockSeconds), 1) * blockSeconds * 1000;
+  }
+
+  // The day's Σ as the card shows it: a ticket in its undo window is gone.
+  private emitSheetTotal(): void {
+    if (!this.sheet) return;
+    const total = this.buildBlocks().reduce((sum, b) => sum + (this.taskGone(b.task) ? 0 : b.totalMs), 0);
+    if (total === this.lastEmittedTotal) return;
+    this.lastEmittedTotal = total;
+    this.dayTotalChanged.emit(total);
+  }
+
+  isOpen(b: TicketBlock): boolean {
+    return !this.sheet || this.openTasks.has(b.task) || this.draftTask === b.task
+      || (this.editingId !== null && [...b.folded, ...b.named].some(e => e.id === this.editingId));
+  }
+
+  // The lid opens and closes the body; its own handles (the key, ↩) act first.
+  onLidClick(b: TicketBlock, ev: MouseEvent): void {
+    if (!this.sheet) return;
+    if ((ev.target as HTMLElement | null)?.closest('.tkt, .l-undo')) return;
+    if (this.openTasks.has(b.task)) {
+      if (this.draftTask === b.task) this.draftTask = null;
+      this.openTasks.delete(b.task);
+    } else {
+      this.openTasks.add(b.task);
+    }
+  }
+
+  private openAttention(): void {
+    const reasons: [string, string][] = [
+      ...this.conflicts.map((c): [string, string] => [`cf|${c.entryId}`, c.task]),
+      ...this.refusals.map((r): [string, string] => [`rf|${r.task}|${r.entryId ?? ''}|${r.reason}`, r.task]),
+      ...this.entries.filter(e => this.unseen.has(e.id)).map((e): [string, string] => [`in|${e.id}`, e.task]),
+    ];
+    for (const [key, task] of reasons) {
+      if (this.attended.has(key)) continue;
+      this.attended.add(key);
+      this.openTasks.add(task);
+    }
+  }
+
+  /** Bring a ticket forward: open it and flash it. The host scrolls to the node. */
+  seek(task: string): HTMLElement | null {
+    if (!this.sheet) return null;
+    this.openTasks.add(task);
+    this.cdr.detectChanges();
+    const el = this.cardEl(task);
+    if (!el) return null;
+    el.classList.add('seek');
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('seek')));
+    return el;
+  }
+
+  // Red glass: an open conflict or a refused worklog inside.
+  isRedGlass(b: TicketBlock): boolean {
+    return this.sheet && (b.named.some(e => this.openConflict(e) !== null) || this.refusalsOf(b.task).length > 0);
+  }
+
+  hasUnseen(b: TicketBlock): boolean {
+    return this.sheet && [...b.folded, ...b.named].some(e => this.unseen.has(e.id));
+  }
+
+  refusalsOf(task: string): readonly PushFailure[] {
+    return this.sheet ? this.refusals.filter(r => r.task === task) : [];
+  }
+
+  // The entry's conflict, while no side is taken.
+  openConflict(e: ManualEntry): EntryConflict | null {
+    if (!this.sheet || this.pickTimers.has(e.id) || this.resolving.has(e.id)) return null;
+    return this.conflicts.find(c => c.entryId === e.id) ?? null;
+  }
+
+  // What drifted, in words: the worklog fields the two sides disagree on.
+  conflictSay(c: EntryConflict): string {
+    if (c.kind === ConflictKind.Deleted) return 'Deleted in Tempo';
+    const names: readonly string[] = c.fields;
+    if (names.length === 0) return '';
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${names.length === 1 ? 'differs' : 'differ'}`;
+  }
+
+  // Tempo's side is its current version: the last sync plus its own edits.
+  conflictSide(e: ManualEntry, c: EntryConflict, side: 'mine' | 'tempo'): ConflictSideView {
+    const tempo = c.tempo;
+    if (side === 'tempo' && !tempo) {
+      return { gone: true, task: null, date: null, type: '', description: '', duration: '—', litType: false, litDescription: false, litDuration: false };
+    }
+    const onlyHere = c.kind === ConflictKind.Deleted;
+    const lit = (field: ConflictField): boolean => onlyHere || c.fields.includes(field);
+    const mine = { task: e.task, date: this.date, seconds: this.displayMinutes(e) * 60, description: this.displayDescription(e), activity: this.displayActivity(e) };
+    const x = side === 'tempo' && tempo ? tempo : mine;
+    return {
+      gone: false,
+      task: tempo && tempo.task !== e.task ? x.task : null,
+      date: tempo && tempo.date !== this.date ? shortDate(x.date) : null,
+      type: this.activityLabel(x.activity),
+      description: x.description,
+      duration: this.formatDurationHm(x.seconds * 1000),
+      litType: lit(ConflictField.Activity),
+      litDescription: lit(ConflictField.Description),
+      litDuration: lit(ConflictField.Time),
+    };
+  }
+
+  readonly sideMine = ResolveSide.Mine;
+  readonly sideTempo = ResolveSide.Tempo;
+
+  pickSide(e: ManualEntry, c: EntryConflict, side: ResolveSide, ev: MouseEvent): void {
+    ev.stopPropagation();
+    if (!this.sheet || this.locked || this.pickTimers.has(e.id)) return;
+    this.pickTimers.set(e.id, { side, conflict: c, timer: setTimeout(() => this.commitPick(e.id), UNDO_WINDOW_MS) });
+  }
+
+  unpick(e: ManualEntry, ev: MouseEvent): void {
+    ev.stopPropagation();
+    const pick = this.pickTimers.get(e.id);
+    if (!pick) return;
+    clearTimeout(pick.timer);
+    this.pickTimers.delete(e.id);
+  }
+
+  isPicked(e: ManualEntry): boolean {
+    return this.pickTimers.has(e.id);
+  }
+
+  // The chosen side in words — while ↩ burns and until the data catches up.
+  resolvedNote(e: ManualEntry): string | null {
+    const pick = this.pickTimers.get(e.id) ?? this.resolving.get(e.id);
+    return pick ? resolvedNoteText(pick) : null;
+  }
+
+  private commitPick(id: string): void {
+    const pick = this.pickTimers.get(id);
+    if (!pick) return;
+    this.pickTimers.delete(id);
+    this.resolving.set(id, { side: pick.side, conflict: pick.conflict, at: Date.now() });
+    this.resolveCommitted.emit({ entryId: id, side: pick.side });
+  }
+
+  private reconcileResolving(): void {
+    const now = Date.now();
+    for (const [id, r] of [...this.resolving]) {
+      const pending = this.conflicts.some(c => c.entryId === id) && this.entries.some(e => e.id === id);
+      if (!pending || now - r.at > HIDDEN_TTL_MS) this.resolving.delete(id);
+    }
   }
 
   // ─── Row display (with optimistic overrides) ───────────────────────────
@@ -702,7 +963,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // The ticket key — the card's handle. Delete takes the whole card.
   onTicketMenu(b: TicketBlock, ev: MouseEvent): void {
-    if (this.actionPending || this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
+    if (this.actionPending || this.sheetReadOnly || this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       ...(b.task !== '—'
         ? [{ icon: CTX_ICON.add, label: 'Add time', action: (): void => this.openDraft(b.task) }] : []),
@@ -720,11 +981,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // A handle lights up only while its menu can open: not during the fresh
   // draft window, not on a struck row, not while the daemon is answering.
   entryMenuReady(e: ManualEntry): boolean {
-    return !this.actionPending && !this.isFresh(e) && !this.isDeleted(e) && !this.taskDeleted(e.task);
+    return !this.actionPending && !this.sheetReadOnly && !this.isFresh(e) && !this.isDeleted(e) && !this.taskDeleted(e.task);
   }
 
   addedMenuReady(b: TicketBlock): boolean {
-    return !this.actionPending && !this.foldedHasFresh(b) && !this.foldedDeleted(b) && !this.taskDeleted(b.task);
+    return !this.actionPending && !this.sheetReadOnly && !this.foldedHasFresh(b) && !this.foldedDeleted(b) && !this.taskDeleted(b.task);
+  }
+
+  // Sheet without edits: today's snapshot or a closed month.
+  get sheetReadOnly(): boolean {
+    return this.sheet && this.readOnly;
   }
 
   // The type word — an entry's handle.
@@ -733,8 +999,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       { icon: CTX_ICON.edit, label: 'Edit', action: () => this.onRowDblClick(e) },
       // Hidden only when structurally impossible (no description to name the
-      // template); an exact duplicate shows as a disabled fact instead.
-      ...(this.canFavorite(e)
+      // template); an exact duplicate shows as a disabled fact instead. The
+      // Timesheets card has no favorites.
+      ...(this.canFavorite(e) && !this.sheet
         ? [this.isInFavorites(e)
           ? { icon: CTX_ICON.star, label: 'In favorites', disabled: true,
               title: 'This exact task + description + duration is already saved', action: (): void => {} }
@@ -1026,9 +1293,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // ─── The row form — inline edit (menu / double-click) and the Add time draft ─
 
   onRowDblClick(e: ManualEntry): void {
-    if (!this.canEdit(e) || this.actionPending || this.editingId === e.id
-        || this.isDeleted(e) || this.taskDeleted(e.task)) return;
+    if (!this.canEdit(e) || this.actionPending || this.sheetReadOnly || this.editingId === e.id
+        || this.isDeleted(e) || this.taskDeleted(e.task) || this.openConflict(e) !== null || this.resolvedNote(e) !== null) return;
     this.draftTask = null;
+    if (this.sheet) this.openTasks.add(e.task);
     this.editingId = e.id;
     this.editMinutes = this.displayMinutes(e);
     this.editActivity = this.displayActivity(e);
@@ -1043,6 +1311,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Add time: a new row born as its own form at the foot of the card.
   private openDraft(task: string): void {
     if (this.actionPending || this.taskDeleted(task)) return;
+    if (this.sheet) this.openTasks.add(task); // the saved row lands in sight
     this.editingId = null;
     this.editPinnedActivity = '';
     const options = this.activityOptions;
@@ -1127,7 +1396,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // The left cell is the row's anchor: its menu grows from under it.
   onSessionMenu(s: SessionDetail, anchor: HTMLElement): void {
-    if (this.actionPending) return;
+    if (this.actionPending || this.sheetReadOnly) return;
     if (s.closedBy) {
       if (this.sessionDeleted(s) || this.taskDeleted(s.task ?? '—')) return;
       toggleAnchoredMenu(anchor, () => [

@@ -25,11 +25,15 @@
        [class.deleted]="taskDeleted(b.task)"
        [class.removing]="removingTasks.has(b.task)"
        [class.folding]="foldingTasks.has(b.task)"
+       [class.open]="sheet && isOpen(b)"
+       [class.cf]="isRedGlass(b)"
+       [class.in]="hasUnseen(b)"
        (contextmenu)="onCardContextMenu($event)">
 
-    <!-- The lid — identity + day Σ; the key is the card's handle -->
-    <div class="blk-id">
-      <span class="tkt anc" [class.locked]="actionPending" (click)="onTicketMenu(b, $event)">{{ b.task }}</span>
+    <!-- The lid — identity + day Σ; the key is the card's handle. On the
+         Timesheets card the lid also opens and closes the body. -->
+    <div class="blk-id" (click)="onLidClick(b, $event)">
+      <span class="tkt" [class.anc]="!sheetReadOnly" [class.locked]="actionPending" (click)="onTicketMenu(b, $event)">{{ b.task }}</span>
       <span class="c-nm"
             [class.none]="!summaryOfTask(b.task)">{{ summaryOfTask(b.task) || '— name not cached' }}</span>
       <ng-container *ngIf="taskDeleted(b.task); else blockSumTpl">
@@ -40,7 +44,12 @@
       </ng-template>
     </div>
 
-    <div class="blk-body">
+    <div class="blk-body" *ngIf="isOpen(b)">
+
+      <!-- Timesheets: a worklog Tempo refused on the last push — why, in its words. -->
+      <div class="cfb" *ngFor="let r of refusalsOf(b.task)">
+        <div class="wl cf-cap"><span class="c-type">Refused</span><span class="c-ds cf-say">{{ r.reason }}</span></div>
+      </div>
 
       <!-- Sessions — one row each: live ones wear the pill (Tracking /
            Paused / Waiting), closed ones the type word. The left cell is the
@@ -52,7 +61,7 @@
         [showDur]="showSessionDur(b)"
         [deleted]="sessionDeleted(s)"
         [struck]="taskDeleted(b.task)"
-        [locked]="actionPending"
+        [locked]="actionPending || sheetReadOnly"
         [class.removing]="sesRemovingIds.has(s.id)"
         (menuRequested)="onSessionMenu(s, $event)"
         (undoRequested)="undoSessionDelete(s)" />
@@ -95,48 +104,84 @@
 
       <!-- Described entries — ordinary records: the type word opens the
            entry's menu, dblclick edits in place, delete burns a 3s undo in
-           the time slot. -->
-      <div class="wl ent"
-           *ngFor="let e of b.named; trackBy: trackByEntry"
-           [attr.data-eid]="e.id"
-           [class.fresh]="isFresh(e)"
-           [class.arrive]="arrivingId === e.id"
-           [class.landed]="landedId === e.id"
-           [class.pop]="poppingIds.has(e.id)"
-           [style.animation-delay.ms]="popDelayMs.get(e.id)"
-           [class.editing]="editingId === e.id"
-           [class.deleted]="isDeleted(e)"
-           [class.removing]="removingIds.has(e.id)"
-           [class.fav-done]="favDoneId === e.id"
-           (dblclick)="onRowDblClick(e)">
+           the time slot. On the Timesheets card an entry changed in Tempo
+           too shows both versions instead (R1); a side taken reads as words
+           while its ↩ burns. -->
+      <ng-container *ngFor="let e of b.named; trackBy: trackByEntry">
+        <div class="cfb" *ngIf="openConflict(e) as c; else entryRow" [attr.data-eid]="e.id">
+          <div class="wl cf-cap"><span class="c-type">Conflict</span><span class="c-ds cf-say">{{ conflictSay(c) }}</span></div>
+          <div class="wl cf-side" *ngIf="conflictSide(e, c, 'mine') as s">
+            <button *ngIf="!locked; else mineWord" type="button" class="side mine" (click)="pickSide(e, c, sideMine, $event)"><span>Mine</span></button>
+            <ng-template #mineWord><span class="side-w">Mine</span></ng-template>
+            <span class="c-ds v"><ng-container *ngTemplateOutlet="sideText; context: { $implicit: s }" /></span>
+            <span class="c-dur" [class.df]="s.litDuration">{{ s.duration }}</span>
+          </div>
+          <div class="wl cf-side" *ngIf="conflictSide(e, c, 'tempo') as s">
+            <button *ngIf="!locked; else tempoWord" type="button" class="side tempo" (click)="pickSide(e, c, sideTempo, $event)"><span>Tempo</span></button>
+            <ng-template #tempoWord><span class="side-w">Tempo</span></ng-template>
+            <span class="c-ds v"><ng-container *ngTemplateOutlet="sideText; context: { $implicit: s }" /></span>
+            <span class="c-dur" [class.df]="s.litDuration">{{ s.duration }}</span>
+          </div>
+        </div>
 
-        <ng-container *ngIf="editingId === e.id; else viewBand">
-          <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: e, locked: false }" />
-        </ng-container>
-        <ng-template #viewBand>
-          <span class="c-type" [class.anc]="entryMenuReady(e)" (click)="onEntryMenu(e, $event)">{{ activityLabel(displayActivity(e)) }}</span>
-          <span class="c-ds" *ngIf="favDoneId !== e.id; else favNote">{{ displayDescription(e) }}</span>
-          <ng-template #favNote><span class="c-ds fav-note">★ added to favorites</span></ng-template>
+        <ng-template #entryRow>
+          <div class="wl ent" *ngIf="resolvedNote(e) as note; else plainEntry" [attr.data-eid]="e.id">
+            <span class="c-type">{{ activityLabel(displayActivity(e)) }}</span>
+            <span class="c-ds note">{{ note }}</span>
+            <button *ngIf="isPicked(e)" type="button" class="l-undo" (click)="unpick(e, $event)">↩ undo</button>
+          </div>
         </ng-template>
 
-        <ng-container *ngIf="isDeleted(e); else entDur">
-          <button type="button" class="l-undo" (click)="undoDelete(e, $event)">↩ undo</button>
-        </ng-container>
-        <ng-template #entDur>
-          <!-- Time never leaves its slot: edit swaps the span for a
-               frameless wdDuration input (wheel ±15m / typed). -->
-          <input *ngIf="editingId === e.id; else viewDur"
-                 class="c-dur edit"
-                 [(wdDuration)]="editMinutes"
-                 (durEnter)="saveForm(e)"
-                 (keydown.escape)="cancelForm(); $event.stopPropagation()"
-                 title="1h 15m · 90 · 45m — wheel: ±15m" />
-          <ng-template #viewDur>
-            <span class="c-dur"
-                  [class.wheel]="isFresh(e)"
-                  (wheel)="onFreshWheel(e, $event)">{{ showEntryDur(b, e) ? formatDurationHm(displayMinutes(e) * 60000) : '' }}</span>
-          </ng-template>
+        <ng-template #plainEntry>
+          <div class="wl ent"
+               [attr.data-eid]="e.id"
+               [class.fresh]="isFresh(e)"
+               [class.arrive]="arrivingId === e.id"
+               [class.landed]="landedId === e.id"
+               [class.pop]="poppingIds.has(e.id)"
+               [style.animation-delay.ms]="popDelayMs.get(e.id)"
+               [class.editing]="editingId === e.id"
+               [class.deleted]="isDeleted(e)"
+               [class.removing]="removingIds.has(e.id)"
+               [class.fav-done]="favDoneId === e.id"
+               (dblclick)="onRowDblClick(e)">
+
+            <ng-container *ngIf="editingId === e.id; else viewBand">
+              <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: e, locked: false }" />
+            </ng-container>
+            <ng-template #viewBand>
+              <span class="c-type" [class.anc]="entryMenuReady(e)" (click)="onEntryMenu(e, $event)">{{ activityLabel(displayActivity(e)) }}</span>
+              <span class="c-ds" *ngIf="favDoneId !== e.id; else favNote">{{ displayDescription(e) }}</span>
+              <ng-template #favNote><span class="c-ds fav-note">★ added to favorites</span></ng-template>
+            </ng-template>
+
+            <ng-container *ngIf="isDeleted(e); else entDur">
+              <button type="button" class="l-undo" (click)="undoDelete(e, $event)">↩ undo</button>
+            </ng-container>
+            <ng-template #entDur>
+              <!-- Time never leaves its slot: edit swaps the span for a
+                   frameless wdDuration input (wheel ±15m / typed). -->
+              <input *ngIf="editingId === e.id; else viewDur"
+                     class="c-dur edit"
+                     [(wdDuration)]="editMinutes"
+                     (durEnter)="saveForm(e)"
+                     (keydown.escape)="cancelForm(); $event.stopPropagation()"
+                     title="1h 15m · 90 · 45m — wheel: ±15m" />
+              <ng-template #viewDur>
+                <span class="c-dur"
+                      [class.wheel]="isFresh(e)"
+                      (wheel)="onFreshWheel(e, $event)">{{ showEntryDur(b, e) ? formatDurationHm(displayMinutes(e) * 60000) : '' }}</span>
+              </ng-template>
+            </ng-template>
+          </div>
         </ng-template>
+      </ng-container>
+
+      <!-- Timesheets: Tempo worklogs we do not own — plain read-only lines. -->
+      <div class="wl ent foreign" *ngFor="let f of b.foreign">
+        <span class="c-type">{{ activityLabel(f.activity ?? '') }}</span>
+        <span class="c-ds">{{ f.description ?? '' }}</span>
+        <span class="c-dur">{{ b.rowCount >= 2 ? formatDurationHm(f.seconds * 1000) : '' }}</span>
       </div>
 
       <!-- Add time — a new row born as its own form. Saved bare (Development,
@@ -163,6 +208,17 @@
     </div>
   </div>
 </div>
+
+<!-- One side of a conflict: ticket and day only where the sides part, the
+     fields that differ lit. -->
+<ng-template #sideText let-s>
+  <span class="gone" *ngIf="s.gone; else sideValues">—</span>
+  <ng-template #sideValues>
+    <ng-container *ngIf="s.task"><span class="df">{{ s.task }}</span> · </ng-container>
+    <ng-container *ngIf="s.date"><span class="df">{{ s.date }}</span> · </ng-container>
+    <span class="ty" [class.df]="s.litType">{{ s.type }}</span><ng-container *ngIf="s.description"> · <i [class.df]="s.litDescription">{{ s.description }}</i></ng-container>
+  </ng-template>
+</ng-template>
 
 <!-- The row form — one at a time: an entry's edit, the manual added row's
      time-only edit (locked), or the Add time draft (no entry yet). -->
