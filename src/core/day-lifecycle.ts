@@ -5,13 +5,16 @@ import type { DailyLog } from './types.js';
  *
  * Facts are: an activated session, a manual entry, a review checkout (the
  * fact behind a pending suggestion — must survive restarts and rollover),
- * or the file already existing on disk (loaded days keep being written so
- * recovery/edits are never lost). Signals alone do NOT materialize a day —
- * a quiet weekend with a couple of ordinary checkouts leaves nothing behind.
+ * the push marker (a pushed day keeps its file so the next push sees what
+ * was deleted), or the file already existing on disk (loaded days keep being
+ * written so recovery/edits are never lost). Signals alone do NOT materialize
+ * a day — a quiet weekend with a couple of ordinary checkouts leaves nothing
+ * behind.
  */
 export function isDayMaterialized(log: DailyLog, loadedFromDisk: boolean): boolean {
   return loadedFromDisk
     || log.sessions.length > 0
     || (log.manualEntries?.length ?? 0) > 0
-    || (log.reviewCheckouts?.length ?? 0) > 0;
+    || (log.reviewCheckouts?.length ?? 0) > 0
+    || !!log.pushedAt;
 }

@@ -4,6 +4,7 @@ import { SessionState, ClosedBy, DayStatus, SignalType, PauseSource, Sensitivity
 import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, EvaluatorResult, ActivitySignals, EvidenceSnapshot, LedgerQuery, LineStats, CommitLedgerState } from './types.js';
 import { applyLedgerUpdate, countSessionCommits, countSessionLines, createEmptyLedger } from './commit-ledger.js';
 import { isDayMaterialized } from './day-lifecycle.js';
+import { isEmptyDayLog } from './janitor.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -304,15 +305,7 @@ export class SessionTracker {
     this.dailyLog.sessions = this.dailyLog.sessions.filter(s => s !== session);
     this.onSessionClosed?.(session.id);
 
-    if (this.dailyLog.sessions.length === 0
-      && (this.dailyLog.manualEntries ?? []).length === 0
-      && (this.dailyLog.reviewCheckouts ?? []).length === 0
-      && !this.dailyLog.pushedAt) {
-      deleteDailyLog(this.dailyLog.date);
-      this.loadedFromDisk = false; // day de-materializes back into a draft
-      this.lastFlushedState = null;
-      return { ok: true, deleted: session, dayFileDeleted: true };
-    }
+    if (this.dematerializeIfEmpty()) return { ok: true, deleted: session, dayFileDeleted: true };
 
     if (this.dailyLog.status !== DayStatus.Draft) {
       this.dailyLog.status = DayStatus.Draft; // pushed day edited → re-sync on next push
@@ -348,15 +341,7 @@ export class SessionTracker {
     }
     for (const s of sessions) this.onSessionClosed?.(s.id);
 
-    if (this.dailyLog.sessions.length === 0
-      && (this.dailyLog.manualEntries ?? []).length === 0
-      && (this.dailyLog.reviewCheckouts ?? []).length === 0
-      && !this.dailyLog.pushedAt) {
-      deleteDailyLog(this.dailyLog.date);
-      this.loadedFromDisk = false; // day de-materializes back into a draft
-      this.lastFlushedState = null;
-      return { ok: true, sessions, entries, dayFileDeleted: true };
-    }
+    if (this.dematerializeIfEmpty()) return { ok: true, sessions, entries, dayFileDeleted: true };
 
     if (this.dailyLog.status !== DayStatus.Draft) {
       this.dailyLog.status = DayStatus.Draft; // pushed day edited → re-sync on next push
@@ -366,10 +351,10 @@ export class SessionTracker {
   }
 
   /** Set a ticket's manual added total in today's log (0 removes the record) */
-  public setAddedMinutes(task: string, minutes: number): { ok: boolean; error?: string; entry?: ManualEntry | null } {
+  public setAddedMinutes(task: string, minutes: number): { ok: boolean; error?: string; entry?: ManualEntry | null; dayFileDeleted?: boolean } {
     try {
       const entry = setAddedMinutes(this.dailyLog, task, minutes, this.config);
-      return { ok: true, entry };
+      return { ok: true, entry, dayFileDeleted: this.dematerializeIfEmpty() };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -416,13 +401,27 @@ export class SessionTracker {
   }
 
   /** Delete a manual entry from today's log (the manual added record included) */
-  public deleteManualEntry(id: string): { ok: boolean; error?: string; deleted?: ManualEntry } {
+  public deleteManualEntry(id: string): { ok: boolean; error?: string; deleted?: ManualEntry; dayFileDeleted?: boolean } {
     try {
       const deleted = deleteManualEntry(this.dailyLog, id);
-      return { ok: true, deleted };
+      return { ok: true, deleted, dayFileDeleted: this.dematerializeIfEmpty() };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  /**
+   * The day's last fact is gone: its file goes too (file exists ⇔ a confirmed
+   * fact happened) and the day turns back into a draft. A flush alone cannot
+   * do it — it skips a day that is not materialized, and the deleted fact
+   * would come back from disk on the next load. True = the file was deleted.
+   */
+  private dematerializeIfEmpty(): boolean {
+    if (!isEmptyDayLog(this.dailyLog)) return false;
+    deleteDailyLog(this.dailyLog.date);
+    this.loadedFromDisk = false;
+    this.lastFlushedState = null;
+    return true;
   }
 
   /**
