@@ -23,7 +23,7 @@ import {
 } from './models/workday.models';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { loadSuggestionsMode, persistSuggestionsMode, type SuggestionsMode } from './views/day-view/suggestions-mode.util';
-import { TimesheetsViewComponent } from './views/timesheets-view/timesheets-view.component';
+import { TimesheetsViewComponent, type SheetAction } from './views/timesheets-view/timesheets-view.component';
 import { SettingsViewComponent } from './views/settings-view/settings-view.component';
 import { SetupViewComponent } from './views/setup-view/setup-view.component';
 
@@ -651,6 +651,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
   submitTaskDelete(task: string, includeOpen = false): void {
     this.runCommit(() => this.api.deleteTask(task, undefined, includeOpen));
+  }
+
+  // Timesheets edits share the gate; the tab reloads its month afterwards.
+  submitSheetAction(a: SheetAction): void {
+    this.runCommit(a.run, a.done);
   }
 
   // A card's delete commits in one breath — its tracked part, then each

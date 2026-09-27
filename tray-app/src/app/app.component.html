@@ -103,7 +103,10 @@
       (settingsRequested)="setView('set')"
       (retryInstall)="retryDaemonInstall()" />
 
-    <app-timesheets-view *ngSwitchCase="'sheet'" />
+    <app-timesheets-view *ngSwitchCase="'sheet'"
+      [actionPending]="actionPending"
+      [jiraBaseUrl]="jiraBaseUrl"
+      (action)="submitSheetAction($event)" />
 
     <app-setup-view *ngSwitchCase="'setup'"
       (done)="onSetupDone()" />

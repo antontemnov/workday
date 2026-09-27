@@ -3,6 +3,16 @@
 // chevron slot, hours as the rightmost column, delta arrow with a custom tooltip,
 // no future months in the pager).
 
+@use 'glass';
+
+// The open day's card: one glass carrying the Day tab's ticket blocks.
+.day-card {
+  @include glass.glass-card;
+  margin: 2px 0 9px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 :host {
   display: block;
   flex: 1;

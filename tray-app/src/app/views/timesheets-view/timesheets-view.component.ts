@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkdayApiService } from '../../services/workday-api.service';
@@ -7,14 +7,20 @@ import {
   ActivityType,
   ApiResponse,
   DEVELOPMENT_ACTIVITY,
+  EntryConflict,
   Favorite,
+  ManualEntry,
+  ManualEntryInput,
   ManualEntryPatch,
   MonthDaySummary,
   MonthDayStatus,
+  MonthDayTask,
   MonthResponse,
   PushPlanEntry,
   PushResponse,
+  ResolveSide,
   ScheduleDay,
+  SessionDetail,
   TempoApprovalResponse,
   TempoImportRequest,
   TempoScheduleResponse,
@@ -22,8 +28,17 @@ import {
 } from '../../models/workday.models';
 import { activityLabel, activityOptions, activityTone } from '../day-view/activity.util';
 import { loadLoggedCols } from '../day-view/logged-cols.util';
-import { DurationInputDirective } from '../day-view/duration-field/duration-input.directive';
 import { openCtxMenu } from '../day-view/ctx-menu.util';
+import { LoggedPanelComponent } from '../day-view/logged-panel/logged-panel.component';
+
+// A Timesheets edit rides the app's one action gate; the tab reloads its
+// month when the daemon has answered (ok or not — the card reconciles).
+export interface SheetAction {
+  readonly run: () => Promise<ApiResponse<unknown>>;
+  readonly done: (ok: boolean) => void;
+}
+
+const NO_SUMMARIES: Readonly<Record<string, string>> = {};
 
 // Delete mirrors the Logged panel: instant with a client-side undo — the row
 // stays struck-through with a burning ↩ for this long, then collapses and the
@@ -62,6 +77,12 @@ interface DayRow {
   readonly trackedSumLabel: string;
   readonly loggedSumLabel: string;
   readonly tempoSumLabel: string;
+  // The day card's material (daemon ≥ 0.52.0; empty on older daemons).
+  readonly entries: readonly ManualEntry[];
+  readonly openSessions: readonly SessionDetail[];
+  readonly closedSessions: readonly SessionDetail[];
+  readonly foreign: readonly MonthDayTask[];
+  readonly conflicts: readonly EntryConflict[];
 }
 
 interface WeekGroup {
@@ -93,11 +114,16 @@ interface TotalsDelta {
 @Component({
   selector: 'app-timesheets-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, DurationInputDirective],
+  imports: [CommonModule, FormsModule, LoggedPanelComponent],
   templateUrl: './timesheets-view.component.html',
   styleUrl: './timesheets-view.component.scss',
 })
 export class TimesheetsViewComponent implements OnInit, OnDestroy {
+  // The app's action gate — the day cards open no menu while it is busy.
+  @Input() actionPending = false;
+  @Input() jiraBaseUrl: string | null = null;
+  @Output() action = new EventEmitter<SheetAction>();
+
   monthData: MonthResponse | null = null;
   schedule: TempoScheduleResponse | null = null;
   approval: TempoApprovalResponse | null = null;
@@ -738,11 +764,23 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
 
   // ─── Day list ──────────────────────────────────────────────────────────
 
+  // Rows are rebuilt only when the data behind them changes — the open days'
+  // cards take their arrays as inputs and must not see new ones every tick.
+  private weeksMemo: { month: MonthResponse | null; schedule: TempoScheduleResponse | null; today: string; weeks: readonly WeekGroup[] } | null = null;
+
   /** Weeks newest-first, days newest-first inside; future days are dropped. */
   get weeks(): readonly WeekGroup[] {
+    const today = localToday();
+    const memo = this.weeksMemo;
+    if (memo && memo.month === this.monthData && memo.schedule === this.schedule && memo.today === today) return memo.weeks;
+    const weeks = this.buildWeeks(today);
+    this.weeksMemo = { month: this.monthData, schedule: this.schedule, today, weeks };
+    return weeks;
+  }
+
+  private buildWeeks(today: string): readonly WeekGroup[] {
     const m = this.monthData;
     if (!m) return [];
-    const today = localToday();
     const visible = m.days.filter(d => d.date <= today);
     if (visible.length === 0) return [];
 
@@ -820,7 +858,55 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
       trackedSumLabel: fmtSum(tracked.reduce((sum, t) => sum + t.seconds, 0)),
       loggedSumLabel: fmtSum(logged.reduce((sum, t) => sum + t.seconds, 0)),
       tempoSumLabel: fmtSum(foreign.reduce((sum, t) => sum + t.seconds, 0)),
+      entries: d.entries ?? [],
+      openSessions: (d.sessions ?? []).filter(s => !s.closedBy),
+      closedSessions: (d.sessions ?? []).filter(s => !!s.closedBy),
+      foreign,
+      conflicts: d.conflicts ?? [],
     };
+  }
+
+  // ─── The day card (the Day tab's panel in sheet mode) ──────────────────
+
+  get issueSummaries(): Readonly<Record<string, string>> {
+    return this.monthData?.issueSummaries ?? NO_SUMMARIES;
+  }
+
+  get roundingMinutes(): number {
+    return this.monthData?.roundingMinutes ?? 0;
+  }
+
+  // IN_REVIEW / APPROVED — the daemon refuses every edit; the card only reads.
+  get monthClosed(): boolean {
+    return this.approval?.available === true && this.approval.closed === true;
+  }
+
+  onPanelPatch(date: string, e: { id: string; patch: ManualEntryPatch }): void {
+    this.runSheetAction(() => this.api.updateManualEntry(e.id, e.patch, date));
+  }
+
+  onPanelDelete(date: string, id: string): void {
+    this.runSheetAction(() => this.api.deleteManualEntry(id, date));
+  }
+
+  onPanelSessionDelete(date: string, id: string): void {
+    this.runSheetAction(() => this.api.deleteSession(id, date));
+  }
+
+  onPanelTaskDelete(date: string, task: string): void {
+    this.runSheetAction(() => this.api.deleteTask(task, date));
+  }
+
+  onPanelAdd(date: string, input: ManualEntryInput): void {
+    this.runSheetAction(() => this.api.addManualEntry({ ...input, date }));
+  }
+
+  onPanelResolve(date: string, r: { entryId: string; side: ResolveSide }): void {
+    this.runSheetAction(() => this.api.resolveConflict(date, r.entryId, r.side));
+  }
+
+  private runSheetAction(run: () => Promise<ApiResponse<unknown>>): void {
+    this.action.emit({ run, done: () => void this.reloadMonthQuiet() });
   }
 
   isOpen(date: string): boolean {
