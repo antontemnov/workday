@@ -37,8 +37,8 @@ import { buildMonthResponse } from './push/month-report.js';
 import { getDefaultFromDate, getDefaultToDate } from './push/report-builder.js';
 import { runPush } from './push/tempo-pusher.js';
 import { recordEntryDeletion } from './push/push-log.js';
-import { fetchMonthSnapshot } from './push/tempo-snapshot.js';
 import { importTempoWorklogs, type ImportEntryInput } from './push/tempo-import.js';
+import { syncTempoMonth, type LiveToday, type TempoEntryValues } from './push/tempo-sync.js';
 import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
 import { resolveMonthApproval, approvalUnavailable } from './push/tempo-approvals.js';
 import {
@@ -1753,10 +1753,10 @@ export class HttpServer {
   // ─── Tempo snapshot sync (mirror pull) ────────────────────────────
 
   /**
-   * Refetch the month's Tempo snapshot on demand — mirrors the CLI
-   * `tempo-sync`. Body: {year?, month?}, both default to the current
-   * working month. Read-only against Tempo; never blocks or gates push
-   * (push does its own live fetch before planning).
+   * Read the month from Tempo and sync the mirror with it — mirrors the CLI
+   * `tempo-sync`. Body: {year?, month?}, both default to the current working
+   * month. Read-only against Tempo; locally it adopts, fast-forwards and
+   * restores ownership. A month that is not OPEN in Tempo is skipped.
    */
   private async handleTempoSync(body: Record<string, unknown>): Promise<ApiResponse<TempoSyncResponse>> {
     const today = this.deps.getCurrentDate();
@@ -1774,19 +1774,42 @@ export class HttpServer {
       return { ok: false, error: 'Jira/Tempo tokens are not configured — set them in Settings' };
     }
 
+    // The report reads today from disk — flush the live log first.
+    const tracker = this.deps.sessionTracker;
+    tracker.flush();
     try {
-      const snapshot = await fetchMonthSnapshot(year, month, secrets);
-      return {
-        ok: true,
-        data: {
-          month: snapshot.month,
-          syncedAt: snapshot.fetchedAt,
-          worklogCount: snapshot.worklogs.length,
-        },
-      };
+      const data = await syncTempoMonth(year, month, secrets, {
+        config: this.deps.config,
+        today,
+        live: this.liveToday(),
+      });
+      return { ok: true, data };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  // Today's log belongs to the tracker: Tempo-sync writes go through it.
+  private liveToday(): LiveToday {
+    const tracker = this.deps.sessionTracker;
+    return {
+      addEntry: (input: ImportEntryInput) => {
+        const r = tracker.importManualEntry(input);
+        if (!r.ok || !r.entry) throw new Error(r.error ?? 'Import failed');
+        tracker.flush();
+        return r.entry;
+      },
+      overwriteEntry: (id: string, values: TempoEntryValues) => {
+        const r = tracker.overwriteEntryFromTempo(id, values);
+        if (!r.ok) throw new Error(r.error ?? 'Update failed');
+        tracker.flush();
+      },
+      deleteEntry: (id: string) => {
+        const r = tracker.deleteManualEntry(id);
+        if (!r.ok) throw new Error(r.error ?? 'Delete failed');
+        tracker.flush();
+      },
+    };
   }
 
   /**
@@ -1829,19 +1852,13 @@ export class HttpServer {
       return { ok: false, error: 'Jira/Tempo tokens are not configured — set them in Settings' };
     }
 
-    const tracker = this.deps.sessionTracker;
     try {
       const result = await importTempoWorklogs(year, month, secrets, {
         config: this.deps.config,
         today,
         date,
         worklogIds,
-        addEntryToday: (input: ImportEntryInput) => {
-          const r = tracker.importManualEntry(input);
-          if (!r.ok || !r.entry) throw new Error(r.error ?? 'Import failed');
-          tracker.flush();
-          return r.entry;
-        },
+        addEntryToday: this.liveToday().addEntry,
       });
       return { ok: true, data: result };
     } catch (err) {

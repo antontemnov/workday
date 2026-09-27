@@ -1332,8 +1332,24 @@ export interface TempoWorklog {
 // POST /api/tempo-sync — refresh the month's Tempo snapshot on demand.
 export interface TempoSyncResponse {
   readonly month: string;          // YYYY-MM
-  readonly syncedAt: string;       // snapshot fetchedAt
+  readonly syncedAt: string;       // snapshot fetchedAt ('' when a closed month has none)
   readonly worklogCount: number;
+  // Timesheets v2 — every read of Tempo is a sync: worklogs created there
+  // without us are adopted (these, one per new entry), changes made only
+  // there are taken (fast-forward), lost ownership is restored (linked).
+  readonly adopted: readonly AdoptedEntry[];
+  readonly fastForwarded: number;
+  readonly linked: number;
+  readonly conflicts: number;      // manual-entry conflicts left in the month
+  // A month that is not OPEN in Tempo is never read nor written.
+  readonly skipped?: 'closed';
+}
+
+export interface AdoptedEntry {
+  readonly date: string;
+  readonly task: string;
+  readonly entryId: string;
+  readonly tempoWorklogId: number;
 }
 
 // POST /api/tempo-import — adopt foreign worklogs into local manual entries

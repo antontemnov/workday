@@ -731,6 +731,24 @@ export function addImportedEntry(
   return entry;
 }
 
+/**
+ * Take the version Tempo holds for an entry changed only there (fast-forward).
+ * No authoring rules and no unseal: Tempo already has exactly this, the day
+ * stays in sync. Throws when the id is unknown.
+ */
+export function overwriteEntryFromTempo(
+  log: DailyLog,
+  id: string,
+  values: { minutes: number; description: string; activity: string },
+): ManualEntry {
+  const entry = findManualEntry(log, id);
+  if (!entry) throw new Error(`Manual entry not found: ${id}`);
+  entry.minutes = values.minutes;
+  entry.description = values.description;
+  entry.activity = values.activity;
+  return entry;
+}
+
 export interface ManualEntryEdit {
   readonly entry: ManualEntry;            // the record carrying the time after the edit
   // Standalone entry retired into manual added — the caller tombstones its

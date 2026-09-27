@@ -59,6 +59,7 @@ import type {
   ActivityTypesResponse,
   MonthResponse,
   TempoImportResponse,
+  TempoSyncResponse,
   JiraProjectsResponse,
   SettingsResponse,
   NotificationsResponse,
@@ -1311,14 +1312,39 @@ async function handleTempoSync(args: string[]): Promise<void> {
   const secrets = tryLoadSecrets();
   if (!secrets) { console.log('Secrets not configured — run "workday init".'); return; }
 
-  const { fetchMonthSnapshot, getSnapshotPath } = await import('./push/tempo-snapshot.js');
-  let snapshot;
-  try {
-    snapshot = await fetchMonthSnapshot(ym.year, ym.month, secrets);
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+  // Through the daemon: today's adoptions must land in the live log. With
+  // the daemon down the sync runs here and leaves today alone.
+  let result: TempoSyncResponse;
+  const viaDaemon = await apiPost<TempoSyncResponse>('/api/tempo-sync', { year: ym.year, month: ym.month });
+  if (viaDaemon.ok && viaDaemon.data) {
+    result = viaDaemon.data;
+  } else if (viaDaemon.error === 'Daemon is not running.') {
+    const { syncTempoMonth } = await import('./push/tempo-sync.js');
+    const config = loadConfig();
+    try {
+      result = await syncTempoMonth(ym.year, ym.month, secrets, {
+        config,
+        today: computeWorkingDate(Date.now(), config.boundaryHour, config.timezone),
+        live: null,
+      });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      return;
+    }
+  } else {
+    console.log(viaDaemon.error);
     return;
   }
+
+  const { loadMonthSnapshot, getSnapshotPath } = await import('./push/tempo-snapshot.js');
+  if (result.skipped === 'closed') {
+    console.log(`Tempo ${result.month}: the timesheet is not open — nothing read, nothing written.`);
+    return;
+  }
+  console.log(`Synced ${result.month}: ${result.adopted.length} adopted, ${result.fastForwarded} taken from Tempo, ${result.linked} relinked, ${result.conflicts} conflict(s) left`);
+  for (const a of result.adopted) console.log(`  + ${a.date} ${a.task} → manual entry ${a.entryId}`);
+  const snapshot = loadMonthSnapshot(ym.year, ym.month);
+  if (!snapshot) return;
 
   const totalSeconds = snapshot.worklogs.reduce((sum, w) => sum + w.timeSpentSeconds, 0);
   console.log(`Tempo snapshot ${snapshot.month}: ${snapshot.worklogs.length} worklog(s), ${formatReportHours(totalSeconds)}`);
@@ -1892,7 +1918,7 @@ Usage:
   workday tempo --push                                 Push computed data to Tempo
   workday tempo --push --force                         Also overwrite worklogs edited in Tempo (conflicts)
   workday month [YYYY-MM]                              Month view: day statuses vs Tempo (pending/outdated/pushed)
-  workday tempo-sync [YYYY-MM]                         Fetch the month's Tempo worklogs into the local snapshot cache
+  workday tempo-sync [YYYY-MM]                         Read the month from Tempo and sync: adopt, take Tempo-only changes, relink
   workday tempo-import [YYYY-MM]                       Adopt Tempo-only worklogs as local entries (--date / --ids to narrow)
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
   workday approval [YYYY-MM]                           Tempo timesheet approval status for the period

@@ -8,6 +8,7 @@ import type { AppConfig, ManualEntry, Secrets, TempoImportItem, TempoImportRespo
 import { loadPushLog, savePushLog, loadTombstones, pushLogKey } from './push-log.js';
 import { acquirePushLock } from './push-lock.js';
 import { fetchMonthSnapshot } from './tempo-snapshot.js';
+import { isMonthClosed } from './tempo-approvals.js';
 
 export interface ImportEntryInput {
   readonly task: string;
@@ -148,6 +149,9 @@ export async function importTempoWorklogs(
   secrets: Secrets,
   options: ImportOptions,
 ): Promise<TempoImportResponse> {
+  if (await isMonthClosed(year, month, secrets)) {
+    throw new Error(`Timesheet ${year}-${String(month).padStart(2, '0')} is not open in Tempo — a closed month is left alone`);
+  }
   // Import rewrites push-log — same cross-process lock as a commit push.
   const releaseLock = acquirePushLock('import');
   try {

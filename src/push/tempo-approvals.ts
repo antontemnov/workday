@@ -76,6 +76,12 @@ export function approvalUnavailable(reason: TempoMetaUnavailableReason): TempoAp
   };
 }
 
+/** A month anything but OPEN in Tempo is out of our hands. Unknown = open. */
+export async function isMonthClosed(year: number, month: number, secrets: Secrets): Promise<boolean> {
+  const approval = await resolveMonthApproval(year, month, secrets);
+  return approval.available && !!approval.statusKey && approval.statusKey !== 'OPEN';
+}
+
 /**
  * Timesheet approval for the period containing the given month (period =
  * calendar month on approvalPeriod=MONTH instances). Needs both a Jira

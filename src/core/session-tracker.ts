@@ -17,6 +17,7 @@ import {
   addImportedEntry,
   editManualEntry,
   deleteManualEntry,
+  overwriteEntryFromTempo,
   setAddedMinutes,
   isAddedEntry,
   resolveSessionTarget,
@@ -399,6 +400,16 @@ export class SessionTracker {
     try {
       const edit = editManualEntry(this.dailyLog, id, patch, this.config);
       return { ok: true, edit };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Take Tempo's version of an entry of today changed only there (fast-forward) */
+  public overwriteEntryFromTempo(id: string, values: { minutes: number; description: string; activity: string }): { ok: boolean; error?: string } {
+    try {
+      overwriteEntryFromTempo(this.dailyLog, id, values);
+      return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
