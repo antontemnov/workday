@@ -637,20 +637,49 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // Deferred DELETE — the panel already played the undo window; a failure
   // surfaces as the usual toast and the row comes back with the refresh.
-  async submitEntryDelete(target: string): Promise<void> {
-    await this.runAction(() => this.api.deleteManualEntry(target));
+  submitEntryDelete(target: string): void {
+    this.runCommit(() => this.api.deleteManualEntry(target));
   }
 
   async submitSessionStop(target: string): Promise<void> {
     await this.runAction(() => this.api.stopSession(target));
   }
 
-  async submitSessionDelete(target: string): Promise<void> {
-    await this.runAction(() => this.api.deleteSession(target));
+  submitSessionDelete(target: string): void {
+    this.runCommit(() => this.api.deleteSession(target));
   }
 
-  async submitTaskDelete(task: string, includeOpen = false): Promise<void> {
-    await this.runAction(() => this.api.deleteTask(task, undefined, includeOpen));
+  submitTaskDelete(task: string, includeOpen = false): void {
+    this.runCommit(() => this.api.deleteTask(task, undefined, includeOpen));
+  }
+
+  // A card's delete commits in one breath — its tracked part, then each
+  // entry (and a view torn down commits every pending one at once). Calls
+  // made within one tick go out as ONE action, one after another: the gate
+  // would drop all but the first. The first failure is the toast.
+  private commitCalls: (() => Promise<ApiResponse<unknown>>)[] = [];
+  private commitDone: ((ok: boolean) => void)[] = [];
+
+  private runCommit(call: () => Promise<ApiResponse<unknown>>, done?: (ok: boolean) => void): void {
+    this.commitCalls.push(call);
+    if (done) this.commitDone.push(done);
+    if (this.commitCalls.length === 1) queueMicrotask(() => void this.flushCommits());
+  }
+
+  private async flushCommits(): Promise<void> {
+    const calls = this.commitCalls;
+    const done = this.commitDone;
+    this.commitCalls = [];
+    this.commitDone = [];
+    const ok = await this.runAction(async () => {
+      let failed: ApiResponse<unknown> | null = null;
+      for (const call of calls) {
+        const res = await call();
+        if (!res.ok && !failed) failed = res;
+      }
+      return failed ?? { ok: true };
+    });
+    for (const d of done) d(ok);
   }
 
   // ─── Favorites (context-menu management) ───────────────────────────────
