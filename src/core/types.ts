@@ -1135,7 +1135,8 @@ export interface TempoApprovalResponse {
   readonly available: boolean;
   readonly reason?: TempoMetaUnavailableReason;
   readonly period: { readonly from: string; readonly to: string } | null;
-  readonly statusKey: string | null;        // OPEN | IN_REVIEW | APPROVED
+  readonly statusKey: string | null;        // OPEN | IN_REVIEW | APPROVED | REJECTED
+  readonly closed: boolean;                 // nothing in the month changes, here or in Tempo
   readonly requiredSeconds: number | null;
   readonly timeSpentSeconds: number | null; // Tempo-side logged total
   readonly canSubmit: boolean;              // actions.submit present (v2 groundwork)

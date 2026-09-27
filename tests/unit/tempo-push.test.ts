@@ -209,11 +209,20 @@ await test('a one-day push elsewhere still goes (the gate looks at its own range
 
 console.log('\nPush — closed months');
 
-await test('a month that is not OPEN is refused before anything is read', async () => {
+await test('an APPROVED month is refused before anything is read', async () => {
   approval = 'APPROVED';
   calls.length = 0;
-  await assert.rejects(push(), /not open/);
+  await assert.rejects(push(), /2026-03 is APPROVED in Tempo — a closed month/);
   assert.ok(!calls.some(c => c.includes('/4/worklogs')));
+  approval = 'OPEN';
+});
+
+await test('a REJECTED month is open again → the push goes', async () => {
+  approval = 'REJECTED';
+  calls.length = 0;
+  const r = await push();
+  assert.equal(r.blockedByConflicts, true); // the both-sides edit above still stands
+  assert.ok(calls.some(c => c.startsWith('GET /4/worklogs')));
   approval = 'OPEN';
 });
 

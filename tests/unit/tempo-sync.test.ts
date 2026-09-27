@@ -210,7 +210,7 @@ await test('with the live tracker, today is adopted through its hooks', () => {
 
 console.log('\nTempo sync — closed months');
 
-await test('a month that is not OPEN is never read', async () => {
+await test('a closed (APPROVED) month is never read', async () => {
   mkdirSync(getDataDir(), { recursive: true });
   writeFileSync(join(getDataDir(), APPROVAL_CACHE_FILE), JSON.stringify({
     '2026-04': { fetchedAt: new Date().toISOString(), period: { from: '2026-04-01', to: '2026-04-30' }, statusKey: 'APPROVED', requiredSeconds: 0, timeSpentSeconds: 0, canSubmit: false },

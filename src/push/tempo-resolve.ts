@@ -10,7 +10,7 @@ import { ConflictKind, DayStatus, ResolveSide } from '../core/types.js';
 import type { AppConfig, PushLogEntry, Secrets, TempoResolveResponse } from '../core/types.js';
 import { loadPushLog, loadTombstones, pushLogKey, saveTombstones } from './push-log.js';
 import { acquirePushLock } from './push-lock.js';
-import { isMonthClosed } from './tempo-approvals.js';
+import { closedMonthMessage, closedMonthStatus } from './tempo-approvals.js';
 import { loadMonthSnapshot } from './tempo-snapshot.js';
 import { baseOf, commitOwnership, entryValuesOf, mirrorWriter, readMonthModel, type LiveToday } from './tempo-sync.js';
 
@@ -102,10 +102,8 @@ export async function resolveConflict(
   secrets: Secrets | null,
   options: ResolveOptions,
 ): Promise<TempoResolveResponse> {
-  const [year, month] = [Number(date.slice(0, 4)), Number(date.slice(5, 7))];
-  if (secrets && await isMonthClosed(year, month, secrets)) {
-    throw new Error(`Timesheet ${date.slice(0, 7)} is not open in Tempo — a closed month is left alone`);
-  }
+  const closedStatus = secrets ? await closedMonthStatus(Number(date.slice(0, 4)), Number(date.slice(5, 7)), secrets) : null;
+  if (closedStatus) throw new Error(closedMonthMessage(date.slice(0, 7), closedStatus));
   const releaseLock = acquirePushLock('resolve');
   try {
     return resolveOnSnapshot(date, entryId, side, options);

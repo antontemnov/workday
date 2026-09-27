@@ -400,6 +400,16 @@ async function handleSessionStop(args: string[]): Promise<void> {
   console.log(`Stopped session ${d.id} — ${d.repo} (${d.task ?? '—'}), ${formatDuration(d.effectiveDurationMs)} tracked`);
 }
 
+/** A day in a month closed in Tempo is never edited: prints why, answers false. */
+async function dayEditable(date: string): Promise<boolean> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return true;
+  const config = loadConfig();
+  const { dayEditRefusal } = await import('./push/tempo-approvals.js');
+  const refusal = await dayEditRefusal(date, computeWorkingDate(Date.now(), config.boundaryHour, config.timezone), tryLoadSecrets());
+  if (refusal) console.log(refusal);
+  return !refusal;
+}
+
 // ─── Session delete ───────────────────────────────────────────────────────
 
 async function handleSessionDelete(args: string[]): Promise<void> {
@@ -419,7 +429,7 @@ async function handleSessionDelete(args: string[]): Promise<void> {
   }
 
   if (date) {
-    handleSessionDeleteOffline(date, target);
+    if (await dayEditable(date)) handleSessionDeleteOffline(date, target);
     return;
   }
 
@@ -463,6 +473,7 @@ async function handleTaskDelete(args: string[]): Promise<void> {
   }
 
   if (date) {
+    if (!(await dayEditable(date))) return;
     try {
       const { sessions, entries, dayFileDeleted, dayWasPushed } = deleteTaskOnDate(date, task);
       const observedMs = sessions.reduce((sum, s) => sum + computeEffectiveDuration(s), 0);
@@ -519,7 +530,7 @@ async function handleLog(args: string[]): Promise<void> {
   }
 
   if (date) {
-    handleLogOffline(date, task, minutes, description, activity);
+    if (await dayEditable(date)) handleLogOffline(date, task, minutes, description, activity);
     return;
   }
 
@@ -584,7 +595,7 @@ async function handleLogEdit(args: string[]): Promise<void> {
   }
 
   if (date) {
-    handleLogEditOffline(date, target, patch);
+    if (await dayEditable(date)) handleLogEditOffline(date, target, patch);
     return;
   }
 
@@ -626,7 +637,7 @@ async function handleLogDelete(args: string[]): Promise<void> {
   }
 
   if (date) {
-    handleLogDeleteOffline(date, target);
+    if (await dayEditable(date)) handleLogDeleteOffline(date, target);
     return;
   }
 
@@ -670,7 +681,7 @@ async function handleLogAdded(args: string[]): Promise<void> {
   }
 
   if (date) {
-    handleLogAddedOffline(date, task, minutes);
+    if (await dayEditable(date)) handleLogAddedOffline(date, task, minutes);
     return;
   }
 
@@ -1357,7 +1368,7 @@ async function handleTempoSync(args: string[]): Promise<void> {
 
   const { loadMonthSnapshot, getSnapshotPath } = await import('./push/tempo-snapshot.js');
   if (result.skipped === 'closed') {
-    console.log(`Tempo ${result.month}: the timesheet is not open — nothing read, nothing written.`);
+    console.log(`Tempo ${result.month}: the timesheet is closed — nothing read, nothing written.`);
     return;
   }
   console.log(`Synced ${result.month}: ${result.adopted.length} adopted, ${result.fastForwarded} taken from Tempo, ${result.linked} relinked, ${result.conflicts} conflict(s) left`);

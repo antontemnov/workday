@@ -180,13 +180,19 @@ await test('no conflict on the entry → refused', () => {
   assert.throws(() => resolveOnSnapshot('2026-02-10', 'e2', ResolveSide.Mine, opts), /No conflict/);
 });
 
-await test('a month that is not OPEN → refused', async () => {
+const secrets = { Jira_Email: 'a@b.c', Jira_BaseUrl: 'https://example.atlassian.net', Jira_Token: 't', Tempo_Token: 't' };
+
+await test('a month IN_REVIEW is closed → refused', async () => {
   mkdirSync(getDataDir(), { recursive: true });
   writeFileSync(join(getDataDir(), APPROVAL_CACHE_FILE), JSON.stringify({
     '2026-01': { fetchedAt: new Date().toISOString(), period: null, statusKey: 'IN_REVIEW', requiredSeconds: 0, timeSpentSeconds: 0, canSubmit: false },
+    '2026-02': { fetchedAt: new Date().toISOString(), period: null, statusKey: 'REJECTED', requiredSeconds: 0, timeSpentSeconds: 0, canSubmit: false },
   }));
-  const secrets = { Jira_Email: 'a@b.c', Jira_BaseUrl: 'https://example.atlassian.net', Jira_Token: 't', Tempo_Token: 't' };
-  await assert.rejects(resolveConflict('2026-01-10', 'e1', ResolveSide.Tempo, secrets, opts), /not open/);
+  await assert.rejects(resolveConflict('2026-01-10', 'e1', ResolveSide.Tempo, secrets, opts), /2026-01 is IN_REVIEW in Tempo — a closed month/);
+});
+
+await test('a REJECTED month is open again → the resolve goes on', async () => {
+  await assert.rejects(resolveConflict('2026-02-10', 'e2', ResolveSide.Tempo, secrets, opts), /No conflict/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

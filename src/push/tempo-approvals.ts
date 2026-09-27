@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from '../core/config.js';
-import { APPROVAL_CACHE_FILE, APPROVAL_CACHE_TTL_MS } from '../core/constants.js';
+import { APPROVAL_CACHE_FILE, APPROVAL_CACHE_TTL_MS, EDITABLE_APPROVAL_STATUSES } from '../core/constants.js';
 import type { Secrets, TempoApprovalResponse, TempoMetaUnavailableReason } from '../core/types.js';
 import { TempoClient, TempoApiError } from './tempo-client.js';
 import { getAccountId, isJiraConfigured } from './jira-client.js';
@@ -55,6 +55,7 @@ function fromEntry(entry: ApprovalCacheEntry, fromCache: boolean): TempoApproval
     available: true,
     period: entry.period,
     statusKey: entry.statusKey,
+    closed: isClosedStatus(entry.statusKey),
     requiredSeconds: entry.requiredSeconds,
     timeSpentSeconds: entry.timeSpentSeconds,
     canSubmit: entry.canSubmit,
@@ -69,6 +70,7 @@ export function approvalUnavailable(reason: TempoMetaUnavailableReason): TempoAp
     reason,
     period: null,
     statusKey: null,
+    closed: false,
     requiredSeconds: null,
     timeSpentSeconds: null,
     canSubmit: false,
@@ -76,10 +78,38 @@ export function approvalUnavailable(reason: TempoMetaUnavailableReason): TempoAp
   };
 }
 
-/** A month anything but OPEN in Tempo is out of our hands. Unknown = open. */
+export function isClosedStatus(statusKey: string | null): boolean {
+  return !!statusKey && !EDITABLE_APPROVAL_STATUSES.includes(statusKey);
+}
+
+export function closedMonthMessage(monthKey: string, statusKey: string): string {
+  return `Timesheet ${monthKey} is ${statusKey} in Tempo — a closed month stays as it is`;
+}
+
+/** The Tempo status that closes the month, null while it is editable. Unknown = editable. */
+export async function closedMonthStatus(
+  year: number,
+  month: number,
+  secrets: Secrets,
+  forceRefresh = false,
+): Promise<string | null> {
+  const approval = await resolveMonthApproval(year, month, secrets, forceRefresh);
+  return approval.available && approval.closed ? approval.statusKey : null;
+}
+
 export async function isMonthClosed(year: number, month: number, secrets: Secrets): Promise<boolean> {
-  const approval = await resolveMonthApproval(year, month, secrets);
-  return approval.available && !!approval.statusKey && approval.statusKey !== 'OPEN';
+  return (await closedMonthStatus(year, month, secrets)) !== null;
+}
+
+/**
+ * Why a day may not be edited: its month is closed in Tempo. A past month is
+ * asked fresh (that is where approvals happen); the current one rides the cache.
+ */
+export async function dayEditRefusal(date: string, today: string, secrets: Secrets | null): Promise<string | null> {
+  if (!secrets) return null;
+  const monthKey = date.slice(0, 7);
+  const status = await closedMonthStatus(Number(date.slice(0, 4)), Number(date.slice(5, 7)), secrets, monthKey < today.slice(0, 7));
+  return status ? closedMonthMessage(monthKey, status) : null;
 }
 
 /**

@@ -4,7 +4,7 @@ import { DayStatus, type AdoptedEntry, type AppConfig, type Secrets, type TaskDa
 import { buildReport, getDefaultToDate } from './report-builder.js';
 import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient, tempoRefusalReason } from './tempo-client.js';
-import { invalidateApprovalCache, resolveMonthApproval } from './tempo-approvals.js';
+import { closedMonthMessage, closedMonthStatus, invalidateApprovalCache } from './tempo-approvals.js';
 import { loadPushLog, savePushLog, pushLogKey, loadTombstones, removeTombstonesByWorklogIds } from './push-log.js';
 import { acquirePushLock } from './push-lock.js';
 import { fetchMonthSnapshot, getSnapshotPath } from './tempo-snapshot.js';
@@ -211,16 +211,13 @@ function* monthsInRange(from: string, to: string): Generator<{ year: number; mon
   }
 }
 
-/** Refuse commit pushes into any month that is not OPEN in Tempo — nothing
- *  can change there, here or in Tempo. Unavailable approval (no scope, Tempo
- *  down) never blocks — the check is a live safety gate, not a dependency. */
+/** Refuse commit pushes into any month closed in Tempo — nothing can change
+ *  there, here or in Tempo. Unavailable approval (no scope, Tempo down) never
+ *  blocks — the check is a live safety gate, not a dependency. */
 async function assertRangePushable(from: string, to: string, secrets: Secrets): Promise<void> {
   for (const { year, month } of monthsInRange(from, to)) {
-    const approval = await resolveMonthApproval(year, month, secrets, true);
-    if (approval.available && approval.statusKey && approval.statusKey !== 'OPEN') {
-      const key = `${year}-${String(month).padStart(2, '0')}`;
-      throw new Error(`Timesheet ${key} is ${approval.statusKey} in Tempo — a month that is not open is left alone`);
-    }
+    const status = await closedMonthStatus(year, month, secrets, true);
+    if (status) throw new Error(closedMonthMessage(`${year}-${String(month).padStart(2, '0')}`, status));
   }
 }
 

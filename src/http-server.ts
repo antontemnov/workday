@@ -41,7 +41,7 @@ import { importTempoWorklogs, type ImportEntryInput } from './push/tempo-import.
 import { syncTempoMonth, type LiveToday, type TempoEntryValues } from './push/tempo-sync.js';
 import { resolveConflict } from './push/tempo-resolve.js';
 import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
-import { resolveMonthApproval, approvalUnavailable } from './push/tempo-approvals.js';
+import { resolveMonthApproval, approvalUnavailable, dayEditRefusal } from './push/tempo-approvals.js';
 import {
   computeWorkingDate,
   buildPatchedConfig,
@@ -317,7 +317,7 @@ export class HttpServer {
       }
       if (method === 'POST' && path === '/api/session/delete') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, this.handleSessionDelete(body));
+        return this.sendJson(res, 200, await this.handleSessionDelete(body));
       }
       if (method === 'POST' && path === '/api/task/delete') {
         const body = await this.readBody(req);
@@ -337,7 +337,7 @@ export class HttpServer {
       }
       if (method === 'POST' && path === '/api/manual-entry/delete') {
         const body = await this.readBody(req);
-        return this.sendJson(res, 200, this.handleDeleteManualEntry(body));
+        return this.sendJson(res, 200, await this.handleDeleteManualEntry(body));
       }
       if (method === 'GET' && path === '/api/favorites') {
         return this.sendJson(res, 200, this.handleGetFavorites());
@@ -585,8 +585,10 @@ export class HttpServer {
     if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
     const today = this.deps.getCurrentDate();
     if (date > today) return { ok: false, error: `Cannot log on a future date (${date} > ${today})` };
+    const refusal = await this.editRefusal(date);
+    if (refusal) return { ok: false, error: refusal };
 
-    const bodyTask = typeof body.task === 'string' ? body.task.trim() : '';
+    const bodyTask =typeof body.task === 'string' ? body.task.trim() : '';
     const bodyActivity = typeof body.activity === 'string' && body.activity.trim() ? body.activity : '';
     const bodyDescription = typeof body.description === 'string' && body.description.trim() ? body.description : '';
 
@@ -868,11 +870,13 @@ export class HttpServer {
     };
   }
 
-  private handleSessionDelete(body: Record<string, unknown>): ApiResponse<SessionDeleteResponse> {
+  private async handleSessionDelete(body: Record<string, unknown>): Promise<ApiResponse<SessionDeleteResponse>> {
     const target = typeof body.target === 'string' ? body.target : '';
     if (!target) return { ok: false, error: 'Missing target (session index or id)' };
     const parsed = this.resolveEditDate(body);
     if ('error' in parsed) return { ok: false, error: parsed.error };
+    const refusal = await this.editRefusal(parsed.date);
+    if (refusal) return { ok: false, error: refusal };
 
     if (parsed.date) {
       try {
@@ -921,8 +925,10 @@ export class HttpServer {
     if (!task) return { ok: false, error: 'Missing task' };
     const parsed = this.resolveEditDate(body);
     if ('error' in parsed) return { ok: false, error: parsed.error };
+    const refusal = await this.editRefusal(parsed.date);
+    if (refusal) return { ok: false, error: refusal };
 
-    const removedMs = (sessions: readonly Session[], entries: readonly ManualEntry[]): number =>
+    const removedMs =(sessions: readonly Session[], entries: readonly ManualEntry[]): number =>
       sessions.reduce((sum, s) => sum + computeEffectiveDuration(s), 0)
       + entries.reduce((sum, e) => sum + e.minutes, 0) * MS_PER_MINUTE;
 
@@ -983,6 +989,12 @@ export class HttpServer {
     return { date: date === today ? null : date };
   }
 
+  /** A day in a month closed in Tempo is never edited. null = today. */
+  private async editRefusal(date: string | null): Promise<string | null> {
+    const today = this.deps.getCurrentDate();
+    return dayEditRefusal(date ?? today, today, tryLoadSecrets());
+  }
+
   private toEntryData(entry: ManualEntry, log: DailyLog): ManualEntryResponse {
     return {
       id: entry.id,
@@ -1005,6 +1017,8 @@ export class HttpServer {
     const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
     const parsed = this.resolveEditDate(body);
     if ('error' in parsed) return { ok: false, error: parsed.error };
+    const refusal = await this.editRefusal(parsed.date);
+    if (refusal) return { ok: false, error: refusal };
     const pastDate = parsed.date;
 
     const task = typeof body.task === 'string' ? body.task : '';
@@ -1041,8 +1055,10 @@ export class HttpServer {
     if (!target) return { ok: false, error: 'Missing target (manual entry #index or id)' };
     const parsed = this.resolveEditDate(body);
     if ('error' in parsed) return { ok: false, error: parsed.error };
+    const refusal = await this.editRefusal(parsed.date);
+    if (refusal) return { ok: false, error: refusal };
 
-    const patch: { minutes?: number; description?: string; activity?: string } = {};
+    const patch:{ minutes?: number; description?: string; activity?: string } = {};
     if (typeof body.minutes === 'number') patch.minutes = body.minutes;
     if (typeof body.description === 'string') patch.description = body.description;
     if (typeof body.activity === 'string') patch.activity = body.activity;
@@ -1083,6 +1099,8 @@ export class HttpServer {
     const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
     const parsed = this.resolveEditDate(body);
     if ('error' in parsed) return { ok: false, error: parsed.error };
+    const refusal = await this.editRefusal(parsed.date);
+    if (refusal) return { ok: false, error: refusal };
 
     const tracker = this.deps.sessionTracker;
     // A ticket already on the day came from git or passed the gate earlier.
@@ -1135,12 +1153,14 @@ export class HttpServer {
     });
   }
 
-  private handleDeleteManualEntry(body: Record<string, unknown>): ApiResponse<ManualEntryDeleteResponse> {
+  private async handleDeleteManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryDeleteResponse>> {
     const target = typeof body.target === 'string' ? body.target
       : (typeof body.id === 'string' ? body.id : '');
     if (!target) return { ok: false, error: 'Missing target (manual entry #index or id)' };
     const parsed = this.resolveEditDate(body);
     if ('error' in parsed) return { ok: false, error: parsed.error };
+    const refusal = await this.editRefusal(parsed.date);
+    if (refusal) return { ok: false, error: refusal };
 
     if (parsed.date) {
       try {
