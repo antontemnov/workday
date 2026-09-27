@@ -60,6 +60,7 @@ import type {
   MonthResponse,
   TempoImportResponse,
   TempoSyncResponse,
+  TempoResolveResponse,
   JiraProjectsResponse,
   SettingsResponse,
   NotificationsResponse,
@@ -75,7 +76,7 @@ import type {
   OpenUrlResponse,
   SetupResponse,
 } from './core/types.js';
-import { SensitivityLevel, DayStatus, MonthDayStatus, SuggestionsDayState } from './core/types.js';
+import { SensitivityLevel, DayStatus, MonthDayStatus, ResolveSide, SuggestionsDayState } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1412,6 +1413,47 @@ async function handleTempoImport(args: string[]): Promise<void> {
   }
 }
 
+async function handleTempoResolve(args: string[]): Promise<void> {
+  // workday tempo-resolve <YYYY-MM-DD> <entryId> <mine|tempo>
+  const [date, entryId, side] = args;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !entryId || (side !== ResolveSide.Mine && side !== ResolveSide.Tempo)) {
+    console.log('Usage: workday tempo-resolve <YYYY-MM-DD> <entryId> <mine|tempo>');
+    return;
+  }
+
+  // Through the daemon: today's entries live in its tracker. With the
+  // daemon down the resolve runs here and refuses today.
+  let result: TempoResolveResponse;
+  const viaDaemon = await apiPost<TempoResolveResponse>('/api/tempo/resolve', { date, entryId, side });
+  if (viaDaemon.ok && viaDaemon.data) {
+    result = viaDaemon.data;
+  } else if (viaDaemon.error === 'Daemon is not running.') {
+    const { resolveConflict } = await import('./push/tempo-resolve.js');
+    const config = loadConfig();
+    try {
+      result = await resolveConflict(date, entryId, side, tryLoadSecrets(), {
+        config,
+        today: computeWorkingDate(Date.now(), config.boundaryHour, config.timezone),
+        live: null,
+      });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      return;
+    }
+  } else {
+    console.log(viaDaemon.error);
+    return;
+  }
+
+  if (result.side === ResolveSide.Mine) {
+    console.log(`Resolved ${result.date} ${result.taskAfter} (${result.kind}): mine — the next push sends our version.`);
+  } else if (result.entryIdAfter === null) {
+    console.log(`Resolved ${result.date} (${result.kind}): Tempo — deleted here too.`);
+  } else {
+    console.log(`Resolved (${result.kind}): Tempo — the entry is ${result.entryIdAfter} on ${result.dateAfter}, ${result.taskAfter}.`);
+  }
+}
+
 async function handleSchedule(args: string[]): Promise<void> {
   const { parseYearMonth } = await import('./push/month-report.js');
   const ym = args[0] ? parseYearMonth(args[0]) : currentYearMonth();
@@ -1842,6 +1884,9 @@ async function main(): Promise<void> {
     case 'tempo-import':
       await handleTempoImport(args.slice(1));
       break;
+    case 'tempo-resolve':
+      await handleTempoResolve(args.slice(1));
+      break;
     case 'schedule':
       await handleSchedule(args.slice(1));
       break;
@@ -1920,6 +1965,7 @@ Usage:
   workday month [YYYY-MM]                              Month view: day statuses vs Tempo (pending/outdated/pushed)
   workday tempo-sync [YYYY-MM]                         Read the month from Tempo and sync: adopt, take Tempo-only changes, relink
   workday tempo-import [YYYY-MM]                       Adopt Tempo-only worklogs as local entries (--date / --ids to narrow)
+  workday tempo-resolve <date> <entryId> <mine|tempo>  Resolve one conflict: keep ours (the push overwrites) or take Tempo's
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
   workday approval [YYYY-MM]                           Tempo timesheet approval status for the period
   workday notifications                                Active notifications (what the tray would toast)

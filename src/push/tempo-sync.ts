@@ -12,7 +12,7 @@ import { overwriteEntryFromTempo, readDailyLog, writeDailyLog } from '../core/da
 import { deleteEntryOnDate, importEntryOnDate } from '../core/day-edit.js';
 import type {
   AdoptedEntry, AppConfig, DailyLog, ManualEntry, PushLogEntry, Secrets,
-  TempoMonthSnapshot, TempoSyncResponse, TempoWorklog,
+  TempoMonthSnapshot, TempoSyncResponse, TempoWorklog, WorklogVersion,
 } from '../core/types.js';
 import { buildReport } from './report-builder.js';
 import { getMonthRange } from './month-report.js';
@@ -48,7 +48,7 @@ function monthKeyOf(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
-function readMonthModel(snapshot: TempoMonthSnapshot, config: AppConfig): MonthModel {
+export function readMonthModel(snapshot: TempoMonthSnapshot, config: AppConfig): MonthModel {
   const [year, month] = snapshot.month.split('-').map(Number);
   const { from, to } = getMonthRange(year, month);
   const days: { date: string; log: DailyLog | null }[] = [];
@@ -65,7 +65,7 @@ function readMonthModel(snapshot: TempoMonthSnapshot, config: AppConfig): MonthM
 
 // The base after a sync is the raw remote state — the same baseline an
 // import writes, so the three-way sees parity.
-function baseOf(wl: TempoWorklog): PushLogEntry {
+export function baseOf(wl: TempoWorklog): PushLogEntry {
   return {
     tempoWorklogId: wl.tempoWorklogId,
     timeSpentSeconds: wl.timeSpentSeconds,
@@ -77,7 +77,7 @@ function baseOf(wl: TempoWorklog): PushLogEntry {
 
 // Fresh read-modify-write: a held copy would resurrect keys dropped by a
 // concurrent entry delete (those run outside the push lock).
-function commitOwnership(changes: ReadonlyMap<string, PushLogEntry | null>): void {
+export function commitOwnership(changes: ReadonlyMap<string, PushLogEntry | null>): void {
   if (changes.size === 0) return;
   const log = loadPushLog();
   for (const [key, entry] of changes) {
@@ -87,31 +87,30 @@ function commitOwnership(changes: ReadonlyMap<string, PushLogEntry | null>): voi
   savePushLog(log);
 }
 
-/**
- * Write a fetched snapshot back into the mirror. Per-item failures (day
- * window, a vanished entry) leave that item as it was — the next read
- * retries; a change it could not take stays visible as a conflict.
- */
-export function applyMonthSync(snapshot: TempoMonthSnapshot, options: MonthSyncOptions): MonthSyncResult {
-  const { config, today } = options;
-  const live = options.live ?? null;
-  const writable = (date: string): boolean => date < today || (date === today && live !== null);
-
-  const model = readMonthModel(snapshot, config);
-
-  const identity = new Map<string, PushLogEntry | null>();
-  for (const link of [...model.links, ...model.staleBases]) identity.set(link.key, baseOf(link.worklog));
-  commitOwnership(identity);
-
-  const overwrite = (date: string, id: string, values: TempoEntryValues): void => {
-    if (date === today && live) { live.overwriteEntry(id, values); return; }
-    const log = readDailyLog(date);
-    if (!log) throw new Error(`No data for ${date}`);
-    overwriteEntryFromTempo(log, id, values);
-    writeDailyLog(log);
+// A Tempo version as local entry values.
+export function entryValuesOf(version: WorklogVersion): TempoEntryValues {
+  return {
+    minutes: Math.max(1, Math.round(version.seconds / 60)),
+    description: version.description,
+    activity: version.activity,
   };
+}
+
+// Writes into the mirror: past days on disk, today through the live tracker.
+export interface MirrorWriter {
+  readonly writable: (date: string) => boolean;
+  readonly overwrite: (date: string, id: string, values: TempoEntryValues) => void;
+  readonly remove: (date: string, id: string) => void;
+  // Re-home an entry: a new one where Tempo has it, then the ownership, then
+  // the old one goes — never a moment where the worklog is owned by a key
+  // whose line is gone (the push would delete it in Tempo).
+  readonly relocate: (from: { date: string; entryId: string; key: string }, to: { date: string; task: string }, values: TempoEntryValues, worklog: TempoWorklog) => ManualEntry;
+}
+
+export function mirrorWriter(config: AppConfig, today: string, live: LiveToday | null): MirrorWriter {
+  const writable = (date: string): boolean => date < today || (date === today && live !== null);
   const add = (date: string, input: ImportEntryInput): ManualEntry => {
-    // A move interrupted after its add left the entry already there.
+    // A relocation interrupted after its add left the entry already there.
     const log = date === today && live ? null : readDailyLog(date);
     const owned = new Set(Object.keys(loadPushLog()));
     const again = (log?.manualEntries ?? []).find(e => e.task === input.task && e.minutes === input.minutes
@@ -124,31 +123,56 @@ export function applyMonthSync(snapshot: TempoMonthSnapshot, options: MonthSyncO
     if (date === today && live) live.deleteEntry(id);
     else deleteEntryOnDate(date, id);
   };
+  return {
+    writable,
+    overwrite: (date, id, values) => {
+      if (date === today && live) { live.overwriteEntry(id, values); return; }
+      const log = readDailyLog(date);
+      if (!log) throw new Error(`No data for ${date}`);
+      overwriteEntryFromTempo(log, id, values);
+      writeDailyLog(log);
+    },
+    remove,
+    relocate: (from, to, values, worklog) => {
+      const entry = add(to.date, { task: to.task, ...values });
+      commitOwnership(new Map<string, PushLogEntry | null>([
+        [pushLogKey(to.date, to.task, entry.id), baseOf(worklog)],
+        [from.key, null],
+      ]));
+      remove(from.date, from.entryId);
+      return entry;
+    },
+  };
+}
+
+/**
+ * Write a fetched snapshot back into the mirror. Per-item failures (day
+ * window, a vanished entry) leave that item as it was — the next read
+ * retries; a change it could not take stays visible as a conflict.
+ */
+export function applyMonthSync(snapshot: TempoMonthSnapshot, options: MonthSyncOptions): MonthSyncResult {
+  const { config, today } = options;
+  const live = options.live ?? null;
+  const mirror = mirrorWriter(config, today, live);
+
+  const model = readMonthModel(snapshot, config);
+
+  const identity = new Map<string, PushLogEntry | null>();
+  for (const link of [...model.links, ...model.staleBases]) identity.set(link.key, baseOf(link.worklog));
+  commitOwnership(identity);
 
   let fastForwarded = 0;
   for (const ff of model.fastForwards) {
     const target = ff.tempo.date;
     // A move into the future stays a conflict: the entry would leave sight.
-    if (target > today || !writable(ff.date) || !writable(target)) continue;
-    const values: TempoEntryValues = {
-      minutes: Math.max(1, Math.round(ff.tempo.seconds / 60)),
-      description: ff.tempo.description,
-      activity: ff.tempo.activity,
-    };
+    if (target > today || !mirror.writable(ff.date) || !mirror.writable(target)) continue;
+    const values = entryValuesOf(ff.tempo);
     try {
       if (target === ff.date) {
-        overwrite(ff.date, ff.entryId, values);
+        mirror.overwrite(ff.date, ff.entryId, values);
         commitOwnership(new Map([[ff.key, baseOf(ff.worklog)]]));
       } else {
-        // Add, move the ownership, then remove — never a window where the
-        // worklog is owned by a key whose line is gone (the push would
-        // delete it in Tempo).
-        const entry = add(target, { task: ff.task, ...values });
-        commitOwnership(new Map<string, PushLogEntry | null>([
-          [pushLogKey(target, ff.task, entry.id), baseOf(ff.worklog)],
-          [ff.key, null],
-        ]));
-        remove(ff.date, ff.entryId);
+        mirror.relocate({ date: ff.date, entryId: ff.entryId, key: ff.key }, { date: target, task: ff.task }, values, ff.worklog);
       }
       fastForwarded++;
     } catch { /* stays a conflict; the next read retries */ }
@@ -158,7 +182,7 @@ export function applyMonthSync(snapshot: TempoMonthSnapshot, options: MonthSyncO
     const task = snapshot.issueKeys?.[String(w.issueId)];
     // Keyless (no Jira access) stays a read-only row; the future arrives
     // with its day.
-    return !!task && JIRA_KEY_PATTERN.test(task) && w.startDate <= today && writable(w.startDate);
+    return !!task && JIRA_KEY_PATTERN.test(task) && w.startDate <= today && mirror.writable(w.startDate);
   });
   const adopted: AdoptedEntry[] = [];
   if (adoptable.length > 0) {

@@ -1352,6 +1352,24 @@ export interface AdoptedEntry {
   readonly tempoWorklogId: number;
 }
 
+export enum ResolveSide {
+  Mine = 'mine',
+  Tempo = 'tempo',
+}
+
+// POST /api/tempo/resolve — one conflict, one side. Where the entry lives
+// afterwards: Tempo's side can move it to another day or ticket (a new
+// entry id), or delete it (entryIdAfter null).
+export interface TempoResolveResponse {
+  readonly date: string;
+  readonly entryId: string;
+  readonly side: ResolveSide;
+  readonly kind: ConflictKind;
+  readonly dateAfter: string;
+  readonly taskAfter: string;
+  readonly entryIdAfter: string | null;
+}
+
 // POST /api/tempo-import — adopt foreign worklogs into local manual entries
 // with push-log ownership (mirror pull). One item per targeted worklog.
 export interface TempoImportItem {

@@ -39,6 +39,7 @@ import { runPush } from './push/tempo-pusher.js';
 import { recordEntryDeletion } from './push/push-log.js';
 import { importTempoWorklogs, type ImportEntryInput } from './push/tempo-import.js';
 import { syncTempoMonth, type LiveToday, type TempoEntryValues } from './push/tempo-sync.js';
+import { resolveConflict } from './push/tempo-resolve.js';
 import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
 import { resolveMonthApproval, approvalUnavailable } from './push/tempo-approvals.js';
 import {
@@ -121,6 +122,7 @@ import type {
   TempoApprovalResponse,
   TempoSyncResponse,
   TempoImportResponse,
+  TempoResolveResponse,
   NotificationsResponse,
   NotificationAckResponse,
   NotificationTestResponse,
@@ -139,7 +141,7 @@ import type {
 } from './core/types.js';
 import { isGitRepo, repoPathKey, scanForRepos } from './collectors/repo-scanner.js';
 import { listInstalledBrowsers, openUrlInBrowser } from './core/browser-registry.js';
-import { ApiErrorCode, DayStatus, SensitivityLevel, SessionState } from './core/types.js';
+import { ApiErrorCode, DayStatus, ResolveSide, SensitivityLevel, SessionState } from './core/types.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -388,6 +390,10 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/tempo-import') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleTempoImport(body));
+      }
+      if (method === 'POST' && path === '/api/tempo/resolve') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleTempoResolve(body));
       }
       if (method === 'GET' && path === '/api/tempo/schedule') {
         return this.sendJson(res, 200, await this.handleTempoSchedule(url));
@@ -1781,6 +1787,31 @@ export class HttpServer {
       const data = await syncTempoMonth(year, month, secrets, {
         config: this.deps.config,
         today,
+        live: this.liveToday(),
+      });
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * One manual-entry conflict, one side — mirrors the CLI `tempo-resolve`.
+   * Body: {date, entryId, side: 'mine' | 'tempo'}. Acts on the cached
+   * snapshot; a month that is not OPEN in Tempo is refused.
+   */
+  private async handleTempoResolve(body: Record<string, unknown>): Promise<ApiResponse<TempoResolveResponse>> {
+    const date = typeof body.date === 'string' ? body.date : '';
+    const entryId = typeof body.entryId === 'string' ? body.entryId : '';
+    const side = body.side === ResolveSide.Mine || body.side === ResolveSide.Tempo ? body.side : null;
+    if (!DATE_RE.test(date) || !entryId || !side) {
+      return { ok: false, error: 'Expected { date: YYYY-MM-DD, entryId, side: "mine" | "tempo" }' };
+    }
+    this.deps.sessionTracker.flush();
+    try {
+      const data = await resolveConflict(date, entryId, side, tryLoadSecrets(), {
+        config: this.deps.config,
+        today: this.deps.getCurrentDate(),
         live: this.liveToday(),
       });
       return { ok: true, data };
