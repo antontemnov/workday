@@ -15,24 +15,26 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.5.6", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
+# The tauri crates move as one release set: CI resolves them fresh over a
+# stale Cargo.lock, and an older tauri picks up newer internal crates
+# (tauri-runtime, tauri-macros) it does not compile with. tauri / dialog /
+# shell sit on the minor of their npm packages — the CLI refuses a
+# major/minor mismatch. Upgrade = every line here + package.json together.
 # macos-private-api: WebviewWindowBuilder::transparent() does not exist on
 # macOS without it — the toast window broke the aarch64-apple-darwin build.
-# tauri / dialog / shell stay on the minor of their npm packages
-# (package-lock): the CLI refuses to build a major/minor mismatch, and CI
-# resolves crates fresh (cargo update -p tauri).
-tauri = { version = "~2.11", features = ["tray-icon", "image-png", "macos-private-api"] }
-tauri-plugin-log = "2"
-tauri-plugin-shell = "~2.3"
-tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
-tauri-plugin-dialog = "~2.7"
-tauri-plugin-autostart = "2"
+tauri = { version = "~2.12", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-plugin-log = "2.10"
+tauri-plugin-shell = "~2.4"
+tauri-plugin-single-instance = "2.5"
+tauri-plugin-updater = "2.13"
+tauri-plugin-dialog = "~2.8"
+tauri-plugin-autostart = "2.6"
 tokio = { version = "1", features = ["rt"] }
 # SVG rendering for the dynamic tray icon (status dot composited on the
 # octocat silhouette). resvg is pure-Rust, no native deps.
