@@ -8,7 +8,7 @@ export enum SensitivityLevel {
   Patient = 'patient',
 }
 
-export type SensitivityPill = SensitivityLevel | 'pause';
+export type SensitivityPill = SensitivityLevel | 'pause' | 'resume';
 
 export interface ApiResponse<T = unknown> {
   ok: boolean;

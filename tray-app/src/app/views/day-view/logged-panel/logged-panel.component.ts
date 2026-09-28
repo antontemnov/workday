@@ -1449,10 +1449,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return [
       ...(state === 'tracking'
         ? [{ icon: CTX_ICON.pause, label: 'Pause', hint: this.pauseHint(s), action: (): void => this.selectPill(s, 'pause') }] : []),
-      // Resume = clear the manual pause by re-applying the current sensitivity;
-      // the daemon closes the open manual pause as a side-effect.
+      // Not via the sensitivity API: that pins the mode as a per-repo override.
       ...(state === 'paused'
-        ? [{ icon: CTX_ICON.play, label: 'Resume', action: (): void => this.selectPill(s, s.sensitivity) }] : []),
+        ? [{ icon: CTX_ICON.play, label: 'Resume', action: (): void => this.selectPill(s, 'resume') }] : []),
       { icon: CTX_ICON.stop, label: 'Stop', action: (): void => this.stopSessionRow(s) },
       { icon: CTX_ICON.mode, label: 'Mode', hint: mode, nav: 'go' as const,
         action: (): void => openAnchoredMenu(anchor, this.modeMenu(s, anchor)) },
@@ -1477,8 +1476,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         icon: o.key === s.sensitivity ? CTX_ICON.check : CTX_ICON.none,
         label: o.label,
         hint: o.hint,
-        // Setting a mode resumes a manual pause (that is what Resume rides
-        // on) — a paused session asks the daemon to keep it.
+        // Setting a mode resumes a manual pause — a paused session asks the
+        // daemon to keep it.
         action: (): void => { if (o.key !== s.sensitivity) this.selectPill(s, o.key, sessionRowState(s) === 'paused'); },
       })),
     ];

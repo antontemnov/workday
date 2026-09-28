@@ -656,6 +656,15 @@ export class SessionTracker {
     return true;
   }
 
+  /** Close a repo's manual pause. The mode is not touched. Returns true if resumed. */
+  public resumeRepoSession(repoName: string): boolean {
+    const session = this.findOpenSession(repoName);
+    if (!session || this.getOpenPauseSource(session) !== PauseSource.Manual) return false;
+
+    this.closeOpenPause(session, new Date().toISOString());
+    return true;
+  }
+
   /** Resume all paused sessions */
   public resumeAllSessions(): void {
     const now = new Date().toISOString();

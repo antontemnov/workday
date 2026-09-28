@@ -186,8 +186,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.post('/api/pause', repo ? { repo } : {});
   }
 
-  override async resume(): Promise<ApiResponse<{ resumed: string[] }>> {
-    return this.post('/api/resume');
+  override async resume(repo?: string): Promise<ApiResponse<{ resumed: string[] }>> {
+    return this.post('/api/resume', repo ? { repo } : {});
   }
 
   override async sensitivity(level: SensitivityLevel, repo?: string, keepPause?: boolean): Promise<ApiResponse<SensitivityResponse>> {

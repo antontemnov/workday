@@ -475,8 +475,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: { paused: repo ? [repo] : [] } };
   }
 
-  async resume(): Promise<ApiResponse<{ resumed: string[] }>> {
-    return { ok: true, data: { resumed: [] } };
+  async resume(repo?: string): Promise<ApiResponse<{ resumed: string[] }>> {
+    await delay(1200);
+    if (!repo) return { ok: true, data: { resumed: [] } };
+    const resumed = this.mockManualPaused.delete(repo) ? [repo] : [];
+    return { ok: true, data: { resumed } };
   }
 
   // Mirrors the daemon: setting the sensitivity also clears a manual pause,

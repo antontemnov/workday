@@ -305,7 +305,8 @@ export class HttpServer {
         return this.sendJson(res, 200, await this.handlePause(body));
       }
       if (method === 'POST' && path === '/api/resume') {
-        return this.sendJson(res, 200, await this.handleResume());
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleResume(body));
       }
       if (method === 'POST' && path === '/api/sensitivity') {
         const body = await this.readBody(req);
@@ -840,16 +841,27 @@ export class HttpServer {
     };
   }
 
-  private async handleResume(): Promise<ApiResponse<ResumeResponse>> {
+  private async handleResume(body: Record<string, unknown>): Promise<ApiResponse<ResumeResponse>> {
     const tracker = this.deps.sessionTracker;
-    const before = tracker.getOpenSessions().filter(s => tracker.hasOpenPause(s));
-    tracker.resumeAllSessions();
+    const repo = typeof body.repo === 'string' ? body.repo : null;
+    const resumed: string[] = [];
+
+    if (repo) {
+      if (tracker.resumeRepoSession(repo)) {
+        resumed.push(repo);
+      }
+    } else {
+      const before = tracker.getOpenSessions().filter(s => tracker.hasOpenPause(s));
+      tracker.resumeAllSessions();
+      resumed.push(...before.map(s => s.repo));
+    }
+
     tracker.flush();
     // Re-run evaluator immediately so Superseded/IdleTimeout are re-applied
     // before the client fetches the next state snapshot.
     await this.deps.forceTick();
 
-    return { ok: true, data: { resumed: before.map(s => s.repo) } };
+    return { ok: true, data: { resumed } };
   }
 
   private async handleSessionStop(body: Record<string, unknown>): Promise<ApiResponse<SessionStopResponse>> {

@@ -287,6 +287,25 @@ test('keepPause changes the mode under a session that stays paused', () => {
   assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Low);
 });
 
+test('resumeRepoSession closes the manual pause and leaves the mode on the default', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  tracker.pauseRepoSession(session.repo);
+  assert.equal(tracker.resumeRepoSession(session.repo), true);
+  assert.equal(tracker.hasOpenPause(session), false);
+  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Normal);
+
+  tracker.setSensitivity(SensitivityLevel.Patient);
+  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Patient, 'the repo follows the default');
+});
+
+test('resumeRepoSession leaves an idle pause to the evaluator', () => {
+  const { tracker, session } = makeIdleSession(3);
+  assert.equal(tracker.resumeRepoSession(session.repo), false);
+  assert.equal(tracker.hasOpenPause(session), true);
+});
+
 console.log('\nManual stop');
 
 test('stopSession closes a live session with ManualStop', () => {

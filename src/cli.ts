@@ -341,8 +341,10 @@ async function handlePause(args: string[]): Promise<void> {
   }
 }
 
-async function handleResume(): Promise<void> {
-  const result = await apiPost<ResumeResponse>('/api/resume');
+async function handleResume(args: string[]): Promise<void> {
+  const repo = args[0];
+  const body = repo ? { repo } : undefined;
+  const result = await apiPost<ResumeResponse>('/api/resume', body);
   if (!result.ok) {
     console.log(result.error);
     return;
@@ -1848,7 +1850,7 @@ async function main(): Promise<void> {
       await handlePause(args.slice(1));
       break;
     case 'resume':
-      await handleResume();
+      await handleResume(args.slice(1));
       break;
     case 'sensitivity':
       await handleSensitivity(args.slice(1));
@@ -1965,6 +1967,7 @@ Usage:
   workday pause              Pause all active sessions
   workday pause <repo>       Pause a specific repo session
   workday resume             Resume all paused sessions
+  workday resume <repo>      Resume a manually paused repo session (mode unchanged)
   workday sensitivity <level>             Set global default (low|normal|patient)
   workday sensitivity <level> <repo>      Set per-repo sensitivity
   workday sensitivity <level> <repo> --keep-pause   Same, a manually paused session stays paused

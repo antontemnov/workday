@@ -36,7 +36,7 @@ workday status                         Show daemon status and sessions
 workday today                          Today's summary
 workday day YYYY-MM-DD                 Past day summary
 workday pause [repo]                   Pause sessions
-workday resume                         Resume paused sessions
+workday resume [repo]                  Resume paused sessions
 workday autopause on|off [repo]        Toggle idle auto-pause
 workday log <task> <min> "<desc>"      Log manual time on a task
 workday log-added <task> <min>         Set a ticket's manual added total (bare Development time; 0 removes)

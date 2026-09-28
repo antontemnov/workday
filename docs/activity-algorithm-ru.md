@@ -678,6 +678,10 @@ evaluator.removeSession(sessionId):
 Закрывает ВСЕ открытые паузы вне зависимости от источника (manual, idle_timeout, superseded).
 Если пользователь явно написал «resume» — он знает что делает.
 
+`workday resume <repo>` (Resume в трее) закрывает только ручную паузу этого
+репо. Конфиг sensitivity не трогает — возобновление не должно фиксировать
+текущий режим репо как per-repo override.
+
 В будущем: интеграция Teams будет вызывать HTTP-endpoint resume для сигнала «пользователь вернулся».
 
 ### workday autopause off [repo]

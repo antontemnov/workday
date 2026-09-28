@@ -670,6 +670,10 @@ natural competition through activity and decay.
 Closes ALL open pauses regardless of source (manual, idle_timeout, superseded).
 If the user explicitly says "resume", they know what they're doing.
 
+`workday resume <repo>` (the tray's Resume) closes only that repo's manual
+pause. It never touches the sensitivity config — resuming must not pin the
+repo's current mode as a per-repo override.
+
 Future: Teams integration will call the resume HTTP endpoint to signal "user is back".
 
 ### workday autopause off [repo]

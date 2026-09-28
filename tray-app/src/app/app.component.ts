@@ -497,6 +497,8 @@ export class AppComponent implements OnInit, OnDestroy {
   async onPillSelected(e: { session: SessionDetail; pill: SensitivityPill; keepPause?: boolean }): Promise<void> {
     if (e.pill === 'pause') {
       await this.runAction(() => this.api.pause(e.session.repo));
+    } else if (e.pill === 'resume') {
+      await this.runAction(() => this.api.resume(e.session.repo));
     } else {
       await this.runAction(() => this.api.sensitivity(e.pill as SensitivityLevel, e.session.repo, e.keepPause));
     }
