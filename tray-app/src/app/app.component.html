@@ -106,7 +106,13 @@
     <app-timesheets-view *ngSwitchCase="'sheet'"
       [actionPending]="actionPending"
       [jiraBaseUrl]="jiraBaseUrl"
-      (action)="submitSheetAction($event)" />
+      [favorites]="favorites"
+      [activityTypes]="activityTypes"
+      [activityAllowed]="activityAllowed"
+      (action)="submitSheetAction($event)"
+      (favoriteAddSubmitted)="submitFavoriteAdd($event)"
+      (favoritesRemoveSubmitted)="submitFavoritesRemove($event)"
+      (settingsRequested)="setView('set')" />
 
     <app-setup-view *ngSwitchCase="'setup'"
       (done)="onSetupDone()" />

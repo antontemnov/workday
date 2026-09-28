@@ -5,18 +5,6 @@ export function activityLabel(types: readonly ActivityType[], value: string): st
   return types.find(a => a.value === value)?.name ?? value;
 }
 
-/** CSS tone modifier so a few common activities get a distinct badge tint. */
-export function activityTone(value: string): string {
-  switch (value) {
-    case 'CodeReview':
-    case 'CodeReviewFixes':
-    case 'TestReview':   return 'rev';
-    case 'Development':
-    case 'Bugfixing':    return 'dev';
-    default:             return 'other';
-  }
-}
-
 /**
  * Picker options: the allow-list applied over the full catalog (empty = all).
  * `current` — the edited entry's activity — is always kept so an existing

@@ -1,81 +1,51 @@
 <div class="ts-root">
-  <!-- Header, one line: month pager left · delta arrow + total right.
-       No future months: › is hidden on the current month; on any other month
-       the label turns into a ↩ link back to it. -->
+  <!-- Row 1 — the month: title on the day list's left edge, its Tempo status
+       as a tag right after it, chevrons trail (no future months); the gap
+       (only when there is one) and the total sit on the hours column. -->
   <div class="ts-head">
-    <div class="pager">
-      <button class="pbtn" (click)="prevMonth()" title="Previous month">‹</button>
-      <span class="plabel"
-            [class.away]="!isCurrentMonth"
-            [title]="isCurrentMonth ? '' : 'Back to the current month'"
-            (click)="backToCurrent()">
-        <span class="bk" *ngIf="!isCurrentMonth">↩</span>{{ monthLabel }}
-      </span>
-      <button class="pbtn" [class.hide]="isCurrentMonth" (click)="nextMonth()" title="Next month">›</button>
-    </div>
-    <div class="totals" *ngIf="monthData && !loading"
-         [class.behind]="delta !== null && !delta.ahead"
-         [class.ahead]="delta !== null && delta.ahead">
-      <span class="dmk" *ngIf="delta">{{ delta.ahead ? '▴' : '▾' }}</span>
+    <span class="plabel">{{ monthLabel }}</span>
+    <span class="pst" *ngIf="periodStatus as p" [ngClass]="p.cls">{{ p.label }}</span>
+    <span class="pnav">
+      <button type="button" (click)="prevMonth()">‹</button>
+      <button type="button" [class.dim]="isCurrentMonth" (click)="nextMonth()">›</button>
+    </span>
+    <div class="totals" *ngIf="monthData && !loading">
+      <span class="dlt" *ngIf="gap as g" [ngClass]="g.word"><b>{{ g.amount }}</b> {{ g.word }}</span>
       <span class="tmain">{{ totalLabel }}</span>
-      <!-- one-liner strictly left of the total, lit by hovering the arrow -->
-      <div class="tip" *ngIf="deltaTip">{{ deltaTip }}</div>
     </div>
   </div>
 
-  <!-- Tempo strip: period status · last push · sync (meta cluster) · push button -->
-  <div class="actions" [class.no-status]="!periodStatus">
-    <span class="period-status" *ngIf="periodStatus" [ngClass]="periodStatus.cls">
-      <span class="sdot"></span>{{ periodStatus.label }}
-    </span>
-    <span class="push-note" *ngIf="pushNote; else lastPush">{{ pushNote }}</span>
-    <ng-template #lastPush>
+  <!-- Row 2 — Tempo: last push (or why it can't be read) · Fetch · the Push
+       navigator. Blocked, Push leads to what blocks it. -->
+  <div class="sync">
+    <span class="push-note err" *ngIf="tempoUnreachable; else lastPushTpl">Tempo unreachable</span>
+    <ng-template #lastPushTpl>
       <span class="push-note" *ngIf="lastPushLabel">last push {{ lastPushLabel }}</span>
     </ng-template>
-    <button class="sync-ghost"
-            *ngIf="monthData"
-            [class.spin]="syncing"
-            [disabled]="syncing"
-            (click)="onSync()"
-            [title]="syncedLabel ? 'Statuses verified against Tempo · synced ' + syncedLabel : 'Fetch Tempo worklogs to verify day statuses'">
-      ⟳
+    <span class="sp"></span>
+    <button type="button" class="fetch" [class.busy]="fetching" (click)="onFetch()">
+      <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 2.8L5 11" stroke-dasharray="2.6 1.6"/><path d="M2.8 4.2V6.6M2.8 8.4V13.2H7.4M9.2 13.2H11.6"/></svg><span>Fetch</span>
     </button>
-    <button class="push-btn"
-            *ngIf="monthData && !pushHidden"
-            [class.clean]="pushCount === 0"
-            [disabled]="pushCount === 0 || pushing"
-            (click)="onPush()">
-      <ng-container *ngIf="pushing">⚡ pushing…</ng-container>
-      <ng-container *ngIf="!pushing && pushCount === 0">⚡ nothing to push</ng-container>
-      <ng-container *ngIf="!pushing && pushCount > 0">
-        ⚡ Push the Tempo <span class="hrs" *ngIf="pushHoursLabel">{{ pushHoursLabel }}</span>
-      </ng-container>
-    </button>
-  </div>
-  <div class="push-error" *ngIf="pushError">{{ pushError }}</div>
-  <div class="push-error" *ngIf="importError">{{ importError }}</div>
-  <div class="push-error" *ngIf="editError">{{ editError }}</div>
-
-  <!-- Conflict gate: push stopped, nothing executed — user picks a side -->
-  <div class="conflict-panel" *ngIf="conflicts.length > 0">
-    <div class="cf-head">⚠ edited in Tempo after last push — pushing overwrites:</div>
-    <div class="cf-row" *ngFor="let c of conflicts">
-      <span class="cf-date">{{ c.date.slice(5) }}</span>
-      <span class="cf-task">{{ c.task }}</span>
-      <span class="cf-detail">{{ c.detail }}</span>
-    </div>
-    <div class="cf-actions">
-      <button class="cf-btn ours" (click)="onPushForce()" [disabled]="pushing">⚡ Push ours</button>
-      <button class="cf-btn keep" (click)="dismissConflicts()" [disabled]="pushing">Keep Tempo</button>
-    </div>
+    <ng-container *ngIf="pushView as v">
+      <button *ngIf="v.kind === 'busy'" type="button" class="push-btn busy">
+        <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg><span class="lbl">pushing…</span>
+      </button>
+      <button *ngIf="v.kind === 'resolve'" type="button" class="push-btn cf" (click)="onPush($event)">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 1.8v8.4M4 10.2L2.2 8.4M4 10.2l1.8-1.8M8 10.2V1.8M8 1.8L6.2 3.6M8 1.8l1.8 1.8"/></svg>Resolve {{ v.count }} conflict{{ v.count > 1 ? 's' : '' }}
+      </button>
+      <button *ngIf="v.kind === 'review'" type="button" class="push-btn" (click)="onPush($event)">Review {{ v.count }} new from Tempo</button>
+      <button *ngIf="v.kind === 'nothing'" type="button" class="push-btn" disabled>
+        <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg>nothing to push
+      </button>
+      <button *ngIf="v.kind === 'push'" type="button" class="push-btn" (click)="onPush($event)">
+        <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg>Push the Tempo<span class="cnt" *ngIf="v.count > 0">{{ v.count }} day{{ v.count > 1 ? 's' : '' }}</span>
+      </button>
+    </ng-container>
   </div>
 
-  <!-- Day list: newest first, week separators. Drawer rows share the Logged
-       panel's column layout (name/type widths persisted by the day view). -->
-  <div class="scroll-zone"
-       [class.edit-lock]="editingKey !== null"
-       [style.--w-name]="colName + 'px'"
-       [style.--w-type]="colType + 'px'">
+  <!-- Days, newest first. An open day is one glass: the day row is its lid,
+       the tickets are lines of it (the Day tab's card in sheet mode). -->
+  <div class="scroll-zone" #zone>
     <div class="status-msg" *ngIf="loading">Loading…</div>
     <div class="status-msg" *ngIf="!loading && error && !monthData">{{ error }}</div>
     <div class="status-msg" *ngIf="isEmpty">No days yet — this month hasn't started</div>
@@ -88,27 +58,34 @@
              *ngFor="let row of week.rows; trackBy: trackByDate"
              [class.today]="row.isToday"
              [class.dim]="row.dim"
-             [class.open]="isOpen(row.date)">
-          <div class="day-row" [class.static]="!row.hasData" (click)="toggleDay(row)">
-            <span class="d-num">{{ row.dayNum }}</span>
-            <span class="d-wd">{{ row.weekday }}</span>
-            <span class="d-status" [ngClass]="row.status" [title]="row.driftTitle">
-              <ng-container *ngIf="row.status !== 'none'">
-                <span class="sdot"></span>{{ row.status }}
-              </ng-container>
-            </span>
-            <span class="d-note" [class.holiday]="row.holidayName">
-              {{ row.holidayName ? '☀ ' + row.holidayName : '' }}
-            </span>
-            <span class="d-hours" [class.zero]="!row.hasData">
-              {{ row.hasData ? row.hoursLabel : '—' }}
-            </span>
-          </div>
+             [class.open]="isOpen(row)"
+             [style.--heat]="row.heat">
+          <div class="dbox" [class.dcard]="isOpen(row)">
+            <div class="day-row" [class.static]="!canOpen(row)" (click)="toggleDay(row)">
+              <span class="d-num">{{ row.dayNum }}</span>
+              <span class="d-wd">{{ row.weekday }}</span>
+              <span class="d-status" [ngSwitch]="row.state"
+                    [class.tracking]="row.state === 'tracking'"
+                    [class.conflict]="row.state === 'conflict'"
+                    [class.out]="row.state === 'unpushed'"
+                    [class.pushed]="row.state === 'pushed'">
+                <ng-container *ngSwitchCase="'tracking'"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1 L9 5 L2 9 Z"/></svg>tracking</ng-container>
+                <ng-container *ngSwitchCase="'conflict'"><span class="sdot"></span>conflict</ng-container>
+                <ng-container *ngSwitchCase="'unpushed'"><span class="sdot"></span>unpushed</ng-container>
+                <ng-container *ngSwitchCase="'pushed'"><span class="sdot"></span>pushed</ng-container>
+              </span>
+              <span class="d-note" [class.holiday]="!!row.holidayName && !(row.isToday && isOpen(row))">{{ noteOf(row) }}</span>
+              <button *ngIf="showDayPush(row)" type="button" class="g-btn blue" (click)="onPushDay(row, $event)">
+                <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg><span>Push</span>
+              </button>
+              <button *ngIf="showLog(row)" type="button" class="g-btn mauve" [disabled]="actionPending" (click)="openCloud(row, $event)">
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg><span>Log</span>
+              </button>
+              <span class="d-hours" [class.zero]="!hasHours(row)">{{ hoursLabel(row) }}</span>
+            </div>
 
-          <!-- The day card — the Day tab's ticket blocks as lines of one glass;
-               a ticket's lid opens its body. -->
-          <div class="day-card" *ngIf="row.hasData && isOpen(row.date)">
             <app-logged-panel
+              *ngIf="isOpen(row)"
               [sheet]="true"
               [date]="row.date"
               [entries]="row.entries"
@@ -116,11 +93,14 @@
               [closedSessions]="row.closedSessions"
               [foreign]="row.foreign"
               [conflicts]="row.conflicts"
+              [refusals]="refusalsFor(row.date)"
+              [unseen]="unseenFor(row.date)"
+              [freshEntryId]="freshIdFor(row.date)"
               [issueSummaries]="issueSummaries"
               [roundingMinutes]="roundingMinutes"
-              [readOnly]="row.isToday || monthClosed"
+              [readOnly]="readOnlyDay(row)"
               [locked]="monthClosed"
-              [actionPending]="actionPending"
+              [actionPending]="cardsBusy"
               [activityTypes]="activityTypes"
               [activityAllowed]="activityAllowed"
               [jiraBaseUrl]="jiraBaseUrl"
@@ -129,10 +109,32 @@
               (sessionDeleteCommitted)="onPanelSessionDelete(row.date, $event)"
               (taskDeleteCommitted)="onPanelTaskDelete(row.date, $event)"
               (entryAdded)="onPanelAdd(row.date, $event)"
-              (resolveCommitted)="onPanelResolve(row.date, $event)" />
+              (resolveCommitted)="onPanelResolve(row.date, $event)"
+              (dayTotalChanged)="onDayTotal(row.date, $event)"
+              (sidesPendingChanged)="onSidesPending(row.date, $event)" />
           </div>
         </div>
       </ng-container>
     </ng-container>
   </div>
+
+  <div class="toast" [class.on]="toastOn">{{ toastText }}</div>
 </div>
+
+<!-- ＋Log — the Day tab's cloud, hung under the lid of its day -->
+<div class="cloud-backdrop" [class.open]="cloudOpen" (click)="closeCloud()"></div>
+<app-log-cloud
+  [open]="cloudOpen"
+  [favorites]="favorites"
+  [activityTypes]="activityTypes"
+  [activityAllowed]="activityAllowed"
+  [actionPending]="actionPending"
+  [style.top.px]="cloudTop"
+  [style.transform-origin]="cloudOrigin"
+  (chipPicked)="onChipPicked($event)"
+  (formSubmitted)="onCloudForm($event)"
+  (batchSubmitted)="onCloudBatch($event)"
+  (favoriteSaved)="favoriteAddSubmitted.emit($event)"
+  (favoritesRemoved)="favoritesRemoveSubmitted.emit($event)"
+  (settingsRequested)="onCloudSettings()"
+  (closed)="closeCloud()" />
