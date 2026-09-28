@@ -42,6 +42,8 @@ const POP_STAGGER_MS = 80;
 // biggest rank jumper lifts off the glass for the trip.
 const REORDER_DELAY_MS = 260;
 const REORDER_FLIGHT_MS = 440;
+// Sheet seek: the flash holds its hue a beat past the 1.6s fade.
+const SEEK_FADE_MS = 1700;
 
 // Live rows inside a block: the one accruing first, then the held one, then
 // the frozen ones.
@@ -210,6 +212,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Output() resolveCommitted = new EventEmitter<{ entryId: string; side: ResolveSide }>();
   // Sheet: the day's Σ as the card shows it (ms) — the lid prints it.
   @Output() dayTotalChanged = new EventEmitter<number>();
+  // Sheet: entries with a side taken (↩ burning or the resolve on its way) —
+  // their conflicts no longer wait for the user.
+  @Output() sidesPendingChanged = new EventEmitter<readonly string[]>();
 
   public constructor(private host: ElementRef<HTMLElement>, private cdr: ChangeDetectorRef, private jiraLink: JiraLinkService) {}
 
@@ -226,6 +231,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private readonly pickTimers = new Map<string, ConflictPick & { readonly timer: ReturnType<typeof setTimeout> }>();
   private readonly resolving = new Map<string, ConflictPick & { readonly at: number }>();
   private lastEmittedTotal = -1;
+  private lastSidesPending = '';
 
   // Draft window state — one fresh row at a time.
   freshId: string | null = null;
@@ -343,7 +349,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       // its minutes as the stepper base once it appears.
       if (this.freshId !== null && this.freshMinutes === null) {
         const e = this.entries.find(x => x.id === this.freshId);
-        if (e) { this.freshMinutes = e.minutes; this.freshBase = e.minutes; }
+        if (e) {
+          this.freshMinutes = e.minutes;
+          this.freshBase = e.minutes;
+          if (this.sheet) this.openTasks.add(e.task); // the logged row lands in sight
+        }
       }
       this.reconcilePending();
       this.reconcileDeletes();
@@ -816,25 +826,35 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
   }
 
-  /** Bring a ticket forward: open it and flash it. The host scrolls to the node. */
-  seek(task: string): HTMLElement | null {
+  /** Bring a ticket forward: open it and flash it — red for a conflict, blue
+   *  for a row new from Tempo. The host scrolls to the node. */
+  seek(task: string, kind: 'cf' | 'in'): HTMLElement | null {
     if (!this.sheet) return null;
     this.openTasks.add(task);
     this.cdr.detectChanges();
     const el = this.cardEl(task);
     if (!el) return null;
-    el.classList.add('seek');
+    const hue = kind === 'cf' ? 'flash-cf' : 'flash-in';
+    el.classList.remove('flash-cf', 'flash-in');
+    el.classList.add(hue, 'seek');
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('seek')));
+    setTimeout(() => el.classList.remove(hue), SEEK_FADE_MS);
     return el;
+  }
+
+  /** Is the ticket's body open — a row landing there is in the user's sight. */
+  isTaskOpen(task: string): boolean {
+    return this.openTasks.has(task);
+  }
+
+  /** Open a ticket's body — also one the data has not brought yet. */
+  openTask(task: string): void {
+    if (this.sheet) this.openTasks.add(task);
   }
 
   // Red glass: an open conflict or a refused worklog inside.
   isRedGlass(b: TicketBlock): boolean {
     return this.sheet && (b.named.some(e => this.openConflict(e) !== null) || this.refusalsOf(b.task).length > 0);
-  }
-
-  hasUnseen(b: TicketBlock): boolean {
-    return this.sheet && [...b.folded, ...b.named].some(e => this.unseen.has(e.id));
   }
 
   refusalsOf(task: string): readonly PushFailure[] {
@@ -886,6 +906,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     ev.stopPropagation();
     if (!this.sheet || this.locked || this.pickTimers.has(e.id)) return;
     this.pickTimers.set(e.id, { side, conflict: c, timer: setTimeout(() => this.commitPick(e.id), UNDO_WINDOW_MS) });
+    this.emitSidesPending();
   }
 
   unpick(e: ManualEntry, ev: MouseEvent): void {
@@ -894,6 +915,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (!pick) return;
     clearTimeout(pick.timer);
     this.pickTimers.delete(e.id);
+    this.emitSidesPending();
+  }
+
+  private emitSidesPending(): void {
+    if (!this.sheet) return;
+    const ids = [...new Set([...this.pickTimers.keys(), ...this.resolving.keys()])].sort();
+    const key = ids.join('|');
+    if (key === this.lastSidesPending) return;
+    this.lastSidesPending = key;
+    this.sidesPendingChanged.emit(ids);
   }
 
   isPicked(e: ManualEntry): boolean {
@@ -920,6 +951,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       const pending = this.conflicts.some(c => c.entryId === id) && this.entries.some(e => e.id === id);
       if (!pending || now - r.at > HIDDEN_TTL_MS) this.resolving.delete(id);
     }
+    this.emitSidesPending();
   }
 
   // ─── Row display (with optimistic overrides) ───────────────────────────

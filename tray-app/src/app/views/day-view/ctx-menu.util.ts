@@ -109,27 +109,33 @@ export function openCtxMenu(x: number, y: number, items: readonly CtxMenuEntry[]
   mount(menu, null);
 }
 
+// Which anchor edge the menu hangs from — 'right' for anchors on the right
+// edge of the window (the Timesheets Push button).
+export type AnchorAlign = 'left' | 'right';
+
 // A second click on the same anchor closes its menu.
-export function toggleAnchoredMenu(anchor: HTMLElement, build: () => readonly CtxMenuEntry[]): void {
+export function toggleAnchoredMenu(anchor: HTMLElement, build: () => readonly CtxMenuEntry[], align: AnchorAlign = 'left'): void {
   if (menuAnchor === anchor) closeCtxMenu();
-  else openAnchoredMenu(anchor, build());
+  else openAnchoredMenu(anchor, build(), align);
 }
 
-export function openAnchoredMenu(anchor: HTMLElement, items: readonly CtxMenuEntry[]): void {
+export function openAnchoredMenu(anchor: HTMLElement, items: readonly CtxMenuEntry[], align: AnchorAlign = 'left'): void {
   const sameAnchor = menuAnchor === anchor;
   closeCtxMenu();
   if (items.length === 0) return;
   const menu = buildMenu(items);
   menu.classList.add('anchored');
+  if (align === 'right') menu.classList.add('right');
   // A sub-menu replaces its parent in place — no second entrance.
   if (sameAnchor) menu.style.animation = 'none';
   document.body.appendChild(menu);
 
   // Grows from under the anchor; pinned inside the right edge, flipped above
-  // the anchor at the bottom one.
+  // the anchor at the bottom one. Layout size, not the bounding rect — the
+  // entrance animation starts scaled down.
   const a = anchor.getBoundingClientRect();
-  const rect = menu.getBoundingClientRect();
-  let x = a.left + ANCHOR_DX;
+  const rect = { width: menu.offsetWidth, height: menu.offsetHeight };
+  let x = align === 'right' ? a.right - ANCHOR_DX - rect.width : a.left + ANCHOR_DX;
   let y = a.bottom + ANCHOR_GAP;
   if (x + rect.width > window.innerWidth - EDGE_MARGIN) x = window.innerWidth - EDGE_MARGIN - rect.width;
   if (y + rect.height > window.innerHeight - EDGE_MARGIN) y = a.top - ANCHOR_GAP - rect.height;

@@ -485,8 +485,9 @@
 
   .blk.cf + .blk .blk-id { box-shadow: none; }
 
-  // Seek — the ticket the Push button led to lights up, then fades.
-  .blk.cf::after, .blk.in::after {
+  // Seek — the ticket the Push button led to lights up, then fades: red for
+  // a conflict, blue for a row new from Tempo (seek() sets the hue).
+  .blk.flash-cf::after, .blk.flash-in::after {
     content: '';
     position: absolute;
     inset: 1px 3px 2px;
@@ -499,9 +500,9 @@
     box-shadow: none;
   }
 
-  .blk.cf::after { background: rgba(243, 139, 168, 0.24); }
-  .blk.in::after { background: rgba(137, 180, 250, 0.2); }
-  .blk.cf.seek::after, .blk.in.seek::after { opacity: 1; transition: none; }
+  .blk.flash-cf::after { background: rgba(243, 139, 168, 0.24); }
+  .blk.flash-in::after { background: rgba(137, 180, 250, 0.2); }
+  .blk.seek::after { opacity: 1; transition: none; }
 
   // R1 — both versions of the record, one pill each.
   .cfb {

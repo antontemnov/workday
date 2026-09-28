@@ -27,7 +27,6 @@
        [class.folding]="foldingTasks.has(b.task)"
        [class.open]="sheet && isOpen(b)"
        [class.cf]="isRedGlass(b)"
-       [class.in]="hasUnseen(b)"
        (contextmenu)="onCardContextMenu($event)">
 
     <!-- The lid — identity + day Σ; the key is the card's handle. On the

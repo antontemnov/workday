@@ -193,6 +193,18 @@ test('Add time opens the ticket and the saved row lands in sight', () => {
   assert.equal(h.comp.isOpen(blockOf(h, 'ATL-1')!), true);
 });
 
+test('an entry logged from ＋Log opens its ticket when it lands', () => {
+  const h = makePanel();
+  h.set({ entries: [entry('e1', 'ATL-1', 30)] });
+  h.comp.freshEntryId = 'e2';
+  h.comp.ngOnChanges({ freshEntryId: change('e2') } as never);
+  assert.equal(h.comp.isTaskOpen('ATL-2'), false);
+  h.set({ entries: [entry('e1', 'ATL-1', 30), entry('e2', 'ATL-2', 45)] });
+  assert.equal(h.comp.isTaskOpen('ATL-2'), true);
+  assert.equal(h.comp.isOpen(blockOf(h, 'ATL-2')!), true);
+  assert.equal(h.comp.isTaskOpen('ATL-1'), false);
+});
+
 test('a conflict opens its ticket once; closed by hand it stays closed', () => {
   const h = makePanel();
   h.set({ entries: [entry('e1', 'ATL-8839', 60, 'Other', 'Refund edge cases review')], conflicts: [edited] });
@@ -296,6 +308,26 @@ test('the notes say what the side does', () => {
   h.comp.unpick(e, click);
   h.comp.pickSide(e, ticket, ResolveSide.Mine, click);
   assert.equal(h.comp.resolvedNote(e), '✓ mine — the push moves it back');
+});
+
+test('a side taken leaves the navigator\'s count at once; undo gives it back', () => {
+  const h = makePanel();
+  const pending: string[][] = [];
+  h.comp.sidesPendingChanged.subscribe((ids: readonly string[]) => pending.push([...ids]));
+  const e = entry('e1', 'ATL-8839', 60, 'Other', 'Refund edge cases review');
+  h.set({ entries: [e], conflicts: [edited] });
+  h.comp.pickSide(e, edited, ResolveSide.Mine, click);
+  assert.deepEqual(pending.at(-1), ['e1']);
+  h.comp.unpick(e, click);
+  assert.deepEqual(pending.at(-1), []);
+  h.comp.pickSide(e, edited, ResolveSide.Mine, click);
+  advance(3_100);
+  // Resolving: still taken until the data drops the conflict.
+  assert.deepEqual(pending.at(-1), ['e1']);
+  const before = pending.length;
+  h.set({ conflicts: [] });
+  assert.deepEqual(pending.at(-1), []);
+  assert.equal(pending.length, before + 1);
 });
 
 test('a closed month shows the sides and offers none', () => {

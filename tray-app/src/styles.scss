@@ -51,6 +51,7 @@ html:has(body.toast-window), body.toast-window {
 
   // Anchored menus grow from under their anchor, not from the cursor.
   &.anchored { transform-origin: 12px 0; }
+  &.anchored.right { transform-origin: calc(100% - 12px) 0; }
 
   &::before {
     content: '';
