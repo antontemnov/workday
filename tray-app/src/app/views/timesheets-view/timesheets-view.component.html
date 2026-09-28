@@ -1,31 +1,18 @@
 <div class="ts-root">
-  <!-- Row 1 — the month: title on the day list's left edge, its Tempo status
-       as a tag right after it, chevrons trail (no future months); the gap
-       (only when there is one) and the total sit on the hours column. -->
+  <!-- Row 1 — the month: ‹ back only (no future months), the title (a past
+       month's title leads home), its Tempo status as a tag; the total sits on
+       the hours column. -->
   <div class="ts-head">
-    <span class="plabel">{{ monthLabel }}</span>
+    <button type="button" class="pback" (click)="prevMonth()">‹</button>
+    <span class="plabel" [class.home]="!isCurrentMonth" (click)="backToCurrent()">{{ monthLabel }}</span>
     <span class="pst" *ngIf="periodStatus as p" [ngClass]="p.cls">{{ p.label }}</span>
-    <span class="pnav">
-      <button type="button" (click)="prevMonth()">‹</button>
-      <button type="button" [class.dim]="isCurrentMonth" (click)="nextMonth()">›</button>
-    </span>
-    <div class="totals" *ngIf="monthData && !loading">
-      <span class="dlt" *ngIf="gap as g" [ngClass]="g.word"><b>{{ g.amount }}</b> {{ g.word }}</span>
-      <span class="tmain">{{ totalLabel }}</span>
-    </div>
+    <span class="tmain" *ngIf="monthData && !loading">{{ totalLabel }}</span>
   </div>
 
-  <!-- Row 2 — Tempo: last push (or why it can't be read) · Fetch · the Push
-       navigator. Blocked, Push leads to what blocks it. -->
+  <!-- Row 2 — the Push navigator (blocked, Push leads to what blocks it) ·
+       Fetch · why Tempo can't be read; the gap (only when there is one) under
+       the total. -->
   <div class="sync">
-    <span class="push-note err" *ngIf="tempoUnreachable; else lastPushTpl">Tempo unreachable</span>
-    <ng-template #lastPushTpl>
-      <span class="push-note" *ngIf="lastPushLabel">last push {{ lastPushLabel }}</span>
-    </ng-template>
-    <span class="sp"></span>
-    <button type="button" class="fetch" [class.busy]="fetching" (click)="onFetch()">
-      <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 2.8L5 11" stroke-dasharray="2.6 1.6"/><path d="M2.8 4.2V6.6M2.8 8.4V13.2H7.4M9.2 13.2H11.6"/></svg><span>Fetch</span>
-    </button>
     <ng-container *ngIf="pushView as v">
       <button *ngIf="v.kind === 'busy'" type="button" class="push-btn busy">
         <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg><span class="lbl">pushing…</span>
@@ -38,8 +25,16 @@
         <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg>nothing to push
       </button>
       <button *ngIf="v.kind === 'push'" type="button" class="push-btn" (click)="onPush($event)">
-        <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg>Push the Tempo<span class="cnt" *ngIf="v.count > 0">{{ v.count }} day{{ v.count > 1 ? 's' : '' }}</span>
+        <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg>Push<ng-container *ngIf="v.count > 0"> {{ v.count }} day{{ v.count > 1 ? 's' : '' }}</ng-container>
       </button>
+    </ng-container>
+    <button type="button" class="fetch" [class.busy]="fetching" (click)="onFetch()">
+      <svg class="gi" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 2.8L5 11" stroke-dasharray="2.6 1.6"/><path d="M2.8 4.2V6.6M2.8 8.4V13.2H7.4M9.2 13.2H11.6"/></svg><span>Fetch</span>
+    </button>
+    <span class="push-note err" *ngIf="tempoUnreachable">Tempo unreachable</span>
+    <span class="sp"></span>
+    <ng-container *ngIf="monthData && !loading">
+      <span class="dlt" *ngIf="gap as g" [ngClass]="g.word"><b>{{ g.amount }}</b> {{ g.word }}</span>
     </ng-container>
   </div>
 

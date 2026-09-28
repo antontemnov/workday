@@ -38,7 +38,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 15px 20px 4px 16px;
+  padding: 15px 20px 0 16px;
 }
 
 .plabel {
@@ -47,6 +47,13 @@
   color: #cdd6f4;
   letter-spacing: 0.2px;
   white-space: nowrap;
+
+  // A past month: the title leads back to today's month.
+  &.home {
+    cursor: pointer;
+    transition: color 0.15s;
+    &:hover { color: #89b4fa; }
+  }
 }
 
 // The month's Tempo status — a tag: tinted, ringed, square-ish (a label,
@@ -72,44 +79,36 @@
   &.rejected { --sc: 243 139 168; }
 }
 
-.pnav {
+// ‹ — its glyph on the Push button's left edge, close to the title.
+.pback {
+  width: 18px;
+  height: 22px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 1px;
-  margin-left: -4px;
+  justify-content: center;
+  margin: 0 -7px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: #7f849c;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0 2px;
   user-select: none;
 
-  button {
-    width: 18px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    background: transparent;
-    border-radius: 5px;
-    color: #7f849c;
-    font: inherit;
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 0 2px;
-
-    &:hover { color: #cdd6f4; background: rgba(205, 214, 244, 0.06); }
-    // The current month is the ceiling.
-    &.dim { opacity: 0.3; pointer-events: none; }
-  }
+  &:hover { color: #cdd6f4; background: rgba(205, 214, 244, 0.06); }
 }
 
-.totals {
+.tmain {
   margin-left: auto;
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-
-  .tmain { font-size: 17px; font-weight: 700; letter-spacing: 0.2px; }
 }
 
 // Behind / ahead — only a gap is said; the number carries the colour, the
@@ -118,6 +117,8 @@
   font-size: 10.5px;
   font-weight: 600;
   color: #7f849c;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 
   b { font-weight: 700; }
   &.behind b { color: #f38ba8; }
@@ -131,7 +132,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 20px 13px 16px;
+  padding: 10px 20px 13px 16px;
   border-bottom: 1px solid #26263a;
 
   .sp { flex: 1; }
@@ -156,7 +157,7 @@ svg.gi {
 .fetch {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   font: inherit;
   font-size: 10.5px;
   font-weight: 700;
@@ -166,7 +167,8 @@ svg.gi {
   background: transparent;
   border: 1px solid rgba(205, 214, 244, 0.14);
   border-radius: 6px;
-  padding: 4px 11px;
+  height: 22px;
+  padding: 0 10px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 
@@ -199,7 +201,7 @@ svg.gi {
 .push-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   font: inherit;
   font-size: 10.5px;
   font-weight: 700;
@@ -207,7 +209,8 @@ svg.gi {
   background: transparent;
   border: 1px solid rgba(137, 180, 250, 0.3);
   border-radius: 6px;
-  padding: 4px 11px;
+  height: 22px;
+  padding: 0 10px;
   cursor: pointer;
   letter-spacing: 0.2px;
   white-space: nowrap;
@@ -224,17 +227,6 @@ svg.gi {
   }
 
   svg.gi { width: 12px; height: 12px; stroke-width: 1.6; }
-
-  // The badge — the number of UNPUSHED days.
-  .cnt {
-    display: inline-flex;
-    align-items: center;
-    height: 15px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: rgba(137, 180, 250, 0.15);
-    font-size: 9.5px;
-  }
 
   &:hover:not(:disabled), &.armed { background: rgba(137, 180, 250, 0.08); border-color: rgba(137, 180, 250, 0.5); }
   &:disabled { color: #6c7086; border-color: #26263a; cursor: default; }

@@ -54,7 +54,6 @@ const CLOUD_LEFT = 10;
 const SEEK_TOP = 60;
 // A live day's ▶ when nothing accrues — the lab's warm white.
 const IDLE_HEAT = '243 220 200';
-const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // The Push menu's ↗ — the header button's arrow on the menu's 12px box.
 const PUSH_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="miter"><path d="M3 13L12.8 3.2"/><path d="M5.8 3H13V10.2"/></svg>';
@@ -107,7 +106,7 @@ interface SeekTarget {
 /**
  * Timesheets tab (canon v2, design-preview/timesheets-lab.html). A month of
  * days against Tempo: the header names the month (status, gap, total) and
- * syncs it (last push · Fetch · the Push navigator); an open day is one glass
+ * syncs it (the Push navigator · Fetch); an open day is one glass
  * whose lid is the day row, its tickets are the Day tab's card in sheet mode.
  * Every read of Tempo is a sync done by the daemon — the tab only asks,
  * shows what came back (new rows once, via Review) and leads to what blocks
@@ -146,7 +145,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   month: number;
 
   syncing = false;
-  // The last read of Tempo failed — said in red where "last push" stands.
+  // The last read of Tempo failed — said in red after the Fetch button.
   tempoUnreachable = false;
   // Months read this view — the read runs once per month view; a failed
   // one retries on the upkeep tick (self-heal), Fetch reads on demand.
@@ -268,23 +267,26 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.approval = res.ok && res.data ? res.data : null;
   }
 
-  // ─── Month pager (the current month is the ceiling — no future) ────────
+  // ─── Month pager (back only; a past month's title leads home) ──────────
 
-  prevMonth(): void { this.shiftMonth(-1); }
+  prevMonth(): void {
+    if (this.month === 1) this.showMonth(this.year - 1, 12);
+    else this.showMonth(this.year, this.month - 1);
+  }
 
-  nextMonth(): void {
+  backToCurrent(): void {
     if (this.isCurrentMonth) return;
-    this.shiftMonth(1);
+    const today = localToday();
+    this.showMonth(Number(today.slice(0, 4)), Number(today.slice(5, 7)));
   }
 
   get isCurrentMonth(): boolean {
     return this.monthContainsToday;
   }
 
-  private shiftMonth(delta: number): void {
-    this.month += delta;
-    if (this.month < 1) { this.month = 12; this.year--; }
-    if (this.month > 12) { this.month = 1; this.year++; }
+  private showMonth(year: number, month: number): void {
+    this.year = year;
+    this.month = month;
     this.closeCloud();
     this.openDates.clear();
     this.liveTotals.clear();
@@ -342,16 +344,6 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     const diff = Math.round(logged - required);
     if (diff === 0) return null;
     return { amount: fmtHm(Math.abs(diff)), word: diff < 0 ? 'behind' : 'ahead' };
-  }
-
-  // Per month; empty when the month was never pushed. '23 Sep, 18:42' — the
-  // month by hand: en-GB prints 'Sept' in newer ICU.
-  get lastPushLabel(): string | null {
-    const iso = this.monthData?.lastPushAt;
-    if (!iso) return null;
-    const d = new Date(iso);
-    const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]}, ${hm}`;
   }
 
   // In-flight flag lives in a root service — see PushStateService.
