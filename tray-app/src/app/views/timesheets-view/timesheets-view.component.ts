@@ -50,7 +50,7 @@ const CLOUD_GAP = 6;
 const CLOUD_EDGE = 8;
 // The cloud's own inset from the view's left edge (log-cloud :host).
 const CLOUD_LEFT = 10;
-// The ticket the Push button leads to settles this far under the list's top.
+// The ticket the Push button leads to settles this far under the header.
 const SEEK_TOP = 60;
 // A live day's ▶ when nothing accrues — the lab's warm white.
 const IDLE_HEAT = '243 220 200';
@@ -133,6 +133,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
 
   @ViewChildren(LoggedPanelComponent) private panels?: QueryList<LoggedPanelComponent>;
   @ViewChild('zone') private zoneRef?: ElementRef<HTMLElement>;
+  @ViewChild('head') private headRef?: ElementRef<HTMLElement>;
   @ViewChild(LogCloudComponent, { read: ElementRef }) private cloudRef?: ElementRef<HTMLElement>;
 
   monthData: MonthResponse | null = null;
@@ -145,7 +146,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   month: number;
 
   syncing = false;
-  // The last read of Tempo failed — said in red after the Fetch button.
+  // The last read of Tempo failed — said in red under the total.
   tempoUnreachable = false;
   // Months read this view — the read runs once per month view; a failed
   // one retries on the upkeep tick (self-heal), Fetch reads on demand.
@@ -563,7 +564,8 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     const el = this.panelOf(date)?.seek(task, kind);
     const zone = this.zoneRef?.nativeElement;
     if (!el || !zone) return;
-    zone.scrollTop = el.getBoundingClientRect().top - zone.getBoundingClientRect().top + zone.scrollTop - SEEK_TOP;
+    const head = this.headRef?.nativeElement.offsetHeight ?? 0;
+    zone.scrollTop = el.getBoundingClientRect().top - zone.getBoundingClientRect().top + zone.scrollTop - head - SEEK_TOP;
   }
 
   private panelOf(date: string): LoggedPanelComponent | undefined {
