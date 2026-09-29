@@ -108,7 +108,7 @@ export class StatusRenderer {
             badge = `${YELLOW}PENDING${RESET}`;
           }
           const dot = (!isPaused && session.state === 'active') ? ` ${GREEN}●${RESET}` : '';
-          const sens = ` ${DIM}[${tracker.getSensitivity(session.repo).toUpperCase()}]${RESET}`;
+          const sens = ` ${DIM}[${tracker.getSessionSensitivity(session).toUpperCase()}]${RESET}`;
 
           const COL1 = 18; // first value column width
 

@@ -44,7 +44,7 @@ function makeConfig(over?: { workDays?: number[]; holidays?: string[]; enabled?:
     workDays: over?.workDays ?? [1, 2, 3, 4, 5],
     holidays: over?.holidays ?? [],
     apiPort: 9213,
-    sensitivity: { default: SensitivityLevel.Normal, perRepo: {} },
+    sensitivity: { default: SensitivityLevel.Normal },
     search: { projectKeys: [], knownProjects: [] },
     activities: { values: [] },
     notifications: { timesheetReminder: { enabled: over?.enabled ?? true, notifyHour: over?.notifyHour ?? 14 } },

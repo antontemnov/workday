@@ -48,7 +48,7 @@ function makeConfig(idleCloseHours: number): AppConfig {
     report: { roundingMinutes: 15 },
     workDays: [1, 2, 3, 4, 5, 6, 7],
     holidays: [],
-    sensitivity: { default: 'normal', perRepo: {} },
+    sensitivity: { default: 'normal' },
   } as unknown as AppConfig;
 }
 
@@ -266,14 +266,14 @@ test('idleCloseHours: 0 disables auto-close', () => {
 
 console.log('\nManual pause and the mode');
 
-test('setSensitivity resumes a manually paused session', () => {
+test('setSessionSensitivity resumes a manually paused session', () => {
   const { tracker, tick } = makeHarness(3);
   tick(true);
   const session = tracker.getOpenSessions()[0];
   tracker.pauseRepoSession(session.repo);
-  tracker.setSensitivity(SensitivityLevel.Patient, session.repo);
+  assert.equal(tracker.setSessionSensitivity(session.repo, SensitivityLevel.Patient), true);
   assert.equal(tracker.hasOpenPause(session), false);
-  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Patient);
+  assert.equal(tracker.getSessionSensitivity(session), SensitivityLevel.Patient);
 });
 
 test('keepPause changes the mode under a session that stays paused', () => {
@@ -281,23 +281,53 @@ test('keepPause changes the mode under a session that stays paused', () => {
   tick(true);
   const session = tracker.getOpenSessions()[0];
   tracker.pauseRepoSession(session.repo);
-  tracker.setSensitivity(SensitivityLevel.Low, session.repo, true);
+  tracker.setSessionSensitivity(session.repo, SensitivityLevel.Low, true);
   assert.equal(tracker.hasOpenPause(session), true);
   assert.equal(session.pauses[session.pauses.length - 1].source, PauseSource.Manual);
-  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Low);
+  assert.equal(tracker.getSessionSensitivity(session), SensitivityLevel.Low);
 });
 
-test('resumeRepoSession closes the manual pause and leaves the mode on the default', () => {
+test('setSessionSensitivity without a session changes nothing', () => {
+  const { tracker } = makeHarness(3);
+  assert.equal(tracker.setSessionSensitivity('repoA', SensitivityLevel.Low), false);
+  assert.equal(tracker.getDefaultSensitivity(), SensitivityLevel.Normal);
+});
+
+test('a session mode lives with its session; the next session starts on the default', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const first = tracker.getOpenSessions()[0];
+  tracker.setSessionSensitivity(first.repo, SensitivityLevel.Low);
+  tracker.stopSession(first.id);
+  assert.equal(first.sensitivity, SensitivityLevel.Low, 'the closed session keeps what it ran in');
+
+  tick(true);
+  const second = tracker.getOpenSessions()[0];
+  assert.notEqual(second.id, first.id);
+  assert.equal(second.sensitivity, null);
+  assert.equal(tracker.getSessionSensitivity(second), SensitivityLevel.Normal);
+});
+
+test('the default reaches sessions without their own mode, not the picked ones', () => {
+  const { tracker, tick } = makeHarness(3);
+  tick(true);
+  const session = tracker.getOpenSessions()[0];
+  tracker.setDefaultSensitivity(SensitivityLevel.Patient);
+  assert.equal(tracker.getSessionSensitivity(session), SensitivityLevel.Patient);
+
+  tracker.setSessionSensitivity(session.repo, SensitivityLevel.Low);
+  tracker.setDefaultSensitivity(SensitivityLevel.Normal);
+  assert.equal(tracker.getSessionSensitivity(session), SensitivityLevel.Low);
+});
+
+test('resumeRepoSession closes the manual pause and leaves the mode alone', () => {
   const { tracker, tick } = makeHarness(3);
   tick(true);
   const session = tracker.getOpenSessions()[0];
   tracker.pauseRepoSession(session.repo);
   assert.equal(tracker.resumeRepoSession(session.repo), true);
   assert.equal(tracker.hasOpenPause(session), false);
-  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Normal);
-
-  tracker.setSensitivity(SensitivityLevel.Patient);
-  assert.equal(tracker.getSensitivity(session.repo), SensitivityLevel.Patient, 'the repo follows the default');
+  assert.equal(session.sensitivity, null);
 });
 
 test('resumeRepoSession leaves an idle pause to the evaluator', () => {

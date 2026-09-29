@@ -57,7 +57,7 @@ function makeConfig(): AppConfig {
     report: { roundingMinutes: 15 },
     workDays: [1, 2, 3, 4, 5, 6, 7],
     holidays: [],
-    sensitivity: { default: 'normal', perRepo: {} },
+    sensitivity: { default: 'normal' },
   } as unknown as AppConfig;
 }
 
@@ -81,6 +81,7 @@ function makeSession(overrides: Partial<Session>): Session {
     mergeBaseSha: null,
     evidenceBaseline: null,
     lastBranchCommits: null,
+    sensitivity: null,
     ledger: null,
     ...overrides,
   } as Session;

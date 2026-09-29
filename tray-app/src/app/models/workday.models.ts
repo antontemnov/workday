@@ -729,7 +729,6 @@ export interface SettingsConfigSubset {
   readonly tracking: TrackingConfig;
   readonly sensitivity: {
     readonly default: SensitivityLevel;
-    readonly perRepo?: Readonly<Record<string, SensitivityLevel>>;
   };
   // Optional so an older daemon (no search config) doesn't break the type;
   // the UI reads it defensively (projectKeys ?? []).

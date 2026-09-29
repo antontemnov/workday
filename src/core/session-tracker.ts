@@ -26,7 +26,7 @@ import {
   trimTrailingPauses,
 } from './daily-log.js';
 import type { ManualEntryEdit } from './daily-log.js';
-import { computeWorkingDate, getSensitivityForRepo, resolveSensitivityTicks, writeConfig } from './config.js';
+import { computeWorkingDate, resolveSensitivityTicks, writeConfig } from './config.js';
 
 /**
  * Manages session lifecycle within a DailyLog.
@@ -534,8 +534,7 @@ export class SessionTracker {
         }
       : { hasDynamics: false, hasCommit: false, deltaMagnitude: 0 };
 
-    const level = getSensitivityForRepo(this.config, session.repo);
-    const maxTicks = resolveSensitivityTicks(level, this.config.session.diffPollSeconds);
+    const maxTicks = resolveSensitivityTicks(this.getSessionSensitivity(session), this.config.session.diffPollSeconds);
 
     return { sessionId: session.id, signals, maxTicks };
   }
@@ -603,35 +602,36 @@ export class SessionTracker {
   // ─── Sensitivity management ──────────────────────────────────────────
 
   /**
-   * Set sensitivity for a repo (perRepo override) or global default.
-   * Persisted to config.json immediately. Auto-resumes manual pause on the
-   * affected repos as a side effect — switching off Pause via the scale pill.
-   * keepPause skips that: the mode changes under a session that stays paused.
+   * Set the global default, persisted to config.json. Sessions without their
+   * own mode follow it at once. Auto-resumes every manual pause.
    */
-  public setSensitivity(level: SensitivityLevel, repoName?: string, keepPause = false): void {
-    if (repoName) {
-      this.config.sensitivity.perRepo[repoName] = level;
-    } else {
-      this.config.sensitivity.default = level;
-    }
+  public setDefaultSensitivity(level: SensitivityLevel): void {
+    this.config.sensitivity.default = level;
     writeConfig(this.config);
-    if (keepPause) return;
-
-    // Side effect: any manual pause on the affected repo(s) is closed —
-    // picking a sensitivity pill implicitly resumes the session.
-    const now = new Date().toISOString();
-    for (const session of this.dailyLog.sessions) {
-      if (session.closedBy) continue;
-      if (repoName && session.repo !== repoName) continue;
-      if (this.getOpenPauseSource(session) === PauseSource.Manual) {
-        this.closeOpenPause(session, now);
-      }
-    }
+    for (const session of this.getOpenSessions()) this.resumeRepoSession(session.repo);
   }
 
-  /** Current sensitivity for a repo (perRepo override → default). */
-  public getSensitivity(repoName: string): SensitivityLevel {
-    return getSensitivityForRepo(this.config, repoName);
+  /**
+   * Mode for the repo's open (or candidate) session until it ends; nothing is
+   * persisted, the next session starts on the default. Auto-resumes a manual
+   * pause unless keepPause. Returns false when the repo has no session.
+   */
+  public setSessionSensitivity(repoName: string, level: SensitivityLevel, keepPause = false): boolean {
+    const session = this.findOpenOrCandidateSession(repoName);
+    if (!session) return false;
+
+    session.sensitivity = level;
+    if (!keepPause) this.resumeRepoSession(repoName);
+    return true;
+  }
+
+  /** Effective mode of a session: its own pick, else the default. */
+  public getSessionSensitivity(session: Session): SensitivityLevel {
+    return session.sensitivity ?? this.config.sensitivity.default;
+  }
+
+  public getDefaultSensitivity(): SensitivityLevel {
+    return this.config.sensitivity.default;
   }
 
   // ─── Pause / Resume ──────────────────────────────────────────────────
@@ -796,6 +796,7 @@ export class SessionTracker {
       uncommittedBaseline: null,
       lastBranchCommits: null,
       ledger: null,
+      sensitivity: null,
     };
   }
 

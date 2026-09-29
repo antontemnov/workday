@@ -47,7 +47,7 @@ const config: AppConfig = {
   workDays: [1, 2, 3, 4, 5],
   holidays: [],
   apiPort: 9213,
-  sensitivity: { default: SensitivityLevel.Normal, perRepo: {} },
+  sensitivity: { default: SensitivityLevel.Normal },
 };
 const secrets = { Jira_Email: 'a@b.c', Jira_BaseUrl: 'https://example.atlassian.net', Jira_Token: 't', Tempo_Token: 't' };
 const TODAY = '2026-03-20';

@@ -35,7 +35,7 @@ function makeConfig(): AppConfig {
     workDays: [1, 2, 3, 4, 5],
     holidays: [],
     apiPort: 9213,
-    sensitivity: { default: SensitivityLevel.Normal, perRepo: {} },
+    sensitivity: { default: SensitivityLevel.Normal },
     search: {
       projectKeys: ['ATL'],
       knownProjects: [{ key: 'ATL', name: 'Core Platform', id: '10001' }, { key: 'WEB', name: 'Web Portal', id: '10002' }],

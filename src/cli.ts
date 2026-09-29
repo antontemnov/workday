@@ -382,8 +382,10 @@ async function handleSensitivity(args: string[]): Promise<void> {
     return;
   }
 
-  const target = result.data!.repo ?? 'global default';
-  console.log(`Sensitivity for ${target}: ${result.data!.level}.`);
+  const repoName = result.data!.repo;
+  console.log(repoName
+    ? `Sensitivity for the ${repoName} session: ${result.data!.level} (until it ends).`
+    : `Default sensitivity: ${result.data!.level}.`);
 }
 
 // ─── Session stop ─────────────────────────────────────────────────────────
@@ -1968,8 +1970,8 @@ Usage:
   workday pause <repo>       Pause a specific repo session
   workday resume             Resume all paused sessions
   workday resume <repo>      Resume a manually paused repo session (mode unchanged)
-  workday sensitivity <level>             Set global default (low|normal|patient)
-  workday sensitivity <level> <repo>      Set per-repo sensitivity
+  workday sensitivity <level>             Set the default for every new session (low|normal|patient)
+  workday sensitivity <level> <repo>      Set the repo's current session only, until it ends
   workday sensitivity <level> <repo> --keep-pause   Same, a manually paused session stays paused
   workday session-stop <target>                        Stop an open session now (live or frozen)
   workday session-delete <target> [--date DATE]        Delete a junk session (review-time cleanup)

@@ -226,7 +226,7 @@ export class Daemon {
 
     // sensitivity.default — delegate so manual pauses get auto-resumed
     if (patch.sensitivity?.default && patch.sensitivity.default !== this.config.sensitivity.default) {
-      this.sessionTracker.setSensitivity(patch.sensitivity.default);
+      this.sessionTracker.setDefaultSensitivity(patch.sensitivity.default);
     }
 
     // search — deep-merge so a selection change keeps the cached catalog and

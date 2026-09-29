@@ -106,7 +106,7 @@ const config = {
   tracking: { projectKeys: ['ATL'], branchOwners: ['atemnov'] },
   genericBranches: ['master'],
   session: { diffPollSeconds: 30, signalDeduplicationSeconds: 300, dayBoundaryCheckSeconds: 60, reflogCount: 20 },
-  sensitivity: { default: 'normal', perRepo: {} },
+  sensitivity: { default: 'normal' },
 } as unknown as AppConfig;
 
 git('init -q');

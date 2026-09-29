@@ -110,7 +110,6 @@ export enum SensitivityLevel {
 
 export interface SensitivityConfig {
   default: SensitivityLevel;
-  perRepo: Record<string, SensitivityLevel>;
 }
 
 export interface SessionConfig {
@@ -304,6 +303,9 @@ export interface Session {
   // reflog. When present, evidence.commits is derived from it and the
   // positive-jump fallback is skipped. Null on old logs / fallback repos.
   ledger: CommitLedgerState | null;
+  // Mode picked for this session only. Null (absent on old logs) = the
+  // current sensitivity.default.
+  sensitivity: SensitivityLevel | null;
 }
 
 // Mutable — ratcheted down in place when branch totals drop below it.
@@ -1208,7 +1210,6 @@ export interface SettingsConfigSubset {
   readonly tracking: TrackingConfig;
   readonly sensitivity: {
     readonly default: SensitivityLevel;
-    readonly perRepo: Readonly<Record<string, SensitivityLevel>>;
   };
   readonly search: SearchConfig;
   readonly activities: ActivityScopeConfig;

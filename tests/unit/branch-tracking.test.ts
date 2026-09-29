@@ -40,7 +40,7 @@ function makeConfig(): AppConfig {
     workDays: [1, 2, 3, 4, 5],
     holidays: [],
     apiPort: 9213,
-    sensitivity: { default: SensitivityLevel.Normal, perRepo: {} },
+    sensitivity: { default: SensitivityLevel.Normal },
     search: { projectKeys: ['ATL'], knownProjects: [] },
     activities: { values: [] },
     notifications: { timesheetReminder: { enabled: true, notifyHour: 14 } },

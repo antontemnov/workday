@@ -84,11 +84,6 @@ export function validateConfig(config: AppConfig): void {
   if (!isValidSensitivity(config.sensitivity.default)) {
     throw new Error(`config.json: invalid sensitivity.default "${config.sensitivity.default}"`);
   }
-  for (const [repo, level] of Object.entries(config.sensitivity.perRepo)) {
-    if (!isValidSensitivity(level)) {
-      throw new Error(`config.json: invalid sensitivity.perRepo[${repo}] "${level}"`);
-    }
-  }
 
   validateSearchConfig(config.search);
   validateActivityScopeConfig(config.activities);
@@ -267,16 +262,12 @@ export function loadConfig(): AppConfig {
   delete raw.dayBoundaryHour;
 
   // Migrate the removed always_on level in place (nonstop mode cut in 0.44.0).
+  // A legacy perRepo map is dropped: per-repo modes were cut in 0.53.0.
   const rawSensitivity = (raw.sensitivity ?? {}) as Partial<SensitivityConfig>;
   const migrateLevel = (level: unknown): SensitivityLevel | undefined =>
     level === 'always_on' ? SensitivityLevel.Normal : level as SensitivityLevel | undefined;
-  const perRepo: Record<string, SensitivityLevel> = {};
-  for (const [repo, level] of Object.entries(rawSensitivity.perRepo ?? {})) {
-    perRepo[repo] = migrateLevel(level) ?? (DEFAULT_SENSITIVITY as SensitivityLevel);
-  }
   const sensitivity: SensitivityConfig = {
     default: migrateLevel(rawSensitivity.default) ?? (DEFAULT_SENSITIVITY as SensitivityLevel),
-    perRepo,
   };
 
   const rawSession = (raw.session ?? {}) as Record<string, unknown>;
@@ -432,7 +423,6 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
     ...patch,
     sensitivity: {
       default: patch.sensitivity?.default ?? current.sensitivity.default,
-      perRepo: patch.sensitivity?.perRepo ?? current.sensitivity.perRepo,
     },
     // Deep-merge: a patch that only reselects projects must not wipe the
     // owner list, and vice versa.
@@ -462,12 +452,6 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
   };
   validateConfig(merged);
   return merged;
-}
-
-/** Resolve sensitivity for a repo (perRepo override → default). repo is either path or basename. */
-export function getSensitivityForRepo(config: AppConfig, repo: string): SensitivityLevel {
-  const name = basename(repo);
-  return config.sensitivity.perRepo[name] ?? config.sensitivity.perRepo[repo] ?? config.sensitivity.default;
 }
 
 /**

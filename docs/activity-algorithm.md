@@ -50,8 +50,10 @@ Tick-based values are derived at `ActivityEvaluator` construction time.
 
 ### Source constants (time-based)
 
-The repo's **sensitivity** sets a single knob — the max timeout / stamina ceiling
-(`SENSITIVITY_TIMEOUTS`). The touch floor is *derived* from it
+The session's **sensitivity** sets a single knob — the max timeout / stamina ceiling
+(`SENSITIVITY_TIMEOUTS`). Every session starts on `sensitivity.default`; a mode
+picked for a session (tray Mode ›) lasts until that session ends and is never
+saved — there are no per-repo or per-branch modes. The touch floor is *derived* from it
 (`× STAMINA_FLOOR_RATIO = 1/4`), there is no separate min constant:
 
 | Sensitivity | max (ceiling) | derived touch floor |
@@ -671,8 +673,7 @@ Closes ALL open pauses regardless of source (manual, idle_timeout, superseded).
 If the user explicitly says "resume", they know what they're doing.
 
 `workday resume <repo>` (the tray's Resume) closes only that repo's manual
-pause. It never touches the sensitivity config — resuming must not pin the
-repo's current mode as a per-repo override.
+pause and leaves the session's mode alone.
 
 Future: Teams integration will call the resume HTTP endpoint to signal "user is back".
 

@@ -42,7 +42,7 @@ const config: AppConfig = {
   workDays: [1, 2, 3, 4, 5],
   holidays: [],
   apiPort: 9213,
-  sensitivity: { default: SensitivityLevel.Normal, perRepo: {} },
+  sensitivity: { default: SensitivityLevel.Normal },
 };
 
 const D = '2026-09-22';

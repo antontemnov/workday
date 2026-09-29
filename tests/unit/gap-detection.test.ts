@@ -49,7 +49,7 @@ function makeConfig(repos: string[], idleCloseHours = 3): AppConfig {
     report: { roundingMinutes: 15 },
     workDays: [1, 2, 3, 4, 5, 6, 7],
     holidays: [],
-    sensitivity: { default: 'normal', perRepo: {} },
+    sensitivity: { default: 'normal' },
   } as unknown as AppConfig;
 }
 

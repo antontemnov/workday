@@ -209,7 +209,7 @@ export function selectWatchingRepos(
   return watching.filter(w => !occupiedRepos.has(w.repoName));
 }
 
-/** Synthetic PENDING card for a watched repo — zeros, real sensitivity. */
+/** Synthetic PENDING card for a watched repo — zeros, the default sensitivity. */
 export function buildWatchingCard(
   repo: WatchingRepo,
   sensitivity: SensitivityLevel,
@@ -512,7 +512,7 @@ export class HttpServer {
     const summaries: SessionSummary[] = [
       ...openSessions.map(s => this.toSessionSummary(s, tracker)),
       ...candidates.map(s => this.toSessionSummary(s, tracker)),
-      ...watching.map(w => buildWatchingCard(w, tracker.getSensitivity(w.repoName), now)),
+      ...watching.map(w => buildWatchingCard(w, tracker.getDefaultSensitivity(), now)),
     ];
     const jiraBaseUrl = tryLoadSecrets()?.Jira_BaseUrl?.trim() || undefined;
 
@@ -735,7 +735,7 @@ export class HttpServer {
     const sessions: SessionDetail[] = [
       ...log.sessions.map(toDetail),
       ...candidates.map(toDetail),
-      ...watching.map(w => buildWatchingCard(w, tracker.getSensitivity(w.repoName), now)),
+      ...watching.map(w => buildWatchingCard(w, tracker.getDefaultSensitivity(), now)),
     ];
 
     const totalEffectiveMs = log.sessions.reduce(
@@ -827,7 +827,13 @@ export class HttpServer {
     }
     const repo = typeof body.repo === 'string' ? body.repo : undefined;
 
-    tracker.setSensitivity(rawLevel, repo, body.keepPause === true);
+    if (repo) {
+      if (!tracker.setSessionSensitivity(repo, rawLevel, body.keepPause === true)) {
+        return { ok: false, error: `No session for ${repo}` };
+      }
+    } else {
+      tracker.setDefaultSensitivity(rawLevel);
+    }
     tracker.flush();
     // Re-run evaluator so the new maxTicks takes effect immediately.
     await this.deps.forceTick();
@@ -1484,7 +1490,6 @@ export class HttpServer {
           },
           sensitivity: {
             default: c.sensitivity.default,
-            perRepo: { ...c.sensitivity.perRepo },
           },
           search: {
             projectKeys: [...c.search.projectKeys],
@@ -2014,7 +2019,7 @@ export class HttpServer {
         ? sessionScore.etaTicks * this.deps.config.session.diffPollSeconds * MS_PER_SECOND
         : null,
       isLeader: evalResult?.leaderId === session.id,
-      sensitivity: tracker.getSensitivity(session.repo),
+      sensitivity: tracker.getSessionSensitivity(session),
     };
   }
 

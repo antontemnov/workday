@@ -50,7 +50,7 @@ const config: AppConfig = {
   workDays: [1, 2, 3, 4, 5],
   holidays: [],
   apiPort: 9213,
-  sensitivity: { default: SensitivityLevel.Normal, perRepo: {} },
+  sensitivity: { default: SensitivityLevel.Normal },
 } as unknown as AppConfig;
 
 const makeLog = (date = '2026-06-13'): DailyLog => createEmptyLog(date, config);

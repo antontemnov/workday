@@ -52,7 +52,7 @@ function makeConfig(): AppConfig {
     workDays: [1, 2, 3, 4, 5],
     holidays: [],
     apiPort: 9213,
-    sensitivity: { default: SensitivityLevel.Normal, perRepo: {} },
+    sensitivity: { default: SensitivityLevel.Normal },
   };
 }
 
@@ -73,6 +73,7 @@ function makeSession(task: string | null): Session {
     mergeBaseSha: null,
     evidenceBaseline: null,
     lastBranchCommits: null,
+    sensitivity: null,
     ledger: null,
   };
 }
