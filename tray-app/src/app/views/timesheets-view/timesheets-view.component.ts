@@ -205,13 +205,14 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     }
     // Quiet upkeep: failed loads retry until they land (one-shot fetches must
     // self-heal), and today's row stays fresh while the current month is on
-    // screen. Meta calls are cached daemon-side.
+    // screen. Meta calls are cached daemon-side; the approval is asked every
+    // tick — a reviewer can flip it while the tab stays open.
     this.refreshTimer = setInterval(() => {
       if (this.pushing) return;
       if (!this.monthData || this.error) { void this.load(false); return; }
       if (this.monthContainsToday) void this.reloadMonthQuiet();
       if (this.schedule === null) void this.loadSchedule(this.loadSeq);
-      if (this.approval === null) void this.loadApproval(this.loadSeq);
+      void this.loadApproval(this.loadSeq);
       void this.autoSync();
     }, 30_000);
   }
@@ -262,10 +263,11 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.schedule = res.ok && res.data ? res.data : null;
   }
 
+  // A failed call keeps the last known status; a month switch clears it.
   private async loadApproval(seq: number): Promise<void> {
     const res = await this.api.getTempoApproval(this.year, this.month);
-    if (seq !== this.loadSeq) return;
-    this.approval = res.ok && res.data ? res.data : null;
+    if (seq !== this.loadSeq || !res.ok || !res.data) return;
+    this.approval = res.data;
   }
 
   // ─── Month pager (back only; a past month's title leads home) ──────────
@@ -423,6 +425,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   private async runSync(): Promise<void> {
     if (this.busy || this.actionPending) return;
     const key = this.monthKey;
+    const seq = this.loadSeq;
     const [year, month] = [this.year, this.month];
     this.syncing = true;
     const res = await this.api.syncTempo(year, month);
@@ -434,7 +437,10 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.tempoUnreachable = false;
     this.syncedMonths.add(key);
     if (res.data.adopted?.length) this.adopt(res.data.adopted);
-    if (!this.destroyed && key === this.monthKey) void this.reloadMonthQuiet();
+    if (this.destroyed || key !== this.monthKey) return;
+    void this.reloadMonthQuiet();
+    // The read asked Tempo for the approval too (a submit made on the site).
+    void this.loadApproval(seq);
   }
 
   // What a read adopted is new until shown — unless it landed in sight

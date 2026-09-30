@@ -97,10 +97,6 @@ export async function closedMonthStatus(
   return approval.available && approval.closed ? approval.statusKey : null;
 }
 
-export async function isMonthClosed(year: number, month: number, secrets: Secrets): Promise<boolean> {
-  return (await closedMonthStatus(year, month, secrets)) !== null;
-}
-
 /**
  * Why a day may not be edited: its month is closed in Tempo. A past month is
  * asked fresh (that is where approvals happen); the current one rides the cache.

@@ -21,7 +21,7 @@ import { acquirePushLock } from './push-lock.js';
 import { buildMonthModel, type MonthModel } from './sync-state.js';
 import { fetchMonthSnapshot, loadMonthSnapshot } from './tempo-snapshot.js';
 import { importFromSnapshot, type ImportEntryInput } from './tempo-import.js';
-import { isMonthClosed } from './tempo-approvals.js';
+import { closedMonthStatus } from './tempo-approvals.js';
 
 export interface TempoEntryValues {
   readonly minutes: number;
@@ -206,7 +206,8 @@ export function applyMonthSync(snapshot: TempoMonthSnapshot, options: MonthSyncO
 /**
  * Read a month from Tempo and sync the mirror with it, under the push lock
  * (the sync rewrites push-log). A month that is not OPEN is skipped before
- * any worklog is read.
+ * any worklog is read. The approval is asked fresh: a submit lands seconds
+ * after a push, and the read is what shows it.
  */
 export async function syncTempoMonth(
   year: number,
@@ -214,7 +215,7 @@ export async function syncTempoMonth(
   secrets: Secrets,
   options: MonthSyncOptions,
 ): Promise<TempoSyncResponse> {
-  if (await isMonthClosed(year, month, secrets)) {
+  if (await closedMonthStatus(year, month, secrets, true) !== null) {
     const cached = loadMonthSnapshot(year, month);
     const conflicts = cached
       ? [...readMonthModel(cached, options.config).days.values()].reduce((sum, d) => sum + d.conflicts.length, 0)

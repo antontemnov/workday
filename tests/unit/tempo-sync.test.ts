@@ -2,7 +2,7 @@
  * Unit tests for the Tempo read = sync writer (tempo-sync.ts): identity
  * relinks, refreshed bases, fast-forward in place and across days,
  * adoption with its exclusions, ticket-move pairs left alone, today routed
- * through the live hooks, closed months never read.
+ * through the live hooks, closed months never read (approval asked fresh).
  *
  * Run: npx tsx tests/unit/tempo-sync.test.ts
  * Exit code: 0 = all pass, 1 = any fail
@@ -13,7 +13,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from '../../src/core/config.js';
 import { createEmptyLog, readDailyLog, writeDailyLog } from '../../src/core/daily-log.js';
-import { APPROVAL_CACHE_FILE } from '../../src/core/constants.js';
+import { APPROVAL_CACHE_FILE, ISSUE_CACHE_FILE } from '../../src/core/constants.js';
 import { applyMonthSync, syncTempoMonth } from '../../src/push/tempo-sync.js';
 import { loadPushLog, pushLogKey, savePushLog, saveTombstones } from '../../src/push/push-log.js';
 import { saveMonthSnapshot } from '../../src/push/tempo-snapshot.js';
@@ -210,16 +210,51 @@ await test('with the live tracker, today is adopted through its hooks', () => {
 
 console.log('\nTempo sync — closed months');
 
-await test('a closed (APPROVED) month is never read', async () => {
+const closedSecrets = { Jira_Email: 'a@b.c', Jira_BaseUrl: 'https://example.atlassian.net', Jira_Token: 't', Tempo_Token: 't' };
+
+function approvalCache(month: string, statusKey: string): void {
   mkdirSync(getDataDir(), { recursive: true });
+  writeFileSync(join(getDataDir(), ISSUE_CACHE_FILE), JSON.stringify({ __accountId__: 'acc-1' }));
   writeFileSync(join(getDataDir(), APPROVAL_CACHE_FILE), JSON.stringify({
-    '2026-04': { fetchedAt: new Date().toISOString(), period: { from: '2026-04-01', to: '2026-04-30' }, statusKey: 'APPROVED', requiredSeconds: 0, timeSpentSeconds: 0, canSubmit: false },
+    [month]: { fetchedAt: new Date().toISOString(), period: null, statusKey, requiredSeconds: 0, timeSpentSeconds: 0, canSubmit: false },
   }));
-  const secrets = { Jira_Email: 'a@b.c', Jira_BaseUrl: 'https://example.atlassian.net', Jira_Token: 't', Tempo_Token: 't' };
-  // Any network call would fail in the test home — a skip proves none happened.
-  const result = await syncTempoMonth(2026, 4, secrets, { config, today: TODAY, live: null });
+}
+
+// Only the approval may be asked; a worklog read fails the test.
+function tempoApproval(statusKey: string | null): string[] {
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request): Promise<Response> => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (!url.pathname.startsWith('/4/timesheet-approvals/')) throw new Error(`unexpected ${url.pathname}`);
+    if (statusKey === null) throw new Error('fetch failed');
+    return new Response(JSON.stringify({ period: null, status: { key: statusKey } }), { status: 200 });
+  }) as typeof fetch;
+  return calls;
+}
+
+await test('a closed (APPROVED) month is never read', async () => {
+  approvalCache('2026-04', 'APPROVED');
+  const calls = tempoApproval('APPROVED');
+  const result = await syncTempoMonth(2026, 4, closedSecrets, { config, today: TODAY, live: null });
   assert.equal(result.skipped, 'closed');
   assert.deepEqual(result.adopted, []);
+  assert.equal(calls.length, 1);
+});
+
+await test('submitted after the cache said OPEN → the read asks fresh and skips', async () => {
+  approvalCache('2026-05', 'OPEN');
+  const calls = tempoApproval('IN_REVIEW');
+  const result = await syncTempoMonth(2026, 5, closedSecrets, { config, today: TODAY, live: null });
+  assert.equal(result.skipped, 'closed');
+  assert.deepEqual(calls, ['/4/timesheet-approvals/user/acc-1']);
+});
+
+await test('Tempo down on the approval → the last known status decides', async () => {
+  approvalCache('2026-04', 'APPROVED');
+  tempoApproval(null);
+  const result = await syncTempoMonth(2026, 4, closedSecrets, { config, today: TODAY, live: null });
+  assert.equal(result.skipped, 'closed');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

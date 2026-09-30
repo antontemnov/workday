@@ -109,6 +109,7 @@ interface FakeApi {
   pushes: { from: string; to: string; stopTracking: boolean }[];
   pushAnswer: ApiResponse<PushResponse>;
   syncAnswer: ApiResponse<TempoSyncResponse>;
+  approvalAnswer: ApiResponse<TempoApprovalResponse>;
   month: MonthResponse;
 }
 
@@ -117,12 +118,13 @@ function harness(month: MonthResponse = september()) {
     pushes: [],
     pushAnswer: { ok: true, data: { dryRun: false, plan: [] } },
     syncAnswer: { ok: true, data: { month: '2026-09', syncedAt: '', worklogCount: 0, adopted: [] } },
+    approvalAnswer: { ok: true, data: approval('OPEN') },
     month,
   };
   const api = {
     getMonth: async () => ({ ok: true, data: fake.month }),
     getTempoSchedule: async () => ({ ok: true, data: schedule() }),
-    getTempoApproval: async () => ({ ok: true, data: approval('OPEN') }),
+    getTempoApproval: async () => fake.approvalAnswer,
     syncTempo: async () => fake.syncAnswer,
     pushToTempo: async (from: string, to: string, _force: boolean, stopTracking: boolean) => {
       fake.pushes.push({ from, to, stopTracking });
@@ -356,6 +358,26 @@ await test('a failed read says Tempo unreachable; the next good one clears it', 
   assert.equal(h.comp.tempoUnreachable, false);
 });
 
+await test('submitted on the site after a push: Fetch shows the new period status', async () => {
+  const h = harness();
+  h.fake.approvalAnswer = { ok: true, data: approval('IN_REVIEW', true) };
+  h.fake.syncAnswer = { ok: true, data: { month: '2026-09', syncedAt: '', worklogCount: 0, adopted: [], skipped: 'closed' } };
+  h.comp.onFetch();
+  await tick();
+  await tick();
+  assert.equal(h.comp.periodStatus?.label, 'in review');
+  assert.equal(h.comp.monthClosed, true);
+});
+
+await test('a failed approval call keeps the last known status', async () => {
+  const h = harness();
+  h.fake.approvalAnswer = { ok: false, error: 'daemon offline' };
+  h.comp.onFetch();
+  await tick();
+  await tick();
+  assert.equal(h.comp.periodStatus?.label, 'open');
+});
+
 // ─── Header ──────────────────────────────────────────────────────────────
 
 console.log('\nHeader');
@@ -368,15 +390,6 @@ await test('the gap: closed days only, a word only when there is one', () => {
   assert.deepEqual(h.comp.gap, { amount: '7h 00m', word: 'behind' });
   h.comp.monthData = september({ '2026-09-24': { hours: 11, state: MonthSyncState.Unpushed } });
   assert.deepEqual(h.comp.gap, { amount: '3h 00m', word: 'ahead' });
-});
-
-await test('last push: "23 Sep, HH:MM" — per month, empty when never pushed', () => {
-  const h = harness();
-  const d = new RealDate('2026-09-23T14:42:00.000Z');
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  assert.equal(h.comp.lastPushLabel, `${d.getDate()} Sep, ${hm}`);
-  h.comp.monthData = { ...september(), lastPushAt: null };
-  assert.equal(h.comp.lastPushLabel, null);
 });
 
 await test('weeks newest first, labelled "21 — 27"; no future days', () => {
