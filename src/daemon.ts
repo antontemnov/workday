@@ -4,9 +4,11 @@ import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig, ensureConfigFiles } from './core/config.js';
 import { readDailyLog, writeDailyLog, collapseAddedEntries } from './core/daily-log.js';
+import { cutDayAt, isEmptyCut, monthDates, type DayCut } from './core/month-lock.js';
 import { runStartupJanitor } from './core/janitor.js';
 import type { EntryOwnershipCheck } from './core/janitor.js';
 import { loadPushLog, pushLogKey } from './push/push-log.js';
+import { ApprovalWatch, monthsBetween, type DueCut } from './push/approval-watch.js';
 import { writeStopMarker, clearStopMarker } from './core/stop-marker.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { CalendarCollector } from './collectors/calendar-collector.js';
@@ -18,7 +20,7 @@ import { NotificationCenter } from './core/notification-center.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { ActivityScopeConfig, AppConfig, CalendarConfig, Secrets, SearchConfig, TrackingConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
+import type { ActivityScopeConfig, AppConfig, CalendarConfig, ManualEntry, PollResult, Secrets, SearchConfig, TrackingConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
@@ -40,6 +42,7 @@ export class Daemon {
   private updateManager: UpdateManager = new UpdateManager();
   private notificationCenter!: NotificationCenter;
   private calendarCollector!: CalendarCollector;
+  private approvalWatch!: ApprovalWatch;
   // Version installed on disk and waiting for a quiet window to restart into.
   private pendingRestartVersion: string | null = null;
   private updateInFlight: boolean = false;
@@ -96,6 +99,11 @@ export class Daemon {
     this.activityEvaluator = new ActivityEvaluator(this.config.session.diffPollSeconds);
     this.sessionTracker.onSessionClosed = (sessionId) => this.activityEvaluator.removeSession(sessionId);
 
+    this.approvalWatch = new ApprovalWatch({
+      getSecrets: () => this.secrets,
+      getConfig: () => this.config,
+    });
+
     this.writePidFile();
     // A starting daemon voids any manual-stop intent — the tray watchdog
     // may resume guarding it.
@@ -130,6 +138,7 @@ export class Daemon {
       notificationCenter: this.notificationCenter,
       calendarCollector: this.calendarCollector,
       onSecretsUpdated: () => { this.secrets = loadSecrets(); },
+      onPushed: (from, to) => this.approvalWatch.armAfterPush(monthsBetween(from, to)),
     };
     this.httpServer = new HttpServer(this.config.apiPort, deps);
     await this.httpServer.start();
@@ -332,6 +341,9 @@ export class Daemon {
       //     births a new session instead of resuming a stale pause.
       this.sessionTracker.closeIdleSessions(Date.now());
 
+      // 0c. Closed-month lock — cut what came after the submit, then lock.
+      this.applyMonthLock();
+
       const baseShas = this.sessionTracker.getBaseShasPerRepoPath(this.config.repos);
       const ledgerQueries = this.sessionTracker.getLedgerQueries(this.config.repos);
       const results = await this.gitTracker.pollAll(baseShas, ledgerQueries);
@@ -353,6 +365,8 @@ export class Daemon {
 
       this.sessionTracker.flush();
 
+      void this.approvalWatch.ask(this.currentDate, results.some(hasGitActivity));
+
       if (this.statusRenderer) {
         this.statusRenderer.render();
       }
@@ -364,6 +378,41 @@ export class Daemon {
         console.error(`[poll] ${message}`);
       }
     }
+  }
+
+  // ─── Closed-month lock ─────────────────────────────────────────────────
+
+  private applyMonthLock(): void {
+    for (const cut of this.approvalWatch.sync(this.currentDate)) {
+      this.applyMonthCut(cut);
+      this.approvalWatch.markCut(cut);
+    }
+    this.sessionTracker.setMonthLock(this.approvalWatch.isClosed(this.currentDate.slice(0, 7)));
+  }
+
+  // Past days on disk, today through the tracker. Entries owning a Tempo
+  // worklog stay — they are Tempo already.
+  private applyMonthCut({ month, cutAt }: DueCut): void {
+    const pushLog = loadPushLog();
+    const ownedOn = (date: string) => (entry: ManualEntry): boolean => pushLogKey(date, entry.task, entry.id) in pushLog;
+    const changed: string[] = [];
+    for (const date of monthDates(month)) {
+      if (date === this.currentDate) continue;
+      const log = readDailyLog(date);
+      if (!log) continue;
+      const cut = cutDayAt(log, cutAt, ownedOn(date));
+      if (isEmptyCut(cut)) continue;
+      writeDailyLog(log);
+      changed.push(describeCut(date, cut));
+    }
+    if (this.currentDate.startsWith(month)) {
+      const cut = this.sessionTracker.applyMonthCut(cutAt, ownedOn(this.currentDate));
+      if (!isEmptyCut(cut)) {
+        this.sessionTracker.flush();
+        changed.push(describeCut(this.currentDate, cut));
+      }
+    }
+    if (changed.length > 0) console.log(`[month-lock] ${month} closed at ${cutAt} — ${changed.join('; ')}`);
   }
 
   // ─── Observation gap (sleep / hibernate) ──────────────────────────────
@@ -633,6 +682,14 @@ function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+
+function hasGitActivity(result: PollResult): boolean {
+  return result.delta.hasDynamics || result.newReflogEntries.some(e => e.type === 'commit');
+}
+
+function describeCut(date: string, cut: DayCut): string {
+  return `${date}: ${cut.removedSessionIds.length} session(s) removed, ${cut.closedSessionIds.length} ended, ${cut.removedEntries.length} entr${cut.removedEntries.length === 1 ? 'y' : 'ies'} removed`;
 }
 
 // ─── Entry point (direct execution / background mode) ────────────────────

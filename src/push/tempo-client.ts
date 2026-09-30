@@ -91,7 +91,7 @@ export interface TempoTimesheetApproval {
   readonly period: { readonly from: string; readonly to: string };
   readonly requiredSeconds: number;
   readonly timeSpentSeconds: number;
-  readonly status?: { readonly key?: string };
+  readonly status?: { readonly key?: string; readonly updatedAt?: string };
   readonly actions?: { readonly submit?: unknown };
 }
 

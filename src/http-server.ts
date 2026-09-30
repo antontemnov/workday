@@ -192,6 +192,8 @@ export interface HttpServerDeps {
   readonly calendarCollector: CalendarCollector;
   /** Secrets were rewritten via the API — holders of a startup copy reload. */
   readonly onSecretsUpdated: () => void;
+  /** Worklogs went out for the range — a submit may follow. */
+  readonly onPushed?: (from: string, to: string) => void;
 }
 
 // ─── Watching-card synthesis (A-6) ─────────────────────────────────────
@@ -1010,7 +1012,7 @@ export class HttpServer {
   /** A day in a month closed in Tempo is never edited. null = today. */
   private async editRefusal(date: string | null): Promise<string | null> {
     const today = this.deps.getCurrentDate();
-    return dayEditRefusal(date ?? today, today, tryLoadSecrets());
+    return dayEditRefusal(date ?? today, today, tryLoadSecrets(), this.deps.config);
   }
 
   private toEntryData(entry: ManualEntry, log: DailyLog): ManualEntryResponse {
@@ -1802,6 +1804,7 @@ export class HttpServer {
           this.deps.sessionTracker.markPushed(disk.pushedAt);
         }
       }
+      if (!dryRun && !response.blockedByAdoption && !response.blockedByConflicts) this.deps.onPushed?.(from, to);
       return { ok: true, data: response };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -1971,7 +1974,8 @@ export class HttpServer {
     const secrets = tryLoadSecrets();
     if (!secrets) return { ok: true, data: approvalUnavailable('no-token') };
     try {
-      return { ok: true, data: await resolveMonthApproval(parsed.year, parsed.month, secrets) };
+      const fresh = url.searchParams.get('fresh') === '1';
+      return { ok: true, data: await resolveMonthApproval(parsed.year, parsed.month, secrets, fresh ? 0 : undefined) };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

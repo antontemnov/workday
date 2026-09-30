@@ -27,6 +27,7 @@ import {
 } from './daily-log.js';
 import type { ManualEntryEdit } from './daily-log.js';
 import { computeWorkingDate, resolveSensitivityTicks, writeConfig } from './config.js';
+import { cutDayAt, type DayCut } from './month-lock.js';
 
 /**
  * Manages session lifecycle within a DailyLog.
@@ -66,6 +67,8 @@ export class SessionTracker {
   // quiet day (all sessions closed) is rewritten every poll tick for hours.
   // Reset whenever this.dailyLog is replaced or its file is deleted.
   private lastFlushedState: string | null = null;
+  // The working day's month is closed in Tempo: nothing is tracked.
+  private monthLocked = false;
   public onSessionClosed: ((sessionId: string) => void) | null = null;
 
   public constructor(config: AppConfig, initialLog?: DailyLog) {
@@ -118,6 +121,7 @@ export class SessionTracker {
    *    startedAt = first signal); an existing candidate ticks like a session
    */
   public processPollResult(result: PollResult): void {
+    if (this.monthLocked) return;
     const now = new Date().toISOString();
     const repoName = basename(result.repoPath);
     let openSession = this.findOpenSession(repoName);
@@ -732,6 +736,27 @@ export class SessionTracker {
   public hasActiveWork(): boolean {
     return this.candidates.size > 0
       || this.getOpenSessions().some(s => !this.hasOpenPause(s));
+  }
+
+  // ─── Closed-month lock ────────────────────────────────────────────────
+
+  /** Lock on: candidates evaporate, open sessions end at their last seen activity. */
+  public setMonthLock(locked: boolean): void {
+    if (locked === this.monthLocked) return;
+    this.monthLocked = locked;
+    if (!locked) return;
+    this.dropAllCandidates();
+    for (const session of this.dailyLog.sessions) {
+      if (!session.closedBy) this.closeSession(session, ClosedBy.MonthClosed, session.lastSeenAt);
+    }
+  }
+
+  /** Cut today's log at the moment its month closed (see cutDayAt). */
+  public applyMonthCut(cutAt: string, ownsWorklog: (entry: ManualEntry) => boolean): DayCut {
+    this.dropAllCandidates();
+    const cut = cutDayAt(this.dailyLog, cutAt, ownsWorklog);
+    for (const id of [...cut.removedSessionIds, ...cut.closedSessionIds]) this.onSessionClosed?.(id);
+    return cut;
   }
 
   // ─── Candidates ──────────────────────────────────────────────────────

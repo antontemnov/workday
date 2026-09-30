@@ -145,6 +145,13 @@ export const APPROVAL_CACHE_TTL_MS = 15 * 60_000;
 // A timesheet can be changed only while OPEN or sent back (REJECTED); any
 // other status (IN_REVIEW, APPROVED, …) closes the month here and in Tempo.
 export const EDITABLE_APPROVAL_STATUSES: readonly string[] = ['OPEN', 'REJECTED'];
+// A submit on the site can land any moment in the last working days of a
+// month: edits there (and in past or closed months) trust the cache this long.
+export const SUBMIT_WINDOW_WORKING_DAYS = 3;
+export const APPROVAL_EDIT_MAX_AGE_MS = 60_000;
+// A submit usually follows a push: the pushed month is watched closely.
+export const APPROVAL_PUSH_WATCH_MS = 10 * 60_000;
+export const APPROVAL_PUSH_WATCH_INTERVAL_MS = 30_000;
 
 // ─── Calendar feed (meeting suggestions) ────────────────────────────────
 export const CALENDAR_CACHE_FILE = 'calendar-cache.json';

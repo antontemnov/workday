@@ -166,6 +166,8 @@ export enum ClosedBy {
   DaemonCrash = 'daemon_crash',
   ManualStop = 'manual_stop',
   IdleTimeout = 'idle_timeout',
+  // The month was closed in Tempo (timesheet submitted) — cut at that moment.
+  MonthClosed = 'month_closed',
   // Legacy — never produced since budget v2; kept so old day files still read.
   BudgetExhausted = 'budget_exhausted',
 }
@@ -1139,6 +1141,7 @@ export interface TempoApprovalResponse {
   readonly period: { readonly from: string; readonly to: string } | null;
   readonly statusKey: string | null;        // OPEN | IN_REVIEW | APPROVED | REJECTED
   readonly closed: boolean;                 // nothing in the month changes, here or in Tempo
+  readonly closedAt?: string | null;        // when the closing status was set (submit, approval)
   readonly requiredSeconds: number | null;
   readonly timeSpentSeconds: number | null; // Tempo-side logged total
   readonly canSubmit: boolean;              // actions.submit present (v2 groundwork)

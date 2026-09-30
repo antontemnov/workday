@@ -409,7 +409,7 @@ async function dayEditable(date: string): Promise<boolean> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return true;
   const config = loadConfig();
   const { dayEditRefusal } = await import('./push/tempo-approvals.js');
-  const refusal = await dayEditRefusal(date, computeWorkingDate(Date.now(), config.boundaryHour, config.timezone), tryLoadSecrets());
+  const refusal = await dayEditRefusal(date, computeWorkingDate(Date.now(), config.boundaryHour, config.timezone), tryLoadSecrets(), config);
   if (refusal) console.log(refusal);
   return !refusal;
 }
@@ -1512,14 +1512,16 @@ async function handleSchedule(args: string[]): Promise<void> {
 
 async function handleApproval(args: string[]): Promise<void> {
   const { parseYearMonth } = await import('./push/month-report.js');
-  const ym = args[0] ? parseYearMonth(args[0]) : currentYearMonth();
-  if (!ym) { console.log('Usage: workday approval [YYYY-MM]'); return; }
+  const fresh = args.includes('--fresh');
+  const monthArg = args.find(a => !a.startsWith('--'));
+  const ym = monthArg ? parseYearMonth(monthArg) : currentYearMonth();
+  if (!ym) { console.log('Usage: workday approval [YYYY-MM] [--fresh]'); return; }
 
   const secrets = tryLoadSecrets();
   if (!secrets) { console.log('Secrets not configured — run "workday init".'); return; }
 
   const { resolveMonthApproval } = await import('./push/tempo-approvals.js');
-  const data = await resolveMonthApproval(ym.year, ym.month, secrets);
+  const data = await resolveMonthApproval(ym.year, ym.month, secrets, fresh ? 0 : undefined);
   if (!data.available) {
     const hint = data.reason === 'scope' ? ' — Tempo token needs the approvals:view scope' : '';
     console.log(`Approval unavailable (${data.reason})${hint}`);
@@ -1527,7 +1529,7 @@ async function handleApproval(args: string[]): Promise<void> {
   }
 
   console.log(`Period: ${data.period?.from ?? '?'} → ${data.period?.to ?? '?'}${data.fromCache ? '  [cache]' : ''}`);
-  console.log(`Status: ${data.statusKey ?? '—'}`);
+  console.log(`Status: ${data.statusKey ?? '—'}${data.closedAt ? ` since ${data.closedAt}` : ''}`);
   if (data.requiredSeconds !== null) console.log(`Required: ${formatReportHours(data.requiredSeconds)}`);
   if (data.timeSpentSeconds !== null) console.log(`Logged (Tempo side): ${formatReportHours(data.timeSpentSeconds)}`);
   if (data.canSubmit) console.log('Submit action is available for this period.');
@@ -2001,7 +2003,7 @@ Usage:
   workday tempo-import [YYYY-MM]                       Adopt Tempo-only worklogs as local entries (--date / --ids to narrow)
   workday tempo-resolve <date> <entryId> <mine|tempo>  Resolve one conflict: keep ours (the push overwrites) or take Tempo's
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
-  workday approval [YYYY-MM]                           Tempo timesheet approval status for the period
+  workday approval [YYYY-MM] [--fresh]                 Tempo timesheet approval status (--fresh skips the cache)
   workday notifications                                Active notifications (what the tray would toast)
   workday notifications test [minutes]                 Inject a test notification (delivery pipeline check)
   workday notifications ack <id> <shown|opened|hidden> Acknowledge a notification

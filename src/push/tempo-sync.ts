@@ -215,7 +215,7 @@ export async function syncTempoMonth(
   secrets: Secrets,
   options: MonthSyncOptions,
 ): Promise<TempoSyncResponse> {
-  if (await closedMonthStatus(year, month, secrets, true) !== null) {
+  if (await closedMonthStatus(year, month, secrets, 0) !== null) {
     const cached = loadMonthSnapshot(year, month);
     const conflicts = cached
       ? [...readMonthModel(cached, options.config).days.values()].reduce((sum, d) => sum + d.conflicts.length, 0)

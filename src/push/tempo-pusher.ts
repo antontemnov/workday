@@ -216,7 +216,7 @@ function* monthsInRange(from: string, to: string): Generator<{ year: number; mon
  *  blocks — the check is a live safety gate, not a dependency. */
 async function assertRangePushable(from: string, to: string, secrets: Secrets): Promise<void> {
   for (const { year, month } of monthsInRange(from, to)) {
-    const status = await closedMonthStatus(year, month, secrets, true);
+    const status = await closedMonthStatus(year, month, secrets, 0);
     if (status) throw new Error(closedMonthMessage(`${year}-${String(month).padStart(2, '0')}`, status));
   }
 }
