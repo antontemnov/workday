@@ -346,8 +346,8 @@ export class HttpWorkdayApiService extends WorkdayApiService {
     return this.get<TempoScheduleResponse>(`/api/tempo/schedule?year=${year}&month=${month}`);
   }
 
-  override async getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>> {
-    return this.get<TempoApprovalResponse>(`/api/tempo/approval?year=${year}&month=${month}`);
+  override async getTempoApproval(year: number, month: number, fresh = false): Promise<ApiResponse<TempoApprovalResponse>> {
+    return this.get<TempoApprovalResponse>(`/api/tempo/approval?year=${year}&month=${month}${fresh ? '&fresh=1' : ''}`);
   }
 
   override async syncTempo(year: number, month: number): Promise<ApiResponse<TempoSyncResponse>> {

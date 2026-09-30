@@ -11,14 +11,16 @@
     <!-- The Day tab's glass, sticky; the days melt under it. Each row sits on
          one baseline. Row 1 — ‹ back only (no future months) · the title (a
          past month's title leads home) · status tag · total, and right under
-         it the gap (only when there is one) or why Tempo can't be read.
+         it the gap (only when there is one) or why Tempo can't be read. The
+         status tag asks Tempo for the status now (a sent-back month).
          Row 2 — the Push navigator (blocked, Push leads to what blocks it) ·
          Fetch. -->
     <div class="ts-head" #head>
       <div class="hrow">
         <button type="button" class="pback" (click)="prevMonth()">‹</button>
         <h1 class="plabel" [class.home]="!isCurrentMonth" (click)="backToCurrent()">{{ monthLabel }}</h1>
-        <span class="pst" *ngIf="periodStatus as p" [ngClass]="p.cls">{{ p.label }}</span>
+        <button type="button" class="pst" *ngIf="periodStatus as p" [ngClass]="p.cls"
+                [class.busy]="approvalRefreshing" (click)="refreshApproval()">{{ p.label }}</button>
         <span class="sp"></span>
         <span class="totals" *ngIf="monthData && !loading">
           <span class="tmain">{{ totalLabel }}</span>

@@ -790,7 +790,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     };
   }
 
-  async getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>> {
+  async getTempoApproval(year: number, month: number, _fresh = false): Promise<ApiResponse<TempoApprovalResponse>> {
     await delay(150);
     const [ty, tm] = this.today.split('-').map(Number);
     const isPast = year < ty || (year === ty && month < tm);

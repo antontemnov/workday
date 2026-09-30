@@ -110,6 +110,7 @@ interface FakeApi {
   pushAnswer: ApiResponse<PushResponse>;
   syncAnswer: ApiResponse<TempoSyncResponse>;
   approvalAnswer: ApiResponse<TempoApprovalResponse>;
+  approvalAsks: boolean[];
   month: MonthResponse;
 }
 
@@ -119,12 +120,16 @@ function harness(month: MonthResponse = september()) {
     pushAnswer: { ok: true, data: { dryRun: false, plan: [] } },
     syncAnswer: { ok: true, data: { month: '2026-09', syncedAt: '', worklogCount: 0, adopted: [] } },
     approvalAnswer: { ok: true, data: approval('OPEN') },
+    approvalAsks: [],
     month,
   };
   const api = {
     getMonth: async () => ({ ok: true, data: fake.month }),
     getTempoSchedule: async () => ({ ok: true, data: schedule() }),
-    getTempoApproval: async () => fake.approvalAnswer,
+    getTempoApproval: async (_year: number, _month: number, fresh?: boolean) => {
+      fake.approvalAsks.push(fresh === true);
+      return fake.approvalAnswer;
+    },
     syncTempo: async () => fake.syncAnswer,
     pushToTempo: async (from: string, to: string, _force: boolean, stopTracking: boolean) => {
       fake.pushes.push({ from, to, stopTracking });
@@ -376,6 +381,20 @@ await test('a failed approval call keeps the last known status', async () => {
   await tick();
   await tick();
   assert.equal(h.comp.periodStatus?.label, 'open');
+});
+
+await test('the status tag asks Tempo now: sent back → the month opens', async () => {
+  const h = harness();
+  h.comp.approval = approval('IN_REVIEW', true);
+  h.fake.approvalAnswer = { ok: true, data: approval('REJECTED', false) };
+  const click = h.comp.refreshApproval();
+  assert.equal(h.comp.approvalRefreshing, true);
+  void h.comp.refreshApproval(); // a second click while asking sends nothing
+  await click;
+  assert.deepEqual(h.fake.approvalAsks, [true]);
+  assert.equal(h.comp.approvalRefreshing, false);
+  assert.equal(h.comp.periodStatus?.label, 'rejected');
+  assert.equal(h.comp.monthClosed, false);
 });
 
 // ─── Header ──────────────────────────────────────────────────────────────

@@ -629,6 +629,8 @@ export interface TempoApprovalResponse {
   // Nothing in the month changes, here or in Tempo (the daemon refuses every
   // edit). Absent on daemons < 0.52.0.
   readonly closed?: boolean;
+  // When the closing status was set (submit, approval). Absent on daemons < 0.54.0.
+  readonly closedAt?: string | null;
   readonly requiredSeconds: number | null;
   readonly timeSpentSeconds: number | null; // Tempo-side logged total
   readonly canSubmit: boolean;

@@ -140,7 +140,8 @@ export abstract class WorkdayApiService {
   // Tempo-side month meta — cached daemon-side, {available:false} degrades
   // the UI silently (missing token scope / network failure).
   abstract getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>>;
-  abstract getTempoApproval(year: number, month: number): Promise<ApiResponse<TempoApprovalResponse>>;
+  // fresh — skip the daemon's cache and ask Tempo now.
+  abstract getTempoApproval(year: number, month: number, fresh?: boolean): Promise<ApiResponse<TempoApprovalResponse>>;
   // Read the month from Tempo — a sync: worklogs created there without us are
   // adopted (listed in the answer), changes made only there are taken. A
   // month closed in Tempo is skipped.

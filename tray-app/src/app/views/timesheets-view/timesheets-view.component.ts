@@ -139,6 +139,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   monthData: MonthResponse | null = null;
   schedule: TempoScheduleResponse | null = null;
   approval: TempoApprovalResponse | null = null;
+  approvalRefreshing = false;
   loading = true;
   error: string | null = null;
 
@@ -266,6 +267,17 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   // A failed call keeps the last known status; a month switch clears it.
   private async loadApproval(seq: number): Promise<void> {
     const res = await this.api.getTempoApproval(this.year, this.month);
+    if (seq !== this.loadSeq || !res.ok || !res.data) return;
+    this.approval = res.data;
+  }
+
+  // The status tag: ask Tempo now, past the daemon's cache.
+  async refreshApproval(): Promise<void> {
+    if (this.approvalRefreshing) return;
+    const seq = this.loadSeq;
+    this.approvalRefreshing = true;
+    const res = await this.api.getTempoApproval(this.year, this.month, true);
+    this.approvalRefreshing = false;
     if (seq !== this.loadSeq || !res.ok || !res.data) return;
     this.approval = res.data;
   }

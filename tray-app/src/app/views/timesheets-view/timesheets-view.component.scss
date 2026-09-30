@@ -105,7 +105,7 @@
 }
 
 // The month's Tempo status — a tag: tinted, ringed, square-ish (a label,
-// never a capsule = button).
+// never a capsule = button). A click asks Tempo for it now.
 .pst {
   display: inline-flex;
   align-items: center;
@@ -124,6 +124,12 @@
   // capitals.
   position: relative;
   top: -3px;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.6s ease;
+
+  &.busy { opacity: 0.5; }
 
   &.open { --sc: 137 180 250; }
   &.in_review { --sc: 249 226 175; }
