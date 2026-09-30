@@ -98,6 +98,9 @@ export interface TodayResponse {
   // Ticket summaries (task key → Jira summary) for the day's tasks, cached
   // lookups only. A key is absent until its summary lands in the daemon cache.
   issueSummaries?: Readonly<Record<string, string>>;
+  // The day's month is closed in Tempo: nothing is tracked or edited.
+  // Absent on daemons < 0.54.1.
+  monthClosed?: boolean;
 }
 
 export interface StatusResponse {

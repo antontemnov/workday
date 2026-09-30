@@ -277,6 +277,56 @@ test('Stop & Delete: undo keeps the session running, a later Delete is plain', (
   assert.equal(blockOf(h, 'ATL-8')?.sessionRows.length, 1);
 });
 
+// ─── Refused by the daemon — the row comes back at once ─────────────────
+
+console.log('\nRefused by the daemon');
+
+test('refused edit: the old value is back at once, not after the safety net', () => {
+  const h = makePanel();
+  const e1 = entry('e1', 'ATL-1', 30);
+  h.refresh([e1]);
+  (h.comp as never as { commitPatch(id: string, patch: { minutes: number }): void }).commitPatch('e1', { minutes: 60 });
+  assert.equal(h.comp.displayMinutes(e1), 60);
+  h.comp.rollback('e1');
+  assert.equal(h.comp.displayMinutes(e1), 30);
+  assert.equal(h.lastDiff(), 0);
+});
+
+test('refused entry DELETE: the row is back at once', () => {
+  const h = makePanel();
+  const e1 = entry('e1', 'ATL-1', 30);
+  const e2 = entry('e2', 'ATL-1', 45, 'Testing', 'qa pass');
+  h.refresh([e1, e2]);
+  (h.comp as never as { deleteEntry(e: ManualEntry): void }).deleteEntry(e1);
+  commitDelete();
+  assert.equal(blockOf(h, 'ATL-1')?.named.length, 1);
+  h.comp.rollback('e1');
+  assert.equal(blockOf(h, 'ATL-1')?.named.length, 2);
+  assert.equal(h.lastDiff(), 0);
+});
+
+test('refused card DELETE: the card is back at once', () => {
+  const h = makePanel();
+  h.refresh([added('f1', 'ATL-2', 90)]);
+  (h.comp as never as { deleteEntry(e: ManualEntry): void }).deleteEntry(h.comp.entries[0]);
+  commitDelete();
+  assert.equal(blockOf(h, 'ATL-2'), undefined);
+  h.comp.rollback('ATL-2');
+  assert.ok(blockOf(h, 'ATL-2'));
+});
+
+test('read-only on the Day tab (a closed month): no menus, no edit form', () => {
+  const h = makePanel();
+  const e1 = entry('e1', 'ATL-1', 30);
+  h.refresh([e1]);
+  h.comp.readOnly = true;
+  assert.equal(h.comp.entryMenuReady(e1), false);
+  h.comp.onRowDblClick(e1);
+  assert.equal(h.comp.editingId, null);
+  h.comp.readOnly = false;
+  assert.equal(h.comp.entryMenuReady(e1), true);
+});
+
 Date.now = realDateNow;
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

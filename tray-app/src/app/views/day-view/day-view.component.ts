@@ -104,6 +104,9 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @ViewChild(LoggedPanelComponent, { read: ElementRef })
   private historyRef?: ElementRef<HTMLElement>;
 
+  @ViewChild(LoggedPanelComponent)
+  private panel?: LoggedPanelComponent;
+
   @ViewChild(LogCloudComponent, { read: ElementRef })
   private cloudRef?: ElementRef<HTMLElement>;
 
@@ -163,13 +166,28 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     return this.data?.sessions.filter(s => s.closedBy) ?? [];
   }
 
+  // The month is closed in Tempo: nothing on the tab changes.
+  get monthClosed(): boolean {
+    return this.data?.monthClosed === true;
+  }
+
+  // A closed month has no offers — nothing can be logged.
+  get shownSuggestions(): readonly Suggestion[] {
+    return this.monthClosed ? [] : this.suggestions;
+  }
+
+  /** The daemon refused an action on this entry, session or ticket. */
+  public rollback(id: string): void {
+    this.panel?.rollback(id);
+  }
+
   // Radar only when the day is a blank page — any session, suggestion, entry
   // or closed group means the feed has something better to say.
   get dayEmpty(): boolean {
     return this.openSessions.length === 0
       && this.closedSessions.length === 0
       && this.manualEntries.length === 0
-      && this.suggestions.length === 0;
+      && this.shownSuggestions.length === 0;
   }
 
   get closedTotalMs(): number {

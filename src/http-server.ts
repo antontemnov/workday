@@ -759,6 +759,7 @@ export class HttpServer {
         activeIntervals: computeActiveIntervals(log.sessions),
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
         issueSummaries: this.buildIssueSummaries(log),
+        monthClosed: tracker.isMonthLocked(),
       },
     };
   }

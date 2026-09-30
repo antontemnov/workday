@@ -32,7 +32,7 @@
     <!-- The lid — identity + day Σ; the key is the card's handle. On the
          Timesheets card the lid also opens and closes the body. -->
     <div class="blk-id" (click)="onLidClick(b, $event)">
-      <span class="tkt" [class.anc]="!sheetReadOnly" [class.locked]="actionPending" (click)="onTicketMenu(b, $event)">{{ b.task }}</span>
+      <span class="tkt" [class.anc]="!readOnly" [class.locked]="actionPending" (click)="onTicketMenu(b, $event)">{{ b.task }}</span>
       <span class="c-nm"
             [class.none]="!summaryOfTask(b.task)">{{ summaryOfTask(b.task) || '— name not cached' }}</span>
       <ng-container *ngIf="taskDeleted(b.task); else blockSumTpl">
@@ -60,7 +60,7 @@
         [showDur]="showSessionDur(b)"
         [deleted]="sessionDeleted(s)"
         [struck]="taskDeleted(b.task)"
-        [locked]="actionPending || sheetReadOnly"
+        [locked]="actionPending || readOnly"
         [class.removing]="sesRemovingIds.has(s.id)"
         (menuRequested)="onSessionMenu(s, $event)"
         (undoRequested)="undoSessionDelete(s)" />

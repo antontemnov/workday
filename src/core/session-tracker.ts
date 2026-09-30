@@ -751,6 +751,10 @@ export class SessionTracker {
     }
   }
 
+  public isMonthLocked(): boolean {
+    return this.monthLocked;
+  }
+
   /** Cut today's log at the moment its month closed (see cutDayAt). */
   public applyMonthCut(cutAt: string, ownsWorklog: (entry: ManualEntry) => boolean): DayCut {
     this.dropAllCandidates();

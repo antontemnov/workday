@@ -847,6 +847,8 @@ export interface TodayResponse {
   // lookups only. Display-only; a key is absent when its summary isn't cached
   // yet (a background fill pulls it in for the next poll).
   readonly issueSummaries?: Readonly<Record<string, string>>;
+  // The day's month is closed in Tempo: nothing is tracked or edited.
+  readonly monthClosed?: boolean;
 }
 
 export interface SessionDetail extends SessionSummary {

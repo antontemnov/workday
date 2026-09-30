@@ -198,6 +198,7 @@ test('lock on: the open session ends at its last seen activity, candidates evapo
   assert.ok(open, 'session activated');
   const lastSeen = open.lastSeenAt;
   h.tracker.setMonthLock(true);
+  assert.equal(h.tracker.isMonthLocked(), true);
   assert.equal(open.closedBy, ClosedBy.MonthClosed);
   assert.equal(open.lastSeenAt, lastSeen);
   assert.equal(h.tracker.getOpenSessions().length, 0);

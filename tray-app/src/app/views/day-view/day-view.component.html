@@ -58,7 +58,7 @@
     <h1 class="day-date">{{ dateLabel }}</h1>
     <button class="g-btn"
             (click)="openCloud()"
-            [disabled]="actionPending"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
+            [disabled]="actionPending || monthClosed"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</button>
     <!-- Width is pinned to the label's character count: a fixed box per
          length, so glyph/DPI rounding can't tremble the Log capsule when
          digits swap; it shifts only when the format itself changes
@@ -73,7 +73,7 @@
   </div>
 
   <!-- Radar only when the whole day is empty — otherwise the history speaks -->
-  <div class="waiting" *ngIf="dayEmpty">
+  <div class="waiting" *ngIf="dayEmpty && !monthClosed">
     <div class="radar">
       <span class="ring"></span>
       <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
@@ -101,6 +101,7 @@
     [arriveFrom]="suggestionArrive"
     [feedSort]="feedSort"
     [jiraBaseUrl]="jiraBaseUrl"
+    [readOnly]="monthClosed"
     (patchCommitted)="onPanelPatch($event)"
     (deleteCommitted)="entryDeleteSubmitted.emit($event)"
     (sessionStopRequested)="sessionStopSubmitted.emit($event)"
@@ -114,7 +115,7 @@
     <!-- Suggested — graphite blueprint offers, projected between the hot
          blocks and the cold history; never counted anywhere -->
     <app-suggestion-row
-      *ngFor="let g of suggestions; trackBy: trackBySuggestion"
+      *ngFor="let g of shownSuggestions; trackBy: trackBySuggestion"
       [class.cloud-anchor]="isCloudAnchor(g)"
       [suggestion]="g"
       [actionPending]="actionPending"

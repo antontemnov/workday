@@ -174,7 +174,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Tempo gets (tracked time rounded), no hot zone, no favorites, taskless
   // sessions stay out.
   @Input() sheet = false;
-  // No edits: today's snapshot (edits live on the Day tab) or a closed month.
+  // No edits: today's snapshot on the Timesheets tab, or a closed month.
   @Input() readOnly = false;
   // A month closed in Tempo: conflicts show both sides, neither is offered.
   @Input() locked = false;
@@ -995,7 +995,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // The ticket key — the card's handle. Delete takes the whole card.
   onTicketMenu(b: TicketBlock, ev: MouseEvent): void {
-    if (this.actionPending || this.sheetReadOnly || this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
+    if (this.actionPending || this.readOnly || this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       ...(b.task !== '—'
         ? [{ icon: CTX_ICON.add, label: 'Add time', action: (): void => this.openDraft(b.task) }] : []),
@@ -1013,16 +1013,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // A handle lights up only while its menu can open: not during the fresh
   // draft window, not on a struck row, not while the daemon is answering.
   entryMenuReady(e: ManualEntry): boolean {
-    return !this.actionPending && !this.sheetReadOnly && !this.isFresh(e) && !this.isDeleted(e) && !this.taskDeleted(e.task);
+    return !this.actionPending && !this.readOnly && !this.isFresh(e) && !this.isDeleted(e) && !this.taskDeleted(e.task);
   }
 
   addedMenuReady(b: TicketBlock): boolean {
-    return !this.actionPending && !this.sheetReadOnly && !this.foldedHasFresh(b) && !this.foldedDeleted(b) && !this.taskDeleted(b.task);
-  }
-
-  // Sheet without edits: today's snapshot or a closed month.
-  get sheetReadOnly(): boolean {
-    return this.sheet && this.readOnly;
+    return !this.actionPending && !this.readOnly && !this.foldedHasFresh(b) && !this.foldedDeleted(b) && !this.taskDeleted(b.task);
   }
 
   // The type word — an entry's handle.
@@ -1238,6 +1233,25 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
   }
 
+  // ─── Refused by the daemon ─────────────────────────────────────────────
+
+  /** The daemon refused an action on this entry, session or ticket: it comes back now. */
+  public rollback(id: string): void {
+    const timer = this.pendingTimers.get(id);
+    if (timer) clearTimeout(timer);
+    this.pendingTimers.delete(id);
+    this.pending.delete(id);
+    this.hiddenIds.delete(id);
+    this.sesHiddenIds.delete(id);
+    this.stoppedLiveIds.delete(id);
+    if (this.hiddenTasks.delete(id)) {
+      for (const s of this.openSessions) {
+        if ((s.task ?? '—') === id) this.stoppedLiveIds.delete(s.id);
+      }
+    }
+    this.recomputeLive();
+  }
+
   // ─── Pending patches ────────────────────────────────────────────────────
 
   private commitPatch(id: string, patch: ManualEntryPatch): void {
@@ -1325,7 +1339,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // ─── The row form — inline edit (menu / double-click) and the Add time draft ─
 
   onRowDblClick(e: ManualEntry): void {
-    if (!this.canEdit(e) || this.actionPending || this.sheetReadOnly || this.editingId === e.id
+    if (!this.canEdit(e) || this.actionPending || this.readOnly || this.editingId === e.id
         || this.isDeleted(e) || this.taskDeleted(e.task) || this.openConflict(e) !== null || this.resolvedNote(e) !== null) return;
     this.draftTask = null;
     if (this.sheet) this.openTasks.add(e.task);
@@ -1428,7 +1442,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   // The left cell is the row's anchor: its menu grows from under it.
   onSessionMenu(s: SessionDetail, anchor: HTMLElement): void {
-    if (this.actionPending || this.sheetReadOnly) return;
+    if (this.actionPending || this.readOnly) return;
     if (s.closedBy) {
       if (this.sessionDeleted(s) || this.taskDeleted(s.task ?? '—')) return;
       toggleAnchoredMenu(anchor, () => [

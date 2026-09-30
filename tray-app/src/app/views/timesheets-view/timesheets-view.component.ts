@@ -43,6 +43,7 @@ export interface SheetAction {
 }
 
 const NO_SUMMARIES: Readonly<Record<string, string>> = {};
+const APPROVAL_REFRESH_MIN_MS = 1200;
 const NO_REFUSALS: readonly PushFailure[] = [];
 const NO_IDS: ReadonlySet<string> = new Set<string>();
 const TOAST_MS = 2000;
@@ -271,12 +272,16 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.approval = res.data;
   }
 
-  // The status tag: ask Tempo now, past the daemon's cache.
+  // The status tag: ask Tempo now, past the daemon's cache. The tag breathes
+  // for at least a beat — a click always shows, a second one is swallowed.
   async refreshApproval(): Promise<void> {
     if (this.approvalRefreshing) return;
     const seq = this.loadSeq;
     this.approvalRefreshing = true;
-    const res = await this.api.getTempoApproval(this.year, this.month, true);
+    const [res] = await Promise.all([
+      this.api.getTempoApproval(this.year, this.month, true),
+      new Promise(resolve => setTimeout(resolve, APPROVAL_REFRESH_MIN_MS)),
+    ]);
     this.approvalRefreshing = false;
     if (seq !== this.loadSeq || !res.ok || !res.data) return;
     this.approval = res.data;
@@ -784,19 +789,24 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   }
 
   onPanelPatch(date: string, e: { id: string; patch: ManualEntryPatch }): void {
-    this.runSheetAction(() => this.api.updateManualEntry(e.id, e.patch, date));
+    this.runSheetAction(() => this.api.updateManualEntry(e.id, e.patch, date), this.rollbackOnRefusal(date, e.id));
   }
 
   onPanelDelete(date: string, id: string): void {
-    this.runSheetAction(() => this.api.deleteManualEntry(id, date));
+    this.runSheetAction(() => this.api.deleteManualEntry(id, date), this.rollbackOnRefusal(date, id));
   }
 
   onPanelSessionDelete(date: string, id: string): void {
-    this.runSheetAction(() => this.api.deleteSession(id, date));
+    this.runSheetAction(() => this.api.deleteSession(id, date), this.rollbackOnRefusal(date, id));
   }
 
   onPanelTaskDelete(date: string, task: string): void {
-    this.runSheetAction(() => this.api.deleteTask(task, date));
+    this.runSheetAction(() => this.api.deleteTask(task, date), this.rollbackOnRefusal(date, task));
+  }
+
+  // A refused edit comes back at once, not after the card's safety net.
+  private rollbackOnRefusal(date: string, id: string): (ok: boolean) => void {
+    return ok => { if (!ok) this.panelOf(date)?.rollback(id); };
   }
 
   onPanelAdd(date: string, input: ManualEntryInput): void {

@@ -127,14 +127,21 @@
   border: none;
   font-family: inherit;
   cursor: pointer;
-  transition: opacity 0.6s ease;
 
-  &.busy { opacity: 0.5; }
+  &.busy {
+    cursor: default;
+    animation: pst-breathe 0.6s ease-in-out infinite alternate;
+  }
 
   &.open { --sc: 137 180 250; }
   &.in_review { --sc: 249 226 175; }
   &.approved { --sc: 166 227 161; }
   &.rejected { --sc: 243 139 168; }
+}
+
+@keyframes pst-breathe {
+  from { opacity: 1; }
+  to { opacity: 0.3; }
 }
 
 // ‹ — its glyph on the header's left edge, close to the title.

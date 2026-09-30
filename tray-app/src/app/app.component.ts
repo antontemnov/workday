@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, OnDestroy } from '@angular/core';
+import { Component, HostListener, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -49,6 +49,8 @@ interface SensitivityPillOption {
 export class AppComponent implements OnInit, OnDestroy {
   // ─── View routing (signal-style state via plain field for now) ─────────
   activeView: ActiveView = 'day';
+  // Refused Day-tab edits roll back through it.
+  @ViewChild(DayViewComponent) private dayView?: DayViewComponent;
 
   // Custom titlebar: the header's close glyph exists only inside the Tauri
   // webview — browser dev mode has no window to close.
@@ -602,7 +604,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async submitEntryEdit(e: { target: string; patch: ManualEntryPatch }): Promise<void> {
-    await this.runAction(() => this.api.updateManualEntry(e.target, e.patch));
+    if (!await this.runAction(() => this.api.updateManualEntry(e.target, e.patch))) this.dayView?.rollback(e.target);
   }
 
   // ─── Meeting suggestions ───────────────────────────────────────────────
@@ -638,21 +640,25 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   // Deferred DELETE — the panel already played the undo window; a failure
-  // surfaces as the usual toast and the row comes back with the refresh.
+  // surfaces as the usual toast and the row comes back at once.
   submitEntryDelete(target: string): void {
-    this.runCommit(() => this.api.deleteManualEntry(target));
+    this.runCommit(() => this.api.deleteManualEntry(target), this.rollbackOnRefusal(target));
   }
 
   async submitSessionStop(target: string): Promise<void> {
-    await this.runAction(() => this.api.stopSession(target));
+    if (!await this.runAction(() => this.api.stopSession(target))) this.dayView?.rollback(target);
   }
 
   submitSessionDelete(target: string): void {
-    this.runCommit(() => this.api.deleteSession(target));
+    this.runCommit(() => this.api.deleteSession(target), this.rollbackOnRefusal(target));
   }
 
   submitTaskDelete(task: string, includeOpen = false): void {
-    this.runCommit(() => this.api.deleteTask(task, undefined, includeOpen));
+    this.runCommit(() => this.api.deleteTask(task, undefined, includeOpen), this.rollbackOnRefusal(task));
+  }
+
+  private rollbackOnRefusal(id: string): (ok: boolean) => void {
+    return ok => { if (!ok) this.dayView?.rollback(id); };
   }
 
   // Timesheets edits share the gate; the tab reloads its month afterwards.

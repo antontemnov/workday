@@ -186,6 +186,7 @@ function printTodayData(data: TodayResponse): void {
   console.log(`Date: ${data.date}  (${data.dayType})  Status: ${data.status}`);
   console.log(`Total: ${formatDuration(data.totalEffectiveMs)}  Signals: ${data.signalCount}`);
   console.log(`Claimed: ${formatDuration(data.claimedMs)}`);
+  if (data.monthClosed) console.log('Month closed in Tempo — nothing is tracked or edited.');
 
   if (data.sessions.length === 0) {
     console.log('No sessions.');
