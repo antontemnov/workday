@@ -130,6 +130,14 @@ export async function dayEditRefusal(date: string, today: string, secrets: Secre
   return status ? closedMonthMessage(monthKey, status) : null;
 }
 
+const closedReadListeners = new Set<() => void>();
+
+/** Told whenever a read from Tempo (never a cache hit) finds a month closed. */
+export function onClosedMonthRead(listener: () => void): () => void {
+  closedReadListeners.add(listener);
+  return () => closedReadListeners.delete(listener);
+}
+
 // Callers asking the same month at once share one request.
 const inFlight = new Map<string, Promise<TempoApprovalResponse>>();
 
@@ -187,7 +195,9 @@ async function fetchApproval(
     const cache = readCache();
     cache[key] = entry;
     writeCache(cache);
-    return fromEntry(entry, false);
+    const approval = fromEntry(entry, false);
+    if (approval.closed) closedReadListeners.forEach(listener => listener());
+    return approval;
   } catch (err) {
     if (err instanceof TempoApiError && err.status === 403) return approvalUnavailable('scope');
     if (cached) return fromEntry(cached, true); // stale beats nothing

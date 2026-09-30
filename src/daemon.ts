@@ -9,6 +9,7 @@ import { runStartupJanitor } from './core/janitor.js';
 import type { EntryOwnershipCheck } from './core/janitor.js';
 import { loadPushLog, pushLogKey } from './push/push-log.js';
 import { ApprovalWatch, monthsBetween, type DueCut } from './push/approval-watch.js';
+import { onClosedMonthRead } from './push/tempo-approvals.js';
 import { writeStopMarker, clearStopMarker } from './core/stop-marker.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { CalendarCollector } from './collectors/calendar-collector.js';
@@ -103,6 +104,8 @@ export class Daemon {
       getSecrets: () => this.secrets,
       getConfig: () => this.config,
     });
+    // A closed month just read: lock and cut now, not on the next scheduled tick.
+    onClosedMonthRead(() => void this.pollTick());
 
     this.writePidFile();
     // A starting daemon voids any manual-stop intent — the tray watchdog

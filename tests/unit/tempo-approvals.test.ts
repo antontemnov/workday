@@ -15,7 +15,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from '../../src/core/config.js';
 import { APPROVAL_CACHE_FILE, ISSUE_CACHE_FILE } from '../../src/core/constants.js';
-import { approvalUnavailable, cachedApprovals, dayEditRefusal, isClosedStatus, resolveMonthApproval } from '../../src/push/tempo-approvals.js';
+import { approvalUnavailable, cachedApprovals, dayEditRefusal, isClosedStatus, onClosedMonthRead, resolveMonthApproval } from '../../src/push/tempo-approvals.js';
 import { SensitivityLevel } from '../../src/core/types.js';
 import type { AppConfig } from '../../src/core/types.js';
 
@@ -177,6 +177,20 @@ await test('maxAge 0 always asks; the moment the month closed comes along', asyn
 await test('an open month has no closing moment', async () => {
   tempoStatus = { '2026-09': 'REJECTED' };
   assert.equal((await resolveMonthApproval(2026, 9, secrets, 0)).closedAt, null);
+});
+
+await test('a read that finds the month closed is told at once; an open read or a cache hit is not', async () => {
+  let told = 0;
+  const off = onClosedMonthRead(() => told++);
+  tempoStatus = { '2026-09': 'OPEN' };
+  await resolveMonthApproval(2026, 9, secrets, 0);
+  assert.equal(told, 0);
+  tempoStatus = { '2026-09': 'IN_REVIEW' };
+  await resolveMonthApproval(2026, 9, secrets, 0);
+  assert.equal(told, 1);
+  await resolveMonthApproval(2026, 9, secrets);
+  assert.equal(told, 1);
+  off();
 });
 
 await test('callers asking the same month at once share one request', async () => {
