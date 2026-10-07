@@ -2,7 +2,7 @@
 // header). Opens with a scale-morph from the ＋Log corner; chips pop in a
 // wave only while :host has .spawn (filter re-renders stay still). Modes
 // ride host classes: .batch-mode (footer), .review-mode (list swap),
-// .form-mode (body collapses to 30px under the one-line form).
+// .form-mode (body collapses under the two-line form).
 :host {
   position: absolute;
   left: 10px;
@@ -92,9 +92,9 @@
 }
 
 // Form mode: filter fades out of flow, body collapses, chips dim — the
-// one-line form (absolute, bottom) spreads over them.
+// form (absolute, bottom) spreads over them: the ticket line, then controls.
 :host(.form-mode) .cloud-filter { opacity: 0; pointer-events: none; position: absolute; }
-:host(.form-mode) .cloud-body { max-height: 30px; }
+:host(.form-mode) .cloud-body { max-height: 43px; }
 :host(.form-mode) .cloud-chips { opacity: 0; pointer-events: none; }
 
 // Review mode swaps the whole picker for the list.
@@ -172,7 +172,6 @@
     .f-name {
       color: #6c7086;
       font-weight: 400;
-      font-style: italic;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -361,9 +360,10 @@
 
   .rv-key { color: #cba6f7; font-weight: 700; flex-shrink: 0; }
 
+  // The chip pair: a small key, the name a step larger in the chips' ink.
   .rv-name {
-    color: #a6adc8;
-    font-style: italic;
+    color: #bac2de;
+    font-size: 10.5px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -492,28 +492,41 @@
   }
 }
 
-// ─── One-line form (Jira result) ──────────────────────────────────────────
+// ─── Single-entry form (Jira result) ──────────────────────────────────────
 // Spreads left-to-right over the collapsed body (scaleX morph on mount).
+// The ticket line is the Review row's top line: the same key, the same name.
 .cloud-form {
   position: absolute;
   left: 10px;
   right: 10px;
   bottom: 10px;
-  display: flex;
-  gap: 6px;
-  align-items: center;
   transform-origin: 0 50%;
   animation: form-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1) 0.05s backwards;
 
-  .cf-key {
-    flex-shrink: 0;
-    color: #89b4fa;
+  .cf-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 13px;
+    margin-bottom: 5px;
+    font-size: 9.5px;
+  }
+
+  .cf-key { color: #89b4fa; font-weight: 700; flex-shrink: 0; }
+
+  .cf-name {
+    color: #bac2de;
     font-size: 10.5px;
-    font-weight: 700;
-    background: rgba(137, 180, 250, 0.1);
-    border: 1px solid rgba(137, 180, 250, 0.3);
-    border-radius: 6px;
-    padding: 5px 9px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .cf-ctl {
+    display: flex;
+    gap: 6px;
+    align-items: center;
   }
 
   input, select {

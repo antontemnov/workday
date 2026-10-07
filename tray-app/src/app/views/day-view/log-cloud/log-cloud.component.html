@@ -156,28 +156,34 @@
   </div>
 </div>
 
-<!-- Single-row form — Jira results only; the ticket is a label, not editable -->
+<!-- Single-entry form — Jira results only; the ticket is a label (key + name,
+     the Review row's top line), not editable -->
 <div class="cloud-form" *ngIf="isFormMode">
-  <button type="button" class="cf-back" title="back" (click)="exitForm()">←</button>
-  <span class="cf-key">{{ formTask }}</span>
-  <select #formAct
-          class="cf-act"
-          [class.need]="formActivityNeeded"
-          [(ngModel)]="formActivity"
-          (ngModelChange)="formActivityNeeded = false">
-    <option value="" disabled hidden>activity…</option>
-    <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
-  </select>
-  <input #formMin
-         class="cf-min"
-         [(wdDuration)]="formMinutes"
-         (durEnter)="submitForm()"
-         title="1h 15m · 90 · 45m — wheel: ±15m" />
-  <input #formDesc
-         class="cf-desc"
-         [class.need]="formDescNeeded"
-         [(ngModel)]="formDescription"
-         (keydown.enter)="submitForm()"
-         placeholder="description" />
-  <button type="button" class="cf-submit" [disabled]="actionPending" (click)="submitForm()">Log</button>
+  <div class="cf-top">
+    <span class="cf-key">{{ formTask }}</span>
+    <span class="cf-name">{{ formSummary }}</span>
+  </div>
+  <div class="cf-ctl">
+    <button type="button" class="cf-back" title="back" (click)="exitForm()">←</button>
+    <select #formAct
+            class="cf-act"
+            [class.need]="formActivityNeeded"
+            [(ngModel)]="formActivity"
+            (ngModelChange)="formActivityNeeded = false">
+      <option value="" disabled hidden>activity…</option>
+      <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
+    </select>
+    <input #formMin
+           class="cf-min"
+           [(wdDuration)]="formMinutes"
+           (durEnter)="submitForm()"
+           title="1h 15m · 90 · 45m — wheel: ±15m" />
+    <input #formDesc
+           class="cf-desc"
+           [class.need]="formDescNeeded"
+           [(ngModel)]="formDescription"
+           (keydown.enter)="submitForm()"
+           placeholder="description" />
+    <button type="button" class="cf-submit" [disabled]="actionPending" (click)="submitForm()">Log</button>
+  </div>
 </div>

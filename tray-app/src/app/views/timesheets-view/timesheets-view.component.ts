@@ -29,7 +29,7 @@ import {
   TempoScheduleResponse,
 } from '../../models/workday.models';
 import { LoggedPanelComponent } from '../day-view/logged-panel/logged-panel.component';
-import { ChipPick, LogCloudComponent } from '../day-view/log-cloud/log-cloud.component';
+import { ChipPick, FormPick, LogCloudComponent } from '../day-view/log-cloud/log-cloud.component';
 import { CTX_ICON } from '../day-view/ctx-icons.util';
 import { CtxMenuEntry, toggleAnchoredMenu } from '../day-view/ctx-menu.util';
 import { sessionRowState } from '../day-view/session-row/session-row.component';
@@ -930,8 +930,8 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.logFromCloud([pick.entry], true);
   }
 
-  onCloudForm(entry: ManualEntryInput): void {
-    this.logFromCloud([entry], true);
+  onCloudForm(pick: FormPick): void {
+    this.logFromCloud([pick.entry], true);
   }
 
   onCloudBatch(entries: readonly ManualEntryInput[]): void {

@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LoggedPanelComponent, type ArriveFrom } from './logged-panel/logged-panel.component';
-import { ChipPick, LogCloudComponent } from './log-cloud/log-cloud.component';
+import { ChipPick, FormPick, LogCloudComponent } from './log-cloud/log-cloud.component';
 import { SuggestionRowComponent, type SuggestionAcceptEvent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
 import { closeCtxMenu, currentCtxMenu, openCtxMenu, type CtxMenuItem } from './ctx-menu.util';
@@ -120,6 +120,10 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // same instant as the panel Σ while a draft stepper spins.
   liveDiffMinutes = 0;
 
+  // A Log cloud row on its way already fills the page — until the action
+  // that carries it is over.
+  private holdingLog = false;
+
   public constructor(private hostEl: ElementRef<HTMLElement>, private zone: NgZone) {}
 
   ngOnDestroy(): void {
@@ -127,7 +131,10 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['data']) this.checkDayFlash();
+    // Checked behind the panel's live diff for the same data (queued later in
+    // this pass): an entry the feed already counted lands without a 2nd flash.
+    if (changes['data']) queueMicrotask(() => queueMicrotask(() => this.checkDayFlash()));
+    if (changes['actionPending'] && !this.actionPending) this.holdingLog = false;
     if (changes['suggestionsMode'] || changes['allDayBusy'] || changes['allDayFetching']) this.syncFeedMenu();
   }
 
@@ -184,7 +191,8 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // Radar only when the day is a blank page — any session, suggestion, entry
   // or closed group means the feed has something better to say.
   get dayEmpty(): boolean {
-    return this.openSessions.length === 0
+    return !this.holdingLog
+      && this.openSessions.length === 0
       && this.closedSessions.length === 0
       && this.manualEntries.length === 0
       && this.shownSuggestions.length === 0;
@@ -528,11 +536,15 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     this.logSubmitted.emit(pick.entry);
   }
 
-  // Jira-result form → a single entry; lands with the usual draft window.
-  // (Accept mode never reaches this form — picks flow back into the row.)
-  onFormSubmitted(entry: ManualEntryInput): void {
+  // Jira-result form → a single entry. Its row stands in the feed at once —
+  // the daemon may still be asking Jira and Tempo — and the entry lands on it
+  // with the usual draft window. (Accept mode never reaches this form — picks
+  // flow back into the row.)
+  onFormSubmitted(pick: FormPick): void {
     this.closeCloud();
-    this.logSubmitted.emit(entry);
+    this.holdingLog = true;
+    this.panel?.holdLanding(pick.entry, pick.summary);
+    this.logSubmitted.emit(pick.entry);
   }
 
   // Batch review → several entries at once; they land as static rows.

@@ -20,6 +20,13 @@ export interface ChipPick {
   readonly sourceRect: DOMRect;
 }
 
+// The Jira form's entry plus the ticket's name — a card born from it wears
+// the name before the daemon's summaries carry it.
+export interface FormPick {
+  readonly entry: ManualEntryInput;
+  readonly summary: string;
+}
+
 // One collected chip in batch mode. label keeps the chip identity for the
 // review row; description/minutes/activity are the editable log payload.
 interface BasketItem {
@@ -83,7 +90,7 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   // Accept mode: the chosen ticket (a candidate also carries its learned
   // activity) — the parent routes it back into the suggestion row.
   @Output() acceptPicked = new EventEmitter<{ task: string; activity?: string }>();
-  @Output() formSubmitted = new EventEmitter<ManualEntryInput>();
+  @Output() formSubmitted = new EventEmitter<FormPick>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
   // Favorites management: right-click a Jira result → save a template;
   // batch footer → remove the collected ones (ids).
@@ -130,6 +137,7 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
 
   // Form morph (Jira result only) — the ticket is a fixed label.
   formTask = '';
+  formSummary = '';
   formMinutes = DEFAULT_FORM_MINUTES;
   formDescription = '';
   formActivity = '';
@@ -564,6 +572,7 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
 
   enterForm(h: JiraSearchHit): void {
     this.formTask = h.key;
+    this.formSummary = h.summary;
     // The ticket summary is a label, not a description — the user writes
     // what was actually done (may stay empty for Development).
     this.formDescription = '';
@@ -616,10 +625,13 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
     }
     if (this.actionPending) return;
     this.formSubmitted.emit({
-      task: this.formTask,
-      minutes: this.formMinutes,
-      description: this.formDescription.trim(),
-      activity: this.formActivity,
+      entry: {
+        task: this.formTask,
+        minutes: this.formMinutes,
+        description: this.formDescription.trim(),
+        activity: this.formActivity,
+      },
+      summary: this.formSummary,
     });
   }
 

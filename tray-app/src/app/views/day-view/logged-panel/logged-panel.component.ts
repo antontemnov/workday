@@ -103,6 +103,12 @@ function shortDate(iso: string): string {
   return `${Number(iso.slice(8, 10))} ${MONTH_ABBR[Number(iso.slice(5, 7)) - 1] ?? ''}`;
 }
 
+// The daemon pours an add without a description into the ticket's manual
+// added record — Development only.
+function isBareDevelopment(e: ManualEntryInput): boolean {
+  return e.description.trim() === '' && e.activity === DEVELOPMENT_ACTIVITY;
+}
+
 // What the chosen side does, in words — the row says it while ↩ burns.
 function resolvedNoteText(pick: ConflictPick): string {
   const c = pick.conflict;
@@ -243,16 +249,32 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // time draft on a card (draftTask); both share the edit* fields.
   editingId: string | null = null;
   draftTask: string | null = null;
-  // The draft between Save and its landing: shown as a plain row so the card
-  // never collapses and regrows. Cleared by the fresh id or the action's end.
+  // A saved row between its POST and the entry's landing: the Add time draft
+  // held as a plain row (the card never collapses and regrows), or a Log
+  // cloud entry born in the feed at once. It counts in every total; the
+  // refresh that carries the entry takes its place, the action's end without
+  // it lets it go.
   draftPending: ManualEntryInput | null = null;
+  // Log cloud rows enter with the row-in a landed entry would play; an entry
+  // landing mid-entrance finishes it instead of snapping in.
+  pendingEnters = false;
+  private pendingShownAt = 0;
+  // Feed position of the card it stands in — a born card has nothing else.
+  private pendingAt = '';
   // A bare Development draft landing on an existing manual added record has
   // no row to become: the pending row folds away while the record's time grows.
   draftMerging = false;
   private draftMerges = false;
+  private mergeBase = 0;
   private mergeTimer: ReturnType<typeof setTimeout> | null = null;
   // The entry that replaced the pending row in place — no row-in on it.
   landedId: string | null = null;
+  // A Log cloud bare Development add has no row of its own: the manual added
+  // record it pours into shows the grown time until the data confirms it.
+  private heldMergeId: string | null = null;
+  // Ticket names the Log cloud knew — a card born from a pick wears its name
+  // before the daemon's summaries carry it.
+  private heldSummaries = new Map<string, string>();
   editMinutes = 30;
   editActivity = '';
   editDescription = '';
@@ -331,16 +353,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (changes['freshEntryId'] && !changes['freshEntryId'].firstChange
         && this.freshEntryId) {
       this.freeze(); // a new pick supersedes any still-open draft
-      if (this.draftPending) {
-        this.landedId = this.freshEntryId;
-        if (this.draftMerges) this.foldPendingRow(); else this.draftPending = null;
-      }
+      // The id comes back ahead of the refresh carrying the entry — the
+      // pending row stays until that refresh, or the card would blink.
+      if (this.draftPending) this.landedId = this.freshEntryId;
       this.freshId = this.freshEntryId;
       this.freshMinutes = null;
       this.armFreeze();
     }
-    // The action is over and nothing landed — the add failed; let the row go.
-    if (changes['actionPending'] && !this.actionPending && !this.draftMerging) this.draftPending = null;
     // The daemon answers in a second or two — the card menus stay shut
     // meanwhile, or the same action is easily fired twice.
     if (changes['actionPending'] && this.actionPending) closeCtxMenuWithin(this.host.nativeElement);
@@ -356,6 +375,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         }
       }
       this.reconcilePending();
+      this.landPending();
       this.reconcileDeletes();
       this.detectPops();
       if (this.editingId !== null && !this.entries.some(e => e.id === this.editingId)) {
@@ -366,6 +386,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.reconcileTrackedDeletes();
       this.recomputeLive();
     }
+    // The action is over and nothing landed — the add failed; let it go.
+    if (changes['actionPending'] && !this.actionPending) this.dropUnlanded();
     // A sort-mode switch is a direct action — fly now, no row beat to wait
     // for. A tick later: the flight measures rendered cards.
     if (changes['feedSort'] && !changes['feedSort'].firstChange) {
@@ -635,8 +657,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (this.sheet) {
       for (const f of this.foreign) bucketOf(f.task).foreign.push(f);
     }
+    // The pending row's card — born when the ticket has nothing else today.
+    const held = this.draftPending;
+    if (held) bucketOf(held.task);
     const blocks: TicketBlock[] = [];
     for (const [task, b] of byTask) {
+      const heldRow = held?.task === task ? held : null;
+      const heldMinutes = heldRow ? this.heldMinutes : 0;
+      const heldBare = heldRow !== null && isBareDevelopment(heldRow);
       b.live.sort((x, y) => LIVE_RANK[sessionRowState(x)] - LIVE_RANK[sessionRowState(y)]
         || y.lastSeenAt.localeCompare(x.lastSeenAt));
       b.sessions.sort((x, y) => y.startedAt.localeCompare(x.startedAt));
@@ -645,22 +673,27 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       b.named.sort((x, y) => x.createdAt.localeCompare(y.createdAt));
       const trkMs = b.sessions.reduce(
         (sum, s) => sum + (this.sesGone(s.id) ? 0 : s.effectiveDurationMs), 0);
+      // A pending bare Development row is manual added time, any other an entry.
       const foldedMinutes = b.folded.reduce(
-        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
+        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0)
+        + (heldBare ? heldMinutes : 0);
       const namedMinutes = b.named.reduce(
-        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
+        (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0)
+        + (heldBare ? 0 : heldMinutes);
       const foreignMs = b.foreign.reduce((sum, f) => sum + f.seconds * 1000, 0);
       const at = [
         ...b.live.map(s => s.lastSeenAt),
         ...b.sessions.map(s => s.lastSeenAt),
         ...b.folded.map(e => e.createdAt),
         ...b.named.map(e => e.createdAt),
+        ...(heldRow ? [this.pendingAt] : []),
       ].sort().pop() ?? '';
       // Sheet Σ = what Tempo gets: the tracked aggregate rounded, entries and
       // foreign worklogs exact.
       const trackedAlive = b.live.length > 0
         || b.sessions.some(s => !this.sesGone(s.id))
-        || b.folded.some(e => !this.isGoneLocally(e.id));
+        || b.folded.some(e => !this.isGoneLocally(e.id))
+        || (heldBare && heldMinutes > 0);
       const totalMs = this.sheet
         ? this.roundTracked(liveMs + trkMs + foldedMinutes * 60_000, trackedAlive) + namedMinutes * 60_000 + foreignMs
         : liveMs + trkMs + (foldedMinutes + namedMinutes) * 60_000;
@@ -676,7 +709,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         folded: b.folded,
         named: b.named,
         foreign: b.foreign,
-        rowCount: b.live.length + b.sessions.length + (b.folded.length > 0 ? 1 : 0) + b.named.length + b.foreign.length,
+        rowCount: b.live.length + b.sessions.length + (b.folded.length > 0 ? 1 : 0) + b.named.length + b.foreign.length
+          + (heldRow ? 1 : 0),
         totalMs,
         foldedMinutes,
       });
@@ -726,10 +760,17 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.entries.reduce((sum, e) => sum + e.minutes, 0);
   }
 
-  // A deleted row leaves the totals the moment the undo window opens.
+  // A deleted row leaves the totals the moment the undo window opens; a
+  // pending one is in them from the moment it shows.
   private get displayedSumMinutes(): number {
     return this.entries.reduce(
-      (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0);
+      (sum, e) => sum + (this.isGoneLocally(e.id) ? 0 : this.displayMinutes(e)), 0)
+      + this.heldMinutes;
+  }
+
+  // Folding into manual added, its time is already the record's.
+  private get heldMinutes(): number {
+    return this.draftPending !== null && !this.draftMerging ? this.draftPending.minutes : 0;
   }
 
   private isGoneLocally(id: string): boolean {
@@ -1237,10 +1278,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   /** The daemon refused an action on this entry, session or ticket: it comes back now. */
   public rollback(id: string): void {
-    const timer = this.pendingTimers.get(id);
-    if (timer) clearTimeout(timer);
-    this.pendingTimers.delete(id);
-    this.pending.delete(id);
+    this.dropOverride(id);
     this.hiddenIds.delete(id);
     this.sesHiddenIds.delete(id);
     this.stoppedLiveIds.delete(id);
@@ -1255,6 +1293,11 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // ─── Pending patches ────────────────────────────────────────────────────
 
   private commitPatch(id: string, patch: ManualEntryPatch): void {
+    this.overrideEntry(id, patch);
+    this.patchCommitted.emit({ id, patch });
+  }
+
+  private overrideEntry(id: string, patch: ManualEntryPatch): void {
     this.pending.set(id, { ...this.pending.get(id), ...patch });
     const old = this.pendingTimers.get(id);
     if (old) clearTimeout(old);
@@ -1263,7 +1306,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.pendingTimers.delete(id);
       this.recomputeLive();
     }, PENDING_TTL_MS));
-    this.patchCommitted.emit({ id, patch });
+  }
+
+  private dropOverride(id: string): void {
+    const timer = this.pendingTimers.get(id);
+    if (timer) clearTimeout(timer);
+    this.pendingTimers.delete(id);
+    this.pending.delete(id);
   }
 
   // Drop overrides the server data now reflects (or whose entry is gone).
@@ -1274,12 +1323,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         || ((patch.minutes === undefined || e.minutes === patch.minutes)
           && (patch.activity === undefined || e.activity === patch.activity)
           && (patch.description === undefined || e.description === patch.description));
-      if (confirmed) {
-        this.pending.delete(id);
-        const t = this.pendingTimers.get(id);
-        if (t) clearTimeout(t);
-        this.pendingTimers.delete(id);
-      }
+      if (confirmed) this.dropOverride(id);
     }
   }
 
@@ -1329,6 +1373,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
         && this.freshBase !== null && this.freshMinutes !== this.freshBase) {
       this.commitPatch(this.freshId, { minutes: this.freshMinutes });
     }
+    if (this.freshId !== null) this.popDelayMs.delete(this.freshId); // a finished entrance's offset
     this.freshId = null;
     this.freshMinutes = null;
     this.freshBase = null;
@@ -1379,8 +1424,71 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.draftTask = null;
   }
 
-  private hasAddedRecord(task: string): boolean {
-    return this.entries.some(e => e.task === task && e.added === true && !this.isDeleted(e) && !this.hiddenIds.has(e.id));
+  private addedRecordOf(task: string): ManualEntry | undefined {
+    return this.entries.find(e => e.task === task && e.added === true && !this.isDeleted(e) && !this.hiddenIds.has(e.id));
+  }
+
+  /**
+   * A Log cloud entry on its way to the daemon. Its row stands in the feed
+   * at once (the card is born when the ticket has none); a bare Development
+   * add has no row — the manual added record it pours into grows instead.
+   */
+  public holdLanding(entry: ManualEntryInput, summary: string): void {
+    if (summary) this.heldSummaries.set(entry.task, summary);
+    if (this.draftMerging) this.endPendingFold();
+    const added = isBareDevelopment(entry) ? this.addedRecordOf(entry.task) : undefined;
+    if (added) {
+      this.heldMergeId = added.id;
+      this.overrideEntry(added.id, { minutes: this.displayMinutes(added) + entry.minutes });
+      this.recomputeLive();
+      return;
+    }
+    // A bare row lands as the manual added row, which has no entrance.
+    this.showPending(entry, !isBareDevelopment(entry));
+  }
+
+  // Lands as a new manual added row — and reads as one meanwhile.
+  get pendingBare(): boolean {
+    return this.draftPending !== null && isBareDevelopment(this.draftPending) && !this.draftMerges;
+  }
+
+  private showPending(entry: ManualEntryInput, enters: boolean): void {
+    const added = this.addedRecordOf(entry.task);
+    this.draftPending = entry;
+    this.draftMerges = isBareDevelopment(entry) && added !== undefined;
+    this.mergeBase = added?.minutes ?? 0;
+    this.pendingEnters = enters;
+    this.pendingShownAt = Date.now();
+    this.pendingAt = new Date().toISOString();
+    this.recomputeLive();
+  }
+
+  // The refresh carrying the entry takes the pending row's place: the new
+  // entry is in the data, or the manual added record it pours into has grown.
+  private landPending(): void {
+    if (this.draftPending === null || this.draftMerging || this.landedId === null) return;
+    const landed = this.entries.find(e => e.id === this.landedId);
+    if (!landed || (this.draftMerges && landed.minutes === this.mergeBase)) return;
+    if (this.draftMerges) {
+      this.foldPendingRow();
+      return;
+    }
+    // Mid-entrance, the entry plays the rest of the row-in (negative delay).
+    const elapsed = Date.now() - this.pendingShownAt;
+    if (this.pendingEnters && elapsed < POP_ANIM_MS) {
+      this.landedId = null;
+      this.popDelayMs.set(landed.id, -elapsed);
+    }
+    this.draftPending = null;
+  }
+
+  private dropUnlanded(): void {
+    if (this.draftPending !== null && !this.draftMerging) this.draftPending = null;
+    if (this.heldMergeId !== null) {
+      this.dropOverride(this.heldMergeId);
+      this.heldMergeId = null;
+    }
+    this.recomputeLive();
   }
 
   private foldPendingRow(): void {
@@ -1419,9 +1527,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       if (this.draftMerging) this.endPendingFold();
       // Bare Development lands on the ticket's manual added record — the
       // daemon's rule; a described one becomes an entry of its own.
-      this.draftPending = { task, minutes: this.editMinutes, description, activity: this.editActivity };
-      this.draftMerges = description === '' && this.editActivity === DEVELOPMENT_ACTIVITY && this.hasAddedRecord(task);
-      this.entryAdded.emit(this.draftPending);
+      const entry: ManualEntryInput = { task, minutes: this.editMinutes, description, activity: this.editActivity };
+      this.showPending(entry, false);
+      this.entryAdded.emit(entry);
       return;
     }
     const patch: ManualEntryPatch = {};
@@ -1664,7 +1772,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   summaryOfTask(task: string): string {
-    return this.issueSummaries[task] ?? '';
+    return this.issueSummaries[task] || this.heldSummaries.get(task) || '';
   }
 
   // Tracked time is always Development — that's how it pushes to Tempo.
