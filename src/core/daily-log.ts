@@ -513,7 +513,7 @@ export function isAddedEntry(entry: ManualEntry): boolean {
 }
 
 /** Bare Development — no description, no suggestion origin: manual added material. */
-function isBareDevelopment(activity: string, description: string, sourceRef?: string): boolean {
+export function isBareDevelopment(activity: string, description: string, sourceRef?: string): boolean {
   return activity === DEFAULT_ACTIVITY && !description && !sourceRef;
 }
 

@@ -122,11 +122,32 @@ function editMaxAge(monthKey: string, today: string, config: AppConfig): number 
   return APPROVAL_CACHE_TTL_MS;
 }
 
-/** Why a day may not be edited: its month is closed in Tempo. */
-export async function dayEditRefusal(date: string, today: string, secrets: Secrets | null, config: AppConfig): Promise<string | null> {
+/**
+ * Why a day may not be edited: its month is closed in Tempo. An edit that
+ * only adds a record, in the rest of the month (the cache's own TTL), does
+ * not wait on a stale status: the cached open one answers and the read runs
+ * behind it — one that finds the month closed has the daemon cut the day at
+ * the submit moment, the new record included. A change to what exists
+ * always waits: no cut takes it back.
+ */
+export async function dayEditRefusal(
+  date: string,
+  today: string,
+  secrets: Secrets | null,
+  config: AppConfig,
+  addsRecord = false,
+): Promise<string | null> {
   if (!secrets) return null;
   const monthKey = date.slice(0, 7);
-  const status = await closedMonthStatus(Number(date.slice(0, 4)), Number(date.slice(5, 7)), secrets, editMaxAge(monthKey, today, config));
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const maxAgeMs = editMaxAge(monthKey, today, config);
+  if (addsRecord && maxAgeMs === APPROVAL_CACHE_TTL_MS && readCache()[monthKey]) {
+    // A floating rejection would crash the daemon — neutralized at the boundary.
+    resolveMonthApproval(year, month, secrets, maxAgeMs).catch(() => {});
+    return null;
+  }
+  const status = await closedMonthStatus(year, month, secrets, maxAgeMs);
   return status ? closedMonthMessage(monthKey, status) : null;
 }
 

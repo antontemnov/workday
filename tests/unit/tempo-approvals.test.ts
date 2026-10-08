@@ -161,6 +161,49 @@ await test('closed in the cache for over a minute: asked — sent back (REJECTED
   assert.equal(calls.length, 1);
 });
 
+console.log('\nAdds (a new record only — the cut can take it back)');
+
+await test('mid-month: an add does not wait on a stale OPEN, the read runs behind it', async () => {
+  cache({ '2026-09': 'OPEN' }, 20 * 60_000);
+  tempoStatus = { '2026-09': 'IN_REVIEW' };
+  let told = 0;
+  const off = onClosedMonthRead(() => told++);
+  assert.equal(await dayEditRefusal('2026-09-15', TODAY, secrets, config, true), null);
+  assert.equal(cachedApprovals().get('2026-09')?.statusKey, 'OPEN', 'answered before the read landed');
+  await new Promise(r => setTimeout(r, 40));
+  assert.equal(cachedApprovals().get('2026-09')?.statusKey, 'IN_REVIEW');
+  assert.equal(told, 1, 'the closed read is told — the daemon cuts the day');
+  off();
+});
+
+await test('mid-month: an add under a fresh OPEN asks nothing', async () => {
+  cache({ '2026-09': 'OPEN' }, 5 * 60_000);
+  calls.length = 0;
+  assert.equal(await dayEditRefusal('2026-09-15', TODAY, secrets, config, true), null);
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(calls.length, 0);
+});
+
+await test('mid-month: a change still waits on a stale OPEN — submitted → refused', async () => {
+  cache({ '2026-09': 'OPEN' }, 20 * 60_000);
+  tempoStatus = { '2026-09': 'IN_REVIEW' };
+  calls.length = 0;
+  assert.match(await dayEditRefusal('2026-09-15', TODAY, secrets, config) ?? '', /2026-09 is IN_REVIEW/);
+  assert.equal(calls.length, 1);
+});
+
+await test('an add waits where the status matters: the submit window, a past month, a closed one, nothing cached', async () => {
+  tempoStatus = { '2026-09': 'IN_REVIEW', '2026-08': 'APPROVED' };
+  cache({ '2026-09': 'OPEN' }, 2 * 60_000);
+  assert.match(await dayEditRefusal('2026-09-29', '2026-09-29', secrets, config, true) ?? '', /2026-09 is IN_REVIEW/);
+  cache({ '2026-08': 'OPEN' });
+  assert.match(await dayEditRefusal('2026-08-04', TODAY, secrets, config, true) ?? '', /2026-08 is APPROVED/);
+  cache({ '2026-09': 'IN_REVIEW' });
+  assert.match(await dayEditRefusal('2026-09-15', TODAY, secrets, config, true) ?? '', /2026-09 is IN_REVIEW/);
+  cache({});
+  assert.match(await dayEditRefusal('2026-09-15', TODAY, secrets, config, true) ?? '', /2026-09 is IN_REVIEW/);
+});
+
 console.log('\nStatus reads');
 
 await test('maxAge 0 always asks; the moment the month closed comes along', async () => {

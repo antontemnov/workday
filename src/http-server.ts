@@ -15,6 +15,7 @@ import {
   isAddedEntry,
   resolveManualEntryTarget,
   listAvailableDates,
+  isBareDevelopment,
 } from './core/daily-log.js';
 import { toStoredSessionDetail } from './core/session-detail.js';
 import { resolveActivityTypes } from './push/activity-types.js';
@@ -588,7 +589,7 @@ export class HttpServer {
     if (!DATE_RE.test(date)) return { ok: false, error: 'Invalid date. Use YYYY-MM-DD' };
     const today = this.deps.getCurrentDate();
     if (date > today) return { ok: false, error: `Cannot log on a future date (${date} > ${today})` };
-    const refusal = await this.editRefusal(date);
+    const refusal = await this.editRefusal(date, true);
     if (refusal) return { ok: false, error: refusal };
 
     const bodyTask =typeof body.task === 'string' ? body.task.trim() : '';
@@ -1011,9 +1012,9 @@ export class HttpServer {
   }
 
   /** A day in a month closed in Tempo is never edited. null = today. */
-  private async editRefusal(date: string | null): Promise<string | null> {
+  private async editRefusal(date: string | null, addsRecord = false): Promise<string | null> {
     const today = this.deps.getCurrentDate();
-    return dayEditRefusal(date ?? today, today, tryLoadSecrets(), this.deps.config);
+    return dayEditRefusal(date ?? today, today, tryLoadSecrets(), this.deps.config, addsRecord);
   }
 
   private toEntryData(entry: ManualEntry, log: DailyLog): ManualEntryResponse {
@@ -1036,17 +1037,18 @@ export class HttpServer {
   private async handleAddManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryResponse>> {
     const tracker = this.deps.sessionTracker;
     const minutes = typeof body.minutes === 'number' ? body.minutes : NaN;
-    const parsed = this.resolveEditDate(body);
-    if ('error' in parsed) return { ok: false, error: parsed.error };
-    const refusal = await this.editRefusal(parsed.date);
-    if (refusal) return { ok: false, error: refusal };
-    const pastDate = parsed.date;
-
     const task = typeof body.task === 'string' ? body.task : '';
     const description = typeof body.description === 'string' ? body.description : '';
     const activity = typeof body.activity === 'string' && body.activity.trim()
       ? body.activity
       : DEFAULT_MANUAL_ACTIVITY;
+    const parsed = this.resolveEditDate(body);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+    // Bare Development pours into the ticket's manual added record — a change
+    // to what exists, not a new record.
+    const refusal = await this.editRefusal(parsed.date, !isBareDevelopment(activity.trim(), description.trim()));
+    if (refusal) return { ok: false, error: refusal };
+    const pastDate = parsed.date;
 
     if (!task) return { ok: false, error: 'Missing task' };
     // Description validated in core against the activity rule (required

@@ -14,6 +14,10 @@
  *   4. Submitted again: the cached status still says REJECTED, a Fetch reads
  *      it fresh and locks at once; the session born after the submit is gone,
  *      the one stopped before it stays.
+ *   5. Sent back, a quiet stretch, then submitted once more: an add does not
+ *      wait on the stale OPEN (Tempo answers slowly here) — the read behind
+ *      it locks the month and cuts the add. In the submit window the add
+ *      waits and is refused instead.
  *
  * Run: npx tsx tests/integration/closed-month-e2e.test.ts  (~1 min: real poll ticks)
  */
@@ -21,8 +25,10 @@ import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before 
 import { TEST_HOME } from '../helpers/test-home.js';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { inSubmissionWindow } from '../../src/core/month-lock.js';
+import type { AppConfig } from '../../src/core/types.js';
 
 const PORT = 9377;
 const POLL_SECONDS = 6;
@@ -101,6 +107,7 @@ const worklogs = new Map<number, RawWorklog>();
 let nextWorklogId = 1000;
 const approval: Record<string, { key: string; updatedAt?: string }> = {};
 let approvalReads = 0;
+let approvalDelayMs = 0;
 const ISSUE_ID = 4242;
 
 const json = (body: unknown, status = 200): Response =>
@@ -121,6 +128,7 @@ async function fakeTempo(url: URL, method: string, init?: RequestInit): Promise<
   }
   if (method === 'GET' && p.startsWith('/4/timesheet-approvals/user/')) {
     approvalReads++;
+    if (approvalDelayMs > 0) await sleep(approvalDelayMs);
     const month = url.searchParams.get('from')!.slice(0, 7);
     return json({
       period: { from: `${month}-01`, to: monthEnd(month) }, requiredSeconds: 0, timeSpentSeconds: 0,
@@ -202,6 +210,14 @@ async function waitFor<T>(what: string, probe: () => Promise<T | null | undefine
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 const TICK_MS = POLL_SECONDS * 1000;
+
+// A quiet stretch: the month's cached status grows older than its TTL.
+function ageApprovalCache(month: string, ageMs: number): void {
+  const path = join(TEST_HOME, 'data', 'approval-cache.json');
+  const cache = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, { fetchedAt: string }>;
+  cache[month] = { ...cache[month], fetchedAt: new Date(Date.now() - ageMs).toISOString() };
+  writeFileSync(path, JSON.stringify(cache, null, 2));
+}
 
 // Tempo reports the submit to the second: the "submit" lands on the next
 // whole second, after everything done so far.
@@ -321,6 +337,42 @@ try {
     assert.equal(status.data?.statusKey, 'IN_REVIEW');
     assert.equal(status.data?.closedAt, resubmitAt);
   });
+
+  // ─── 5. Submitted mid-month, an add on its way ──────────────────────────
+  const midMonth = !inSubmissionWindow(day, { workDays: [1, 2, 3, 4, 5, 6, 7], holidays: [] } as unknown as AppConfig);
+  console.log(`\n5. An add after a quiet stretch (${midMonth ? 'mid-month' : 'submit window'})`);
+
+  approval[month] = { key: 'REJECTED' };
+  await api<Approval>(`/api/tempo/approval?year=${year}&month=${monthNo}&fresh=1`);
+  await waitFor('the unlock', async () => (await today()).monthClosed === false, 2 * TICK_MS);
+  ageApprovalCache(month, 20 * 60_000);
+  const lateSubmitAt = await submitMoment();
+  approval[month] = { key: 'IN_REVIEW', updatedAt: lateSubmitAt };
+  approvalDelayMs = 1500;
+  const readsBefore5 = approvalReads;
+  const addStart = Date.now();
+  const late = await api<{ id: string }>('/api/manual-entry', { task: 'ATL-1', minutes: 15, description: 'after the submit', activity: 'Other' });
+  const addMs = Date.now() - addStart;
+
+  if (midMonth) {
+    await check(`the add answers at once by the cached OPEN (${addMs} ms, Tempo takes ${approvalDelayMs} ms)`, () => {
+      assert.equal(late.ok, true, late.error);
+      assert.ok(addMs < approvalDelayMs, `${addMs} ms`);
+    });
+    const cut = await waitFor('the lock from the read behind the add', async () => { const t = await today(); return t.monthClosed ? t : null; }, 2 * TICK_MS);
+    await check('the read behind it locks the month and cuts the add; the earlier entry stays', () => {
+      assert.equal(approvalReads, readsBefore5 + 1);
+      const ids = cut.manualEntries.map(e => e.id);
+      assert.equal(ids.includes(late.data!.id), false);
+      assert.equal(ids.includes(entry.data!.id), true);
+    });
+  } else {
+    await check('the add waits for Tempo and is refused', () => {
+      assert.equal(late.ok, false);
+      assert.match(late.error ?? '', /IN_REVIEW/);
+    });
+  }
+  approvalDelayMs = 0;
 } catch (err) {
   failed++;
   console.error(`  FAIL ${(err as Error).message}`);
