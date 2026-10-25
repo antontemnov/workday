@@ -1,0 +1,80 @@
+<h1>Ручной таймер — макет v12 · таймер среди иконок вкладок: циферблат вместо надписи</h1>
+<p class="sub">Продолжение v11: таймер ушёл из правого угла к иконкам вкладок — подальше от <b>− ✕</b>. Вместо надписи <i>+ Timer</i> — <b>циферблат</b> в штрихе иконок вкладок: в покое тусклый, на ходу лаймовый, сектор = минуты текущего часа, на паузе красные полоски вместо стрелки, несколько таймеров — второй циферблат выглядывает сзади. Клик по циферблату в любом состоянии — меню; в покое в нём <i>Start timer</i> и <i>Start on ticket…</i>. Варианты группировки переключаются в панели: <b>T1</b> своя группа за разделителем, <b>T2</b> то же + минуты, <b>T3</b> четвёртой иконкой среди вкладок. Всё остальное — как в v11.</p>
+
+<div class="toolbar" id="toolbar">
+  <div class="tbg"><span class="tbl">сцена</span>
+    <button class="tbb" data-preset="empty">пусто</button>
+    <button class="tbb" data-preset="run">идёт таймер</button>
+    <button class="tbb" data-preset="two">два таймера</button>
+    <button class="tbb" data-preset="yield">сессия перехватила</button>
+    <button class="tbb" data-preset="drafts">черновики</button>
+  </div>
+  <div class="tbg"><span class="tbl">заголовок</span><button class="tbb" data-navv="T1">T1 циферблат</button><button class="tbb" data-navv="T2">T2 + минуты</button><button class="tbb" data-navv="T3">T3 среди вкладок</button></div>
+  <div class="tbg"><span class="tbl">имитация</span><button class="tbb git" data-act="git">git-правка в web-frontend</button></div>
+  <div class="tbg"><span class="tbl">с сессиями</span><button class="tbb" data-mode="yield">yield</button><button class="tbb" data-mode="parallel">parallel</button></div>
+  <div class="tbg"><span class="tbl">скорость</span><button class="tbb" data-speed="1">×1</button><button class="tbb" data-speed="60">×60</button><button class="tbb" data-speed="600">×600</button></div>
+  <div class="tbg"><span class="tbl">иконка трея ×2.5</span><span class="tray-zoom" id="trayZoom"></span></div>
+</div>
+
+<div class="stagewrap">
+  <div class="desk" id="desk">
+    <div class="win ide" id="ide">
+      <div class="ide-title"><b>web-frontend</b><span>checkout.service.ts</span><span class="sp"></span><span class="wc">— ▢ ✕</span></div>
+      <div class="ide-body">
+        <div class="ide-tree">
+          <div>web-frontend</div><div style="--d:1">src</div><div style="--d:2">app</div><div style="--d:3">checkout</div>
+          <div style="--d:4" class="cur">checkout.service.ts</div><div style="--d:4">checkout.store.ts</div><div style="--d:4">payment.gateway.ts</div>
+          <div style="--d:3">orders</div><div style="--d:3">shared</div><div style="--d:2">assets</div><div style="--d:1">package.json</div>
+        </div>
+        <div class="ide-code"><div><span class="k">import</span> { <span class="t">Injectable</span> } <span class="k">from</span> <span class="s">'@angular/core'</span>;</div><div><span class="k">import</span> { <span class="t">PaymentGateway</span> } <span class="k">from</span> <span class="s">'./payment.gateway'</span>;</div><div> </div><div>@<span class="t">Injectable</span>({ providedIn: <span class="s">'root'</span> })</div><div><span class="k">export class</span> <span class="t">CheckoutService</span> {</div><div>  <span class="k">private readonly</span> retryLimit: <span class="t">number</span> = <span class="n">3</span>;</div><div> </div><div>  <span class="k">public constructor</span>(<span class="k">private readonly</span> gateway: <span class="t">PaymentGateway</span>) {}</div><div> </div><div>  <span class="k">public async</span> <span class="f">submit</span>(order: <span class="t">Order</span>): <span class="t">Promise</span>&lt;<span class="t">Receipt</span>&gt; {</div><div>    <span class="k">const</span> session = <span class="k">await this</span>.gateway.<span class="f">open</span>(order.id);</div><div>    <span class="k">for</span> (<span class="k">let</span> attempt = <span class="n">1</span>; attempt &lt;= <span class="k">this</span>.retryLimit; attempt++) {</div><div>      <span class="k">const</span> result = <span class="k">await</span> session.<span class="f">charge</span>(order.total);</div><div>      <span class="k">if</span> (result.ok) <span class="k">return</span> result.receipt;</div><div>      <span class="c">// 500 on 3DS callback — reproduce before the ticket exists</span></div><div>    }</div><div>    <span class="k">throw new</span> <span class="t">Error</span>(<span class="s">'charge failed'</span>);</div><div>  }</div><div>}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="win wd" id="wd">%%APP%%</div>
+
+    <div class="win browser" id="browser" hidden>
+      <div class="br-top"><span class="br-url" id="brUrl"></span><span class="br-x" id="brX">✕</span></div>
+      <div class="br-body">
+        <div class="br-h">Create issue</div>
+        <label>Project</label><div class="br-f">ATL</div>
+        <label>Issue type</label><div class="br-f">Bug ▾</div>
+        <label>Summary</label><input class="br-in" id="brSum">
+        <label>Description</label><div class="br-ta"></div>
+        <div class="br-act"><button class="br-cancel" id="brCancel">Cancel</button><button class="br-create" id="brCreate">Create</button></div>
+        <div class="br-note">макет: это настоящая форма Jira в браузере — обязательные поля проекта заполняет она; summary пришёл из описания таймера или из строки поиска облака</div>
+      </div>
+    </div>
+
+    <div class="tm-widget" id="widget" hidden></div>
+
+    <div class="taskbar">
+      <div class="tb-mid">
+        <span class="tb-app"><i style="background:linear-gradient(135deg,#4cc2ff 0 48%,transparent 48% 52%,#4cc2ff 52%);border-radius:2px"></i></span>
+        <span class="tb-app on"><i style="background:#c43ef5"></i></span>
+        <span class="tb-app"><i style="background:#2f7de1"></i></span>
+        <span class="tb-app"><i style="background:#e3a21a"></i></span>
+      </div>
+      <div class="tb-right">
+        <span class="tb-ic">⌃</span>
+        <span class="tb-ic me" id="trayIc"></span>
+        <span class="tb-ic">◔</span><span class="tb-ic">🔊︎</span>
+        <span class="tb-clock" id="tbClock"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="evlog"><div class="ev-h">журнал — что произошло</div><div id="evlog"></div></div>
+    <div class="notes">
+      <p><b>Yield (дефолт):</b> старт/возврат таймера ставит живые сессии на паузу; свежая git-правка — сессия выигрывает, таймер встаёт; обратно — только кликом. <b>Parallel:</b> никто никого не паузит.</p>
+      <p><b>Stop</b> → черновик в ленте (пунктир + миллиметровка, лайм), возобновить нельзя; Log… появляется, когда известен тикет. <b>Stop &amp; new</b> — то же + новый с нуля. <b>New timer</b> — текущий встаёт на паузу.</p>
+      <p><b>Виджет</b> — отдельное окно поверх всех (как тост): непрозрачное, не берёт фокус → печатать в нём нельзя, описание правится в меню приложения. <b>Unpin</b> (булавка) — виджет пропадает, таймер остаётся в заголовке.</p>
+      <p><b>Заголовок:</b> таймер — иконка в языке переключателя вкладок, без рамок и стекла; правый угол остаётся за − ✕.</p>
+      <p><b>Облако</b> одно на Log и на таймер; в режиме таймера без минут и multi. <b>Create in Jira</b> открывает форму создания в браузере; созданный тикет — первым чипом.</p>
+    </div>
+  </div>
+</div>
+
+<h2>Состояния на одном экране</h2>
+<div id="strips"></div>
