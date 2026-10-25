@@ -78,7 +78,7 @@ body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace;
 .tm-nav.run:hover, .tm-nav.run.armed { color: #f4f9e4; }
 .tm-nav.pause, .tm-nav.yield { color: #7f849c; }
 .tm-nav.pause:hover, .tm-nav.yield:hover, .tm-nav.pause.armed, .tm-nav.yield.armed { color: #a6adc8; }
-.tm-nav .tm-min { width: 6ch; text-align: left; }
+.tm-nav .tm-min { width: 7ch; text-align: left; }
 .tm-menu.idle { width: auto; min-width: 220px; }
 
 /* glyphs */

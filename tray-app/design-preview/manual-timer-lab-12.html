@@ -5349,7 +5349,7 @@ body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace;
 .tm-nav.run:hover, .tm-nav.run.armed { color: #f4f9e4; }
 .tm-nav.pause, .tm-nav.yield { color: #7f849c; }
 .tm-nav.pause:hover, .tm-nav.yield:hover, .tm-nav.pause.armed, .tm-nav.yield.armed { color: #a6adc8; }
-.tm-nav .tm-min { width: 6ch; text-align: left; }
+.tm-nav .tm-min { width: 7ch; text-align: left; }
 .tm-menu.idle { width: auto; min-width: 220px; }
 
 /* glyphs */
@@ -5482,7 +5482,7 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
 </head>
 <body class="lab">
 <h1>Ручной таймер — макет v12 · таймер среди иконок вкладок: циферблат вместо надписи</h1>
-<p class="sub">Продолжение v11: таймер ушёл из правого угла к иконкам вкладок — подальше от <b>− ✕</b>. Вместо надписи <i>+ Timer</i> — <b>циферблат</b> в штрихе иконок вкладок: в покое тусклый, на ходу лаймовый, сектор = минуты текущего часа, на паузе красные полоски вместо стрелки, несколько таймеров — второй циферблат выглядывает сзади. Клик по циферблату в любом состоянии — меню; в покое в нём <i>Start timer</i> и <i>Start on ticket…</i>. Варианты группировки переключаются в панели: <b>T1</b> своя группа за разделителем, <b>T2</b> то же + минуты, <b>T3</b> четвёртой иконкой среди вкладок. Всё остальное — как в v11.</p>
+<p class="sub">Продолжение v11: таймер ушёл из правого угла к иконкам вкладок — подальше от <b>− ✕</b>. Вместо надписи <i>+ Timer</i> — <b>циферблат</b> в штрихе иконок вкладок: в покое тусклый, на ходу лаймовый, сектор = минуты текущего часа, на паузе красные полоски вместо стрелки, несколько таймеров — второй циферблат выглядывает сзади. Клик по циферблату в любом состоянии — меню; в покое в нём <i>Start timer</i> и <i>Start on ticket…</i>. Варианты группировки переключаются в панели: <b>T1</b> своя группа за разделителем, <b>T2</b> то же + время (секунды до часа), <b>T3</b> четвёртой иконкой среди вкладок. Всё остальное — как в v11.</p>
 
 <div class="toolbar" id="toolbar">
   <div class="tbg"><span class="tbl">сцена</span>
@@ -5492,7 +5492,7 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
     <button class="tbb" data-preset="yield">сессия перехватила</button>
     <button class="tbb" data-preset="drafts">черновики</button>
   </div>
-  <div class="tbg"><span class="tbl">заголовок</span><button class="tbb" data-navv="T1">T1 циферблат</button><button class="tbb" data-navv="T2">T2 + минуты</button><button class="tbb" data-navv="T3">T3 среди вкладок</button></div>
+  <div class="tbg"><span class="tbl">заголовок</span><button class="tbb" data-navv="T1">T1 циферблат</button><button class="tbb" data-navv="T2">T2 + время</button><button class="tbb" data-navv="T3">T3 среди вкладок</button></div>
   <div class="tbg"><span class="tbl">имитация</span><button class="tbb git" data-act="git">git-правка в web-frontend</button></div>
   <div class="tbg"><span class="tbl">с сессиями</span><button class="tbb" data-mode="yield">yield</button><button class="tbb" data-mode="parallel">parallel</button></div>
   <div class="tbg"><span class="tbl">скорость</span><button class="tbb" data-speed="1">×1</button><button class="tbb" data-speed="60">×60</button><button class="tbb" data-speed="600">×600</button></div>
@@ -6488,12 +6488,11 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
     const w = multi ? 20 : 16;
     return `<svg class="tm-dial${multi ? ' multi' : ''}" viewBox="0 0 ${w} 16" aria-hidden="true">${back}<path class="crown" d="M6.4 1.2h3.2M8 1.2v2.2"/><circle class="ring" cx="${cx}" cy="${cy}" r="5.6"/>${sec}${inner}</svg>`;
   }
-  const fmtNav = (ms) => { const m = Math.floor(ms / 60000); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${pad(m % 60)}m`; };
   function navParts(t, multi, variant) {
     const st = t ? t.state : 'idle';
     const ms = t ? elapsed(t) : 0;
     const live = t && t.id;
-    const text = variant === 'T2' && t ? `<span class="tm-min"${live ? ` data-nav="${t.id}"` : ''}>${fmtNav(ms)}</span>` : '';
+    const text = variant === 'T2' && t ? `<span class="tm-min"${live ? ` data-nav="${t.id}"` : ''}>${fmtRun(ms)}</span>` : '';
     return {
       cls: `tm-nav ${st} ${variant}${multi ? ' multi' : ''}`,
       html: `<span class="tm-dw"${live ? ` data-dial="${t.id}"` : ''}>${dialSvg(st, ms, multi)}</span>${text}`,
@@ -7117,7 +7116,7 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
     }
     for (const el of $$('[data-nav]')) {
       const t = byId(+el.dataset.nav);
-      if (t) el.textContent = fmtNav(elapsed(t));
+      if (t) el.textContent = fmtRun(elapsed(t));
     }
     for (const el of $$('[data-dial]')) {
       const t = byId(+el.dataset.dial);
@@ -7153,7 +7152,7 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
         ${hdrCell('T1', F({ fixedMs: m(12, 8) }), true, 'несколько — второй циферблат выглядывает сзади (вместо шеврона)')}
         ${hdrCell('T1', F({ fixedMs: m(12, 8) }), false, 'меню открыто — циферблат ярче', ' armed')}
       </div>
-      <div class="st-sub">T2 · своя группа + минуты (без секунд — заголовок не дёргается)</div>
+      <div class="st-sub">T2 · своя группа + время (секунды до часа, с часа — 1h 05m)</div>
       <div class="st-row">
         ${hdrCell('T2', null, false, 'покой — тусклый, как иконки вкладок; клик → меню: Start timer · Start on ticket…')}
         ${hdrCell('T2', F({ fixedMs: m(12, 8) }), false, 'идёт — лаймовый циферблат, сектор = минуты часа')}

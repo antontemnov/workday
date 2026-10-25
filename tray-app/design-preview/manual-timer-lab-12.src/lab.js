@@ -117,12 +117,11 @@
     const w = multi ? 20 : 16;
     return `<svg class="tm-dial${multi ? ' multi' : ''}" viewBox="0 0 ${w} 16" aria-hidden="true">${back}<path class="crown" d="M6.4 1.2h3.2M8 1.2v2.2"/><circle class="ring" cx="${cx}" cy="${cy}" r="5.6"/>${sec}${inner}</svg>`;
   }
-  const fmtNav = (ms) => { const m = Math.floor(ms / 60000); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${pad(m % 60)}m`; };
   function navParts(t, multi, variant) {
     const st = t ? t.state : 'idle';
     const ms = t ? elapsed(t) : 0;
     const live = t && t.id;
-    const text = variant === 'T2' && t ? `<span class="tm-min"${live ? ` data-nav="${t.id}"` : ''}>${fmtNav(ms)}</span>` : '';
+    const text = variant === 'T2' && t ? `<span class="tm-min"${live ? ` data-nav="${t.id}"` : ''}>${fmtRun(ms)}</span>` : '';
     return {
       cls: `tm-nav ${st} ${variant}${multi ? ' multi' : ''}`,
       html: `<span class="tm-dw"${live ? ` data-dial="${t.id}"` : ''}>${dialSvg(st, ms, multi)}</span>${text}`,
@@ -746,7 +745,7 @@
     }
     for (const el of $$('[data-nav]')) {
       const t = byId(+el.dataset.nav);
-      if (t) el.textContent = fmtNav(elapsed(t));
+      if (t) el.textContent = fmtRun(elapsed(t));
     }
     for (const el of $$('[data-dial]')) {
       const t = byId(+el.dataset.dial);
@@ -782,7 +781,7 @@
         ${hdrCell('T1', F({ fixedMs: m(12, 8) }), true, 'несколько — второй циферблат выглядывает сзади (вместо шеврона)')}
         ${hdrCell('T1', F({ fixedMs: m(12, 8) }), false, 'меню открыто — циферблат ярче', ' armed')}
       </div>
-      <div class="st-sub">T2 · своя группа + минуты (без секунд — заголовок не дёргается)</div>
+      <div class="st-sub">T2 · своя группа + время (секунды до часа, с часа — 1h 05m)</div>
       <div class="st-row">
         ${hdrCell('T2', null, false, 'покой — тусклый, как иконки вкладок; клик → меню: Start timer · Start on ticket…')}
         ${hdrCell('T2', F({ fixedMs: m(12, 8) }), false, 'идёт — лаймовый циферблат, сектор = минуты часа')}
