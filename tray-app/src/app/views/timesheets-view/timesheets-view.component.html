@@ -28,9 +28,9 @@
           <span class="tsub">
             <span class="err" *ngIf="tempoUnreachable; else gapTpl">Tempo unreachable</span>
             <ng-template #gapTpl>
-              <span class="row" *ngIf="gap as g"><span>{{ g.word }} in {{ monthName }}</span><span class="lead"></span><b [ngClass]="g.word">{{ g.amount }}</b></span>
+              <span class="row" *ngIf="gap as g"><span>{{ g.word }} in {{ monthName }}</span><span class="lead"></span><b [ngClass]="g.word" [style.min-width.ch]="amountCh">{{ g.amount }}</b></span>
             </ng-template>
-            <span class="row" *ngIf="yearGap as y"><span>{{ y.word }} in {{ year }}</span><span class="lead"></span><b [ngClass]="y.word">{{ y.amount }}</b></span>
+            <span class="row" *ngIf="yearGap as y"><span>{{ y.word }} in {{ year }}</span><span class="lead"></span><b [ngClass]="y.word" [style.min-width.ch]="amountCh">{{ y.amount }}</b></span>
           </span>
         </span>
       </div>

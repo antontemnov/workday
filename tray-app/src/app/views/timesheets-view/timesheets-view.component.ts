@@ -392,6 +392,12 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return toGap(upTo.reduce((sum, m) => sum + m.timeSpentSeconds - m.requiredSeconds, 0) / 60);
   }
 
+  // The amounts' column under the total, in characters (the font is
+  // monospaced): a word never reaches over the widest amount.
+  get amountCh(): number {
+    return Math.max(this.gap?.amount.length ?? 0, this.yearGap?.amount.length ?? 0);
+  }
+
   // Logged − required, minutes. Closed days count; today only once Tempo
   // holds it (pushed) — the number then matches Tempo's, while a day still
   // being written stays out.

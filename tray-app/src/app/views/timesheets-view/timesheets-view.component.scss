@@ -180,10 +180,10 @@
 }
 
 // The month's gap, the year's under it: words first, a dotted leader to the
-// amount on the total's edge. The block is as wide as its longest line —
-// that line's leader stays a few dots, the others fill; a lone line has
-// none. Only a gap is said; the number carries the colour, the word stays
-// grey.
+// amount on the total's edge. The amounts keep one column as wide as the
+// widest (amountCh), so a word ends short of it; the leader runs on into
+// the column up to a narrower amount. A lone line has no leader. Only a gap
+// is said; the number carries the colour, the word stays grey.
 .tsub {
   position: absolute;
   right: 0;
@@ -206,24 +206,38 @@
   .row {
     display: flex;
     align-items: baseline;
-    gap: 4px;
+
+    > span:first-child { margin-right: 4px; }
   }
 
-  .lead {
-    flex: 1;
-    min-width: 8px;
+  .lead,
+  b::before {
     position: relative;
     top: -2px;
     border-bottom: 1px dotted rgb(127 132 156 / 0.45);
   }
 
-  .row:only-child .lead { display: none; }
+  .lead {
+    flex: 1;
+    min-width: 8px;
+  }
 
   b {
+    display: flex;
+    align-items: baseline;
     font-weight: 700;
     &.behind { color: #f38ba8; }
     &.ahead { color: #a6e3a1; }
+
+    &::before {
+      content: '';
+      flex: 1;
+      margin-right: 4px;
+    }
   }
+
+  .row:only-child .lead,
+  .row:only-child b::before { display: none; }
 }
 
 // JetBrains pair: Fetch = dashed ↙ into the corner, Push = solid ↗ out of it.
