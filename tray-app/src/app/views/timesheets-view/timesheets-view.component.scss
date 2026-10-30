@@ -188,7 +188,9 @@
   position: absolute;
   right: 0;
   top: 100%;
-  margin-top: 3px;
+  // With the row gap: the same 8px of air between the inks — total → month
+  // line → year line.
+  margin-top: 4px;
   display: flex;
   flex-direction: column;
   row-gap: 6px;
