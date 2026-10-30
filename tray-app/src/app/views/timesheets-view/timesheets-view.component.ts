@@ -352,15 +352,19 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return fmtHm(days.reduce((sum, d) => sum + this.dayMinutes(d.date, d.reportedSeconds), 0));
   }
 
-  // Only a gap is said, never "on schedule"; closed days only (date < today)
-  // — today is still being written.
+  // Only a gap is said, never "on schedule". Closed days count; today only
+  // once Tempo holds it (pushed) — the number then matches Tempo's, while a
+  // day still being written stays out.
   get gap(): Gap | null {
     const m = this.monthData;
     const s = this.schedule;
     if (!m || !s?.available) return null;
     const today = localToday();
-    const required = s.days.filter(d => d.date < today).reduce((sum, d) => sum + d.requiredSeconds, 0) / 60;
-    const logged = m.days.filter(d => d.date < today).reduce((sum, d) => sum + this.dayMinutes(d.date, d.reportedSeconds), 0);
+    const todayRow = m.days.find(d => d.date === today);
+    const todayPushed = !!todayRow && this.stateOf(todayRow) === MonthSyncState.Pushed;
+    const counted = (date: string): boolean => date < today || (todayPushed && date === today);
+    const required = s.days.filter(d => counted(d.date)).reduce((sum, d) => sum + d.requiredSeconds, 0) / 60;
+    const logged = m.days.filter(d => counted(d.date)).reduce((sum, d) => sum + this.dayMinutes(d.date, d.reportedSeconds), 0);
     const diff = Math.round(logged - required);
     if (diff === 0) return null;
     return { amount: fmtHm(Math.abs(diff)), word: diff < 0 ? 'behind' : 'ahead' };
