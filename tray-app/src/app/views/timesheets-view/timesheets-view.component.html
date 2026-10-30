@@ -25,11 +25,13 @@
         <span class="sp"></span>
         <span class="totals" *ngIf="monthData && !loading">
           <span class="tmain">{{ totalLabel }}</span>
-          <span class="tsub err" *ngIf="tempoUnreachable; else gapTpl">Tempo unreachable</span>
-          <ng-template #gapTpl>
-            <span class="tsub dlt" *ngIf="gap as g" [ngClass]="g.word"><b>{{ g.amount }}</b> {{ g.word }} in {{ monthName }}</span>
-          </ng-template>
-          <span class="tsub dlt" *ngIf="yearGap as y" [ngClass]="y.word" [class.second]="tempoUnreachable || !!gap"><b>{{ y.amount }}</b> {{ y.word }} in {{ year }}</span>
+          <span class="tsub">
+            <span class="err" *ngIf="tempoUnreachable; else gapTpl">Tempo unreachable</span>
+            <ng-template #gapTpl>
+              <span class="row" *ngIf="gap as g"><span>{{ g.word }} in {{ monthName }}</span><span class="lead"></span><b [ngClass]="g.word">{{ g.amount }}</b></span>
+            </ng-template>
+            <span class="row" *ngIf="yearGap as y"><span>{{ y.word }} in {{ year }}</span><span class="lead"></span><b [ngClass]="y.word">{{ y.amount }}</b></span>
+          </span>
         </span>
       </div>
       <div class="hrow">

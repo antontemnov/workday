@@ -167,7 +167,7 @@
   &:hover { color: #cdd6f4; background: rgba(205, 214, 244, 0.06); }
 }
 
-// The total and, hung right under it out of flow, the gap (and the year's).
+// The total and, hung right under it out of flow, the gaps.
 .totals {
   position: relative;
   white-space: nowrap;
@@ -179,27 +179,51 @@
   color: #cdd6f4;
 }
 
+// The month's gap, the year's under it: words first, a dotted leader to the
+// amount on the total's edge. The block is as wide as its longest line —
+// that line's leader stays a few dots, the others fill; a lone line has
+// none. Only a gap is said; the number carries the colour, the word stays
+// grey.
 .tsub {
   position: absolute;
   right: 0;
   top: 100%;
   margin-top: 3px;
+  display: flex;
+  flex-direction: column;
+  row-gap: 4px;
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
+  white-space: nowrap;
   color: #7f849c;
 
-  &.err { color: #f38ba8; }
-  // The year's line under the month's.
-  &.second { margin-top: 17px; }
-}
+  .err {
+    align-self: flex-end;
+    color: #f38ba8;
+  }
 
-// Behind / ahead — only a gap is said; the number carries the colour, the
-// word stays grey.
-.dlt {
-  b { font-weight: 700; }
-  &.behind b { color: #f38ba8; }
-  &.ahead b { color: #a6e3a1; }
+  .row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  .lead {
+    flex: 1;
+    min-width: 8px;
+    position: relative;
+    top: -2px;
+    border-bottom: 1px dotted rgb(127 132 156 / 0.45);
+  }
+
+  .row:only-child .lead { display: none; }
+
+  b {
+    font-weight: 700;
+    &.behind { color: #f38ba8; }
+    &.ahead { color: #a6e3a1; }
+  }
 }
 
 // JetBrains pair: Fetch = dashed ↙ into the corner, Push = solid ↗ out of it.
