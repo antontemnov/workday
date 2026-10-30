@@ -141,7 +141,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   monthData: MonthResponse | null = null;
   schedule: TempoScheduleResponse | null = null;
   approval: TempoApprovalResponse | null = null;
-  // The year's months before this one — loaded on the current month only.
+  // The shown year's settled months.
   balance: TempoBalanceResponse | null = null;
   approvalRefreshing = false;
   loading = true;
@@ -217,7 +217,8 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
       if (!this.monthData || this.error) { void this.load(false); return; }
       if (this.monthContainsToday) void this.reloadMonthQuiet();
       if (this.schedule === null) void this.loadSchedule(this.loadSeq);
-      if (this.monthContainsToday && !this.balance?.available) void this.loadBalance(this.loadSeq);
+      const b = this.balance;
+      if (!b || b.year !== this.year || b.reason === 'error') void this.loadBalance(this.loadSeq);
       void this.loadApproval(this.loadSeq);
       void this.autoSync();
     }, 30_000);
@@ -238,7 +239,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     if (showLoading) this.loading = true;
     void this.loadSchedule(seq);
     void this.loadApproval(seq);
-    if (this.monthContainsToday) void this.loadBalance(seq);
+    void this.loadBalance(seq);
     const res = await this.api.getMonth(this.year, this.month);
     if (seq !== this.loadSeq) return;
     if (res.ok && res.data) {
@@ -277,8 +278,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     this.approval = res.data;
   }
 
-  // A failed call keeps the last known balance; a month switch keeps it too
-  // (it is the year's), the current month asks again on return.
+  // A failed call keeps the last known balance; another year's is not shown.
   private async loadBalance(seq: number): Promise<void> {
     const res = await this.api.getTempoBalance(this.year);
     if (seq !== this.loadSeq || !res.ok || !res.data) return;
@@ -335,6 +335,10 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
       .toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   }
 
+  get monthName(): string {
+    return new Date(this.year, this.month - 1, 1).toLocaleDateString('en-GB', { month: 'long' });
+  }
+
   private get monthKey(): string {
     return `${this.year}-${String(this.month).padStart(2, '0')}`;
   }
@@ -371,14 +375,21 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return diff === null ? null : toGap(diff);
   }
 
-  // The year as Tempo sums it: the months before this one as settled there,
-  // plus this month's gap. Said on the current month only, once a month
-  // before it counts.
+  // The year up to the shown month. The current month: the months before it
+  // as Tempo settled them plus this month's gap; a past month: Tempo's months
+  // up to it. Said once a month before the shown one counts.
   get yearGap(): Gap | null {
     const b = this.balance;
-    if (!this.monthContainsToday || !b?.available || b.year !== this.year || b.months.length === 0) return null;
-    const month = this.monthDiffMinutes();
-    return month === null ? null : toGap(b.balanceSeconds / 60 + month);
+    if (!b?.available || b.year !== this.year) return null;
+    if (this.monthContainsToday) {
+      if (b.months.length === 0) return null;
+      const month = this.monthDiffMinutes();
+      return month === null ? null : toGap(b.balanceSeconds / 60 + month);
+    }
+    const key = this.monthKey;
+    const upTo = b.months.filter(m => m.month <= key);
+    if (!upTo.some(m => m.month < key)) return null;
+    return toGap(upTo.reduce((sum, m) => sum + m.timeSpentSeconds - m.requiredSeconds, 0) / 60);
   }
 
   // Logged − required, minutes. Closed days count; today only once Tempo

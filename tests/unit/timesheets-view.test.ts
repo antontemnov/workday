@@ -99,9 +99,13 @@ function schedule(): TempoScheduleResponse {
   return { available: true, days, requiredSecondsTotal: 0, fromCache: true } as TempoScheduleResponse;
 }
 
-const balance = (hours: number, months = 8): TempoBalanceResponse => ({
-  available: true, year: 2026, balanceSeconds: hours * 3600, fromCache: true,
-  months: Array.from({ length: months }, (_, i) => ({ month: `2026-0${i + 1}`, statusKey: 'APPROVED', requiredSeconds: 0, timeSpentSeconds: 0 })),
+// The year's settled months from January, each this many hours over its norm.
+const balance = (overHours: readonly number[]): TempoBalanceResponse => ({
+  available: true, year: 2026, fromCache: true,
+  balanceSeconds: overHours.reduce((sum, h) => sum + h * 3600, 0),
+  months: overHours.map((h, i) => ({
+    month: `2026-${String(i + 1).padStart(2, '0')}`, statusKey: 'APPROVED', requiredSeconds: 160 * 3600, timeSpentSeconds: (160 + h) * 3600,
+  })),
 });
 
 const approval = (statusKey: string, closed?: boolean): TempoApprovalResponse => ({
@@ -136,7 +140,7 @@ function harness(month: MonthResponse = september()) {
       fake.approvalAsks.push(fresh === true);
       return fake.approvalAnswer;
     },
-    getTempoBalance: async () => ({ ok: true, data: balance(0, 0) }),
+    getTempoBalance: async () => ({ ok: true, data: balance([]) }),
     syncTempo: async () => fake.syncAnswer,
     pushToTempo: async (from: string, to: string, _force: boolean, stopTracking: boolean) => {
       fake.pushes.push({ from, to, stopTracking });
@@ -420,24 +424,41 @@ await test('the gap: closed days, today once pushed; a word only when there is o
   assert.deepEqual(h.comp.gap, { amount: '3h 00m', word: 'ahead' });
 });
 
-await test('the year: the months before plus this month\'s gap, on the current month only', () => {
+await test('the year on the current month: the months before plus this month\'s gap', () => {
   const h = harness(september({ '2026-09-24': { hours: 1 } }));
   assert.equal(h.comp.yearGap, null, 'no balance yet');
-  h.comp.balance = balance(112.5);
-  assert.deepEqual(h.comp.yearGap, { amount: '105h 30m', word: 'ahead' });
+  h.comp.balance = balance([42, 0, 8.5, 12.5, 32, 14.5, 0, 0]);
+  assert.deepEqual(h.comp.yearGap, { amount: '102h 30m', word: 'ahead' });
   h.comp.monthData = september();
-  assert.deepEqual(h.comp.yearGap, { amount: '112h 30m', word: 'ahead' }, 'said although the month is on schedule');
-  h.comp.balance = balance(-10);
+  assert.deepEqual(h.comp.yearGap, { amount: '109h 30m', word: 'ahead' }, 'said although the month is on schedule');
+  h.comp.balance = balance([-10]);
   assert.deepEqual(h.comp.yearGap, { amount: '10h 00m', word: 'behind' });
-  h.comp.balance = balance(5, 0);
+  h.comp.balance = balance([]);
   assert.equal(h.comp.yearGap, null, 'no month before this one → the month\'s gap says it all');
-  h.comp.balance = { ...balance(5), available: false };
+  h.comp.balance = { ...balance([5]), available: false };
   assert.equal(h.comp.yearGap, null);
-  h.comp.balance = { ...balance(5), year: 2025 };
+  h.comp.balance = { ...balance([5]), year: 2025 };
   assert.equal(h.comp.yearGap, null, 'another year\'s balance');
-  h.comp.balance = balance(5);
+});
+
+await test('the year on a past month: Tempo\'s months up to it', () => {
+  const h = harness();
+  h.comp.balance = balance([42, 0, 8.5, 12.5, 32, 14.5, 0, -3]);
+  h.comp.month = 6;
+  assert.deepEqual(h.comp.yearGap, { amount: '109h 30m', word: 'ahead' });
   h.comp.month = 8;
-  assert.equal(h.comp.yearGap, null, 'a past month says no year');
+  assert.deepEqual(h.comp.yearGap, { amount: '106h 30m', word: 'ahead' });
+  h.comp.month = 2;
+  assert.deepEqual(h.comp.yearGap, { amount: '42h 00m', word: 'ahead' });
+  h.comp.month = 1;
+  assert.equal(h.comp.yearGap, null, 'January: the month\'s gap says it all');
+});
+
+await test('the month\'s line names its month', () => {
+  const h = harness();
+  assert.equal(h.comp.monthName, 'September');
+  h.comp.month = 5;
+  assert.equal(h.comp.monthName, 'May');
 });
 
 await test('weeks newest first, labelled "21 — 27"; no future days', () => {

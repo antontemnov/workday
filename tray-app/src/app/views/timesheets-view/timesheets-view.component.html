@@ -12,7 +12,7 @@
          one baseline. Row 1 — ‹ back only (no future months) · the title (a
          past month's title leads home) · status tag · total, and right under
          it the gap (only when there is one) or why Tempo can't be read, and
-         on the current month the year's gap under that. The status tag asks
+         the year's gap up to this month under that. The status tag asks
          Tempo for the status now (a sent-back month).
          Row 2 — the Push navigator (blocked, Push leads to what blocks it) ·
          Fetch. -->
@@ -27,7 +27,7 @@
           <span class="tmain">{{ totalLabel }}</span>
           <span class="tsub err" *ngIf="tempoUnreachable; else gapTpl">Tempo unreachable</span>
           <ng-template #gapTpl>
-            <span class="tsub dlt" *ngIf="gap as g" [ngClass]="g.word"><b>{{ g.amount }}</b> {{ g.word }}</span>
+            <span class="tsub dlt" *ngIf="gap as g" [ngClass]="g.word"><b>{{ g.amount }}</b> {{ g.word }} in {{ monthName }}</span>
           </ng-template>
           <span class="tsub dlt" *ngIf="yearGap as y" [ngClass]="y.word" [class.second]="tempoUnreachable || !!gap"><b>{{ y.amount }}</b> {{ y.word }} in {{ year }}</span>
         </span>
