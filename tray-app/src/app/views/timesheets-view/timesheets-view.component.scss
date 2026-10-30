@@ -188,12 +188,12 @@
   position: absolute;
   right: 0;
   top: 100%;
-  // With the row gap: the same 8px of air between the inks — total → month
-  // line → year line.
-  margin-top: 4px;
+  // With the row gap: the same 7.5px of air between the inks — total → month
+  // line → year line; the year line then sits on the middle of the buttons.
+  margin-top: 3.5px;
   display: flex;
   flex-direction: column;
-  row-gap: 6px;
+  row-gap: 5.5px;
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
