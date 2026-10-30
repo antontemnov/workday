@@ -142,6 +142,10 @@ export const SCHEDULE_CACHE_TTL_MS = 24 * 3_600_000;
 // The cache is also dropped entirely after every successful push.
 export const APPROVAL_CACHE_FILE = 'approval-cache.json';
 export const APPROVAL_CACHE_TTL_MS = 15 * 60_000;
+// Year balance: a closed month moves only when a reviewer reopens it; an
+// open one rides the approval TTL and is dropped by a push into it.
+export const BALANCE_CACHE_FILE = 'balance-cache.json';
+export const BALANCE_CLOSED_TTL_MS = 24 * 3_600_000;
 // A timesheet can be changed only while OPEN or sent back (REJECTED); any
 // other status (IN_REVIEW, APPROVED, …) closes the month here and in Tempo.
 export const EDITABLE_APPROVAL_STATUSES: readonly string[] = ['OPEN', 'REJECTED'];

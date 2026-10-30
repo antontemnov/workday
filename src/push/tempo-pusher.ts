@@ -5,6 +5,7 @@ import { buildReport, getDefaultToDate } from './report-builder.js';
 import { getAccountId, resolveIssueIds } from './jira-client.js';
 import { TempoClient, tempoRefusalReason } from './tempo-client.js';
 import { closedMonthMessage, closedMonthStatus, invalidateApprovalCache } from './tempo-approvals.js';
+import { invalidateBalanceMonths } from './tempo-balance.js';
 import { loadPushLog, savePushLog, pushLogKey, loadTombstones, removeTombstonesByWorklogIds } from './push-log.js';
 import { acquirePushLock } from './push-lock.js';
 import { fetchMonthSnapshot, getSnapshotPath } from './tempo-snapshot.js';
@@ -375,6 +376,7 @@ async function runCommitPush(options: RunPushOptions): Promise<PushResponse> {
   let adoptedAfter: AdoptedEntry[] = [];
   if (result.posted > 0 || result.updated > 0 || result.deleted > 0) {
     invalidateApprovalCache();
+    invalidateBalanceMonths(from, to);
     adoptedAfter = await resyncAfterPush(options, accountId);
   }
 

@@ -640,6 +640,26 @@ export interface TempoApprovalResponse {
   readonly fromCache: boolean;
 }
 
+// A month of the year balance, Tempo's numbers. A closed month counts as it
+// was submitted: Tempo recounts a past norm from today's holiday scheme.
+export interface TempoBalanceMonth {
+  readonly month: string;                   // YYYY-MM
+  readonly statusKey: string | null;
+  readonly requiredSeconds: number;
+  readonly timeSpentSeconds: number;
+}
+
+// The year's months before the current one (daemon >= 0.55.0); the current
+// month is the tab's own gap.
+export interface TempoBalanceResponse {
+  readonly available: boolean;
+  readonly reason?: TempoMetaUnavailableReason;
+  readonly year: number;
+  readonly months: readonly TempoBalanceMonth[];
+  readonly balanceSeconds: number;          // Σ (timeSpent − required)
+  readonly fromCache: boolean;
+}
+
 // ─── Push to Tempo ───────────────────────────────────────────────────────
 
 export type PushActionType = 'create' | 'update' | 'delete' | 'skip' | 'error';

@@ -3,8 +3,9 @@
  * what blocks a push (conflicts, then rows new from Tempo), the badge counts
  * UNPUSHED days, a live today turns Push into a choice, the push range
  * follows the choice, a read of Tempo that fails says so, a refusal stays
- * with its day until the day goes out, the gap counts closed days only, and
- * the day rows follow the read-only rules (today, a closed month).
+ * with its day until the day goes out, the gap counts closed days and today
+ * once pushed, the year adds the months before, and the day rows follow the
+ * read-only rules (today, a closed month).
  *
  * The component runs headless on a fake API and a fixed clock (25 Sep 2026);
  * the template is not rendered — the cards (seek) are out of scope here.
@@ -31,8 +32,8 @@ const { TimesheetsViewComponent } = await import('../../tray-app/src/app/views/t
 const { PushStateService } = await import('../../tray-app/src/app/services/push-state.service');
 const { MonthDayStatus, MonthSyncState, ConflictKind, ConflictField } = await import('../../tray-app/src/app/models/workday.models');
 import type {
-  ApiResponse, EntryConflict, MonthDaySummary, MonthDayTask, MonthResponse, PushResponse, TempoApprovalResponse, TempoScheduleResponse,
-  TempoSyncResponse,
+  ApiResponse, EntryConflict, MonthDaySummary, MonthDayTask, MonthResponse, PushResponse, TempoApprovalResponse, TempoBalanceResponse,
+  TempoScheduleResponse, TempoSyncResponse,
 } from '../../tray-app/src/app/models/workday.models';
 import type { SheetAction } from '../../tray-app/src/app/views/timesheets-view/timesheets-view.component';
 
@@ -98,6 +99,11 @@ function schedule(): TempoScheduleResponse {
   return { available: true, days, requiredSecondsTotal: 0, fromCache: true } as TempoScheduleResponse;
 }
 
+const balance = (hours: number, months = 8): TempoBalanceResponse => ({
+  available: true, year: 2026, balanceSeconds: hours * 3600, fromCache: true,
+  months: Array.from({ length: months }, (_, i) => ({ month: `2026-0${i + 1}`, statusKey: 'APPROVED', requiredSeconds: 0, timeSpentSeconds: 0 })),
+});
+
 const approval = (statusKey: string, closed?: boolean): TempoApprovalResponse => ({
   available: true, period: null, statusKey, ...(closed !== undefined ? { closed } : {}),
   requiredSeconds: null, timeSpentSeconds: null, canSubmit: false, fromCache: true,
@@ -130,6 +136,7 @@ function harness(month: MonthResponse = september()) {
       fake.approvalAsks.push(fresh === true);
       return fake.approvalAnswer;
     },
+    getTempoBalance: async () => ({ ok: true, data: balance(0, 0) }),
     syncTempo: async () => fake.syncAnswer,
     pushToTempo: async (from: string, to: string, _force: boolean, stopTracking: boolean) => {
       fake.pushes.push({ from, to, stopTracking });
@@ -401,14 +408,36 @@ await test('the status tag asks Tempo now: sent back → the month opens', async
 
 console.log('\nHeader');
 
-await test('the gap: closed days only, a word only when there is one', () => {
-  // 18 working days up to 24 Sep × 8h required; logged 8h each → on schedule.
+await test('the gap: closed days, today once pushed; a word only when there is one', () => {
+  // 19 working days up to 25 Sep × 8h required; logged 8h each → on schedule.
   const h = harness();
   assert.equal(h.comp.gap, null);
-  h.comp.monthData = september({ '2026-09-24': { hours: 1 }, '2026-09-25': { hours: 0 } });
-  assert.deepEqual(h.comp.gap, { amount: '7h 00m', word: 'behind' });
+  h.comp.monthData = september({ '2026-09-24': { hours: 1 }, '2026-09-25': { hours: 2, state: MonthSyncState.Tracking } });
+  assert.deepEqual(h.comp.gap, { amount: '7h 00m', word: 'behind' }, 'today still written stays out');
+  h.comp.monthData = september({ '2026-09-24': { hours: 1 }, '2026-09-25': { hours: 6 } });
+  assert.deepEqual(h.comp.gap, { amount: '9h 00m', word: 'behind' }, 'today pushed counts, as in Tempo');
   h.comp.monthData = september({ '2026-09-24': { hours: 11, state: MonthSyncState.Unpushed } });
   assert.deepEqual(h.comp.gap, { amount: '3h 00m', word: 'ahead' });
+});
+
+await test('the year: the months before plus this month\'s gap, on the current month only', () => {
+  const h = harness(september({ '2026-09-24': { hours: 1 } }));
+  assert.equal(h.comp.yearGap, null, 'no balance yet');
+  h.comp.balance = balance(112.5);
+  assert.deepEqual(h.comp.yearGap, { amount: '105h 30m', word: 'ahead' });
+  h.comp.monthData = september();
+  assert.deepEqual(h.comp.yearGap, { amount: '112h 30m', word: 'ahead' }, 'said although the month is on schedule');
+  h.comp.balance = balance(-10);
+  assert.deepEqual(h.comp.yearGap, { amount: '10h 00m', word: 'behind' });
+  h.comp.balance = balance(5, 0);
+  assert.equal(h.comp.yearGap, null, 'no month before this one → the month\'s gap says it all');
+  h.comp.balance = { ...balance(5), available: false };
+  assert.equal(h.comp.yearGap, null);
+  h.comp.balance = { ...balance(5), year: 2025 };
+  assert.equal(h.comp.yearGap, null, 'another year\'s balance');
+  h.comp.balance = balance(5);
+  h.comp.month = 8;
+  assert.equal(h.comp.yearGap, null, 'a past month says no year');
 });
 
 await test('weeks newest first, labelled "21 — 27"; no future days', () => {

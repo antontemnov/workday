@@ -23,6 +23,7 @@ import {
   ScheduleDay,
   TempoScheduleResponse,
   TempoApprovalResponse,
+  TempoBalanceResponse,
   TempoSyncResponse,
   TempoImportRequest,
   TempoImportResponse,
@@ -805,6 +806,31 @@ export class MockWorkdayApiService extends WorkdayApiService {
         requiredSeconds: null,
         timeSpentSeconds: null,
         canSubmit: false,
+        fromCache: true,
+      },
+    };
+  }
+
+  async getTempoBalance(year: number): Promise<ApiResponse<TempoBalanceResponse>> {
+    await delay(150);
+    const [ty, tm] = this.today.split('-').map(Number);
+    const last = year < ty ? 12 : year === ty ? tm - 1 : 0;
+    const months = Array.from({ length: last }, (_, i) => {
+      const required = buildMockSchedule(year, i + 1).reduce((s, d) => s + d.requiredSeconds, 0);
+      return {
+        month: `${year}-${String(i + 1).padStart(2, '0')}`,
+        statusKey: 'APPROVED',
+        requiredSeconds: required,
+        timeSpentSeconds: required + (i % 3) * 4 * 3600,
+      };
+    });
+    return {
+      ok: true,
+      data: {
+        available: true,
+        year,
+        months,
+        balanceSeconds: months.reduce((s, m) => s + m.timeSpentSeconds - m.requiredSeconds, 0),
         fromCache: true,
       },
     };

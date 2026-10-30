@@ -167,7 +167,7 @@
   &:hover { color: #cdd6f4; background: rgba(205, 214, 244, 0.06); }
 }
 
-// The total and, hung right under it out of flow, the gap.
+// The total and, hung right under it out of flow, the gap (and the year's).
 .totals {
   position: relative;
   white-space: nowrap;
@@ -190,6 +190,8 @@
   color: #7f849c;
 
   &.err { color: #f38ba8; }
+  // The year's line under the month's.
+  &.second { margin-top: 17px; }
 }
 
 // Behind / ahead — only a gap is said; the number carries the colour, the

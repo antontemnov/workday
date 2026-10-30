@@ -25,6 +25,7 @@ import {
   ScheduleDay,
   SessionDetail,
   TempoApprovalResponse,
+  TempoBalanceResponse,
   TempoResolveResponse,
   TempoScheduleResponse,
 } from '../../models/workday.models';
@@ -140,6 +141,8 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
   monthData: MonthResponse | null = null;
   schedule: TempoScheduleResponse | null = null;
   approval: TempoApprovalResponse | null = null;
+  // The year's months before this one — loaded on the current month only.
+  balance: TempoBalanceResponse | null = null;
   approvalRefreshing = false;
   loading = true;
   error: string | null = null;
@@ -214,6 +217,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
       if (!this.monthData || this.error) { void this.load(false); return; }
       if (this.monthContainsToday) void this.reloadMonthQuiet();
       if (this.schedule === null) void this.loadSchedule(this.loadSeq);
+      if (this.monthContainsToday && !this.balance?.available) void this.loadBalance(this.loadSeq);
       void this.loadApproval(this.loadSeq);
       void this.autoSync();
     }, 30_000);
@@ -234,6 +238,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     if (showLoading) this.loading = true;
     void this.loadSchedule(seq);
     void this.loadApproval(seq);
+    if (this.monthContainsToday) void this.loadBalance(seq);
     const res = await this.api.getMonth(this.year, this.month);
     if (seq !== this.loadSeq) return;
     if (res.ok && res.data) {
@@ -270,6 +275,14 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     const res = await this.api.getTempoApproval(this.year, this.month);
     if (seq !== this.loadSeq || !res.ok || !res.data) return;
     this.approval = res.data;
+  }
+
+  // A failed call keeps the last known balance; a month switch keeps it too
+  // (it is the year's), the current month asks again on return.
+  private async loadBalance(seq: number): Promise<void> {
+    const res = await this.api.getTempoBalance(this.year);
+    if (seq !== this.loadSeq || !res.ok || !res.data) return;
+    this.balance = res.data;
   }
 
   // The status tag: ask Tempo now, past the daemon's cache. The tag breathes
@@ -352,10 +365,26 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     return fmtHm(days.reduce((sum, d) => sum + this.dayMinutes(d.date, d.reportedSeconds), 0));
   }
 
-  // Only a gap is said, never "on schedule". Closed days count; today only
-  // once Tempo holds it (pushed) — the number then matches Tempo's, while a
-  // day still being written stays out.
+  // Only a gap is said, never "on schedule".
   get gap(): Gap | null {
+    const diff = this.monthDiffMinutes();
+    return diff === null ? null : toGap(diff);
+  }
+
+  // The year as Tempo sums it: the months before this one as settled there,
+  // plus this month's gap. Said on the current month only, once a month
+  // before it counts.
+  get yearGap(): Gap | null {
+    const b = this.balance;
+    if (!this.monthContainsToday || !b?.available || b.year !== this.year || b.months.length === 0) return null;
+    const month = this.monthDiffMinutes();
+    return month === null ? null : toGap(b.balanceSeconds / 60 + month);
+  }
+
+  // Logged − required, minutes. Closed days count; today only once Tempo
+  // holds it (pushed) — the number then matches Tempo's, while a day still
+  // being written stays out.
+  private monthDiffMinutes(): number | null {
     const m = this.monthData;
     const s = this.schedule;
     if (!m || !s?.available) return null;
@@ -365,9 +394,7 @@ export class TimesheetsViewComponent implements OnInit, OnDestroy {
     const counted = (date: string): boolean => date < today || (todayPushed && date === today);
     const required = s.days.filter(d => counted(d.date)).reduce((sum, d) => sum + d.requiredSeconds, 0) / 60;
     const logged = m.days.filter(d => counted(d.date)).reduce((sum, d) => sum + this.dayMinutes(d.date, d.reportedSeconds), 0);
-    const diff = Math.round(logged - required);
-    if (diff === 0) return null;
-    return { amount: fmtHm(Math.abs(diff)), word: diff < 0 ? 'behind' : 'ahead' };
+    return logged - required;
   }
 
   // In-flight flag lives in a root service — see PushStateService.
@@ -974,6 +1001,12 @@ function fmtHm(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+function toGap(diffMinutes: number): Gap | null {
+  const diff = Math.round(diffMinutes);
+  if (diff === 0) return null;
+  return { amount: fmtHm(Math.abs(diff)), word: diff < 0 ? 'behind' : 'ahead' };
 }
 
 // The accruing session's temperature — the card's pill wears the same.

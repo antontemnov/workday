@@ -1536,6 +1536,34 @@ async function handleApproval(args: string[]): Promise<void> {
   if (data.canSubmit) console.log('Submit action is available for this period.');
 }
 
+async function handleBalance(args: string[]): Promise<void> {
+  const config = loadConfig();
+  const today = computeWorkingDate(Date.now(), config.boundaryHour, config.timezone);
+  const year = args[0] ? Number(args[0]) : Number(today.slice(0, 4));
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) { console.log('Usage: workday balance [YYYY]'); return; }
+
+  const secrets = tryLoadSecrets();
+  if (!secrets) { console.log('Secrets not configured — run "workday init".'); return; }
+
+  const { resolveYearBalance } = await import('./push/tempo-balance.js');
+  const data = await resolveYearBalance(year, today, secrets);
+  if (!data.available) {
+    const hint = data.reason === 'scope' ? ' — Tempo token needs the approvals:view scope' : '';
+    console.log(`Balance unavailable (${data.reason})${hint}`);
+    return;
+  }
+  if (data.months.length === 0) { console.log(`Balance ${year}: no settled months yet`); return; }
+
+  const signed = (seconds: number): string => `${seconds >= 0 ? '+' : '-'}${formatReportHours(Math.abs(seconds))}`;
+  console.log(`Balance ${year}, months before the current one (Tempo; closed months as submitted)${data.fromCache ? '  [cache]' : ''}`);
+  for (const m of data.months) {
+    const diff = m.timeSpentSeconds - m.requiredSeconds;
+    console.log(`  ${m.month}  ${(m.statusKey ?? '—').padEnd(10)} ${formatReportHours(m.timeSpentSeconds).padStart(8)} / ${formatReportHours(m.requiredSeconds).padEnd(8)} ${signed(diff).padStart(9)}`);
+  }
+  const note = year === Number(today.slice(0, 4)) ? ' (the current month adds on top — see "workday month")' : '';
+  console.log(`Total: ${signed(data.balanceSeconds)}${note}`);
+}
+
 // ─── Notifications ───────────────────────────────────────────────────────
 
 async function handleNotifications(args: string[]): Promise<void> {
@@ -1929,6 +1957,9 @@ async function main(): Promise<void> {
     case 'approval':
       await handleApproval(args.slice(1));
       break;
+    case 'balance':
+      await handleBalance(args.slice(1));
+      break;
     case 'notifications':
       await handleNotifications(args.slice(1));
       break;
@@ -2005,6 +2036,7 @@ Usage:
   workday tempo-resolve <date> <entryId> <mine|tempo>  Resolve one conflict: keep ours (the push overwrites) or take Tempo's
   workday schedule [YYYY-MM]                           Tempo work schedule: required hours, holidays
   workday approval [YYYY-MM] [--fresh]                 Tempo timesheet approval status (--fresh skips the cache)
+  workday balance [YYYY]                               Year balance: Tempo's ahead/behind over the months before this one
   workday notifications                                Active notifications (what the tray would toast)
   workday notifications test [minutes]                 Inject a test notification (delivery pipeline check)
   workday notifications ack <id> <shown|opened|hidden> Acknowledge a notification

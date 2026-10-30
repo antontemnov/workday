@@ -34,6 +34,7 @@ import {
   ResolveSide,
   TempoScheduleResponse,
   TempoApprovalResponse,
+  TempoBalanceResponse,
   TempoSyncResponse,
   TempoImportRequest,
   TempoImportResponse,
@@ -142,6 +143,8 @@ export abstract class WorkdayApiService {
   abstract getTempoSchedule(year: number, month: number): Promise<ApiResponse<TempoScheduleResponse>>;
   // fresh — skip the daemon's cache and ask Tempo now.
   abstract getTempoApproval(year: number, month: number, fresh?: boolean): Promise<ApiResponse<TempoApprovalResponse>>;
+  // The year's months before the current one as Tempo sums them.
+  abstract getTempoBalance(year: number): Promise<ApiResponse<TempoBalanceResponse>>;
   // Read the month from Tempo — a sync: worklogs created there without us are
   // adopted (listed in the answer), changes made only there are taken. A
   // month closed in Tempo is skipped.

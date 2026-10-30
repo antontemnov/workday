@@ -56,6 +56,7 @@ workday tempo-sync [YYYY-MM]           Refresh the month's Tempo snapshot (mirro
 workday tempo-import [YYYY-MM]         Adopt Tempo-only worklogs as local entries
 workday schedule [YYYY-MM]             Tempo work schedule (required hours, holidays)
 workday approval [YYYY-MM] [--fresh]   Tempo timesheet approval status (--fresh skips the cache)
+workday balance [YYYY]                 Year balance: Tempo's ahead/behind over the months before this one
 workday notifications                  Active desktop notifications (tray toasts)
 workday notifications test [minutes]   Inject a test notification (pipeline check)
 workday notifications ack <id> <act>   Acknowledge (shown|opened|hidden)

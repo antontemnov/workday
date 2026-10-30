@@ -43,6 +43,7 @@ import { syncTempoMonth, type LiveToday, type TempoEntryValues } from './push/te
 import { resolveConflict } from './push/tempo-resolve.js';
 import { resolveMonthSchedule, scheduleUnavailable } from './push/tempo-schedule.js';
 import { resolveMonthApproval, approvalUnavailable, dayEditRefusal } from './push/tempo-approvals.js';
+import { resolveYearBalance, balanceUnavailable } from './push/tempo-balance.js';
 import {
   computeWorkingDate,
   buildPatchedConfig,
@@ -121,6 +122,7 @@ import type {
   PushResponse,
   TempoScheduleResponse,
   TempoApprovalResponse,
+  TempoBalanceResponse,
   TempoSyncResponse,
   TempoImportResponse,
   TempoResolveResponse,
@@ -404,6 +406,9 @@ export class HttpServer {
       }
       if (method === 'GET' && path === '/api/tempo/approval') {
         return this.sendJson(res, 200, await this.handleTempoApproval(url));
+      }
+      if (method === 'GET' && path === '/api/tempo/balance') {
+        return this.sendJson(res, 200, await this.handleTempoBalance(url));
       }
       if (method === 'POST' && path === '/api/stop') {
         const response: ApiResponse<StopResponse> = { ok: true, data: { message: 'Daemon stopping...' } };
@@ -1979,6 +1984,19 @@ export class HttpServer {
     try {
       const fresh = url.searchParams.get('fresh') === '1';
       return { ok: true, data: await resolveMonthApproval(parsed.year, parsed.month, secrets, fresh ? 0 : undefined) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async handleTempoBalance(url: URL): Promise<ApiResponse<TempoBalanceResponse>> {
+    const parsed = this.resolveYearMonth(url);
+    if ('error' in parsed) return { ok: false, error: parsed.error };
+
+    const secrets = tryLoadSecrets();
+    if (!secrets) return { ok: true, data: balanceUnavailable(parsed.year, 'no-token') };
+    try {
+      return { ok: true, data: await resolveYearBalance(parsed.year, this.deps.getCurrentDate(), secrets) };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
