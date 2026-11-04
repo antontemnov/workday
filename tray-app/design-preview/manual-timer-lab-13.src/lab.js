@@ -207,7 +207,7 @@
     const r = running();
     if (r) haltRun(r, 'pause');
     const t = { id: ++S.seq, task: null, title: '', desc: '', firstAt: simNow, acc: 0, runSince: simNow, state: 'run' };
-    S.timers.unshift(t);
+    S.timers.push(t);
     log(`▶ таймер #${t.id} пошёл${r ? `, #${r.id} на паузе` : ''}${yieldSessions()}`);
     render();
     return t;
@@ -224,7 +224,6 @@
     if (t.firstAt == null) t.firstAt = simNow;
     t.state = 'run';
     t.runSince = simNow;
-    S.timers = [t, ...S.timers.filter((x) => x !== t)];
     log(`▶ таймер ${label(t)} ${fresh ? 'пошёл' : 'снова считает'}${r && r !== t ? `, #${r.id} на паузе` : ''}${yieldSessions()}`);
     render();
   }
@@ -268,11 +267,7 @@
   const ADD = '<div class="ctx-sep"></div><button type="button" class="tm-add" data-a="add" data-id="0"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.4v7.2M2.4 6h7.2"/></svg>New timer</button>';
   const showAdd = () => !(S.timers.length === 1 && emptyReady(S.timers[0]));
   const PLAY = '<svg class="tm-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.7l5.2 3.3L3 8.3z"/></svg>';
-  const ordered = () => {
-    const r = running();
-    const rest = S.timers.filter((t) => t !== r);
-    return [...(r ? [r] : []), ...rest.filter((t) => t.state !== 'ready'), ...rest.filter((t) => t.state === 'ready')];
-  };
+  const ordered = () => [...S.timers];
   function materialize() {
     const t = { id: ++S.seq, task: null, title: '', desc: '', firstAt: null, acc: 0, runSince: null, state: 'ready' };
     S.timers.push(t);
@@ -305,7 +300,6 @@
   }
 
   const icb = (a, id, icon, extra = '') => `<button type="button" class="tm-ic${extra}" data-a="${a}" data-id="${id}">${icon}</button>`;
-  const GAP = '<span class="tm-ic-gap"></span>';
   function rowHTML(t, isCur, lone = false) {
     const st = t.state;
     const key = t.task
@@ -314,23 +308,22 @@
     const desc = edit && edit.kind === 'desc' && edit.id === t.id
       ? `<input class="tm-in" data-in="desc" value="${esc(t.desc)}" placeholder="what is it?">`
       : `<span class="tm-desc${t.desc ? '' : ' ph'}" data-a="desc" data-id="${t.id}">${t.desc ? esc(t.desc) : 'what is it?'}</span>`;
-    let right = '';
+    let time = '';
     if (st !== 'ready') {
-      right = edit && edit.kind === 'time' && edit.id === t.id
-        ? `<input class="tm-tin" data-in="time" value="${Math.round(elapsed(t) / 60000)}m">`
-        : `<span class="tm-time" data-a="time" data-id="${t.id}" data-t="${t.id}">${fmtRun(elapsed(t))}</span>`;
-      right += `<span class="tm-word">${st === 'yield' ? 'session' : ''}</span>`;
+      time = (st === 'yield' ? '<span class="tm-word">session</span>' : '')
+        + (edit && edit.kind === 'time' && edit.id === t.id
+          ? `<input class="tm-tin" data-in="time" value="${Math.round(elapsed(t) / 60000)}m">`
+          : `<span class="tm-time" data-a="time" data-id="${t.id}" data-t="${t.id}">${fmtRun(elapsed(t))}</span>`);
     }
-    const icons =
-      (lone ? GAP : icb('pin', t.id, IC.pin, pinnedOf(t) ? ' on' : ''))
-      + (st === 'ready' ? GAP : icb('stop', t.id, IC.stop))
-      + (lone ? GAP : icb('x', t.id, IC.x));
+    const ctl = lone ? '' :
+      icb('pin', t.id, IC.pin, pinnedOf(t) ? ' on' : '')
+      + (st === 'ready' ? '' : icb('stop', t.id, IC.stop))
+      + icb('x', t.id, IC.x);
     const g = st === 'ready' ? PLAY : glyph(st);
     return `<div class="tm-row ${st}">
       <button type="button" class="tm-g" data-a="toggle" data-id="${t.id}">${g}</button>
-      <div class="tm-mid"><div class="tm-l1">${key}</div><div class="tm-l2">${desc}</div></div>
-      <div class="tm-right">${right}</div>
-      <div class="tm-ics">${icons}</div></div>`;
+      <div class="tm-l1">${key}</div><div class="tm-r1">${time}</div>
+      <div class="tm-l2">${desc}</div><div class="tm-r2">${ctl}</div></div>`;
   }
   function buildMenu() {
     if (!menuEl) return;
@@ -745,7 +738,7 @@
       const b = mkT({ task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', acc: 12 * 60 * 1000, state: 'run' });
       b.runSince = simNow;
       const c = mkT({ task: 'ATL-7020', title: 'Organization tree: drag-and-drop reorder', desc: 'ревью PR коллеги', state: 'ready', firstAt: null });
-      S.timers = [b, a, c]; setSession('paused');
+      S.timers = [a, b, c]; setSession('paused');
       log('сцена: идёт #2, #1 на паузе, #3 — заготовка ждёт ▶');
     }
     if (name === 'yield') {
@@ -823,7 +816,7 @@
       <div class="st-sub">Меню — только карточки</div>
       <div class="st-row">
         ${mCell([F({ id: 900, state: 'ready' })], 'таймеров нет — меню = одна готовая карточка: ▶ старт сразу, task? — тикет и ждать ▶', 0, false)}
-        ${mCell([F({ id: 901, task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ id: 902, state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15) }), F({ id: 903, state: 'ready', task: 'ATL-7020', title: 'Organization tree: drag-and-drop reorder', desc: 'ревью PR коллеги' })], 'идёт + на паузе + заготовка; булавка на каждой карточке (горит = на виджете); внизу ＋ New timer', 901)}
+        ${mCell([F({ id: 902, state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15) }), F({ id: 901, task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ id: 903, state: 'ready', task: 'ATL-7020', title: 'Organization tree: drag-and-drop reorder', desc: 'ревью PR коллеги' })], 'порядок = порядок добавления, старт его не меняет; время справа вверху, 📌 ■ ✕ справа внизу (как Deny · Log… у suggestion)', 901)}
         ${mCell([F({ id: 906, state: 'yield', desc: 'разбор 500-х на checkout', fixedMs: m(23, 40) })], 'перехват сессией — красные полоски + session; вернуть — ⏸ в ▶ кликом', 906)}
         ${mCell([F({ id: 907, task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ id: 908, state: 'ready' })], '＋ New timer → новая заготовка, курсор сразу в описании; не заполнил — исчезнет при закрытии меню', 907)}
       </div>
