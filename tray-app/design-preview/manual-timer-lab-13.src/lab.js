@@ -37,9 +37,11 @@
   const glyph = (st) => (st === 'run' ? SW('glow') : PZ);
 
   // ── state ────────────────────────────────────────────────────────
-  const S = { mode: 'yield', pinned: true, timers: [], drafts: [], session: 'tracking', seq: 0 };
+  const S = { mode: 'yield', timers: [], drafts: [], session: 'tracking', seq: 0 };
+  // Widget pin per timer: a started one is pinned until unpinned, a ready one only when pinned.
+  const pinnedOf = (t) => t.pinned ?? t.state !== 'ready';
   const running = () => S.timers.find((t) => t.state === 'run');
-  const counts = (t) => t.state !== 'ready' && !t.struck;
+  const counts = (t) => t.state !== 'ready';
   const current = () => running() || S.timers.find(counts);
   const liveCount = () => S.timers.filter(counts).length;
   const byId = (id) => S.timers.find((t) => t.id === id);
@@ -235,35 +237,11 @@
     log(`■ таймер ${label(t)} → черновик ${fmtMin(ms)} в ленте${back}`);
     if (!quiet) render();
   }
-  // ✕: a ready row goes at once; a row with time is struck, Undo waits in
-  // its time slot (the session-delete grammar), then it is gone.
-  const UNDO_MS = 5000;
   function removeT(t) {
-    if (t.state === 'ready') {
-      S.timers = S.timers.filter((x) => x !== t);
-      log(`✕ заготовка ${label(t)} убрана`);
-      render();
-      return;
-    }
-    const prev = t.state;
-    haltRun(t, 'pause');
-    t.struck = { prev };
-    log(`✕ таймер ${label(t)} зачёркнут — Undo в слоте времени${sessionsBack()}`);
+    const had = t.state !== 'ready';
+    S.timers = S.timers.filter((x) => x !== t);
+    log(had ? `✕ таймер ${label(t)} удалён вместе с ${fmtRun(elapsed(t))}${sessionsBack()}` : `✕ заготовка ${label(t)} убрана`);
     render();
-    setTimeout(() => {
-      if (!t.struck || !S.timers.includes(t)) return;
-      S.timers = S.timers.filter((x) => x !== t);
-      log(`таймер ${label(t)} удалён вместе с ${fmtRun(elapsed(t))}`);
-      render();
-    }, UNDO_MS);
-  }
-  function undoRemove(t) {
-    if (!t || !t.struck) return;
-    const { prev } = t.struck;
-    delete t.struck;
-    log(`↶ таймер ${label(t)} вернулся`);
-    if (prev === 'run') resumeT(t);
-    else { t.state = prev; render(); }
   }
   function gitActivity() {
     const r = running();
@@ -281,11 +259,14 @@
   }
 
   // ── the menu: timer cards only ───────────────────────────────────
-  // One grammar for ready / running / paused rows. The last row is always an
-  // empty ready one: its ▶ starts a timer, its task? picks a ticket and waits.
+  // One grammar for ready / running / paused rows. No timers — one ready
+  // card is the whole menu; otherwise ＋ New timer adds one. A ready card left
+  // empty is gone when the menu closes.
   let menuEl = null;
   let edit = null; // { kind: 'desc' | 'time', id }
-  const BLANK = { id: 0, task: null, title: '', desc: '', state: 'ready', acc: 0 };
+  const emptyReady = (t) => t.state === 'ready' && !t.task && !t.desc;
+  const ADD = '<div class="ctx-sep"></div><button type="button" class="tm-add" data-a="add" data-id="0"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.4v7.2M2.4 6h7.2"/></svg>New timer</button>';
+  const showAdd = () => !(S.timers.length === 1 && emptyReady(S.timers[0]));
   const PLAY = '<svg class="tm-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.7l5.2 3.3L3 8.3z"/></svg>';
   const ordered = () => {
     const r = running();
@@ -309,6 +290,7 @@
   function closeMenu() {
     if (!menuEl) return;
     commitEdit();
+    S.timers = S.timers.filter((t) => !emptyReady(t));
     menuEl.remove();
     menuEl = null;
     edit = null;
@@ -324,8 +306,7 @@
 
   const icb = (a, id, icon, extra = '') => `<button type="button" class="tm-ic${extra}" data-a="${a}" data-id="${id}">${icon}</button>`;
   const GAP = '<span class="tm-ic-gap"></span>';
-  function rowHTML(t, isCur) {
-    const blank = t.id === 0;
+  function rowHTML(t, isCur, lone = false) {
     const st = t.state;
     const key = t.task
       ? `<span class="tm-key key" data-a="pick" data-id="${t.id}">${SW()}${esc(t.task)}</span><span class="tm-ttl">${esc(t.title)}</span>`
@@ -334,29 +315,29 @@
       ? `<input class="tm-in" data-in="desc" value="${esc(t.desc)}" placeholder="what is it?">`
       : `<span class="tm-desc${t.desc ? '' : ' ph'}" data-a="desc" data-id="${t.id}">${t.desc ? esc(t.desc) : 'what is it?'}</span>`;
     let right = '';
-    if (t.struck) right = `<button type="button" class="tm-undo" data-a="undo" data-id="${t.id}">Undo</button>`;
-    else if (st !== 'ready') {
+    if (st !== 'ready') {
       right = edit && edit.kind === 'time' && edit.id === t.id
         ? `<input class="tm-tin" data-in="time" value="${Math.round(elapsed(t) / 60000)}m">`
         : `<span class="tm-time" data-a="time" data-id="${t.id}" data-t="${t.id}">${fmtRun(elapsed(t))}</span>`;
       right += `<span class="tm-word">${st === 'yield' ? 'session' : ''}</span>`;
     }
-    const icons = blank || t.struck ? '' :
-      (isCur ? icb('pin', t.id, IC.pin, S.pinned ? ' on' : '') : GAP)
+    const icons =
+      (lone ? GAP : icb('pin', t.id, IC.pin, pinnedOf(t) ? ' on' : ''))
       + (st === 'ready' ? GAP : icb('stop', t.id, IC.stop))
-      + icb('x', t.id, IC.x);
+      + (lone ? GAP : icb('x', t.id, IC.x));
     const g = st === 'ready' ? PLAY : glyph(st);
-    return `<div class="tm-row ${st}${blank ? ' blank' : ''}${t.struck ? ' struck' : ''}">
-      <button type="button" class="tm-g" data-a="toggle" data-id="${t.id}"${t.struck ? ' disabled' : ''}>${g}</button>
+    return `<div class="tm-row ${st}">
+      <button type="button" class="tm-g" data-a="toggle" data-id="${t.id}">${g}</button>
       <div class="tm-mid"><div class="tm-l1">${key}</div><div class="tm-l2">${desc}</div></div>
       <div class="tm-right">${right}</div>
       <div class="tm-ics">${icons}</div></div>`;
   }
-  const menuRows = () => { const cur = current(); return ordered().map((t) => rowHTML(t, t === cur)).join('') + rowHTML(BLANK, false); };
-
   function buildMenu() {
     if (!menuEl) return;
-    menuEl.innerHTML = `<div class="tm-list">${menuRows()}</div>`;
+    if (!S.timers.length) materialize();
+    const cur = current();
+    const lone = !showAdd();
+    menuEl.innerHTML = `<div class="tm-list">${ordered().map((t) => rowHTML(t, t === cur, lone)).join('')}</div>${showAdd() ? ADD : ''}`;
     placeMenu();
     const inp = $('[data-in]', menuEl);
     if (inp) { inp.focus(); inp.select(); }
@@ -397,14 +378,19 @@
       return;
     }
     commitEdit();
+    if (a === 'add') {
+      const t = S.timers.find(emptyReady) || materialize();
+      edit = { kind: 'desc', id: t.id };
+      buildMenu();
+      return;
+    }
     const t = id ? byId(id) : null;
     switch (a) {
       case 'toggle': if (t) toggleT(t); else startNew(); break;
       case 'pick': closeMenu(); openCloud('pick', t ? { kind: 'timer', id } : { kind: 'blank' }); break;
       case 'stop': stopT(t); break;
       case 'x': removeT(t); break;
-      case 'undo': undoRemove(t); break;
-      case 'pin': S.pinned = !S.pinned; log(S.pinned ? '📌 виджет поверх всех окон' : 'булавка снята — таймер только в заголовке приложения'); render(); break;
+      case 'pin': t.pinned = !pinnedOf(t); log(t.pinned ? `📌 таймер ${label(t)} на виджете` : `булавка снята — таймер ${label(t)} только в приложении`); render(); break;
     }
   });
   document.addEventListener('keydown', (e) => {
@@ -627,32 +613,39 @@
     setTimeout(renderDrafts, 0);
   });
 
-  // ── the widget ───────────────────────────────────────────────────
-  const wPos = { x: 318, y: 36, w: 250, h: 46 };
-  function widgetInner(t, live) {
+  // ── the widget: one window, a stack of pinned cards ──────────────
+  // Several pins never mean several windows (each would be a WebView2).
+  const wPos = { x: 318, y: 36, w: 250, rowH: 46 };
+  const pinnedList = () => ordered().filter(pinnedOf);
+  function widgetRow(t, live) {
     const key = t.task ? `<span class="tw-key">${esc(t.task)}</span>` : '<span class="tw-key ask">task?</span>';
     const desc = t.state === 'yield'
       ? '<span class="tw-desc word">session</span>'
       : `<span class="tw-desc${t.desc ? '' : ' ph'}">${t.desc ? esc(t.desc) : 'what is it?'}</span>`;
-    return `<button type="button" class="tw-g" data-w="toggle">${glyph(t.state)}</button><div class="tw-mid">${key}${desc}</div><span class="tw-time"${live ? ` data-t="${t.id}"` : ''}>${fmtRun(elapsed(t))}</span>`;
+    const time = t.state === 'ready' ? '<span class="tw-time"></span>'
+      : `<span class="tw-time"${live ? ` data-t="${t.id}"` : ''}>${fmtRun(elapsed(t))}</span>`;
+    const g = t.state === 'ready' ? PLAY : glyph(t.state);
+    return `<div class="tw-row ${t.state}" data-wid="${t.id ?? ''}"><button type="button" class="tw-g" data-w="toggle">${g}</button>`
+      + `<div class="tw-mid">${key}${desc}</div>${time}<button type="button" class="tw-pin" data-w="unpin">${IC.pin}</button></div>`;
   }
-  function placeWidget() {
-    Object.assign(widget.style, { left: `${wPos.x}px`, top: `${wPos.y}px`, width: `${wPos.w}px`, height: `${wPos.h}px` });
+  const stackH = (n, rowH) => rowH * n + (n - 1);
+  function placeWidget(n = pinnedList().length) {
+    Object.assign(widget.style, { left: `${wPos.x}px`, top: `${wPos.y}px`, width: `${wPos.w}px`, height: `${stackH(n, wPos.rowH)}px` });
   }
   function renderWidget() {
-    const t = current();
-    const show = S.pinned && !!t;
-    widget.hidden = !show;
-    if (!show) return;
-    widget.className = `tm-widget ${t.state}`;
-    widget.innerHTML = `${widgetInner(t, true)}<button type="button" class="tw-pin" data-w="unpin">${IC.pin}</button><span class="tw-grip" data-w="grip"></span>`;
-    placeWidget();
+    const list = pinnedList();
+    widget.hidden = !list.length;
+    if (!list.length) return;
+    widget.className = `tm-widget${list.some((t) => t.state === 'run') ? ' run' : ''}`;
+    widget.innerHTML = list.map((t) => widgetRow(t, true)).join('') + '<span class="tw-grip" data-w="grip"></span>';
+    placeWidget(list.length);
   }
   widget.addEventListener('pointerdown', (e) => {
     const w = e.target.closest('[data-w]')?.dataset.w;
     if (w === 'toggle' || w === 'unpin') return;
     e.preventDefault();
     const grip = w === 'grip';
+    const n = pinnedList().length;
     const st = { cx: e.clientX, cy: e.clientY, ...wPos };
     let moved = false;
     widget.classList.add('dragging');
@@ -660,9 +653,9 @@
       const dx = ev.clientX - st.cx;
       const dy = ev.clientY - st.cy;
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      if (grip) { wPos.w = clamp(st.w + dx, 160, 480); wPos.h = clamp(st.h + dy, 34, 130); }
-      else { wPos.x = clamp(st.x + dx, 0, desk.clientWidth - wPos.w); wPos.y = clamp(st.y + dy, 0, desk.clientHeight - 40 - wPos.h); }
-      placeWidget();
+      if (grip) { wPos.w = clamp(st.w + dx, 170, 480); wPos.rowH = clamp(st.rowH + dy / n, 34, 130); }
+      else { wPos.x = clamp(st.x + dx, 0, desk.clientWidth - wPos.w); wPos.y = clamp(st.y + dy, 0, desk.clientHeight - 40 - stackH(n, wPos.rowH)); }
+      placeWidget(n);
     };
     const up = () => {
       window.removeEventListener('pointermove', mv);
@@ -675,8 +668,11 @@
   });
   widget.addEventListener('click', (e) => {
     const w = e.target.closest('[data-w]')?.dataset.w;
-    if (w === 'toggle') { const t = current(); if (t) toggleT(t); }
-    if (w === 'unpin') { S.pinned = false; log('виджет снят (Unpin) — таймер только в заголовке приложения'); render(); }
+    const row = e.target.closest('[data-wid]');
+    const t = row && byId(+row.dataset.wid);
+    if (!t) return;
+    if (w === 'toggle') toggleT(t);
+    if (w === 'unpin') { t.pinned = false; log(`булавка снята с виджета — таймер ${label(t)} только в приложении`); render(); }
   });
 
   // ── tray icon ────────────────────────────────────────────────────
@@ -727,7 +723,7 @@
 
   function reset() {
     closeMenu(); closeCloud(); closeBrowser();
-    S.timers = []; S.drafts = []; S.seq = 0; S.pinned = true; S.mode = 'yield';
+    S.timers = []; S.drafts = []; S.seq = 0; S.mode = 'yield';
     simNow = DAY0;
     nextKey = 7203;
     for (const c of $$('.fav.jira.mine', chips)) if (/^ATL-72\d\d$/.test($('.f-task', c).textContent)) c.remove();
@@ -765,7 +761,7 @@
       ];
       log('сцена: два черновика — без тикета (только Discard, тикет через task?) и с тикетом (Log…)');
     }
-    if (name === 'empty') log('сцена: пусто — циферблат тусклый, в меню одна готовая строка');
+    if (name === 'empty') log('сцена: пусто — циферблат тусклый, в меню одна готовая карточка');
     render();
   }
 
@@ -811,9 +807,9 @@
       return `<div class="st-cell"><div class="st-hdr">${h.outerHTML}</div><div class="st-cap">${cap}</div></div>`;
     };
     const F = (o) => ({ task: null, title: '', desc: '', state: 'run', acc: 0, ...o });
-    const mCell = (list, cap, curId) => `<div class="st-cell"><div class="st-menu"><div class="ctx-menu tm-menu static"><div class="tm-list">${list.map((t) => rowHTML(t, t.id === curId)).join('')}${rowHTML(BLANK, false)}</div></div></div><div class="st-cap">${cap}</div></div>`;
+    const mCell = (list, cap, curId, add = true) => `<div class="st-cell"><div class="st-menu"><div class="ctx-menu tm-menu static"><div class="tm-list">${list.map((t) => rowHTML(t, t.id === curId, !add)).join('')}</div>${add ? ADD : ''}</div></div><div class="st-cap">${cap}</div></div>`;
     const m = (mm, ss = 0) => (mm * 60 + ss) * 1000;
-    const wCell = (t, w, h, cap) => `<div class="st-cell"><div class="tm-widget static ${t.state}" style="width:${w}px;height:${h}px">${widgetInner(t, false)}</div><div class="st-cap">${cap}</div></div>`;
+    const wCell = (list, w, rowH, cap) => `<div class="st-cell"><div class="tm-widget static${list.some((t) => t.state === 'run') ? ' run' : ''}" style="width:${w}px;height:${stackH(list.length, rowH)}px">${list.map((t) => widgetRow(t, false)).join('')}</div><div class="st-cap">${cap}</div></div>`;
     const tCell = (eyes, clock, cap) => `<div class="st-cell"><span class="st-tray">${traySvg(eyes, clock, 52)}</span><span class="st-tray sm">${traySvg(eyes, clock, 16)}</span><div class="st-cap" style="max-width:150px">${cap}</div></div>`;
     host.innerHTML = `
       <div class="st-sub">Заголовок окна (T2)</div>
@@ -826,17 +822,19 @@
       </div>
       <div class="st-sub">Меню — только карточки</div>
       <div class="st-row">
-        ${mCell([], 'пусто — одна готовая строка: ▶ старт сразу, task? — тикет и ждать ▶')}
-        ${mCell([F({ id: 901, task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ id: 902, state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15) }), F({ id: 903, state: 'ready', task: 'ATL-7020', title: 'Organization tree: drag-and-drop reorder', desc: 'ревью PR коллеги' })], 'идёт + на паузе + заготовка; булавка только у текущей карточки', 901)}
-        ${mCell([F({ id: 904, task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ id: 905, state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15), struck: { prev: 'pause' } })], '✕ у строки со временем — зачёркнута, Undo в слоте времени', 904)}
+        ${mCell([F({ id: 900, state: 'ready' })], 'таймеров нет — меню = одна готовая карточка: ▶ старт сразу, task? — тикет и ждать ▶', 0, false)}
+        ${mCell([F({ id: 901, task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ id: 902, state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15) }), F({ id: 903, state: 'ready', task: 'ATL-7020', title: 'Organization tree: drag-and-drop reorder', desc: 'ревью PR коллеги' })], 'идёт + на паузе + заготовка; булавка на каждой карточке (горит = на виджете); внизу ＋ New timer', 901)}
         ${mCell([F({ id: 906, state: 'yield', desc: 'разбор 500-х на checkout', fixedMs: m(23, 40) })], 'перехват сессией — красные полоски + session; вернуть — ⏸ в ▶ кликом', 906)}
+        ${mCell([F({ id: 907, task: 'ATL-7014', title: 'Save pipeline drops middle names on import', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ id: 908, state: 'ready' })], '＋ New timer → новая заготовка, курсор сразу в описании; не заполнил — исчезнет при закрытии меню', 907)}
       </div>
       <div class="st-row">
-        ${wCell(F({ fixedMs: m(12, 8) }), 250, 46, 'виджет: идёт, без тикета')}
-        ${wCell(F({ task: 'ATL-7203', desc: 'Prod 500s on 3DS callback', fixedMs: m(65) }), 250, 46, 'с тикетом и описанием')}
-        ${wCell(F({ state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15) }), 250, 46, 'на паузе (рукой)')}
-        ${wCell(F({ state: 'yield', desc: 'разбор 500-х', fixedMs: m(23, 40) }), 250, 46, 'перехватила сессия — слово session; вернуть кликом ⏵')}
-        ${wCell(F({ task: 'ATL-7203', desc: 'Prod 500s on 3DS callback', fixedMs: m(65) }), 380, 82, 'растянут мышью — всё масштабируется')}
+        ${wCell([F({ fixedMs: m(12, 8) })], 250, 46, 'виджет: идёт, без тикета')}
+        ${wCell([F({ task: 'ATL-7203', desc: 'Prod 500s on 3DS callback', fixedMs: m(65) })], 250, 46, 'с тикетом и описанием')}
+        ${wCell([F({ state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15) })], 250, 46, 'на паузе (рукой)')}
+        ${wCell([F({ state: 'yield', desc: 'разбор 500-х', fixedMs: m(23, 40) })], 250, 46, 'перехватила сессия — слово session; вернуть кликом')}
+        ${wCell([F({ task: 'ATL-7014', desc: 'созвон с QA', fixedMs: m(12, 8) }), F({ state: 'pause', desc: 'разбор 500-х на checkout', fixedMs: m(47, 15) })], 250, 46, 'запинено два — одно окно, стопка; идущий подсвечен')}
+        ${wCell([F({ fixedMs: m(12, 8), desc: 'разбор 500-х' }), F({ state: 'ready', task: 'ATL-7020', desc: 'ревью PR коллеги' })], 250, 46, 'запинена заготовка — ▶ стартует прямо из виджета, приложение не нужно')}
+        ${wCell([F({ task: 'ATL-7203', desc: 'Prod 500s on 3DS callback', fixedMs: m(65) })], 380, 82, 'растянут мышью — всё масштабируется')}
       </div>
       <div class="st-row">
         ${tCell(false, null, 'ничего не идёт')}
