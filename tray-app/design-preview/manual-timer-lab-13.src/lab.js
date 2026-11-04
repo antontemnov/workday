@@ -35,6 +35,13 @@
     tag: '<svg viewBox="0 0 12 12"><path d="M1.8 6.2V2.2a.4.4 0 0 1 .4-.4h4l4.2 4.2-4.4 4.4z"/><circle cx="4.3" cy="4.3" r=".7"/></svg>',
   };
   const glyph = (st) => (st === 'run' ? SW('glow') : PZ);
+  // Card glyph = the session pill's words without the word: a lit ▶ runs, a red
+  // ⏸ is paused, an unlit ▶ is ready. Hovering the glyph shows its action.
+  const PLAY_LIT = '<svg class="tm-play lit" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.7l5.2 3.3L3 8.3z"/></svg>';
+  const PLAY_DIM = '<svg class="tm-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.7l5.2 3.3L3 8.3z"/></svg>';
+  const PLAY_AC = '<svg class="tm-play ac" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.7l5.2 3.3L3 8.3z"/></svg>';
+  const PAUSE_AC = '<svg class="tm-pause-ac" viewBox="0 0 10 10" aria-hidden="true"><rect x="2" y="1.6" width="2.3" height="6.8" rx=".7"/><rect x="5.7" y="1.6" width="2.3" height="6.8" rx=".7"/></svg>';
+  const glyphBtn = (st) => `<span class="g-st">${st === 'run' ? PLAY_LIT : st === 'ready' ? PLAY_DIM : PZ}</span><span class="g-ac">${st === 'run' ? PAUSE_AC : PLAY_AC}</span>`;
 
   // ── state ────────────────────────────────────────────────────────
   const S = { mode: 'yield', timers: [], drafts: [], session: 'tracking', seq: 0 };
@@ -319,7 +326,7 @@
       icb('pin', t.id, IC.pin, pinnedOf(t) ? ' on' : '')
       + (st === 'ready' ? '' : icb('stop', t.id, IC.stop))
       + icb('x', t.id, IC.x);
-    const g = st === 'ready' ? PLAY : glyph(st);
+    const g = glyphBtn(st);
     return `<div class="tm-row ${st}">
       <button type="button" class="tm-g" data-a="toggle" data-id="${t.id}">${g}</button>
       <div class="tm-l1">${key}</div><div class="tm-r1">${time}</div>
@@ -341,7 +348,6 @@
     const inp = menuEl && $('[data-in]', menuEl);
     const t = byId(edit.id);
     if (inp && t) applyInput(t, edit.kind, inp.value);
-    if (t && t.state === 'ready' && !t.task && !t.desc) S.timers = S.timers.filter((x) => x !== t);
     edit = null;
   }
   function applyInput(t, kind, value) {
@@ -378,9 +384,10 @@
       return;
     }
     const t = id ? byId(id) : null;
+    if (!t) { if (a === 'toggle') startNew(); else render(); return; }
     switch (a) {
-      case 'toggle': if (t) toggleT(t); else startNew(); break;
-      case 'pick': closeMenu(); openCloud('pick', t ? { kind: 'timer', id } : { kind: 'blank' }); break;
+      case 'toggle': toggleT(t); break;
+      case 'pick': closeMenu(); openCloud('pick', emptyReady(t) ? { kind: 'blank', pinned: t.pinned } : { kind: 'timer', id }); break;
       case 'stop': stopT(t); break;
       case 'x': removeT(t); break;
       case 'pin': t.pinned = !pinnedOf(t); log(t.pinned ? `📌 таймер ${label(t)} на виджете` : `булавка снята — таймер ${label(t)} только в приложении`); render(); break;
@@ -389,7 +396,7 @@
   document.addEventListener('keydown', (e) => {
     const inp = e.target.closest && e.target.closest('[data-in]');
     if (inp && menuEl) {
-      if (e.key === 'Enter') { commitEdit(); render(); }
+      if (e.key === 'Enter') { commitEdit(); S.timers = S.timers.filter((t) => !emptyReady(t) || t === S.timers[S.timers.length - 1] && S.timers.length === 1); render(); }
       if (e.key === 'Escape') { edit = null; buildMenu(); e.stopPropagation(); }
       return;
     }
@@ -482,6 +489,7 @@
     const kind = st.target.kind;
     closeCloud();
     const obj = kind === 'blank' ? materialize() : kind === 'timer' ? byId(st.target.id) : draftById(st.target.id);
+    if (kind === 'blank' && obj && st.target.pinned !== undefined) obj.pinned = st.target.pinned;
     if (obj) {
       obj.task = task;
       obj.title = isFav ? '' : name;
@@ -617,7 +625,7 @@
       : `<span class="tw-desc${t.desc ? '' : ' ph'}">${t.desc ? esc(t.desc) : 'what is it?'}</span>`;
     const time = t.state === 'ready' ? '<span class="tw-time"></span>'
       : `<span class="tw-time"${live ? ` data-t="${t.id}"` : ''}>${fmtRun(elapsed(t))}</span>`;
-    const g = t.state === 'ready' ? PLAY : glyph(t.state);
+    const g = glyphBtn(t.state);
     return `<div class="tw-row ${t.state}" data-wid="${t.id ?? ''}"><button type="button" class="tw-g" data-w="toggle">${g}</button>`
       + `<div class="tw-mid">${key}${desc}</div>${time}<button type="button" class="tw-pin" data-w="unpin">${IC.pin}</button></div>`;
   }

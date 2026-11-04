@@ -212,7 +212,6 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
 .st-tray.sm { width: 40px; height: 40px; }
 
 /* ── v13: the menu is timer cards only ───────────────────────── */
-.tm-row:hover { background: rgba(205, 214, 244, .035); }
 .tm-row.run { background: rgba(205, 214, 244, .065); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045); }
 .tm-add { display: flex; align-items: center; gap: 8px; width: 100%; height: 24px; padding: 0 10px 0 6px; border: none; border-radius: 6px; background: none;
   cursor: pointer; font: inherit; font-size: 10.5px; color: #6c7086; }
@@ -220,7 +219,6 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
 .tm-add:hover { color: #cdd6f4; background: rgba(205, 214, 244, .06); }
 .tm-add:focus { outline: none; }
 .tm-play { width: 8px; height: 8px; display: block; fill: #6c7086; }
-.tm-g:hover .tm-play { fill: rgb(var(--tm)); }
 .tm-ic { width: 16px; height: 16px; flex-shrink: 0; }
 .tm-ic { border: none; background: none; padding: 0; border-radius: 4px; cursor: pointer; color: #585b70; display: inline-flex; align-items: center; justify-content: center; }
 .tm-ic svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
@@ -240,3 +238,19 @@ app-log-cloud.tm-pick { transform-origin: 70px 0 !important; }
 .tm-r1 { grid-row: 1; gap: 6px; }
 .tm-r2 { grid-row: 2; gap: 1px; margin-right: -3px; }
 .tm-word { height: auto; }
+
+/* card glyph: state at rest, its action on hover of the glyph itself */
+.g-st, .g-ac { display: inline-flex; }
+.g-ac { display: none; }
+.tm-g:hover .g-st, .tw-g:hover .g-st { display: none; }
+.tm-g:hover .g-ac, .tw-g:hover .g-ac { display: inline-flex; }
+.tm-play { width: 9px; height: 9px; display: block; fill: #6c7086; }
+.tm-play.lit { fill: rgb(var(--tm-lite)); filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .9)) drop-shadow(0 0 5px rgb(var(--tm) / .35)); }
+.tm-play.ac { fill: rgb(var(--tm)); }
+.tm-pause-ac { width: 9px; height: 9px; display: block; fill: #cdd6f4; }
+.tw-g .g-st, .tw-g .g-ac { width: 46%; height: 46%; align-items: center; justify-content: center; }
+.tw-g .tm-play, .tw-g .tm-pz, .tw-g .tm-pause-ac { width: 100%; height: 100%; }
+.tw-g .tm-play { transform: translateX(6%); }
+.tm-row.run .tm-g { background: rgb(var(--tm) / .1); box-shadow: inset 0 0 0 1px rgb(var(--tm) / .38), 0 0 8px -2px rgb(var(--tm) / .45); }
+.tm-row .tm-play, .tm-row .tm-pause-ac { width: 8px; height: 8px; }
+.tm-row .tm-play { transform: translateX(.6px); }
