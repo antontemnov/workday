@@ -57,7 +57,7 @@
   // anon — a timer without a ticket: { id, desc, acc (s), runSince, state: run | pause | yield }
   // rec — a record in a ticket card: { id, el, blk, task, kind: ent | man | tadd, act, desc,
   //       sec, sec0, runSince (a timer feeds it right now), yielded, timered }
-  const S = { anchor: 'K', session: 'tracking', seq: 0, anon: [], recs: [], lastAnon: null };
+  const S = { anchor: 'L', session: 'tracking', seq: 0, anon: [], recs: [], lastAnon: null };
   const anonSec = (t) => t.acc + (t.state === 'run' ? (simNow - t.runSince) / 1000 : 0);
   const recSec = (r) => r.sec + (r.runSince != null ? (simNow - r.runSince) / 1000 : 0);
   let nextKey = 7203;
