@@ -5398,11 +5398,19 @@ app-log-cloud.form-mode .tmf { display: none; }
 .blk.tm-landed, .wl.tm-landed { animation: tm-landed 2.6s ease-out; }
 @keyframes tm-landed { 0%, 30% { box-shadow: 0 0 0 1px rgb(var(--lg) / .45), 0 0 14px -4px rgb(var(--lg) / .5); } 100% { box-shadow: none; } }
 
+/* timer added: its control lives inside the label, in manual added's ⊕ slot */
+.c-ds.man .tmk.in { width: 9px; height: 9px; margin: 0 0 .6px; border-radius: 50%; box-shadow: none; color: #6c7086; vertical-align: 0; }
+.c-ds.man .tmk.in .mg { color: inherit; margin: 0; }
+.c-ds.man .tmk.in:hover { background: none; color: #bac2de; }
+.c-ds.man .tmk.in.run { color: rgb(var(--lg-lite)); }
+.c-ds.man .tmk.in.yield { color: #f38ba8; }
+.wl.tm-live .c-ds.man.tadd { box-shadow: inset 0 0 0 1px rgb(var(--lg) / .4); color: #bac2de; }
+
 </style>
 </head>
 <body class="lab">
 <h1>Ручной таймер — макет v19 · таймер = источник времени, схема v18</h1>
-<p class="sub">Кликабельно. <b>+ Log</b> — одно облако на всё: внизу <i>▶ Start timer</i> (подпись идёт за строкой поиска — набрал текст, он станет описанием) и Create in Jira. Таймер без тикета — <i>лейбл в заголовке окна</i> (циферблат + время, виден с любой вкладки; в тулбаре для сравнения — капсула K рядом с + Log): клик → маленькое меню (⏸/▶ · время · описание · ✕), строка → то же облако в режиме выбора тикета. Выбрал тикет — таймер уходит в карточку и сразу идёт в total: голое время — бирка <b>timer added</b>, с описанием — своя строка с ⏱. Stop нет: пауза отключает таймер, продолжить — <b>▶ Start timer</b> в меню записи (клик по слову типа) у любой записи, кроме сессий. У идущей записи вместо ⏱ — кнопка ⏸, время с секундами. В форме облака — переключатель <b>timer</b>: Log пишет вписанные минуты и дальше считает.</p>
+<p class="sub">Кликабельно. <b>+ Log</b> — одно облако на всё: внизу <i>▶ Start timer</i> (подпись идёт за строкой поиска — набрал текст, он станет описанием) и Create in Jira. Таймер без тикета — <i>лейбл в заголовке окна</i> (циферблат + время, виден с любой вкладки; в тулбаре для сравнения — капсула K рядом с + Log): клик → маленькое меню (⏸/▶ · время · описание · ✕), строка → то же облако в режиме выбора тикета. Выбрал тикет — таймер уходит в карточку и сразу идёт в total: голое время — отдельная бирка <b>timer added</b> (пауза / продолжить — внутри неё, на месте ⊕ у manual added), с описанием — своя строка с ⏱. <b>manual added</b> таймер не питает никогда: ▶ на ней кладёт время в соседнюю timer added. Stop нет: пауза отключает таймер, продолжить — <b>▶ Start timer</b> в меню записи (клик по слову типа) у любой записи, кроме сессий. У идущей записи вместо ⏱ — кнопка ⏸, время с секундами. В форме облака — переключатель <b>timer</b>: Log пишет вписанные минуты и дальше считает.</p>
 
 <div class="toolbar" id="toolbar">
   <div class="tbg"><span class="tbl">сцена</span>
@@ -6397,6 +6405,17 @@ app-log-cloud.form-mode .tmf { display: none; }
     }
   }
   const recById = (id) => S.recs.find((r) => r.id === id);
+  // timer added: pause / resume sits inside the label, where manual added has ⊕
+  function labelGlyph(r) {
+    const N = NG_LP;
+    const ring = `<circle ${N} cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width=".9"/>`;
+    const pz = `<path ${N} d="M3.5 3v3M5.5 3v3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>`;
+    const pl = `<path ${N} d="M3.7 2.9l2.5 1.6-2.5 1.6z" fill="currentColor"/>`;
+    const svg = (inner) => `<svg ${N} width="9" height="9" viewBox="0 0 9 9" aria-hidden="true" class="mg">${ring}${inner}</svg>`;
+    if (r.runSince != null) return `<button type="button" class="tmk in run" data-pz="${r.id}">${svg(pz)}</button>`;
+    if (r.yielded) return `<button type="button" class="tmk in yield" data-go="${r.id}">${svg(pz)}</button>`;
+    return `<button type="button" class="tmk in" data-go="${r.id}">${svg(pl)}</button>`;
+  }
   function markHTML(r) {
     if (r.runSince != null) return `<button type="button" class="tmk run" data-pz="${r.id}">${PZ}</button>`;
     if (r.yielded) return `<button type="button" class="tmk yield" data-go="${r.id}">${PZ}</button>`;
@@ -6405,10 +6424,11 @@ app-log-cloud.form-mode .tmf { display: none; }
   }
   function paintRec(r) {
     const ds = $('.c-ds', r.el);
-    if (r.kind === 'tadd') ds.innerHTML = `<span ${NG_LP}>timer added</span>${markHTML(r)}`;
-    else if (r.kind === 'man') ds.innerHTML = `<span ${NG_LP}>manual added</span>${MG}${markHTML(r)}`;
+    if (r.kind === 'tadd') ds.innerHTML = `<span ${NG_LP}>timer added</span>${labelGlyph(r)}`;
+    else if (r.kind === 'man') ds.innerHTML = `<span ${NG_LP}>manual added</span>${MG}`;
     else ds.innerHTML = `${esc(r.desc)}${markHTML(r)}`;
     r.el.classList.toggle('tm-live', r.runSince != null);
+    ds.classList.toggle('tadd', r.kind === 'tadd');
     paintDur(r);
   }
   function paintDur(r) {
@@ -6455,7 +6475,8 @@ app-log-cloud.form-mode .tmf { display: none; }
     const el = (kind === 'ent' ? tplEnt : tplMan).cloneNode(true);
     el.removeAttribute('data-eid');
     $('.c-type', el).textContent = act;
-    body.append(el);
+    const man = kind === 'tadd' && S.recs.find((x) => x.blk === blk && x.kind === 'man');
+    if (man) man.el.after(el); else body.append(el);
     const r = { id: ++S.seq, el, blk, task, kind, act, desc, sec, sec0: 0, runSince: null, yielded: false, timered: kind === 'tadd' };
     el.dataset.rid = r.id;
     S.recs.push(r);
@@ -6489,6 +6510,11 @@ app-log-cloud.form-mode .tmf { display: none; }
     return who;
   }
   function runRec(r) {
+    if (r.kind === 'man') {
+      const t = addBare(r.task, '', 'tadd', 0);
+      log(`manual added — только ручное время; таймер пишет в соседнюю бирку timer added`);
+      r = t;
+    }
     const who = haltOthers(r);
     r.runSince = simNow;
     r.yielded = false;
@@ -6600,7 +6626,7 @@ app-log-cloud.form-mode .tmf { display: none; }
     el.className = 'ctx-menu anchored';
     const t = r.runSince != null
       ? `<div class="ctx-item" data-a="pause"><span class="ci-ic">${MI.pause}</span>Pause timer</div>`
-      : `<div class="ctx-item tm-go" data-a="run"><span class="ci-ic">${MI.play}</span>Start timer</div>`;
+      : `<div class="ctx-item tm-go" data-a="run"><span class="ci-ic">${MI.play}</span>${r.kind === 'man' ? 'Start timer → timer added' : 'Start timer'}</div>`;
     el.innerHTML = `${t}<div class="ctx-item" data-a="edit"><span class="ci-ic">${MI.edit}</span>Edit</div><div class="ctx-sep"></div><div class="ctx-item" data-a="del"><span class="ci-ic">${MI.del}</span>Delete</div>`;
     appEl.append(el);
     menu = { kind: 'rec', el, rec: r };

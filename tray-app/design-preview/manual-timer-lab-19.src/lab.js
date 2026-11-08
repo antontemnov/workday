@@ -159,6 +159,17 @@
     }
   }
   const recById = (id) => S.recs.find((r) => r.id === id);
+  // timer added: pause / resume sits inside the label, where manual added has ⊕
+  function labelGlyph(r) {
+    const N = NG_LP;
+    const ring = `<circle ${N} cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width=".9"/>`;
+    const pz = `<path ${N} d="M3.5 3v3M5.5 3v3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>`;
+    const pl = `<path ${N} d="M3.7 2.9l2.5 1.6-2.5 1.6z" fill="currentColor"/>`;
+    const svg = (inner) => `<svg ${N} width="9" height="9" viewBox="0 0 9 9" aria-hidden="true" class="mg">${ring}${inner}</svg>`;
+    if (r.runSince != null) return `<button type="button" class="tmk in run" data-pz="${r.id}">${svg(pz)}</button>`;
+    if (r.yielded) return `<button type="button" class="tmk in yield" data-go="${r.id}">${svg(pz)}</button>`;
+    return `<button type="button" class="tmk in" data-go="${r.id}">${svg(pl)}</button>`;
+  }
   function markHTML(r) {
     if (r.runSince != null) return `<button type="button" class="tmk run" data-pz="${r.id}">${PZ}</button>`;
     if (r.yielded) return `<button type="button" class="tmk yield" data-go="${r.id}">${PZ}</button>`;
@@ -167,10 +178,11 @@
   }
   function paintRec(r) {
     const ds = $('.c-ds', r.el);
-    if (r.kind === 'tadd') ds.innerHTML = `<span ${NG_LP}>timer added</span>${markHTML(r)}`;
-    else if (r.kind === 'man') ds.innerHTML = `<span ${NG_LP}>manual added</span>${MG}${markHTML(r)}`;
+    if (r.kind === 'tadd') ds.innerHTML = `<span ${NG_LP}>timer added</span>${labelGlyph(r)}`;
+    else if (r.kind === 'man') ds.innerHTML = `<span ${NG_LP}>manual added</span>${MG}`;
     else ds.innerHTML = `${esc(r.desc)}${markHTML(r)}`;
     r.el.classList.toggle('tm-live', r.runSince != null);
+    ds.classList.toggle('tadd', r.kind === 'tadd');
     paintDur(r);
   }
   function paintDur(r) {
@@ -217,7 +229,8 @@
     const el = (kind === 'ent' ? tplEnt : tplMan).cloneNode(true);
     el.removeAttribute('data-eid');
     $('.c-type', el).textContent = act;
-    body.append(el);
+    const man = kind === 'tadd' && S.recs.find((x) => x.blk === blk && x.kind === 'man');
+    if (man) man.el.after(el); else body.append(el);
     const r = { id: ++S.seq, el, blk, task, kind, act, desc, sec, sec0: 0, runSince: null, yielded: false, timered: kind === 'tadd' };
     el.dataset.rid = r.id;
     S.recs.push(r);
@@ -251,6 +264,11 @@
     return who;
   }
   function runRec(r) {
+    if (r.kind === 'man') {
+      const t = addBare(r.task, '', 'tadd', 0);
+      log(`manual added — только ручное время; таймер пишет в соседнюю бирку timer added`);
+      r = t;
+    }
     const who = haltOthers(r);
     r.runSince = simNow;
     r.yielded = false;
@@ -362,7 +380,7 @@
     el.className = 'ctx-menu anchored';
     const t = r.runSince != null
       ? `<div class="ctx-item" data-a="pause"><span class="ci-ic">${MI.pause}</span>Pause timer</div>`
-      : `<div class="ctx-item tm-go" data-a="run"><span class="ci-ic">${MI.play}</span>Start timer</div>`;
+      : `<div class="ctx-item tm-go" data-a="run"><span class="ci-ic">${MI.play}</span>${r.kind === 'man' ? 'Start timer → timer added' : 'Start timer'}</div>`;
     el.innerHTML = `${t}<div class="ctx-item" data-a="edit"><span class="ci-ic">${MI.edit}</span>Edit</div><div class="ctx-sep"></div><div class="ctx-item" data-a="del"><span class="ci-ic">${MI.del}</span>Delete</div>`;
     appEl.append(el);
     menu = { kind: 'rec', el, rec: r };
