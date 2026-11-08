@@ -1,0 +1,27 @@
+<h1>Ручной таймер — макет v19 · таймер = источник времени, схема v18</h1>
+<p class="sub">Кликабельно. <b>+ Log</b> — одно облако на всё: внизу <i>▶ Start timer</i> (подпись идёт за строкой поиска — набрал текст, он станет описанием) и Create in Jira. Таймер без тикета — <i>капсула</i> рядом с + Log (K) или лейбл в заголовке окна (L): клик → маленькое меню (⏸/▶ · время · описание · ✕), строка → то же облако в режиме выбора тикета. Выбрал тикет — таймер уходит в карточку и сразу идёт в total: голое время — бирка <b>timer added</b>, с описанием — своя строка с ⏱. Stop нет: пауза отключает таймер, продолжить — <b>▶ Start timer</b> в меню записи (клик по слову типа) у любой записи, кроме сессий. У идущей записи вместо ⏱ — кнопка ⏸, время с секундами. В форме облака — переключатель <b>timer</b>: Log пишет вписанные минуты и дальше считает.</p>
+
+<div class="toolbar" id="toolbar">
+  <div class="tbg"><span class="tbl">сцена</span>
+    <button class="tbb" data-preset="empty">пусто</button>
+    <button class="tbb" data-preset="one">идёт таймер без тикета</button>
+    <button class="tbb" data-preset="two">два без тикета</button>
+    <button class="tbb" data-preset="bound">запись с таймером</button>
+  </div>
+  <div class="tbg"><span class="tbl">таймер без тикета виден</span><button class="tbb" data-anchor="K">K · капсула</button><button class="tbb" data-anchor="L">L · заголовок окна</button></div>
+  <div class="tbg"><span class="tbl">имитация</span><button class="tbb git" data-act="git">git-правка в web-frontend</button></div>
+  <div class="tbg"><span class="tbl">скорость</span><button class="tbb" data-speed="1">×1</button><button class="tbb" data-speed="60">×60</button><button class="tbb" data-speed="600">×600</button></div>
+</div>
+
+<div class="stagewrap">
+  <div class="stage"><div class="win wd" id="wd">%%APP%%</div></div>
+  <div class="side">
+    <div class="evlog"><div class="ev-h">журнал — что произошло</div><div id="evlog"></div></div>
+    <div class="notes">
+      <p><b>Попробуй:</b> + Log → набери «разбор 500-х» → ▶ Start timer «…». Потом клик по капсуле → строка → выбери тикет. Или + Log → тикет из jira → включи timer → Log.</p>
+      <p><b>Один источник за раз:</b> старт любого таймера ставит на паузу идущий и живые сессии (yield). git-правка — сессия выигрывает, таймер встаёт с красным ⏸; вернуть — кликом.</p>
+      <p><b>Total</b> = tracked + записи, включая время, которое прямо сейчас питает таймер. Таймер без тикета в total не входит, пока не выбран тикет.</p>
+      <p><b>Нет в макете:</b> виджет поверх окон и иконка трея (без изменений с v13), Parallel-режим, правка описания таймера без тикета.</p>
+    </div>
+  </div>
+</div>
