@@ -1,0 +1,193 @@
+:root { --tm: 198 222 120; --tm-lite: 229 240 194; --lg: 203 166 247; --lg-lite: 228 205 252; }
+html, body { margin: 0; height: auto !important; overflow: auto !important; background: #0f0f17 !important; }
+body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace; padding: 22px 26px 60px; }
+.lab h1 { font-size: 14px; margin: 0 0 4px; }
+.lab .sub { color: #7f849c; font-size: 11px; max-width: 1180px; margin: 0 0 14px; }
+.lab .sub b { color: #a6adc8; }
+.lab .sub i { color: rgb(var(--tm)); font-style: normal; }
+
+/* ── toolbar ── */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin: 0 0 14px; }
+.tbg { display: inline-flex; align-items: center; gap: 6px; }
+.tbl { color: #6c7086; font-size: 10.5px; margin-right: 2px; }
+.tbb { font: inherit; font-size: 10.5px; color: #bac2de; background: #1e1e2e; border: 1px solid #313244; border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.tbb:hover { border-color: #45475a; color: #e6ebfa; }
+.tbb.on { border-color: rgb(var(--tm) / .55); color: rgb(var(--tm-lite)); background: rgb(var(--tm) / .07); }
+.tbb.git { border-color: rgba(166, 227, 161, .35); color: #a6e3a1; }
+
+/* ── stage: the app window alone ── */
+.stagewrap { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.stage { padding: 26px; border-radius: 12px; border: 1px solid #2a2a3c; background: radial-gradient(120% 90% at 18% 8%, #2c3150 0%, #1b1d2e 52%, #121320 100%); }
+.wd { position: relative; width: 500px; height: 560px; border-radius: 8px; overflow: hidden; transform: translateZ(0);
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, .72), 0 0 0 1px rgba(255, 255, 255, .07); }
+.wd app-root { display: block; height: 100% !important; }
+.wd .app { height: 100% !important; position: relative; }
+.wd .ctx-menu { position: absolute; }
+.side { width: 330px; display: flex; flex-direction: column; gap: 14px; }
+.evlog { background: #161622; border: 1px solid #2a2a3c; border-radius: 10px; padding: 10px 12px; min-height: 240px; }
+.ev-h { color: #6c7086; font-size: 10.5px; margin-bottom: 6px; }
+.ev { font-size: 10.5px; color: #a6adc8; padding: 3px 0; border-bottom: 1px solid rgba(205, 214, 244, .04); }
+.ev b { color: #6c7086; font-weight: 400; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.ev:first-child { color: #e6ebfa; }
+.notes { color: #7f849c; font-size: 10.5px; line-height: 1.55; }
+.notes b { color: #a6adc8; font-weight: 400; }
+.notes p { margin: 0 0 7px; }
+
+/* ── candy glass — the + Log recipe, dyed by --c ── */
+.candy { --c: var(--tm); --ci: var(--tm-lite); --ink: rgb(var(--tm-lite)); --rc: var(--c); --m1: .14; --m2: .05; --m3: .1; --eg: .22; --ec: .3; --pool: .22;
+  position: relative; border: none; color: color-mix(in srgb, var(--ink) 86%, transparent); text-shadow: 0 0 3px rgb(var(--c) / .42), 0 1px 1px rgba(0, 0, 0, .25);
+  background: radial-gradient(95% 150% at 30% -25%, rgba(255, 255, 255, .12), rgba(255, 255, 255, .02) 50%, transparent 72%),
+    radial-gradient(45% 55% at 78% 108%, rgba(255, 255, 255, .08), transparent 65%),
+    linear-gradient(180deg, rgb(var(--c) / var(--m1)), rgb(var(--c) / var(--m2)) 55%, rgb(var(--c) / var(--m3)));
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .2), inset 0 -4px 6px -4px rgba(4, 6, 16, .42), inset 7px 0 9px -7px rgba(4, 6, 16, .55), inset -7px 0 9px -7px rgba(4, 6, 16, .55),
+    inset 0 0 6px -1px rgb(var(--c) / var(--eg)), inset 0 -1px 2px rgb(var(--ci) / var(--ec)), 0 2px 5px -1px rgba(0, 0, 0, .45), 0 3px 9px -3px rgb(var(--c) / var(--pool)); }
+.candy::before { content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from 0deg, rgb(var(--rc) / .4) 0deg, rgb(var(--rc) / .08) 48deg, rgb(var(--rc) / .2) 100deg, rgba(255, 255, 255, .34) 135deg, rgb(var(--rc) / .16) 195deg, rgb(var(--rc) / .05) 228deg, rgb(var(--rc) / .22) 275deg, rgba(255, 255, 255, .5) 316deg, rgb(var(--rc) / .4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; }
+.candy.paused { --c: 166 173 200; --ci: 205 214 244; --ink: #a6adc8; --pool: .1; color: #9399b2; text-shadow: none; }
+
+/* glyphs */
+.g-play { width: 8px; height: 8px; fill: currentColor; flex-shrink: 0; transform: translateX(.6px); }
+.g-pz { width: 8px; height: 8px; fill: #f38ba8; flex-shrink: 0; }
+.g-x { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.g-dial { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.g-clock { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; }
+
+/* ── K: the ticketless timer's capsule, left of + Log (the + Log · total pair stays whole) ── */
+.tmc-row { margin-left: auto; display: inline-flex; align-items: center; align-self: center; position: relative; top: -6px; }
+.day-head .tmc-row + .g-btn { margin-left: 0; }
+.tmc { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 11px 0 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
+.tmc.run .g-play { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .9)); }
+.tmc b { width: 7ch; text-align: left; }
+
+/* ── L: the titlebar label (dial + time) ── */
+.tm-ndiv { width: 1px; height: 13px; margin: 0 11px 0 12px; flex-shrink: 0; align-self: center; background: #313244; }
+.tm-nav { align-self: center; display: inline-flex; align-items: center; gap: 5px; height: 19px; padding: 0; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: #7f849c; }
+.tm-nav .tm-dw { display: inline-flex; }
+.tm-nav .tm-min { width: 7ch; text-align: left; }
+.tm-dial { width: 15px; height: 15px; display: block; overflow: visible; }
+.tm-dial .ring, .tm-dial .crown, .tm-dial .hand { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tm-dial .hand { stroke-width: 1.4; }
+.tm-dial .sec { fill: currentColor; opacity: .4; }
+.tm-dial .pz { fill: #f38ba8; }
+.tm-nav.run { color: rgb(var(--tm-lite)); }
+.tm-nav.run .tm-dial { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .55)); }
+.tm-nav.run .tm-dial .sec { fill: rgb(var(--tm)); opacity: .6; }
+.tm-nav:hover { filter: brightness(1.15); }
+.tm-nav:focus, .tmm-g:focus, .tmm-x:focus, .tmk:focus, .cf-tm:focus { outline: none; }
+
+/* ── the small menu of ticketless timers (the cards' glass menu) ── */
+.tmm-menu { min-width: 0; width: 300px; }
+.ctx-menu .ctx-item.tmm { display: grid; grid-template-columns: 18px 7ch minmax(0, 1fr) 16px; column-gap: 8px; padding: 4px 6px 4px 5px; }
+.tmm-g { width: 18px; height: 18px; border-radius: 50%; border: none; background: none; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #6c7086; }
+.tmm-g:hover { background: rgba(205, 214, 244, .1); }
+.tmm.run .tmm-g { color: rgb(var(--tm-lite)); background: rgb(var(--tm) / .1); box-shadow: inset 0 0 0 1px rgb(var(--tm) / .38), 0 0 8px -2px rgb(var(--tm) / .45); }
+.tmm.run .tmm-g .g-play { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .9)); }
+.tmm-time { font-weight: 700; font-variant-numeric: tabular-nums; color: #7f849c; text-align: right; }
+.tmm.run .tmm-time { color: rgb(var(--tm-lite)); }
+.tmm-desc { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #bac2de; font-style: italic; }
+.tmm-desc.ph { color: #6c7086; }
+.tmm-x { width: 16px; height: 16px; padding: 0; border: none; background: none; color: #585b70; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 4px; }
+.tmm-x:hover { color: #f38ba8; }
+.ctx-menu .ci-ic svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.ctx-menu .ctx-item.tm-go .ci-ic { color: #cba6f7; }
+.ctx-menu .ctx-item.tm-go .ci-ic svg { fill: currentColor; stroke: none; }
+
+/* ── the cloud: its foot (Start timer · Create in Jira), the form's timer toggle ── */
+.tmf { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(205, 214, 244, .07); }
+app-log-cloud.form-mode .tmf { display: none; }
+.fav.tm-start { border: 1px solid rgb(var(--tm) / .45) !important; background: rgb(var(--tm) / .07) !important; cursor: pointer; }
+.fav.tm-start .f-task { color: rgb(var(--tm)) !important; font-size: 9px !important; }
+.fav.tm-start .f-name { color: rgb(var(--tm-lite)) !important; font-weight: 600 !important; }
+.fav.tm-start:hover { background: rgb(var(--tm) / .13) !important; }
+.fav.tm-create { border: 1px dashed rgba(205, 214, 244, .26) !important; background: transparent !important; cursor: pointer; }
+.fav.tm-create .f-task { color: #a6adc8 !important; }
+.fav.tm-create .f-name { color: #9399b2 !important; font-weight: 400 !important; }
+.fav.tm-create:hover .f-name { color: #cdd6f4 !important; }
+.fav.tm-new { box-shadow: 0 0 0 1px rgb(var(--tm) / .55), 0 0 12px -3px rgb(var(--tm) / .5) !important; }
+.tm-hide { display: none !important; }
+.cf-tm { flex-shrink: 0; height: 25px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 6px; cursor: pointer;
+  background: rgba(17, 17, 27, .85); border: 1px solid #313244; color: #6c7086; font-family: inherit; font-size: 10px; }
+.cf-tm:hover { color: #a6adc8; }
+.cf-tm.on { color: rgb(var(--tm-lite)); border-color: rgb(var(--tm) / .55); background: rgb(var(--tm) / .1); }
+.cloud-form .cf-min.need { border-color: rgba(203, 166, 247, .65) !important; }
+
+/* ── records fed by a timer: ⏱ mark, ⏸ while it runs, the time itself lit (logged = mauve) ── */
+.tmk { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; margin-left: 6px; vertical-align: -2px;
+  padding: 0; border: none; background: none; color: #7f849c; font-style: normal; }
+.c-ds.man .tmk { margin-left: 0; vertical-align: 0; }
+.tmk.run, .tmk.yield { cursor: pointer; border-radius: 50%; }
+.tmk.run { box-shadow: inset 0 0 0 1px rgb(var(--lg) / .5); }
+.tmk.run .g-pz { fill: rgb(var(--lg-lite)); width: 7px; height: 7px; }
+.tmk.run:hover { background: rgb(var(--lg) / .15); }
+.tmk.yield .g-pz { width: 7px; height: 7px; }
+.wl.tm-live .c-dur, .sum.tm-live { color: rgb(var(--lg-lite)) !important; text-shadow: 0 0 8px rgb(var(--lg) / .45); }
+.blk.tm-landed, .wl.tm-landed { animation: tm-landed 2.6s ease-out; }
+@keyframes tm-landed { 0%, 30% { box-shadow: 0 0 0 1px rgb(var(--lg) / .45), 0 0 14px -4px rgb(var(--lg) / .5); } 100% { box-shadow: none; } }
+
+/* timer added: its control lives inside the label, in manual added's ⊕ slot */
+.c-ds.man .tmk.in { width: 9px; height: 9px; margin: 0 0 .6px; border-radius: 50%; box-shadow: none; color: #6c7086; vertical-align: 0; }
+.c-ds.man .tmk.in .mg { color: inherit; margin: 0; }
+.c-ds.man .tmk.in:hover { background: none; color: #bac2de; }
+.c-ds.man .tmk.in.run { color: rgb(var(--lg-lite)); }
+.c-ds.man .tmk.in.yield { color: #f38ba8; }
+.wl.tm-live .c-ds.man.tadd { box-shadow: inset 0 0 0 1px rgb(var(--lg) / .4); color: #bac2de; }
+
+/* ── v26: the ticketless timer = one line at the bottom of the day head ── */
+.day-head.has-tmh { flex-wrap: wrap; row-gap: 0; padding-bottom: 8px; }
+.tmh { flex-basis: 100%; order: 9; margin: 6px 0 0; padding: 0; border: none; background: none; font: inherit; font-size: 11px; color: inherit; text-align: left;
+  display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; cursor: pointer; animation: tmh-in .35s ease-out; }
+@keyframes tmh-in { from { opacity: 0; } to { opacity: 1; } }
+.tmh:focus { outline: none; }
+/* the dial: a touch smaller, its ring centred on the digits */
+.tmh-ic { align-self: baseline; display: inline-flex; position: relative; top: 1.4px; }
+.tmh .tm-dial { width: 12.5px; height: 12.5px; }
+.tmh .tm-dial.stack { width: 14.5px; margin-left: -2px; }
+.tm-dial .back { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; opacity: .45; }
+.tmh-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tmh-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-style: italic; color: #a6adc8; }
+.tmh-desc.ph { color: #6c7086; }
+.tmh-chev { align-self: center; display: inline-flex; color: #6c7086; flex-shrink: 0; }
+.g-chev { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; display: block; transition: transform .18s ease; }
+.tmh.open .tmh-chev { color: #bac2de; }
+.tmh.open .g-chev { transform: rotate(180deg); }
+.tmh.run .tmh-ic, .tmh.run .tmh-time { color: rgb(var(--tm-lite)); }
+.tmh.run .tm-dial { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .55)); }
+.tmh.run .tm-dial .sec { fill: rgb(var(--tm)); opacity: .6; }
+.tmh.pause .tmh-ic { color: #7f849c; }
+.tmh.pause .tmh-time { color: #9399b2; }
+.tmh.pause .tmh-desc { color: #7f849c; }
+.tmh:hover .tmh-chev { color: #bac2de; }
+
+/* ── v27: the head opens on the date's hover; the description is typed in the line ── */
+@property --gx { syntax: '<number>'; inherits: false; initial-value: 0; }
+.wd .day-head.peek { transition: --gx .3s ease;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - var(--gh) - 6px), rgb(0 0 0 / var(--gx)) calc(100% - var(--gh)), rgb(0 0 0 / var(--gx)) calc(100% - 2.5px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - var(--gh) - 6px), rgb(0 0 0 / var(--gx)) calc(100% - var(--gh)), rgb(0 0 0 / var(--gx)) calc(100% - 2.5px), transparent); }
+.wd .day-head.peek.in { --gx: 1; }
+.tmh { cursor: default; animation: none; }
+.tmh-ic, .tmh-time, .tmh-chev { cursor: pointer; }
+.tmh-desc { cursor: text; transition: color .2s ease; }
+.tmh-desc:hover { color: #cdd6f4; }
+.tmh.pause .tmh-desc:hover { color: #bac2de; }
+.tmh-pen { align-self: center; display: inline-flex; color: #9399b2; opacity: 0; transition: opacity .2s ease; cursor: text; margin-left: -2px; flex-shrink: 0; }
+.tmh-pen svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.tmh-desc:hover + .tmh-pen, .tmh-pen:hover { opacity: .85; }
+.tmh.editing .tmh-desc, .tmh.editing .tmh-pen { display: none; }
+.tmh-in { flex: 0 1 auto; field-sizing: content; min-width: 12ch; max-width: 280px; padding: 0; margin: 0; border: none; outline: none; background: none; font: inherit; font-style: italic;
+  line-height: inherit; height: 1.2em; color: #cdd6f4; caret-color: rgb(var(--tm)); box-shadow: 0 1px 0 rgba(205, 214, 244, .22); user-select: text; -webkit-user-select: text; }
+.tmh-in::placeholder { color: #6c7086; }
+/* the clean timer: what the line will be, before the click */
+.tmh.ghost { cursor: pointer; opacity: .5; transition: opacity .2s ease; }
+.tmh.ghost .tmh-desc { cursor: pointer; }
+.tmh.ghost:hover { opacity: .95; }
+.tmh.ghost:hover .tmh-ic { color: rgb(var(--tm-lite)); }
+.tm-dial .rdy { fill: currentColor; stroke: none; }
+.ctx-menu .ctx-item.tmm-new { color: #a6adc8; }
+.ctx-menu .ctx-item.tmm-new .ci-ic svg { fill: currentColor; stroke: none; }
+.ctx-menu .ctx-item.tmm-new:hover { color: #cdd6f4; }
+/* the peek's band is denser than the glass above: the feed under it must not read through */
+.wd .day-head.peek::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--gh) + 10px); z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(30, 30, 46, 0), rgba(30, 30, 46, .72) 10px); }
