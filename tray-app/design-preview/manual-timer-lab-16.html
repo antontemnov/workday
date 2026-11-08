@@ -1,0 +1,4292 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Таймер без тикета — мини-макеты v16</title>
+<style>
+/* src/styles.scss */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  background: #1e1e2e;
+  overflow: hidden;
+}
+html:has(body.toast-window),
+body.toast-window {
+  background: transparent;
+}
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #313244;
+  border-radius: 2px;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 176px;
+  max-width: 340px;
+  padding: 4px;
+  border-radius: 10px;
+  isolation: isolate;
+  border: 1px solid rgba(205, 214, 244, 0.13);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.75), 0 4px 12px -3px rgba(0, 0, 0, 0.5);
+  font-family:
+    "SF Mono",
+    "Cascadia Code",
+    "Consolas",
+    monospace;
+  font-size: 11px;
+  -webkit-user-select: none;
+  user-select: none;
+  transform-origin: 0 0;
+  animation: ctx-menu-in 0.12s ease-out;
+}
+.ctx-menu.anchored {
+  transform-origin: 12px 0;
+}
+.ctx-menu.anchored.right {
+  transform-origin: calc(100% - 12px) 0;
+}
+.ctx-menu::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.055),
+      transparent 42%,
+      rgba(255, 255, 255, 0.025) 72%,
+      transparent 90%),
+    linear-gradient(rgba(22, 22, 34, 0.6), rgba(22, 22, 34, 0.7));
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+.ctx-menu .ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: #bac2de;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctx-menu .ctx-item .ci-ic {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #7f849c;
+  font-size: 10.5px;
+}
+.ctx-menu .ctx-item .ci-ic svg {
+  display: block;
+}
+.ctx-menu .ctx-item .ci-hint {
+  margin-left: auto;
+  padding-left: 18px;
+  color: #6c7086;
+  font-size: 10.5px;
+}
+.ctx-menu .ctx-item .ci-hint.stacked {
+  display: inline-grid;
+  justify-items: end;
+}
+.ctx-menu .ctx-item .ci-hint.stacked > span {
+  grid-area: 1/1;
+}
+.ctx-menu .ctx-item .ci-go {
+  color: #585b70;
+  margin-left: 6px;
+}
+.ctx-menu .ctx-item .ci-go.lone {
+  margin-left: auto;
+  padding-left: 18px;
+}
+.ctx-menu .ctx-item:hover {
+  background: rgba(205, 214, 244, 0.085);
+  color: #e6ebfa;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.ctx-menu .ctx-item:hover .ci-ic {
+  color: #cdd6f4;
+}
+.ctx-menu .ctx-item.danger {
+  color: #f38ba8;
+}
+.ctx-menu .ctx-item.danger .ci-ic {
+  color: #f38ba8;
+}
+.ctx-menu .ctx-item.danger:hover {
+  background: rgba(243, 139, 168, 0.13);
+  color: #f38ba8;
+  box-shadow: none;
+}
+.ctx-menu .ctx-item.danger:hover .ci-ic {
+  color: #f38ba8;
+}
+.ctx-menu .ctx-item.disabled {
+  color: #585b70;
+  cursor: default;
+}
+.ctx-menu .ctx-item.disabled .ci-ic,
+.ctx-menu .ctx-item.disabled .ci-hint {
+  color: #45475a;
+}
+.ctx-menu .ctx-item.disabled:hover {
+  background: none;
+  box-shadow: none;
+  color: #585b70;
+}
+.ctx-menu .ctx-item.disabled:hover .ci-ic {
+  color: #45475a;
+}
+.ctx-menu .ctx-item.busy {
+  cursor: default;
+}
+.ctx-menu .ctx-item.busy:hover {
+  background: none;
+  box-shadow: none;
+  color: #bac2de;
+}
+.ctx-menu .ctx-item.busy:hover .ci-ic {
+  color: #7f849c;
+}
+.ctx-menu .ctx-item.busy .ci-hint,
+.ctx-menu .ctx-item .ci-hint.busy {
+  color: color-mix(in srgb, #f9e2af 82%, transparent);
+  text-shadow: 0 0 3px rgba(249, 226, 175, 0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  animation: ctx-busy-breathe 1.6s ease-in-out infinite;
+}
+.ctx-menu .ctx-sep {
+  height: 1px;
+  margin: 3px 6px;
+  background: rgba(205, 214, 244, 0.085);
+}
+.ctx-menu .ctx-branch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ctx-menu .ctx-branch .ci-ic {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  margin-top: 1.5px;
+  display: inline-flex;
+  color: #7f849c;
+  transition: color 0.15s ease;
+}
+.ctx-menu .ctx-branch .ci-ic svg {
+  display: block;
+}
+.ctx-menu .ctx-branch .cb-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #a6adc8;
+  white-space: normal;
+  text-wrap: balance;
+  transition: color 0.15s ease;
+}
+.ctx-menu .ctx-branch:hover {
+  background: rgba(205, 214, 244, 0.085);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.ctx-menu .ctx-branch:hover .cb-name,
+.ctx-menu .ctx-branch.copied .cb-name {
+  color: #e6ebfa;
+}
+.ctx-menu .ctx-branch:hover .ci-ic,
+.ctx-menu .ctx-branch.copied .ci-ic {
+  color: #cdd6f4;
+}
+@keyframes ctx-busy-breathe {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+@keyframes ctx-menu-in {
+  0% {
+    transform: scale(0.94);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ctx-menu {
+    animation: none;
+  }
+  .ctx-menu .ctx-item.busy .ci-hint,
+  .ctx-menu .ci-hint.busy {
+    animation: none;
+  }
+}
+
+/* angular:styles/global:styles */
+
+
+</style>
+<style>
+
+
+[_nghost-ng-c2659241166] {
+  display: block;
+  height: 100vh;
+  overflow: hidden;
+}
+.app[_ngcontent-ng-c2659241166] {
+  font-family:
+    "SF Mono",
+    "Cascadia Code",
+    "Consolas",
+    monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+  background: #1e1e2e;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.header[_ngcontent-ng-c2659241166] {
+  display: flex;
+  align-items: center;
+  height: 29px;
+  padding: 0 0 0 12px;
+  flex-shrink: 0;
+  background: #181825;
+  border-bottom: 1px solid #26263a;
+}
+.view-switcher[_ngcontent-ng-c2659241166] {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.view-btn[_ngcontent-ng-c2659241166] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #585b70;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+.view-btn[_ngcontent-ng-c2659241166]   svg[_ngcontent-ng-c2659241166] {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.view-btn[_ngcontent-ng-c2659241166]:hover:not(.active) {
+  color: #9399b2;
+}
+.view-btn.active[_ngcontent-ng-c2659241166] {
+  color: #cdd6f4;
+}
+.win-controls[_ngcontent-ng-c2659241166] {
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: stretch;
+  display: inline-flex;
+}
+.wc-btn[_ngcontent-ng-c2659241166] {
+  align-self: stretch;
+  width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #585b70;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.wc-btn[_ngcontent-ng-c2659241166]   svg[_ngcontent-ng-c2659241166] {
+  width: 10px;
+  height: 10px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+}
+.wc-btn[_ngcontent-ng-c2659241166]:hover {
+  color: #cdd6f4;
+  background: rgba(205, 214, 244, 0.06);
+}
+.wc-btn.wc-close[_ngcontent-ng-c2659241166]:hover {
+  color: #f38ba8;
+  background: rgba(243, 139, 168, 0.13);
+}
+.update-banner[_ngcontent-ng-c2659241166] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  flex-shrink: 0;
+  background: rgba(137, 180, 250, 0.08);
+  border-bottom: 1px solid #26263a;
+}
+.update-banner[_ngcontent-ng-c2659241166]   .ub-text[_ngcontent-ng-c2659241166] {
+  color: #89b4fa;
+  font-size: 11px;
+}
+.update-banner[_ngcontent-ng-c2659241166]   .ub-btn[_ngcontent-ng-c2659241166] {
+  margin-left: auto;
+  background: #89b4fa;
+  color: #1e1e2e;
+  border: none;
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.update-banner[_ngcontent-ng-c2659241166]   .ub-btn[_ngcontent-ng-c2659241166]:hover:not(:disabled) {
+  background: #74a3f8;
+}
+.update-banner[_ngcontent-ng-c2659241166]   .ub-btn[_ngcontent-ng-c2659241166]:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.modal-backdrop[_ngcontent-ng-c2659241166] {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal[_ngcontent-ng-c2659241166] {
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  padding: 16px;
+  min-width: 280px;
+  max-width: 380px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.modal[_ngcontent-ng-c2659241166]   h3[_ngcontent-ng-c2659241166] {
+  margin: 0 0 4px 0;
+  color: #cdd6f4;
+  font-size: 13px;
+  font-weight: 700;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-sub[_ngcontent-ng-c2659241166] {
+  color: #6c7086;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166] {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button[_ngcontent-ng-c2659241166] {
+  background: #313244;
+  border: none;
+  color: #cdd6f4;
+  padding: 6px 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button[_ngcontent-ng-c2659241166]:hover:not(:disabled) {
+  background: #45475a;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button.primary[_ngcontent-ng-c2659241166] {
+  background: #89b4fa;
+  color: #1e1e2e;
+  font-weight: 600;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button.primary[_ngcontent-ng-c2659241166]:hover:not(:disabled) {
+  background: #74a3f8;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button.ghost[_ngcontent-ng-c2659241166] {
+  background: transparent;
+  color: #f38ba8;
+  border: 1px solid #3a2020;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button.ghost[_ngcontent-ng-c2659241166]:hover:not(:disabled) {
+  background: #3a2020;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button.danger[_ngcontent-ng-c2659241166] {
+  background: #f38ba8;
+  color: #1e1e2e;
+  font-weight: 600;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button.danger[_ngcontent-ng-c2659241166]:hover:not(:disabled) {
+  background: #eb6f93;
+}
+.modal[_ngcontent-ng-c2659241166]   .modal-actions[_ngcontent-ng-c2659241166]   button[_ngcontent-ng-c2659241166]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.toast[_ngcontent-ng-c2659241166] {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.toast.error[_ngcontent-ng-c2659241166] {
+  background: #3a2020;
+  color: #f38ba8;
+  border: 1px solid #f38ba8;
+}
+
+</style>
+<style>
+@charset "UTF-8";
+
+
+
+[_nghost-ng-c3189555329] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+  background:
+    radial-gradient(
+      420px 300px at 88% -60px,
+      rgba(203, 166, 247, 0.07),
+      transparent 65%),
+    radial-gradient(
+      560px 400px at -80px 38%,
+      rgba(148, 226, 213, 0.05),
+      transparent 65%),
+    radial-gradient(
+      480px 360px at 112% 82%,
+      rgba(166, 227, 161, 0.055),
+      transparent 65%);
+}
+.content[_ngcontent-ng-c3189555329] {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px 12px 12px;
+  box-sizing: border-box;
+}
+.status-msg[_ngcontent-ng-c3189555329] {
+  color: #6c7086;
+  text-align: center;
+  padding: 40px 0;
+}
+.status-msg.error[_ngcontent-ng-c3189555329] {
+  color: #f38ba8;
+}
+.start-screen[_ngcontent-ng-c3189555329] {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.daemon-state[_ngcontent-ng-c3189555329] {
+  color: #89b4fa;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.daemon-state.stopped[_ngcontent-ng-c3189555329] {
+  color: #6c7086;
+}
+.start-hint[_ngcontent-ng-c3189555329] {
+  color: #6c7086;
+  font-size: 11px;
+  text-align: center;
+  line-height: 1.5;
+}
+.start-hint[_ngcontent-ng-c3189555329]   .mono[_ngcontent-ng-c3189555329] {
+  font-family:
+    "Cascadia Code",
+    "Consolas",
+    monospace;
+  color: #89b4fa;
+}
+.install-retry[_ngcontent-ng-c3189555329] {
+  margin-top: 4px;
+  padding: 5px 14px;
+  border: 1px solid rgba(137, 180, 250, 0.35);
+  border-radius: 7px;
+  background: rgba(137, 180, 250, 0.08);
+  color: #89b4fa;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.25s ease;
+}
+.install-retry[_ngcontent-ng-c3189555329]:hover {
+  background: rgba(137, 180, 250, 0.16);
+}
+.day-head[_ngcontent-ng-c3189555329] {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 -12px;
+  padding: 17px 14px 9px;
+  background:
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0.012) 30%,
+      transparent 46%,
+      rgba(255, 255, 255, 0.03) 68%,
+      transparent 84%),
+    radial-gradient(
+      60% 160% at 86% -30%,
+      rgba(203, 166, 247, 0.07),
+      transparent 65%),
+    radial-gradient(
+      55% 110% at 6% 30%,
+      rgba(148, 226, 213, 0.05),
+      transparent 58%),
+    rgba(30, 30, 46, 0.62);
+  backdrop-filter: blur(14px) saturate(1.6) brightness(1.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  -webkit-mask-image:
+    linear-gradient(
+      180deg,
+      #000 calc(100% - 6px),
+      transparent);
+  mask-image:
+    linear-gradient(
+      180deg,
+      #000 calc(100% - 6px),
+      transparent);
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.day-head[_ngcontent-ng-c3189555329]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10px;
+  backdrop-filter: url(#dayheadLens);
+  -webkit-mask-image:
+    linear-gradient(
+      180deg,
+      transparent,
+      #000 70%);
+  mask-image:
+    linear-gradient(
+      180deg,
+      transparent,
+      #000 70%);
+  pointer-events: none;
+}
+.fx-defs[_ngcontent-ng-c3189555329] {
+  position: fixed;
+  width: 0;
+  height: 0;
+}
+.day-week[_ngcontent-ng-c3189555329] {
+  position: absolute;
+  left: 14px;
+  top: 9.8px;
+  line-height: 1;
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: #a6adc8;
+}
+.day-date[_ngcontent-ng-c3189555329] {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+  color: #cdd6f4;
+}
+.g-btn[_ngcontent-ng-c3189555329] {
+  margin-left: auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0 12px;
+  cursor: pointer;
+  top: -6px;
+  --c: 203 166 247;
+  --ci: 228 205 252;
+  --ink: #cba6f7;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+}
+.g-btn[_ngcontent-ng-c3189555329]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.g-btn[_ngcontent-ng-c3189555329]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.g-btn[_ngcontent-ng-c3189555329]   svg[_ngcontent-ng-c3189555329] {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+.g-btn[_ngcontent-ng-c3189555329]   svg[_ngcontent-ng-c3189555329]   path[_ngcontent-ng-c3189555329] {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.g-btn[_ngcontent-ng-c3189555329]:hover:not(:disabled) {
+  --m1: 0.2;
+  --m2: 0.09;
+  --m3: 0.15;
+}
+.g-btn[_ngcontent-ng-c3189555329]:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.day-total[_ngcontent-ng-c3189555329] {
+  text-align: right;
+  margin-left: 9px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #cdd6f4;
+  transition: color 0.3s ease;
+  line-height: 22.2px;
+  margin-bottom: -0.6px;
+  position: relative;
+  top: -5.65px;
+}
+.day-total[_ngcontent-ng-c3189555329]::after {
+  content: "\200b";
+}
+.day-total.empty[_ngcontent-ng-c3189555329] {
+  margin-left: -8px;
+}
+.day-total.flash[_ngcontent-ng-c3189555329] {
+  color: #cba6f7;
+}
+.waiting[_ngcontent-ng-c3189555329] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 42px 0 34px;
+}
+.radar[_ngcontent-ng-c3189555329] {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 14px;
+  animation: _ngcontent-ng-c3189555329_radar-breathe 4s ease-in-out infinite;
+}
+.radar[_ngcontent-ng-c3189555329]   .ring[_ngcontent-ng-c3189555329] {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 226, 213, 0.28);
+}
+.radar[_ngcontent-ng-c3189555329]   svg[_ngcontent-ng-c3189555329] {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+@keyframes _ngcontent-ng-c3189555329_radar-breathe {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.waiting-title[_ngcontent-ng-c3189555329] {
+  font-size: 13px;
+  font-weight: 600;
+  color: #bac2de;
+  margin-bottom: 4px;
+}
+.waiting-sub[_ngcontent-ng-c3189555329] {
+  font-size: 11px;
+  color: #6c7086;
+}
+.cloud-backdrop[_ngcontent-ng-c3189555329] {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgba(12, 12, 20, 0.45);
+  backdrop-filter: blur(1.5px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.cloud-backdrop.open[_ngcontent-ng-c3189555329] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.content[_ngcontent-ng-c3189555329]::-webkit-scrollbar {
+  width: 4px;
+}
+.content[_ngcontent-ng-c3189555329]::-webkit-scrollbar-track {
+  background: transparent;
+}
+.content[_ngcontent-ng-c3189555329]::-webkit-scrollbar-thumb {
+  background: #313244;
+  border-radius: 2px;
+}
+
+</style>
+<style>
+
+
+[_nghost-ng-c1309666480] {
+  display: block;
+}
+.lp-table[_ngcontent-ng-c1309666480] {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+}
+.lp-mid[_ngcontent-ng-c1309666480] {
+  order: 1;
+}
+.lp-cold-mark[_ngcontent-ng-c1309666480] {
+  order: 2;
+  height: 0;
+}
+.blk[_ngcontent-ng-c1309666480] {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid rgba(205, 214, 244, 0.1);
+  border-radius: 9px;
+  box-shadow: 0 3px 10px -4px rgba(0, 0, 0, 0.55);
+  padding: 3px 8px 5px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transition: box-shadow 0.2s ease;
+}
+.blk[_ngcontent-ng-c1309666480]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.035),
+      transparent 40%,
+      rgba(255, 255, 255, 0.02) 70%,
+      transparent 88%),
+    linear-gradient(rgba(30, 30, 46, 0.38), rgba(30, 30, 46, 0.38));
+  backdrop-filter: blur(9px) saturate(1.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  transition: background 0.4s ease;
+  pointer-events: none;
+}
+.blk.one[_ngcontent-ng-c1309666480] {
+  padding-bottom: 4px;
+}
+.blk.traveler[_ngcontent-ng-c1309666480] {
+  z-index: 5;
+  box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.72), 0 3px 10px -4px rgba(0, 0, 0, 0.55);
+}
+.blk.hot[_ngcontent-ng-c1309666480]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      100deg,
+      transparent 42%,
+      rgb(var(--heat)/0.8) 50%,
+      transparent 58%),
+    linear-gradient(
+      100deg,
+      transparent 28%,
+      rgb(var(--heat)/0.3) 50%,
+      transparent 72%),
+    linear-gradient(
+      178deg,
+      rgb(var(--heat)/0.4),
+      transparent 46%),
+    linear-gradient(
+      358deg,
+      rgb(var(--heat)/0.13),
+      transparent 40%);
+  background-size:
+    240% 100%,
+    240% 100%,
+    100% 100%,
+    100% 100%;
+  background-position:
+    120% 0,
+    120% 0,
+    0 0,
+    0 0;
+  background-repeat: no-repeat;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: _ngcontent-ng-c1309666480_rim-sweep 11s ease-in-out infinite;
+}
+.blk.hot.quiet[_ngcontent-ng-c1309666480]::before {
+  background:
+    linear-gradient(
+      100deg,
+      transparent 42%,
+      rgba(205, 214, 244, 0.3) 50%,
+      transparent 58%),
+    linear-gradient(
+      100deg,
+      transparent 28%,
+      rgba(205, 214, 244, 0.12) 50%,
+      transparent 72%),
+    linear-gradient(
+      178deg,
+      rgba(205, 214, 244, 0.14),
+      transparent 46%),
+    linear-gradient(
+      358deg,
+      rgba(205, 214, 244, 0.05),
+      transparent 40%);
+  background-size:
+    240% 100%,
+    240% 100%,
+    100% 100%,
+    100% 100%;
+  background-position:
+    120% 0,
+    120% 0,
+    0 0,
+    0 0;
+  background-repeat: no-repeat;
+  animation: none;
+}
+@keyframes _ngcontent-ng-c1309666480_rim-sweep {
+  0% {
+    background-position:
+      120% 0,
+      120% 0,
+      0 0,
+      0 0;
+  }
+  8% {
+    background-position:
+      76% 0,
+      120% 0,
+      0 0,
+      0 0;
+  }
+  24% {
+    background-position:
+      -20% 0,
+      98% 0,
+      0 0,
+      0 0;
+  }
+  68% {
+    background-position:
+      -20% 0,
+      -20% 0,
+      0 0,
+      0 0;
+  }
+  100% {
+    background-position:
+      -20% 0,
+      -20% 0,
+      0 0,
+      0 0;
+  }
+}
+.blk-id[_ngcontent-ng-c1309666480] {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+  height: 26px;
+  margin: -3px -8px 0;
+  padding: 3px 8px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.075),
+      rgba(255, 255, 255, 0.018));
+  border-radius: 8px 8px 0 0;
+}
+.blk-id[_ngcontent-ng-c1309666480]   .sum[_ngcontent-ng-c1309666480] {
+  color: #cdd6f4;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  justify-self: end;
+}
+.blk-body[_ngcontent-ng-c1309666480] {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) max-content max-content max-content minmax(48px, max-content);
+  gap: 0 8px;
+  padding-top: 2px;
+}
+.tkt[_ngcontent-ng-c1309666480] {
+  justify-self: center;
+  white-space: nowrap;
+  color: #cdd6f4;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-shadow: 0 0 8px rgba(205, 214, 244, 0.3), 0 0 2px rgba(205, 214, 244, 0.18);
+}
+.tkt.anc[_ngcontent-ng-c1309666480] {
+  transition: color 0.18s ease, text-shadow 0.18s ease;
+}
+.tkt.anc[_ngcontent-ng-c1309666480]:hover, 
+.tkt.anc.armed[_ngcontent-ng-c1309666480] {
+  color: #f4f6ff;
+  text-shadow: 0 0 10px rgba(205, 214, 244, 0.62), 0 0 3px rgba(205, 214, 244, 0.42);
+}
+.tkt.locked[_ngcontent-ng-c1309666480] {
+  pointer-events: none;
+}
+.blk[_ngcontent-ng-c1309666480]:not(.hot)   .tkt[_ngcontent-ng-c1309666480] {
+  margin-right: calc(74px - 9.167ch);
+}
+.c-nm[_ngcontent-ng-c1309666480] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #cdd6f4;
+  font-size: 11.5px;
+  cursor: default;
+  -webkit-mask-image:
+    linear-gradient(
+      90deg,
+      #000 calc(100% - 20px),
+      transparent);
+  mask-image:
+    linear-gradient(
+      90deg,
+      #000 calc(100% - 20px),
+      transparent);
+}
+.c-nm.none[_ngcontent-ng-c1309666480] {
+  color: #585b70;
+  font-style: italic;
+}
+.wl[_ngcontent-ng-c1309666480] {
+  grid-column: 1/-1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 22px;
+}
+.c-type[_ngcontent-ng-c1309666480] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #939ab6;
+  font-size: 10px;
+  font-weight: 700;
+}
+.c-ds[_ngcontent-ng-c1309666480] {
+  grid-column: 2/6;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #7f849c;
+  font-style: italic;
+  font-size: 10.5px;
+}
+.c-ds.man[_ngcontent-ng-c1309666480] {
+  font-style: normal;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 14px;
+  padding: 0 5px 0 6px;
+  border-radius: 4px;
+  overflow: visible;
+  line-height: 1;
+  color: #8b90ab;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  box-shadow: inset 0 0 0 1px rgba(205, 214, 244, 0.13);
+  background: rgba(205, 214, 244, 0.03);
+}
+.c-ds.man[_ngcontent-ng-c1309666480]   .mg[_ngcontent-ng-c1309666480] {
+  flex-shrink: 0;
+  color: #6c7086;
+  margin-bottom: 0.6px;
+}
+.wl[_ngcontent-ng-c1309666480]   .c-dur[_ngcontent-ng-c1309666480] {
+  grid-column: 6;
+  color: #a6adc8;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-align: right;
+  justify-self: end;
+  padding: 0 5px;
+  margin: 0 -6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+.wl[_ngcontent-ng-c1309666480]   .c-dur.wheel[_ngcontent-ng-c1309666480] {
+  color: #cba6f7;
+  cursor: ns-resize;
+}
+.wl[_ngcontent-ng-c1309666480]   .c-dur.wheel[_ngcontent-ng-c1309666480]:hover {
+  border-color: rgba(203, 166, 247, 0.55);
+  background: rgba(17, 17, 27, 0.5);
+}
+.wl[_ngcontent-ng-c1309666480]   .c-dur.edit[_ngcontent-ng-c1309666480] {
+  width: 60px;
+  height: 18px;
+  background: transparent;
+  color: #cba6f7;
+  font-family: inherit;
+  font-size: 11px;
+  outline: none;
+}
+.wl.fresh[_ngcontent-ng-c1309666480] {
+  animation: _ngcontent-ng-c1309666480_row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+.wl.pop[_ngcontent-ng-c1309666480] {
+  animation: _ngcontent-ng-c1309666480_row-in 0.45s cubic-bezier(0.2, 1.2, 0.4, 1) backwards;
+}
+.wl.arrive[_ngcontent-ng-c1309666480], 
+.wl.landed[_ngcontent-ng-c1309666480] {
+  animation: none;
+}
+.wl.pending[_ngcontent-ng-c1309666480]   .c-dur[_ngcontent-ng-c1309666480] {
+  color: #cba6f7;
+}
+.wl.editing[_ngcontent-ng-c1309666480]   .c-nm[_ngcontent-ng-c1309666480] {
+  color: #8f96b3;
+}
+.wl.deleted[_ngcontent-ng-c1309666480]   .c-type[_ngcontent-ng-c1309666480], 
+.wl.deleted[_ngcontent-ng-c1309666480]   .c-ds[_ngcontent-ng-c1309666480] {
+  opacity: 0.38;
+  text-decoration: line-through;
+}
+.wl.removing[_ngcontent-ng-c1309666480] {
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: height 0.22s ease, opacity 0.18s ease;
+}
+.l-undo[_ngcontent-ng-c1309666480] {
+  --c: 203 166 247;
+  --ci: 228 205 252;
+  --ink: #cba6f7;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+  grid-column: 6;
+  justify-self: end;
+  width: 48px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.l-undo[_ngcontent-ng-c1309666480]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.l-undo[_ngcontent-ng-c1309666480]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.l-undo[_ngcontent-ng-c1309666480]:hover {
+  --m1: 0.2;
+  --m2: 0.09;
+  --m3: 0.15;
+}
+.blk-id[_ngcontent-ng-c1309666480]   .l-undo[_ngcontent-ng-c1309666480] {
+  grid-column: 3;
+}
+.wl.fav-done[_ngcontent-ng-c1309666480]   .c-ds.fav-note[_ngcontent-ng-c1309666480] {
+  color: #cba6f7;
+  font-style: normal;
+}
+.rf[_ngcontent-ng-c1309666480] {
+  grid-column: 1/6;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform-origin: 0 50%;
+  animation: _ngcontent-ng-c1309666480_le-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+.rf[_ngcontent-ng-c1309666480]   select[_ngcontent-ng-c1309666480], 
+.rf[_ngcontent-ng-c1309666480]   input[_ngcontent-ng-c1309666480] {
+  background: rgba(17, 17, 27, 0.85);
+  border: 1px solid #313244;
+  border-radius: 5px;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  height: 20px;
+  outline: none;
+}
+.rf[_ngcontent-ng-c1309666480]   select[_ngcontent-ng-c1309666480]:focus, 
+.rf[_ngcontent-ng-c1309666480]   input[_ngcontent-ng-c1309666480]:focus {
+  border-color: #cba6f7;
+}
+.rf[_ngcontent-ng-c1309666480]   select[_ngcontent-ng-c1309666480]:disabled, 
+.rf[_ngcontent-ng-c1309666480]   input[_ngcontent-ng-c1309666480]:disabled {
+  opacity: 0.45;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-act[_ngcontent-ng-c1309666480] {
+  width: 104px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #bac2de;
+  padding: 2px 3px;
+  cursor: pointer;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-desc[_ngcontent-ng-c1309666480] {
+  flex: 1;
+  min-width: 0;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-desc[_ngcontent-ng-c1309666480]::placeholder {
+  color: #4b4d63;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-desc.need[_ngcontent-ng-c1309666480] {
+  border-color: rgba(203, 166, 247, 0.65);
+  animation: _ngcontent-ng-c1309666480_need-pulse 1.6s ease-in-out infinite;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-desc.need[_ngcontent-ng-c1309666480]::placeholder {
+  color: rgba(203, 166, 247, 0.55);
+}
+.rf[_ngcontent-ng-c1309666480]   .le-back[_ngcontent-ng-c1309666480] {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  height: 20px;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-back[_ngcontent-ng-c1309666480]:hover {
+  color: #a6adc8;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-save[_ngcontent-ng-c1309666480] {
+  --c: 203 166 247;
+  --ci: 228 205 252;
+  --ink: #cba6f7;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 10px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-save[_ngcontent-ng-c1309666480]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-save[_ngcontent-ng-c1309666480]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-save[_ngcontent-ng-c1309666480]:hover:not(:disabled) {
+  --m1: 0.2;
+  --m2: 0.09;
+  --m3: 0.15;
+}
+.rf[_ngcontent-ng-c1309666480]   .le-save[_ngcontent-ng-c1309666480]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+@keyframes _ngcontent-ng-c1309666480_le-in {
+  0% {
+    transform: scaleX(0.5);
+    opacity: 0;
+  }
+}
+@keyframes _ngcontent-ng-c1309666480_need-pulse {
+  0%, 100% {
+    border-color: rgba(203, 166, 247, 0.65);
+  }
+  50% {
+    border-color: rgba(203, 166, 247, 0.25);
+  }
+}
+.anc[_ngcontent-ng-c1309666480] {
+  cursor: pointer;
+  transition: color 0.18s ease, filter 0.18s ease;
+}
+.c-type.anc[_ngcontent-ng-c1309666480]:hover, 
+.c-type.anc.armed[_ngcontent-ng-c1309666480] {
+  color: #cdd6f4;
+}
+.blk.folding[_ngcontent-ng-c1309666480]   .wl.removing[_ngcontent-ng-c1309666480], 
+.blk.folding[_ngcontent-ng-c1309666480]   .sr.removing[_ngcontent-ng-c1309666480] {
+  height: 22px;
+  opacity: 1;
+}
+.blk.deleted[_ngcontent-ng-c1309666480]   .tkt[_ngcontent-ng-c1309666480], 
+.blk.deleted[_ngcontent-ng-c1309666480]   .c-nm[_ngcontent-ng-c1309666480], 
+.blk.deleted[_ngcontent-ng-c1309666480]   .c-type[_ngcontent-ng-c1309666480], 
+.blk.deleted[_ngcontent-ng-c1309666480]   .c-ds[_ngcontent-ng-c1309666480], 
+.blk.deleted[_ngcontent-ng-c1309666480]   .wl[_ngcontent-ng-c1309666480]   .c-dur[_ngcontent-ng-c1309666480] {
+  opacity: 0.38;
+  text-decoration: line-through;
+}
+.blk.deleted[_ngcontent-ng-c1309666480]   .anc[_ngcontent-ng-c1309666480] {
+  pointer-events: none;
+}
+@keyframes _ngcontent-ng-c1309666480_row-in {
+  0% {
+    transform: translateY(6px) scale(0.96);
+    opacity: 0;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+.sheet[_nghost-ng-c1309666480]   .lp-table[_ngcontent-ng-c1309666480] {
+  padding-bottom: 0;
+}
+.sheet[_nghost-ng-c1309666480]   .blk[_ngcontent-ng-c1309666480], 
+.sheet[_nghost-ng-c1309666480]   .blk.one[_ngcontent-ng-c1309666480] {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  padding: 0 8px;
+}
+.sheet[_nghost-ng-c1309666480]   .blk[_ngcontent-ng-c1309666480]::after, 
+.sheet[_nghost-ng-c1309666480]   .blk.one[_ngcontent-ng-c1309666480]::after {
+  content: none;
+}
+.sheet[_nghost-ng-c1309666480]   .blk[_ngcontent-ng-c1309666480]:last-child, 
+.sheet[_nghost-ng-c1309666480]   .blk.one[_ngcontent-ng-c1309666480]:last-child {
+  padding-bottom: 2px;
+}
+.sheet[_nghost-ng-c1309666480]   .blk-id[_ngcontent-ng-c1309666480] {
+  position: relative;
+  margin: 0 -8px;
+  padding: 0 8px;
+  background: none;
+  border-radius: 0;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sheet[_nghost-ng-c1309666480]   .blk[_ngcontent-ng-c1309666480]    + .blk[_ngcontent-ng-c1309666480]   .blk-id[_ngcontent-ng-c1309666480] {
+  box-shadow: inset 0 1px 0 rgba(205, 214, 244, 0.06);
+}
+.sheet[_nghost-ng-c1309666480]   .blk.open[_ngcontent-ng-c1309666480]   .blk-id[_ngcontent-ng-c1309666480] {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.04),
+      rgba(255, 255, 255, 0.01));
+}
+.sheet[_nghost-ng-c1309666480]   .blk.open[_ngcontent-ng-c1309666480]   .blk-body[_ngcontent-ng-c1309666480] {
+  padding-bottom: 5px;
+}
+.sheet[_nghost-ng-c1309666480]   .blk[_ngcontent-ng-c1309666480]:last-child   .blk-id[_ngcontent-ng-c1309666480] {
+  border-radius: 0 0 8px 8px;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.open[_ngcontent-ng-c1309666480]:last-child   .blk-id[_ngcontent-ng-c1309666480] {
+  border-radius: 0;
+}
+.sheet[_nghost-ng-c1309666480]   .c-nm[_ngcontent-ng-c1309666480] {
+  cursor: inherit;
+}
+.sheet[_nghost-ng-c1309666480]   .c-ds.note[_ngcontent-ng-c1309666480] {
+  color: #cba6f7;
+  font-style: normal;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.cf[_ngcontent-ng-c1309666480] {
+  padding: 3px 8px 5px;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.cf[_ngcontent-ng-c1309666480]    > *[_ngcontent-ng-c1309666480] {
+  position: relative;
+  z-index: 1;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.cf[_ngcontent-ng-c1309666480]::before {
+  content: "";
+  position: absolute;
+  inset: 1px 3px 2px;
+  border-radius: 8px;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.05),
+      transparent 38%,
+      rgba(255, 255, 255, 0.02) 72%,
+      transparent 90%),
+    linear-gradient(
+      180deg,
+      rgba(243, 139, 168, 0.15),
+      rgba(243, 139, 168, 0.07) 40%,
+      rgba(243, 139, 168, 0.055));
+  box-shadow: inset 0 0 0 1px rgba(243, 139, 168, 0.3), inset 0 1px 0 rgba(255, 214, 224, 0.16);
+}
+.sheet[_nghost-ng-c1309666480]   .blk.cf[_ngcontent-ng-c1309666480]   .blk-id[_ngcontent-ng-c1309666480] {
+  margin: 0 -5px;
+  padding: 0 5px;
+  border-radius: 7px 7px 0 0;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(243, 139, 168, 0.1),
+      rgba(243, 139, 168, 0.02));
+  box-shadow: none;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.cf[_ngcontent-ng-c1309666480]   .c-nm[_ngcontent-ng-c1309666480] {
+  color: #f5e0e8;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.cf[_ngcontent-ng-c1309666480]    + .blk[_ngcontent-ng-c1309666480]   .blk-id[_ngcontent-ng-c1309666480] {
+  box-shadow: none;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.flash-cf[_ngcontent-ng-c1309666480]::after, 
+.sheet[_nghost-ng-c1309666480]   .blk.flash-in[_ngcontent-ng-c1309666480]::after {
+  content: "";
+  position: absolute;
+  inset: 1px 3px 2px;
+  border-radius: 8px;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.6s ease;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.sheet[_nghost-ng-c1309666480]   .blk.flash-cf[_ngcontent-ng-c1309666480]::after {
+  background: rgba(243, 139, 168, 0.24);
+}
+.sheet[_nghost-ng-c1309666480]   .blk.flash-in[_ngcontent-ng-c1309666480]::after {
+  background: rgba(137, 180, 250, 0.2);
+}
+.sheet[_nghost-ng-c1309666480]   .blk.seek[_ngcontent-ng-c1309666480]::after {
+  opacity: 1;
+  transition: none;
+}
+.sheet[_nghost-ng-c1309666480]   .cfb[_ngcontent-ng-c1309666480] {
+  grid-column: 1/-1;
+  display: grid;
+  grid-template-columns: subgrid;
+}
+.sheet[_nghost-ng-c1309666480]   .cfb[_ngcontent-ng-c1309666480]   .wl[_ngcontent-ng-c1309666480] {
+  height: 24px;
+}
+.sheet[_nghost-ng-c1309666480]   .cfb[_ngcontent-ng-c1309666480]   .cf-cap[_ngcontent-ng-c1309666480] {
+  height: 21px;
+}
+.sheet[_nghost-ng-c1309666480]   .cf-say[_ngcontent-ng-c1309666480] {
+  color: #a6adc8;
+  font-style: normal;
+}
+.sheet[_nghost-ng-c1309666480]   .side[_ngcontent-ng-c1309666480] {
+  justify-self: start;
+  height: 18px;
+  min-width: 62px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sheet[_nghost-ng-c1309666480]   .side[_ngcontent-ng-c1309666480]   span[_ngcontent-ng-c1309666480] {
+  position: relative;
+  z-index: 3;
+}
+.sheet[_nghost-ng-c1309666480]   .side[_ngcontent-ng-c1309666480]:hover {
+  filter: brightness(1.18);
+}
+.sheet[_nghost-ng-c1309666480]   .side.mine[_ngcontent-ng-c1309666480] {
+  --c: 203 166 247;
+  --ci: 228 205 252;
+  --ink: #cba6f7;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+}
+.sheet[_nghost-ng-c1309666480]   .side.mine[_ngcontent-ng-c1309666480]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.sheet[_nghost-ng-c1309666480]   .side.mine[_ngcontent-ng-c1309666480]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.sheet[_nghost-ng-c1309666480]   .side.tempo[_ngcontent-ng-c1309666480] {
+  --c: 137 180 250;
+  --ci: 200 220 252;
+  --ink: #89b4fa;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+}
+.sheet[_nghost-ng-c1309666480]   .side.tempo[_ngcontent-ng-c1309666480]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.sheet[_nghost-ng-c1309666480]   .side.tempo[_ngcontent-ng-c1309666480]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.sheet[_nghost-ng-c1309666480]   .side-w[_ngcontent-ng-c1309666480] {
+  justify-self: start;
+  min-width: 62px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #7f849c;
+  text-align: center;
+}
+.sheet[_nghost-ng-c1309666480]   .v[_ngcontent-ng-c1309666480] {
+  font-style: normal;
+  color: #7f849c;
+}
+.sheet[_nghost-ng-c1309666480]   .v[_ngcontent-ng-c1309666480]   i[_ngcontent-ng-c1309666480] {
+  font-style: italic;
+}
+.sheet[_nghost-ng-c1309666480]   .v[_ngcontent-ng-c1309666480]   .ty[_ngcontent-ng-c1309666480] {
+  font-weight: 700;
+  font-size: 10px;
+}
+.sheet[_nghost-ng-c1309666480]   .v[_ngcontent-ng-c1309666480]   .df[_ngcontent-ng-c1309666480] {
+  color: #f4f6ff;
+}
+.sheet[_nghost-ng-c1309666480]   .v[_ngcontent-ng-c1309666480]   .gone[_ngcontent-ng-c1309666480] {
+  color: #f5c2d0;
+  font-style: italic;
+}
+.sheet[_nghost-ng-c1309666480]   .cf-side[_ngcontent-ng-c1309666480]   .c-dur[_ngcontent-ng-c1309666480] {
+  color: #7f849c;
+}
+.sheet[_nghost-ng-c1309666480]   .cf-side[_ngcontent-ng-c1309666480]   .c-dur.df[_ngcontent-ng-c1309666480] {
+  color: #f4f6ff;
+}
+@media (prefers-reduced-motion: reduce) {
+  *[_ngcontent-ng-c1309666480], 
+   *[_ngcontent-ng-c1309666480]::before, 
+   *[_ngcontent-ng-c1309666480]::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+</style>
+<style>
+@charset "UTF-8";
+
+
+
+[_nghost-ng-c88576605] {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  z-index: 31;
+  background: #191926;
+  border: 1px solid rgba(203, 166, 247, 0.22);
+  border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  padding: 10px;
+  transform-origin: calc(100% - 60px) 0;
+  transform: scale(0.3) translateY(-16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.22s cubic-bezier(0.2, 1.3, 0.35, 1), opacity 0.16s ease;
+  display: block;
+}
+.open[_nghost-ng-c88576605] {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+.cloud-filter[_ngcontent-ng-c88576605] {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+.cloud-filter[_ngcontent-ng-c88576605]   .f-ic[_ngcontent-ng-c88576605] {
+  color: #6c7086;
+  font-size: 11px;
+}
+.cloud-filter[_ngcontent-ng-c88576605]   input[_ngcontent-ng-c88576605] {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 11.5px;
+  min-width: 0;
+}
+.cloud-filter[_ngcontent-ng-c88576605]   input[_ngcontent-ng-c88576605]::placeholder {
+  color: #4b4d63;
+}
+.cloud-filter[_ngcontent-ng-c88576605]   .f-batch[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid #26263a;
+  border-radius: 4px;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 9px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+.cloud-filter[_ngcontent-ng-c88576605]   .f-batch[_ngcontent-ng-c88576605]:hover {
+  color: #a6adc8;
+  border-color: #45475a;
+}
+.batch-mode[_nghost-ng-c88576605]   .f-batch[_ngcontent-ng-c88576605] {
+  color: #cba6f7;
+  border-color: rgba(203, 166, 247, 0.5);
+  background: rgba(203, 166, 247, 0.1);
+}
+.cloud-body[_ngcontent-ng-c88576605] {
+  max-height: 212px;
+  overflow: hidden;
+  transition: max-height 0.13s ease;
+}
+.cloud-chips[_ngcontent-ng-c88576605] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: flex-start;
+  max-height: 212px;
+  overflow-y: auto;
+  transition: opacity 0.1s ease;
+  padding-top: 3px;
+}
+.cloud-chips[_ngcontent-ng-c88576605]::-webkit-scrollbar {
+  width: 4px;
+}
+.cloud-chips[_ngcontent-ng-c88576605]::-webkit-scrollbar-thumb {
+  background: #313244;
+  border-radius: 2px;
+}
+.form-mode[_nghost-ng-c88576605]   .cloud-filter[_ngcontent-ng-c88576605] {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+.form-mode[_nghost-ng-c88576605]   .cloud-body[_ngcontent-ng-c88576605] {
+  max-height: 43px;
+}
+.form-mode[_nghost-ng-c88576605]   .cloud-chips[_ngcontent-ng-c88576605] {
+  opacity: 0;
+  pointer-events: none;
+}
+.review-mode[_nghost-ng-c88576605]   .cloud-filter[_ngcontent-ng-c88576605] {
+  display: none;
+}
+.review-mode[_nghost-ng-c88576605]   .cloud-body[_ngcontent-ng-c88576605] {
+  display: none;
+}
+.row-label[_ngcontent-ng-c88576605] {
+  width: 100%;
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+  color: #4b4d63;
+  margin: 2px 0 1px;
+}
+.row-label.jira[_ngcontent-ng-c88576605] {
+  color: rgba(137, 180, 250, 0.75);
+}
+.row-label.sugg[_ngcontent-ng-c88576605] {
+  color: rgba(249, 226, 175, 0.6);
+}
+.fav[_ngcontent-ng-c88576605] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(203, 166, 247, 0.05);
+  border: 1px solid rgba(203, 166, 247, 0.2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.fav[_ngcontent-ng-c88576605]:hover {
+  background: rgba(203, 166, 247, 0.14);
+  border-color: rgba(203, 166, 247, 0.55);
+}
+.fav[_ngcontent-ng-c88576605]   .f-task[_ngcontent-ng-c88576605] {
+  color: rgba(203, 166, 247, 0.75);
+  font-weight: 600;
+  font-size: 9.5px;
+}
+.fav[_ngcontent-ng-c88576605]   .f-name[_ngcontent-ng-c88576605] {
+  color: #bac2de;
+  font-weight: 600;
+}
+.fav[_ngcontent-ng-c88576605]   .f-min[_ngcontent-ng-c88576605] {
+  color: #6c7086;
+  font-weight: 600;
+}
+.fav[_ngcontent-ng-c88576605]:hover   .f-name[_ngcontent-ng-c88576605] {
+  color: #cba6f7;
+}
+.fav.sel[_ngcontent-ng-c88576605] {
+  background: rgba(203, 166, 247, 0.2);
+  border-color: #cba6f7;
+}
+.fav.sel[_ngcontent-ng-c88576605]::before {
+  content: "\2713";
+  font-size: 9px;
+  color: #cba6f7;
+  font-weight: 700;
+}
+.fav.shrink[_ngcontent-ng-c88576605] {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  transform: scale(0.5);
+  opacity: 0;
+  pointer-events: none;
+}
+.fav.sugg[_ngcontent-ng-c88576605] {
+  border: 1px solid rgba(205, 214, 244, 0.12);
+  background: rgba(205, 214, 244, 0.04);
+  max-width: 100%;
+}
+.fav.sugg[_ngcontent-ng-c88576605]   .f-spark[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  color: #f9e2af;
+  filter: drop-shadow(0 0 3px rgba(249, 226, 175, 0.75)) drop-shadow(0 0 6px rgba(249, 226, 175, 0.3));
+}
+.fav.sugg[_ngcontent-ng-c88576605]   .f-task[_ngcontent-ng-c88576605] {
+  color: #8b90ab;
+  flex-shrink: 0;
+}
+.fav.sugg[_ngcontent-ng-c88576605]   .f-name[_ngcontent-ng-c88576605] {
+  color: #6c7086;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+.fav.sugg[_ngcontent-ng-c88576605]:hover {
+  background: rgba(205, 214, 244, 0.08);
+  border-color: rgba(205, 214, 244, 0.3);
+}
+.fav.sugg[_ngcontent-ng-c88576605]:hover   .f-name[_ngcontent-ng-c88576605] {
+  color: #a6adc8;
+}
+.fav.jira[_ngcontent-ng-c88576605] {
+  border: 1px solid rgba(137, 180, 250, 0.32);
+  background: rgba(137, 180, 250, 0.05);
+  border-radius: 8px;
+  max-width: 100%;
+}
+.fav.jira[_ngcontent-ng-c88576605]   .f-task[_ngcontent-ng-c88576605] {
+  color: #89b4fa;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.fav.jira[_ngcontent-ng-c88576605]   .f-name[_ngcontent-ng-c88576605] {
+  color: #a6adc8;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+.fav.jira[_ngcontent-ng-c88576605]:hover {
+  background: rgba(137, 180, 250, 0.12);
+  border-color: rgba(137, 180, 250, 0.6);
+}
+.fav.jira[_ngcontent-ng-c88576605]:hover   .f-name[_ngcontent-ng-c88576605] {
+  color: #cdd6f4;
+}
+.fav.jira.sel[_ngcontent-ng-c88576605] {
+  background: rgba(137, 180, 250, 0.16);
+  border-color: #89b4fa;
+}
+.fav.jira.sel[_ngcontent-ng-c88576605]::before {
+  color: #89b4fa;
+}
+.fav.jira.mine[_ngcontent-ng-c88576605]   .f-name[_ngcontent-ng-c88576605] {
+  max-width: none;
+}
+.fav.jira.saved[_ngcontent-ng-c88576605] {
+  border-color: #cba6f7;
+}
+.fav.jira.saved[_ngcontent-ng-c88576605]   .f-name.saved-note[_ngcontent-ng-c88576605] {
+  color: #cba6f7;
+  font-style: normal;
+}
+.spawn[_nghost-ng-c88576605]   .fav[_ngcontent-ng-c88576605] {
+  animation: _ngcontent-ng-c88576605_chip-pop 0.3s cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
+}
+.jira-status[_ngcontent-ng-c88576605] {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: #6c7086;
+  padding: 3px 2px;
+}
+.jira-status[_ngcontent-ng-c88576605]   .spin[_ngcontent-ng-c88576605] {
+  display: inline-block;
+  animation: _ngcontent-ng-c88576605_spin 1s linear infinite;
+  color: #89b4fa;
+}
+.jira-status.link[_ngcontent-ng-c88576605] {
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: #89b4fa;
+}
+.jira-status.link[_ngcontent-ng-c88576605]:hover {
+  color: #b4d0fb;
+  text-decoration: underline;
+}
+.cloud-foot[_ngcontent-ng-c88576605] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(203, 166, 247, 0.12);
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .bk-info[_ngcontent-ng-c88576605] {
+  font-size: 10px;
+  color: #6c7086;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .bk-info[_ngcontent-ng-c88576605]   b[_ngcontent-ng-c88576605] {
+  color: #cba6f7;
+  font-weight: 700;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .bk-clear[_ngcontent-ng-c88576605] {
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 9.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .bk-clear[_ngcontent-ng-c88576605]:hover {
+  color: #f38ba8;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .bk-review[_ngcontent-ng-c88576605] {
+  margin-left: auto;
+  background: #cba6f7;
+  color: #1e1e2e;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 4px 13px;
+  cursor: pointer;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .bk-review[_ngcontent-ng-c88576605]:hover:not(:disabled) {
+  background: #b894ee;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .bk-review[_ngcontent-ng-c88576605]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .ef-remove[_ngcontent-ng-c88576605]    + .bk-review[_ngcontent-ng-c88576605] {
+  margin-left: 0;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .ef-remove[_ngcontent-ng-c88576605] {
+  margin-left: auto;
+  background: rgba(243, 139, 168, 0.14);
+  border: 1px solid rgba(243, 139, 168, 0.5);
+  color: #f38ba8;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .ef-remove[_ngcontent-ng-c88576605]:hover:not(:disabled) {
+  background: rgba(243, 139, 168, 0.24);
+}
+.cloud-foot[_ngcontent-ng-c88576605]   .ef-remove[_ngcontent-ng-c88576605]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.cloud-review[_ngcontent-ng-c88576605] {
+  display: flex;
+  flex-direction: column;
+  animation: _ngcontent-ng-c88576605_rv-in 0.16s ease;
+}
+.rv-list[_ngcontent-ng-c88576605] {
+  max-height: 264px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rv-list[_ngcontent-ng-c88576605]::-webkit-scrollbar {
+  width: 4px;
+}
+.rv-list[_ngcontent-ng-c88576605]::-webkit-scrollbar-thumb {
+  background: #313244;
+  border-radius: 2px;
+}
+.rv-row[_ngcontent-ng-c88576605] {
+  background: rgba(17, 17, 27, 0.5);
+  border: 1px solid #26263a;
+  border-radius: 7px;
+  padding: 5px 8px 6px;
+}
+.rv-row.jira[_ngcontent-ng-c88576605]   .rv-key[_ngcontent-ng-c88576605] {
+  color: #89b4fa;
+}
+.rv-top[_ngcontent-ng-c88576605] {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 9.5px;
+  margin-bottom: 4px;
+}
+.rv-top[_ngcontent-ng-c88576605]   .rv-key[_ngcontent-ng-c88576605] {
+  color: #cba6f7;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.rv-top[_ngcontent-ng-c88576605]   .rv-name[_ngcontent-ng-c88576605] {
+  color: #bac2de;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.rv-top[_ngcontent-ng-c88576605]   .rv-x[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.rv-top[_ngcontent-ng-c88576605]   .rv-x[_ngcontent-ng-c88576605]:hover {
+  color: #f38ba8;
+}
+.rv-ctl[_ngcontent-ng-c88576605] {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-act[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  width: 118px;
+  background: rgba(17, 17, 27, 0.85);
+  border: 1px solid #313244;
+  border-radius: 5px;
+  color: #bac2de;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 3px 3px;
+  outline: none;
+  cursor: pointer;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-act[_ngcontent-ng-c88576605]:focus {
+  border-color: #cba6f7;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-act.need[_ngcontent-ng-c88576605] {
+  border-color: rgba(203, 166, 247, 0.65);
+  color: #cba6f7;
+  animation: _ngcontent-ng-c88576605_need-pulse 1.6s ease-in-out infinite;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-min[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  width: 58px;
+  text-align: center;
+  background: rgba(17, 17, 27, 0.85);
+  border: 1px solid #313244;
+  border-radius: 5px;
+  color: #cba6f7;
+  font-weight: 700;
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 3px 4px;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-min[_ngcontent-ng-c88576605]:focus {
+  border-color: #cba6f7;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-desc[_ngcontent-ng-c88576605] {
+  flex: 1;
+  min-width: 0;
+  background: rgba(17, 17, 27, 0.85);
+  border: 1px solid #313244;
+  border-radius: 5px;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 3px 7px;
+  outline: none;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-desc[_ngcontent-ng-c88576605]:focus {
+  border-color: #cba6f7;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-desc[_ngcontent-ng-c88576605]::placeholder {
+  color: #4b4d63;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-desc.need[_ngcontent-ng-c88576605] {
+  border-color: rgba(203, 166, 247, 0.65);
+  animation: _ngcontent-ng-c88576605_need-pulse 1.6s ease-in-out infinite;
+}
+.rv-ctl[_ngcontent-ng-c88576605]   .rv-desc.need[_ngcontent-ng-c88576605]::placeholder {
+  color: rgba(203, 166, 247, 0.55);
+}
+.rv-foot[_ngcontent-ng-c88576605] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.rv-foot[_ngcontent-ng-c88576605]   .rv-back[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 3px;
+}
+.rv-foot[_ngcontent-ng-c88576605]   .rv-back[_ngcontent-ng-c88576605]:hover {
+  color: #a6adc8;
+}
+.rv-foot[_ngcontent-ng-c88576605]   .rv-info[_ngcontent-ng-c88576605] {
+  font-size: 10px;
+  color: #6c7086;
+  font-variant-numeric: tabular-nums;
+}
+.rv-foot[_ngcontent-ng-c88576605]   .rv-hint[_ngcontent-ng-c88576605] {
+  font-size: 9px;
+  color: #cba6f7;
+  opacity: 0.8;
+}
+.rv-foot[_ngcontent-ng-c88576605]   .rv-ok[_ngcontent-ng-c88576605] {
+  margin-left: auto;
+  background: #cba6f7;
+  color: #1e1e2e;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+.rv-foot[_ngcontent-ng-c88576605]   .rv-ok[_ngcontent-ng-c88576605]:hover:not(:disabled) {
+  background: #b894ee;
+}
+.rv-foot[_ngcontent-ng-c88576605]   .rv-ok[_ngcontent-ng-c88576605]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.cloud-form[_ngcontent-ng-c88576605] {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  transform-origin: 0 50%;
+  animation: _ngcontent-ng-c88576605_form-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1) 0.05s backwards;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-top[_ngcontent-ng-c88576605] {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 13px;
+  margin-bottom: 5px;
+  font-size: 9.5px;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-key[_ngcontent-ng-c88576605] {
+  color: #89b4fa;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-name[_ngcontent-ng-c88576605] {
+  color: #bac2de;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-ctl[_ngcontent-ng-c88576605] {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.cloud-form[_ngcontent-ng-c88576605]   input[_ngcontent-ng-c88576605], 
+.cloud-form[_ngcontent-ng-c88576605]   select[_ngcontent-ng-c88576605] {
+  background: rgba(17, 17, 27, 0.85);
+  border: 1px solid #313244;
+  border-radius: 6px;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+}
+.cloud-form[_ngcontent-ng-c88576605]   input[_ngcontent-ng-c88576605]:focus, 
+.cloud-form[_ngcontent-ng-c88576605]   select[_ngcontent-ng-c88576605]:focus {
+  border-color: #cba6f7;
+}
+.cloud-form[_ngcontent-ng-c88576605]   select[_ngcontent-ng-c88576605] {
+  padding: 4px 3px;
+  font-size: 10px;
+  color: #bac2de;
+  cursor: pointer;
+}
+.cloud-form[_ngcontent-ng-c88576605]   select.need[_ngcontent-ng-c88576605] {
+  border-color: rgba(203, 166, 247, 0.65);
+  color: #cba6f7;
+  animation: _ngcontent-ng-c88576605_need-pulse 1.6s ease-in-out infinite;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-act[_ngcontent-ng-c88576605] {
+  width: 104px;
+  flex-shrink: 0;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-min[_ngcontent-ng-c88576605] {
+  width: 52px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-desc[_ngcontent-ng-c88576605] {
+  flex: 1;
+  min-width: 0;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-desc[_ngcontent-ng-c88576605]::placeholder {
+  color: #4b4d63;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-desc.need[_ngcontent-ng-c88576605] {
+  border-color: rgba(203, 166, 247, 0.65);
+  animation: _ngcontent-ng-c88576605_need-pulse 1.6s ease-in-out infinite;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-desc.need[_ngcontent-ng-c88576605]::placeholder {
+  color: rgba(203, 166, 247, 0.55);
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-submit[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  background: #cba6f7;
+  color: #1e1e2e;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-submit[_ngcontent-ng-c88576605]:hover:not(:disabled) {
+  background: #b894ee;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-submit[_ngcontent-ng-c88576605]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-back[_ngcontent-ng-c88576605] {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 3px;
+}
+.cloud-form[_ngcontent-ng-c88576605]   .cf-back[_ngcontent-ng-c88576605]:hover {
+  color: #a6adc8;
+}
+@keyframes _ngcontent-ng-c88576605_chip-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes _ngcontent-ng-c88576605_spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes _ngcontent-ng-c88576605_need-pulse {
+  0%, 100% {
+    border-color: rgba(203, 166, 247, 0.65);
+  }
+  50% {
+    border-color: rgba(203, 166, 247, 0.25);
+  }
+}
+@keyframes _ngcontent-ng-c88576605_rv-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes _ngcontent-ng-c88576605_form-in {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.35);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [_nghost-ng-c88576605], 
+   *[_ngcontent-ng-c88576605], 
+   *[_ngcontent-ng-c88576605]::before, 
+   *[_ngcontent-ng-c88576605]::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+</style>
+<style>
+
+
+[_nghost-ng-c3459772310] {
+  grid-column: 1/-1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 24px;
+}
+.closed[_nghost-ng-c3459772310] {
+  height: 22px;
+}
+.removing[_nghost-ng-c3459772310] {
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: height 0.22s ease, opacity 0.18s ease;
+}
+.c-type[_ngcontent-ng-c3459772310] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #939ab6;
+  font-size: 10px;
+  font-weight: 700;
+}
+.anc[_ngcontent-ng-c3459772310] {
+  cursor: pointer;
+  transition: color 0.18s ease, filter 0.18s ease;
+}
+.c-type.anc[_ngcontent-ng-c3459772310]:hover, 
+.c-type.anc.armed[_ngcontent-ng-c3459772310] {
+  color: #cdd6f4;
+}
+.repo[_ngcontent-ng-c3459772310] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: #a6adc8;
+  font-weight: 600;
+  -webkit-mask-image:
+    linear-gradient(
+      90deg,
+      #000 calc(100% - 16px),
+      transparent);
+  mask-image:
+    linear-gradient(
+      90deg,
+      #000 calc(100% - 16px),
+      transparent);
+}
+.closed[_nghost-ng-c3459772310]   .repo[_ngcontent-ng-c3459772310] {
+  color: #8b90ab;
+  font-weight: 400;
+}
+.frost[_nghost-ng-c3459772310]   .repo[_ngcontent-ng-c3459772310] {
+  color: #8aa4d0;
+}
+.sc[_ngcontent-ng-c3459772310] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -2px;
+  font-size: 10.5px;
+  color: #8b90ab;
+  white-space: nowrap;
+}
+.sc[_ngcontent-ng-c3459772310]   .csep[_ngcontent-ng-c3459772310] {
+  color: #45475a;
+  font-style: normal;
+}
+.sc[_ngcontent-ng-c3459772310]   .g[_ngcontent-ng-c3459772310] {
+  flex-shrink: 0;
+  opacity: 0.7;
+  color: #7f849c;
+}
+.sc[_ngcontent-ng-c3459772310]   .s-com[_ngcontent-ng-c3459772310] {
+  color: #7f849c;
+}
+.sc[_ngcontent-ng-c3459772310]   .plus[_ngcontent-ng-c3459772310] {
+  color: rgba(166, 227, 161, 0.85);
+  font-weight: 600;
+}
+.sc[_ngcontent-ng-c3459772310]   .minus[_ngcontent-ng-c3459772310] {
+  color: rgba(243, 139, 168, 0.85);
+  font-weight: 600;
+}
+.sc.rng[_ngcontent-ng-c3459772310] {
+  min-width: calc(12ch + 6px);
+}
+.sc.com[_ngcontent-ng-c3459772310] {
+  min-width: calc(3ch + 25px);
+}
+.sc.diff[_ngcontent-ng-c3459772310] {
+  min-width: calc(7ch + 12px);
+}
+.dur[_ngcontent-ng-c3459772310] {
+  grid-column: 6;
+  justify-self: end;
+  font-weight: 700;
+  color: #a6adc8;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.frost[_nghost-ng-c3459772310]   .sc[_ngcontent-ng-c3459772310], 
+.frost[_nghost-ng-c3459772310]   .dur[_ngcontent-ng-c3459772310] {
+  opacity: 0.7;
+}
+.frost[_nghost-ng-c3459772310]   .sc[_ngcontent-ng-c3459772310]   .plus[_ngcontent-ng-c3459772310], 
+.frost[_nghost-ng-c3459772310]   .sc[_ngcontent-ng-c3459772310]   .minus[_ngcontent-ng-c3459772310] {
+  color: #7f849c;
+}
+.paused[_nghost-ng-c3459772310]   .repo[_ngcontent-ng-c3459772310], 
+.paused[_nghost-ng-c3459772310]   .sc[_ngcontent-ng-c3459772310], 
+.paused[_nghost-ng-c3459772310]   .dur[_ngcontent-ng-c3459772310] {
+  opacity: 0.75;
+}
+.l-undo[_ngcontent-ng-c3459772310] {
+  --c: 203 166 247;
+  --ci: 228 205 252;
+  --ink: #cba6f7;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+  grid-column: 6;
+  justify-self: end;
+  width: 48px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.l-undo[_ngcontent-ng-c3459772310]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.l-undo[_ngcontent-ng-c3459772310]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.l-undo[_ngcontent-ng-c3459772310]:hover {
+  --m1: 0.2;
+  --m2: 0.09;
+  --m3: 0.15;
+}
+.deleted[_nghost-ng-c3459772310]   .c-type[_ngcontent-ng-c3459772310], 
+.deleted[_nghost-ng-c3459772310]   .repo[_ngcontent-ng-c3459772310], 
+.deleted[_nghost-ng-c3459772310]   .sc.rng[_ngcontent-ng-c3459772310]   .rv[_ngcontent-ng-c3459772310], 
+.struck[_nghost-ng-c3459772310]   .c-type[_ngcontent-ng-c3459772310], 
+.struck[_nghost-ng-c3459772310]   .repo[_ngcontent-ng-c3459772310], 
+.struck[_nghost-ng-c3459772310]   .sc.rng[_ngcontent-ng-c3459772310]   .rv[_ngcontent-ng-c3459772310] {
+  opacity: 0.38;
+  text-decoration: line-through;
+}
+.deleted[_nghost-ng-c3459772310]   .sc.com[_ngcontent-ng-c3459772310], 
+.deleted[_nghost-ng-c3459772310]   .sc.diff[_ngcontent-ng-c3459772310], 
+.struck[_nghost-ng-c3459772310]   .sc.com[_ngcontent-ng-c3459772310], 
+.struck[_nghost-ng-c3459772310]   .sc.diff[_ngcontent-ng-c3459772310] {
+  opacity: 0.38;
+}
+.struck[_nghost-ng-c3459772310]   .dur[_ngcontent-ng-c3459772310] {
+  opacity: 0.38;
+  text-decoration: line-through;
+}
+.struck[_nghost-ng-c3459772310]   .tb[_ngcontent-ng-c3459772310] {
+  opacity: 0.5;
+}
+.struck[_nghost-ng-c3459772310]   .tb[_ngcontent-ng-c3459772310]   .k-txt[_ngcontent-ng-c3459772310], 
+.struck[_nghost-ng-c3459772310]   .tb[_ngcontent-ng-c3459772310]   .k-alt[_ngcontent-ng-c3459772310] {
+  text-decoration: line-through;
+}
+.deleted[_nghost-ng-c3459772310]   .anc[_ngcontent-ng-c3459772310], 
+.struck[_nghost-ng-c3459772310]   .anc[_ngcontent-ng-c3459772310], 
+.locked[_nghost-ng-c3459772310]   .anc[_ngcontent-ng-c3459772310] {
+  pointer-events: none;
+}
+.tb[_ngcontent-ng-c3459772310] {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  min-width: 73px;
+  padding: 0 7px 0 6px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  justify-self: start;
+  --lx: 10.5px;
+  --c: 205 214 244;
+  --ci: 228 233 250;
+  --ink: #8b90ab;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+  --lc: var(--heat, 205 214 244);
+  --m1: 0.08;
+  --m2: 0.03;
+  --m3: 0.06;
+  --eg: 0.12;
+  --ec: 0.14;
+  --pool: 0.1;
+}
+.tb[_ngcontent-ng-c3459772310]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.tb[_ngcontent-ng-c3459772310]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.tb.anc[_ngcontent-ng-c3459772310]:hover, 
+.tb.anc.armed[_ngcontent-ng-c3459772310] {
+  filter: brightness(1.16);
+}
+.k-txt[_ngcontent-ng-c3459772310] {
+  position: relative;
+  z-index: 3;
+}
+.tb.aq[_ngcontent-ng-c3459772310] {
+  --m1: 0.06;
+  --m2: 0.02;
+  --m3: 0.045;
+  --eg: 0.14;
+  --pool: 0.16;
+}
+.tb.lead[_ngcontent-ng-c3459772310] {
+  --c: var(--heat, 205 214 244);
+  --ci: var(--heat-lite, 228 233 250);
+  --ink: #cdd6f4;
+  --lc: var(--heat, 205 214 244);
+  --ec: 0.3;
+  background:
+    radial-gradient(
+      circle at var(--lx) 50%,
+      rgb(var(--lc)/0.3),
+      rgb(var(--lc)/0.07) 11px,
+      transparent 24px),
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+}
+.tb.lead[_ngcontent-ng-c3459772310]::before {
+  background:
+    radial-gradient(
+      circle at var(--lx) 50%,
+      rgb(var(--lc)/0.7),
+      rgb(var(--lc)/0.28) 12px,
+      transparent 30px),
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+}
+.tb.willp[_ngcontent-ng-c3459772310] {
+  --c: 205 214 244;
+  --ci: 228 233 250;
+  --rc: 205 214 244;
+  --m1: 0.04;
+  --m2: 0.014;
+  --m3: 0.025;
+  background:
+    radial-gradient(
+      circle at var(--lx) 50%,
+      rgba(243, 139, 168, 0.19),
+      rgba(243, 139, 168, 0.05) 13px,
+      transparent 26px),
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.069),
+      transparent 66%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.104), 0 1px 3px -1px rgba(0, 0, 0, 0.2);
+}
+.tb.willp[_ngcontent-ng-c3459772310]::before {
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.184) 0deg,
+      rgb(var(--rc)/0.035) 48deg,
+      rgb(var(--rc)/0.092) 100deg,
+      rgba(255, 255, 255, 0.196) 135deg,
+      rgb(var(--rc)/0.069) 195deg,
+      rgb(var(--rc)/0.023) 228deg,
+      rgb(var(--rc)/0.104) 275deg,
+      rgba(255, 255, 255, 0.3) 316deg,
+      rgb(var(--rc)/0.184) 360deg);
+}
+.tb.willp[_ngcontent-ng-c3459772310]::after {
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.092),
+      transparent 68%);
+}
+.liq[_ngcontent-ng-c3459772310] {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  z-index: 1;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.liq[_ngcontent-ng-c3459772310]   i[_ngcontent-ng-c3459772310] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--stam, 0.6) * 100% + 4px);
+  background:
+    linear-gradient(
+      90deg,
+      rgb(var(--heat)/0.26),
+      rgb(var(--heat)/0.36) calc(100% - 5px),
+      rgb(var(--heat)/0));
+}
+.tb.willp[_ngcontent-ng-c3459772310]   .liq[_ngcontent-ng-c3459772310] {
+  opacity: 0.3;
+}
+.k-ind[_ngcontent-ng-c3459772310] {
+  position: relative;
+  z-index: 3;
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+}
+.k-ind[_ngcontent-ng-c3459772310]    > *[_ngcontent-ng-c3459772310] {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  transition: opacity 0.15s ease;
+}
+.k-lamp[_ngcontent-ng-c3459772310] {
+  width: 8px;
+  height: 8px;
+  fill: rgb(var(--lc));
+  filter: drop-shadow(0 0 2px rgb(var(--lc)/0.95)) drop-shadow(0 0 5px rgb(var(--lc)/0.55));
+}
+.k-act[_ngcontent-ng-c3459772310] {
+  width: 9px;
+  height: 9px;
+  fill: #f38ba8;
+  opacity: 0;
+}
+.tb.willp[_ngcontent-ng-c3459772310]   .k-lamp[_ngcontent-ng-c3459772310] {
+  opacity: 0;
+}
+.tb.willp[_ngcontent-ng-c3459772310]   .k-act[_ngcontent-ng-c3459772310] {
+  opacity: 1;
+  filter: drop-shadow(0 0 2.5px rgba(243, 139, 168, 0.95)) drop-shadow(0 0 6px rgba(243, 139, 168, 0.5));
+}
+.k-stop[_ngcontent-ng-c3459772310] {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: #9399b2;
+}
+.k-word[_ngcontent-ng-c3459772310] {
+  position: relative;
+  z-index: 3;
+  display: inline-grid;
+  align-items: center;
+}
+.k-word[_ngcontent-ng-c3459772310]    > *[_ngcontent-ng-c3459772310] {
+  grid-area: 1/1;
+  justify-self: start;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+.k-word[_ngcontent-ng-c3459772310]   .k-alt[_ngcontent-ng-c3459772310] {
+  opacity: 0;
+}
+.tb.willp[_ngcontent-ng-c3459772310]   .k-word[_ngcontent-ng-c3459772310]   .k-txt[_ngcontent-ng-c3459772310] {
+  opacity: 0;
+}
+.tb.willp[_ngcontent-ng-c3459772310]   .k-word[_ngcontent-ng-c3459772310]   .k-alt[_ngcontent-ng-c3459772310] {
+  opacity: 1;
+  color: rgba(147, 153, 176, 0.62);
+  text-shadow: none;
+}
+.tb.frost[_ngcontent-ng-c3459772310] {
+  color: #8aa4d0;
+  background:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 17' preserveAspectRatio='none'><defs><radialGradient id='fp'><stop offset='0' stop-color='%23bcd6f8' stop-opacity='0.26'/><stop offset='0.65' stop-color='%23bcd6f8' stop-opacity='0.09'/><stop offset='1' stop-color='%23bcd6f8' stop-opacity='0'/></radialGradient></defs><ellipse cx='8' cy='3' rx='11' ry='4.8' fill='url(%23fp)'/><ellipse cx='74' cy='4' rx='9.5' ry='4.2' fill='url(%23fp)'/><ellipse cx='78' cy='12.5' rx='7' ry='4' fill='url(%23fp)'/><ellipse cx='15' cy='15.5' rx='9' ry='3.6' fill='url(%23fp)'/><ellipse cx='46' cy='1.2' rx='7' ry='2.6' fill='url(%23fp)' opacity='0.7'/><g fill='none' stroke='%23a9c9f2' stroke-linecap='round'><g stroke-width='0.55' opacity='0.75'><path d='M0 2 Q6 3.6 14 3.3'/><path d='M80 2.8 Q73 4.4 66 3.5'/></g><g stroke-width='0.5' opacity='0.7'><path d='M1.8 2.5 L2.6 1.2 L3.7 0.6 M2.6 1.2 L3.3 1.8'/><path d='M4 3 L5 1.6 L6.3 1.1 M5 1.6 L5.8 2.1'/><path d='M6.6 3.2 L7.6 2 L8.9 1.5 M7.6 2 L8.3 2.5'/><path d='M9.4 3.3 L10.3 2.2 L11.4 1.9 M10.3 2.2 L10.9 2.7'/><path d='M2.8 2.8 L3.6 4.3 L4.7 5.1 M3.6 4.3 L4.3 3.9'/><path d='M5.4 3.1 L6.2 4.6 L7.1 5.3 M6.2 4.6 L6.9 4.2'/><path d='M8.2 3.3 L8.9 4.6 L9.8 5.2 M8.9 4.6 L9.5 4.1'/><path d='M78.2 3.4 L77.2 1.9 L76 1.3 M77.2 1.9 L76.4 2.4'/><path d='M75.8 4 L74.6 2.6 L73.4 2.2 M74.6 2.6 L73.9 3.2'/><path d='M73 4.2 L72 2.9 L70.9 2.6 M72 2.9 L71.3 3.5'/><path d='M77 3.8 L76.2 5.4 L75.2 6 M76.2 5.4 L75.5 4.9'/><path d='M74.2 4.2 L73.4 5.7 L72.4 6.2 M73.4 5.7 L72.8 5.2'/></g><g stroke-width='0.35' opacity='0.8'><path d='M3.7 0.6 L4.5 0.3 M3.15 0.9 L3.55 0.35'/><path d='M6.3 1.1 L7.1 0.8 M5.6 1.35 L6 0.75'/><path d='M8.9 1.5 L9.7 1.25 M8.2 1.75 L8.6 1.15'/><path d='M11.4 1.9 L12.2 1.7'/><path d='M4.7 5.1 L5.5 5.5 M4.1 4.7 L4.5 5.4'/><path d='M7.1 5.3 L7.9 5.6'/><path d='M3.3 1.8 L3.95 2.25'/><path d='M5.8 2.1 L6.45 2.45'/><path d='M76 1.3 L75.1 1 M76.55 1.55 L76.1 0.9'/><path d='M73.4 2.2 L72.5 2 M74 2.3 L73.6 1.65'/><path d='M70.9 2.6 L70 2.5'/><path d='M75.2 6 L74.35 6.35'/><path d='M76.4 2.4 L75.75 2.85'/><path d='M73.9 3.2 L73.25 3.6'/></g><g stroke-width='0.5' opacity='0.55'><path d='M0 8.2 Q3.4 8.8 6.4 11.6'/><path d='M1.4 8.5 L2.2 7.2 L3.2 6.7 M2.2 7.2 L2.9 7.7'/><path d='M2.9 9.3 L4.1 8.5 L5.2 8.4 M4.1 8.5 L4.6 9.2'/><path d='M4.5 10.4 L5.6 9.7 M4.5 10.4 L5 11.4'/><path d='M2 9 L2.5 10.5 L3.3 11.3'/></g><g stroke-width='0.35' opacity='0.6'><path d='M3.2 6.7 L3.9 6.35 M2.55 6.9 L2.3 6.25'/><path d='M5.2 8.4 L5.9 8.3'/><path d='M3.3 11.3 L4 11.7'/></g><g stroke-width='0.5' opacity='0.45'><path d='M32 0 Q32.8 2.2 35 3.6'/><path d='M32.3 1 L31.2 1.8 L30.4 2.6 M31.2 1.8 L30.5 1.2'/><path d='M33.2 2.5 L32.4 3.5 M33.2 2.5 L34 3.3'/></g><g stroke-width='0.35' opacity='0.5'><path d='M30.4 2.6 L29.8 3.2 M30.8 2.2 L30.2 1.9'/></g><g stroke-width='0.5' opacity='0.4'><path d='M46 0 Q47.2 1.9 49.5 2.5'/><path d='M46.7 1.1 L45.8 1.9 M46.7 1.1 L47.4 2'/></g><g stroke-width='0.5' opacity='0.55'><path d='M80 8.2 Q76.6 8.8 74 10.8'/><path d='M78.5 8.5 L77.6 7.2 L76.5 6.8 M77.6 7.2 L76.9 7.8'/><path d='M76.9 9.3 L75.7 8.6 M76.9 9.3 L76.2 10.2'/></g><g stroke-width='0.35' opacity='0.6'><path d='M76.5 6.8 L75.8 6.5 M77.1 7 L76.9 6.35'/><path d='M76.2 10.2 L75.6 10.75'/></g><g stroke-width='0.5' opacity='0.5'><path d='M80 13.3 Q75 12.7 70.3 14.9'/><path d='M77.7 12.9 L76.9 14.4 L75.9 15 M76.9 14.4 L76.2 13.9'/><path d='M74.8 13.3 L74 14.8 M74.8 13.3 L74.1 12.7'/><path d='M72.4 13.9 L71.8 15.3'/></g><g stroke-width='0.35' opacity='0.55'><path d='M75.9 15 L75.1 15.35 M76.35 14.7 L76 15.4'/><path d='M74.1 12.7 L73.5 12.3'/></g><g stroke-width='0.5' opacity='0.5'><path d='M12 17 Q14.5 14.3 18.2 13.5'/><path d='M13.5 15.6 L12.4 14.6 L11.6 13.7 M12.4 14.6 L13 13.9'/><path d='M15.2 14.5 L14.6 13.1 M15.2 14.5 L16 13.8'/><path d='M16.8 13.9 L16.4 12.5 L15.7 11.7'/></g><g stroke-width='0.35' opacity='0.55'><path d='M11.6 13.7 L11 13.1 M12 14.15 L11.35 14.35'/><path d='M15.7 11.7 L15.1 11.2 M16.6 12.2 L17.2 11.8'/><path d='M14.6 13.1 L14.1 12.55'/></g><g stroke-width='0.5' opacity='0.45'><path d='M0 13.6 Q2.2 14.2 4 16'/><path d='M1.3 13.9 L2 12.7 M1.3 13.9 L0.7 12.9'/><path d='M2.6 14.9 L3.5 14.1'/></g><g stroke-width='0.5' opacity='0.4'><path d='M44 17 Q45.4 15 48 14.3'/><path d='M44.9 15.8 L44 14.8 M44.9 15.8 L45.7 15'/><path d='M46.5 14.8 L46 13.5'/></g></g><g fill='%23bcd6f8'><circle cx='12.5' cy='5.8' r='0.45' opacity='0.6'/><circle cx='13.8' cy='6.8' r='0.3' opacity='0.5'/><circle cx='11.4' cy='7' r='0.25' opacity='0.45'/><circle cx='20' cy='2.6' r='0.4' opacity='0.5'/><circle cx='26' cy='13' r='0.45' opacity='0.45'/><circle cx='36' cy='5.8' r='0.4' opacity='0.45'/><circle cx='40' cy='2.4' r='0.35' opacity='0.5'/><circle cx='50' cy='13.8' r='0.4' opacity='0.4'/><circle cx='55' cy='3.2' r='0.45' opacity='0.55'/><circle cx='58' cy='8.4' r='0.35' opacity='0.4'/><circle cx='70.6' cy='6' r='0.4' opacity='0.55'/><circle cx='71.8' cy='7.1' r='0.3' opacity='0.45'/><circle cx='69.4' cy='7.4' r='0.25' opacity='0.4'/><circle cx='63' cy='13.4' r='0.4' opacity='0.4'/><circle cx='28' cy='14.6' r='0.3' opacity='0.4'/><circle cx='27' cy='12' r='0.25' opacity='0.35'/><circle cx='24' cy='8' r='0.3' opacity='0.35'/></g></svg>"),
+    radial-gradient(
+      120% 110% at 50% -40%,
+      rgba(140, 180, 245, 0.3),
+      transparent 62%),
+    radial-gradient(
+      95% 115% at 104% 120%,
+      rgba(120, 165, 240, 0.22),
+      transparent 58%),
+    radial-gradient(
+      80% 100% at -6% 118%,
+      rgba(125, 168, 240, 0.18),
+      transparent 52%),
+    linear-gradient(
+      180deg,
+      rgba(95, 145, 225, 0.18),
+      rgba(10, 18, 48, 0.62));
+  background-size:
+    cover,
+    auto,
+    auto,
+    auto,
+    auto;
+  background-repeat: no-repeat;
+  box-shadow:
+    inset 0 0 9px rgba(130, 172, 242, 0.3),
+    inset 0 1px 0 rgba(180, 210, 250, 0.24),
+    inset 0 -1px 1px rgba(5, 9, 24, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 0 8px rgba(110, 160, 240, 0.18);
+}
+.tb.frost[_ngcontent-ng-c3459772310]::before {
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(175, 208, 250, 0.45) 0deg,
+      rgba(150, 190, 245, 0.12) 48deg,
+      rgba(150, 190, 245, 0.22) 100deg,
+      rgba(255, 255, 255, 0.35) 135deg,
+      rgba(150, 190, 245, 0.18) 195deg,
+      rgba(150, 190, 245, 0.08) 228deg,
+      rgba(150, 190, 245, 0.25) 275deg,
+      rgba(255, 255, 255, 0.52) 316deg,
+      rgba(175, 208, 250, 0.45) 360deg);
+}
+.tb.frost[_ngcontent-ng-c3459772310]::after {
+  content: none;
+}
+.tb.frost[_ngcontent-ng-c3459772310]   .k-txt[_ngcontent-ng-c3459772310] {
+  color: rgba(150, 180, 230, 0.66);
+  filter: blur(0.35px);
+  text-shadow: 0 0 3px rgba(165, 200, 250, 0.45);
+}
+.tb.frost[_ngcontent-ng-c3459772310]   .k-stop[_ngcontent-ng-c3459772310] {
+  background: #8fb0e6;
+  box-shadow: 0 0 3px rgba(130, 170, 235, 0.6);
+}
+@media (prefers-reduced-motion: reduce) {
+  *[_ngcontent-ng-c3459772310], 
+   *[_ngcontent-ng-c3459772310]::before, 
+   *[_ngcontent-ng-c3459772310]::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+</style>
+<style>
+
+
+[_nghost-ng-c3545032674] {
+  display: block;
+}
+.cloud-anchor[_nghost-ng-c3545032674] {
+  position: relative;
+  z-index: 31;
+  pointer-events: none;
+}
+.sug2[_ngcontent-ng-c3545032674] {
+  padding: 3px 8px 4px;
+  border: 1px dashed rgba(205, 214, 244, 0.18);
+  border-radius: 9px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  background:
+    linear-gradient(
+      115deg,
+      rgba(205, 214, 244, 0.03),
+      transparent 45%),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(205, 214, 244, 0.035) 0 1px,
+      transparent 1px 8px);
+  transition: border-color 0.15s ease;
+}
+.sug2[_ngcontent-ng-c3545032674]:hover {
+  border-color: rgba(205, 214, 244, 0.3);
+}
+.sug2[_ngcontent-ng-c3545032674]:hover   .s-title[_ngcontent-ng-c3545032674] {
+  color: #a6adc8;
+}
+.sug2[_ngcontent-ng-c3545032674]:hover   .chip.key[_ngcontent-ng-c3545032674] {
+  color: #aeb6cf;
+}
+.sug2[_ngcontent-ng-c3545032674]:not(.denying) {
+  max-height: 48px;
+}
+.sug2.denying[_ngcontent-ng-c3545032674] {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    max-height 0.22s ease,
+    opacity 0.18s ease,
+    padding 0.22s ease,
+    margin 0.22s ease;
+}
+.r-l1[_ngcontent-ng-c3545032674] {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+  height: 17px;
+}
+.r-l2[_ngcontent-ng-c3545032674] {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  margin-top: 1px;
+}
+.rv[_ngcontent-ng-c3545032674] {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content);
+  gap: 8px;
+  align-items: center;
+}
+.editing[_ngcontent-ng-c3545032674] {
+  border-style: solid;
+}
+.rf[_ngcontent-ng-c3545032674] {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform-origin: 0 50%;
+  animation: _ngcontent-ng-c3545032674_le-in 0.13s cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+.rf[_ngcontent-ng-c3545032674]   select[_ngcontent-ng-c3545032674], 
+.rf[_ngcontent-ng-c3545032674]   input[_ngcontent-ng-c3545032674] {
+  background: rgba(17, 17, 27, 0.85);
+  border: 1px solid #313244;
+  border-radius: 5px;
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  height: 20px;
+  outline: none;
+}
+.rf[_ngcontent-ng-c3545032674]   select[_ngcontent-ng-c3545032674]:focus, 
+.rf[_ngcontent-ng-c3545032674]   input[_ngcontent-ng-c3545032674]:focus {
+  border-color: rgba(249, 226, 175, 0.5);
+}
+.rf[_ngcontent-ng-c3545032674]   .le-act[_ngcontent-ng-c3545032674] {
+  width: 104px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #bac2de;
+  padding: 2px 3px;
+  cursor: pointer;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-desc[_ngcontent-ng-c3545032674] {
+  flex: 1;
+  min-width: 0;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-desc[_ngcontent-ng-c3545032674]::placeholder {
+  color: #4b4d63;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-desc.need[_ngcontent-ng-c3545032674] {
+  border-color: rgba(249, 226, 175, 0.6);
+  animation: _ngcontent-ng-c3545032674_need-pulse 1.6s ease-in-out infinite;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-desc.need[_ngcontent-ng-c3545032674]::placeholder {
+  color: rgba(249, 226, 175, 0.5);
+}
+.rf[_ngcontent-ng-c3545032674]   .le-back[_ngcontent-ng-c3545032674] {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  height: 20px;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-back[_ngcontent-ng-c3545032674]:hover {
+  color: #a6adc8;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-save[_ngcontent-ng-c3545032674] {
+  --c: 249 226 175;
+  --ci: 252 243 222;
+  --ink: #f9e2af;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 10px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-save[_ngcontent-ng-c3545032674]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-save[_ngcontent-ng-c3545032674]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-save[_ngcontent-ng-c3545032674]:hover:not(:disabled) {
+  --m1: 0.2;
+  --m2: 0.09;
+  --m3: 0.15;
+}
+.rf[_ngcontent-ng-c3545032674]   .le-save[_ngcontent-ng-c3545032674]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+@keyframes _ngcontent-ng-c3545032674_le-in {
+  0% {
+    transform: scaleX(0.5);
+    opacity: 0;
+  }
+}
+@keyframes _ngcontent-ng-c3545032674_need-pulse {
+  0%, 100% {
+    border-color: rgba(249, 226, 175, 0.6);
+  }
+  50% {
+    border-color: rgba(249, 226, 175, 0.22);
+  }
+}
+.chip[_ngcontent-ng-c3545032674] {
+  justify-self: start;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  font-weight: 600;
+  padding: 0 7px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.chip.key[_ngcontent-ng-c3545032674] {
+  padding: 0 0 0 7px;
+  color: #9399b2;
+  transition: color 0.15s ease;
+}
+.chip.ask[_ngcontent-ng-c3545032674] {
+  font: inherit;
+  color: #6c7086;
+  background: transparent;
+  border: 1px dashed #45475a;
+  padding: 0 8px 0 6px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.chip.ask[_ngcontent-ng-c3545032674]:hover:not(:disabled) {
+  color: #a6adc8;
+  border-color: #565973;
+}
+.k-ind[_ngcontent-ng-c3545032674] {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  flex-shrink: 0;
+}
+.k-ind[_ngcontent-ng-c3545032674]   .k-spark[_ngcontent-ng-c3545032674] {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+.k-spark[_ngcontent-ng-c3545032674] {
+  display: block;
+  color: #f9e2af;
+  filter: drop-shadow(0 0 3px rgba(249, 226, 175, 0.75)) drop-shadow(0 0 6px rgba(249, 226, 175, 0.3));
+}
+.k-spark.dim[_ngcontent-ng-c3545032674] {
+  color: rgba(249, 226, 175, 0.55);
+  filter: drop-shadow(0 0 1px rgba(249, 226, 175, 0.3));
+  animation: _ngcontent-ng-c3545032674_spark-tw 4s ease-in-out infinite;
+}
+@keyframes _ngcontent-ng-c3545032674_spark-tw {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.s-title[_ngcontent-ng-c3545032674] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #8b90ab;
+  font-weight: 600;
+  transition: color 0.15s ease;
+  -webkit-mask-image:
+    linear-gradient(
+      90deg,
+      #000 calc(100% - 20px),
+      transparent);
+  mask-image:
+    linear-gradient(
+      90deg,
+      #000 calc(100% - 20px),
+      transparent);
+}
+.s-dur[_ngcontent-ng-c3545032674] {
+  justify-self: end;
+  color: #7f849c;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+.s-dur.edit[_ngcontent-ng-c3545032674] {
+  width: 64px;
+  height: 17px;
+  background: transparent;
+  color: #f9e2af;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: right;
+  outline: none;
+}
+.s-when[_ngcontent-ng-c3545032674] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #565973;
+  font-size: 10.5px;
+}
+.s-when[_ngcontent-ng-c3545032674]   .ar[_ngcontent-ng-c3545032674] {
+  color: #7f849c;
+  margin: 0 2px;
+}
+.s-when[_ngcontent-ng-c3545032674]   .lv[_ngcontent-ng-c3545032674] {
+  color: #7f849c;
+}
+.s-src[_ngcontent-ng-c3545032674] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #565973;
+  font-size: 10px;
+}
+.s-act[_ngcontent-ng-c3545032674] {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lnk-deny[_ngcontent-ng-c3545032674] {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: #565973;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.lnk-deny[_ngcontent-ng-c3545032674]:hover:not(:disabled) {
+  color: #f38ba8;
+}
+.lnk-deny[_ngcontent-ng-c3545032674]:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.btn-log[_ngcontent-ng-c3545032674] {
+  --c: 249 226 175;
+  --ci: 252 243 222;
+  --ink: #f9e2af;
+  --rc: var(--c);
+  --m1: 0.14;
+  --m2: 0.05;
+  --m3: 0.1;
+  --eg: 0.22;
+  --ec: 0.3;
+  --pool: 0.22;
+  position: relative;
+  border: none;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  text-shadow: 0 0 3px rgb(var(--c)/0.42), 0 1px 1px rgba(0, 0, 0, 0.25);
+  background:
+    radial-gradient(
+      95% 150% at 30% -25%,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.02) 50%,
+      transparent 72%),
+    radial-gradient(
+      45% 55% at 78% 108%,
+      rgba(255, 255, 255, 0.08),
+      transparent 65%),
+    linear-gradient(
+      180deg,
+      rgb(var(--c)/var(--m1)),
+      rgb(var(--c)/var(--m2)) 55%,
+      rgb(var(--c)/var(--m3)));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 6px -4px rgba(4, 6, 16, 0.42),
+    inset 7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset -7px 0 9px -7px rgba(4, 6, 16, 0.55),
+    inset 0 0 6px -1px rgb(var(--c)/var(--eg)),
+    inset 0 -1px 2px rgb(var(--ci)/var(--ec)),
+    0 2px 5px -1px rgba(0, 0, 0, 0.45),
+    0 5px 14px -5px rgba(0, 0, 0, 0.4),
+    0 3px 9px -3px rgb(var(--c)/var(--pool));
+  height: 18px;
+  padding: 0 9px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-log[_ngcontent-ng-c3545032674]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgb(var(--rc)/0.4) 0deg,
+      rgb(var(--rc)/0.08) 48deg,
+      rgb(var(--rc)/0.2) 100deg,
+      rgba(255, 255, 255, 0.34) 135deg,
+      rgb(var(--rc)/0.16) 195deg,
+      rgb(var(--rc)/0.05) 228deg,
+      rgb(var(--rc)/0.22) 275deg,
+      rgba(255, 255, 255, 0.5) 316deg,
+      rgb(var(--rc)/0.4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.btn-log[_ngcontent-ng-c3545032674]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 2;
+  background:
+    radial-gradient(
+      50% 56% at 27% 4%,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.04) 48%,
+      transparent 72%),
+    radial-gradient(
+      30% 34% at 77% 98%,
+      rgba(255, 255, 255, 0.07),
+      transparent 65%);
+  pointer-events: none;
+}
+.btn-log[_ngcontent-ng-c3545032674]:hover:not(:disabled) {
+  --m1: 0.2;
+  --m2: 0.09;
+  --m3: 0.15;
+}
+.btn-log[_ngcontent-ng-c3545032674]:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+</style>
+<style>
+:root { --tm: 198 222 120; --tm-lite: 229 240 194; --z: .7; }
+html, body { margin: 0; height: auto !important; overflow: auto !important; background: #0f0f17 !important; }
+body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace; padding: 22px 26px 60px; }
+.lab h1 { font-size: 14px; margin: 0 0 4px; }
+.lab h2 { font-size: 12px; margin: 22px 0 8px; color: #b4befe; font-weight: 600; }
+.lab .sub { color: #7f849c; font-size: 11px; max-width: 1180px; margin: 0 0 12px; }
+.lab .sub b { color: #a6adc8; }
+.lab .sub i { color: rgb(var(--tm)); font-style: normal; }
+.lab .note { color: #7f849c; font-size: 10.5px; max-width: 1180px; margin: -2px 0 10px; }
+.toolbar { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; }
+.tbl { color: #6c7086; font-size: 10.5px; margin-right: 2px; }
+.tbb { font: inherit; font-size: 10.5px; color: #bac2de; background: #1e1e2e; border: 1px solid #313244; border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.tbb.on { border-color: rgb(var(--tm) / .55); color: rgb(var(--tm-lite)); background: rgb(var(--tm) / .07); }
+
+/* ── cells: a cropped copy of the app at its real 500px width ── */
+.row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.cell { display: flex; flex-direction: column; gap: 6px; width: calc(500px * var(--z)); }
+.cv { width: 500px; zoom: var(--z); position: relative; overflow: hidden; border-radius: 8px; border: 1px solid #2a2a3c; background: #1e1e2e; }
+.cv app-root { display: block; height: 100% !important; }
+.cv .app { height: 100% !important; position: relative; }
+.cap { font-size: 10.5px; color: #7f849c; line-height: 1.45; }
+.cap b { color: #cdd6f4; font-weight: 600; }
+
+/* ── candy glass — the + Log recipe, dyed by --c ── */
+.candy { --c: var(--tm); --ci: var(--tm-lite); --ink: rgb(var(--tm-lite)); --rc: var(--c); --m1: .14; --m2: .05; --m3: .1; --eg: .22; --ec: .3; --pool: .22;
+  position: relative; border: none; color: color-mix(in srgb, var(--ink) 86%, transparent); text-shadow: 0 0 3px rgb(var(--c) / .42), 0 1px 1px rgba(0, 0, 0, .25);
+  background: radial-gradient(95% 150% at 30% -25%, rgba(255, 255, 255, .12), rgba(255, 255, 255, .02) 50%, transparent 72%),
+    radial-gradient(45% 55% at 78% 108%, rgba(255, 255, 255, .08), transparent 65%),
+    linear-gradient(180deg, rgb(var(--c) / var(--m1)), rgb(var(--c) / var(--m2)) 55%, rgb(var(--c) / var(--m3)));
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .2), inset 0 -4px 6px -4px rgba(4, 6, 16, .42), inset 7px 0 9px -7px rgba(4, 6, 16, .55), inset -7px 0 9px -7px rgba(4, 6, 16, .55),
+    inset 0 0 6px -1px rgb(var(--c) / var(--eg)), inset 0 -1px 2px rgb(var(--ci) / var(--ec)), 0 2px 5px -1px rgba(0, 0, 0, .45), 0 3px 9px -3px rgb(var(--c) / var(--pool)); }
+.candy::before { content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from 0deg, rgb(var(--rc) / .4) 0deg, rgb(var(--rc) / .08) 48deg, rgb(var(--rc) / .2) 100deg, rgba(255, 255, 255, .34) 135deg, rgb(var(--rc) / .16) 195deg, rgb(var(--rc) / .05) 228deg, rgb(var(--rc) / .22) 275deg, rgba(255, 255, 255, .5) 316deg, rgb(var(--rc) / .4) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; }
+.candy.paused { --c: 166 173 200; --ci: 205 214 244; --ink: #a6adc8; --pool: .1; }
+
+/* glyphs */
+.g-play { width: 8px; height: 8px; fill: currentColor; flex-shrink: 0; transform: translateX(.6px); }
+.g-pz { width: 8px; height: 8px; fill: #f38ba8; flex-shrink: 0; }
+.g-x { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.g-dial { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+
+/* ── 1 · an anonymous timer while the cloud is closed ── */
+/* H1: a second segment inside + Log */
+.lg-sep { width: 1px; align-self: stretch; margin: 5px 1px 5px 3px; background: rgba(203, 166, 247, .3); }
+.lg-tm { display: inline-flex; align-items: center; gap: 5px; color: #9399b2; font-variant-numeric: tabular-nums; text-shadow: none; }
+.lg-tm b { font-weight: 700; }
+.lg-tm.run { color: rgb(var(--tm-lite)); text-shadow: 0 0 6px rgb(var(--tm) / .3); }
+.lg-tm.run .g-play { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .9)); }
+/* H2: a bare number beside + Log, on the capsule's axis */
+.tmh { margin-left: auto; align-self: center; position: relative; top: -6px; display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-variant-numeric: tabular-nums; color: #7f849c; white-space: nowrap; cursor: pointer; }
+.tmh b { font-weight: 700; }
+.tmh.run { color: rgb(var(--tm-lite)); text-shadow: 0 0 6px rgb(var(--tm) / .3); }
+.tmh.run .g-play { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .9)); }
+.day-head .tmh + .g-btn { margin-left: 4px; }
+/* H3: the titlebar dial (v12 T2) */
+.tm-ndiv { width: 1px; height: 13px; margin: 0 11px 0 12px; flex-shrink: 0; align-self: center; background: #313244; }
+.tm-nav { align-self: center; display: inline-flex; align-items: center; gap: 5px; height: 19px; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: #585b70; }
+.tm-nav .tm-dw { display: inline-flex; }
+.tm-dial { width: 15px; height: 15px; display: block; overflow: visible; }
+.tm-dial .ring, .tm-dial .crown, .tm-dial .hand { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tm-dial .hand { stroke-width: 1.4; }
+.tm-dial .sec { fill: currentColor; opacity: .4; }
+.tm-dial .pz { fill: #f38ba8; }
+.tm-nav.run { color: rgb(var(--tm-lite)); }
+.tm-nav.run .tm-dial { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .55)); }
+.tm-nav.run .tm-dial .sec { fill: rgb(var(--tm)); opacity: .6; }
+.tm-nav.pause { color: #7f849c; }
+
+/* ── 2 · the cloud's first section: anonymous timers ── */
+.tmr { display: flex; flex-direction: column; gap: 2px; margin: 0 0 9px; padding-bottom: 8px; border-bottom: 1px solid rgba(205, 214, 244, .07); }
+.row-label.tmr-lbl { color: rgb(var(--tm) / .8) !important; margin-bottom: 3px; }
+.tmr-row { display: grid; grid-template-columns: 18px 7ch minmax(0, 1fr) auto 16px; column-gap: 9px; align-items: center; height: 26px; padding: 0 6px 0 4px; border-radius: 7px;
+  border: 1px solid transparent; font-size: 11px; }
+.tmr-row.sel { border-color: rgb(var(--tm) / .45); background: rgb(var(--tm) / .06); }
+.tmr-g { width: 18px; height: 18px; border-radius: 50%; border: none; background: none; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #6c7086; }
+.tmr-row.run .tmr-g { color: rgb(var(--tm-lite)); background: rgb(var(--tm) / .1); box-shadow: inset 0 0 0 1px rgb(var(--tm) / .38), 0 0 8px -2px rgb(var(--tm) / .45); }
+.tmr-row.run .tmr-g .g-play { filter: drop-shadow(0 0 2.5px rgb(var(--tm) / .9)); }
+.tmr-time { font-weight: 700; font-variant-numeric: tabular-nums; color: #7f849c; text-align: right; }
+.tmr-row.run .tmr-time { color: rgb(var(--tm-lite)); }
+.tmr-desc { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #a6adc8; font-style: italic; }
+.tmr-key { font: inherit; font-size: 10px; font-weight: 700; color: #8b90ab; background: none; border: 1px dashed rgba(205, 214, 244, .24); border-radius: 5px; padding: 1px 6px; cursor: pointer; }
+.tmr-row.sel .tmr-key { color: rgb(var(--tm-lite)); border-color: rgb(var(--tm) / .55); border-style: solid; }
+.tmr-x { width: 16px; height: 16px; padding: 0; border: none; background: none; color: #585b70; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+
+/* ── 3 · the form: one Log, the timer is an option ── */
+.cf-tm { flex-shrink: 0; height: 25px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 6px; cursor: pointer;
+  background: rgba(17, 17, 27, .85); border: 1px solid #313244; color: #6c7086; font-family: inherit; font-size: 10px; }
+.cf-tm .g-dial { width: 11px; height: 11px; }
+.cf-tm.on { color: rgb(var(--tm-lite)); border-color: rgb(var(--tm) / .55); background: rgb(var(--tm) / .1); }
+
+</style>
+</head>
+<body class="lab">
+<h1>Анонимные таймеры — где живут, как видны · мини-макеты v16</h1>
+<p class="sub">После v15: капсулы таймеров в шапке и отдельная кнопка таймера — <b>нет</b> (шумно; пауза без времени не читается). <i>Start timer «текст»</i> в облаке — <b>берём</b>. Здесь три вопроса: (1) где видно анонимный таймер, пока облако закрыто; (2) где он живёт — раздел в облаке + Log; (3) форма с одной кнопкой Log и таймером-опцией. Макет статичный, без логики.</p>
+<div class="toolbar" id="toolbar"><span class="tbl">масштаб</span><button class="tbb on" data-z=".7">70%</button><button class="tbb" data-z="1">100%</button></div>
+<div id="grid"></div>
+<template id="tpl-app"><app-root _nghost-ng-c2659241166=""><div _ngcontent-ng-c2659241166="" class="app"><header _ngcontent-ng-c2659241166="" data-tauri-drag-region="" class="header"><div _ngcontent-ng-c2659241166="" class="view-switcher"><button _ngcontent-ng-c2659241166="" title="Day" class="view-btn active"><svg _ngcontent-ng-c2659241166="" viewBox="0 0 16 16"><circle _ngcontent-ng-c2659241166="" cx="8" cy="8" r="6"></circle><path _ngcontent-ng-c2659241166="" d="M8 4v4l2.5 2.5"></path></svg></button><button _ngcontent-ng-c2659241166="" title="Timesheets" class="view-btn"><svg _ngcontent-ng-c2659241166="" viewBox="0 0 16 16"><rect _ngcontent-ng-c2659241166="" x="2.5" y="3" width="11" height="10" rx="1.2"></rect><path _ngcontent-ng-c2659241166="" d="M2.5 6.5h11M6 3v10"></path></svg></button><button _ngcontent-ng-c2659241166="" title="Settings" class="view-btn"><svg _ngcontent-ng-c2659241166="" viewBox="0 0 16 16"><path _ngcontent-ng-c2659241166="" d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"></path><circle _ngcontent-ng-c2659241166="" cx="8" cy="8" r="2"></circle></svg></button></div><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--></header><!--bindings={
+  "ng-reflect-ng-if": null
+}--><app-day-view _ngcontent-ng-c2659241166="" _nghost-ng-c3189555329=""><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--><svg _ngcontent-ng-c3189555329="" aria-hidden="true" class="fx-defs"><filter _ngcontent-ng-c3189555329="" id="dayheadLens" x="-10%" y="-100%" width="120%" height="300%" color-interpolation-filters="sRGB"><feImage _ngcontent-ng-c3189555329="" href="data:image/svg+xml;utf8,&lt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='10'&gt;&lt;linearGradient id='y' x1='0' y1='0' x2='0' y2='1'&gt;&lt;stop offset='0' stop-color='%23808000'/&gt;&lt;stop offset='1' stop-color='%23804000'/&gt;&lt;/linearGradient&gt;&lt;rect width='40' height='10' fill='url(%23y)'/&gt;&lt;/svg&gt;" x="0" y="0" width="2000" height="10" preserveAspectRatio="none" result="m"></feImage><feDisplacementMap _ngcontent-ng-c3189555329="" in="SourceGraphic" in2="m" scale="14" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap></filter></svg><div _ngcontent-ng-c3189555329="" class="content"><div _ngcontent-ng-c3189555329="" class="day-head"><span _ngcontent-ng-c3189555329="" class="day-week">Monday</span><h1 _ngcontent-ng-c3189555329="" class="day-date">26 October 2026</h1><button _ngcontent-ng-c3189555329="" class="g-btn"><svg _ngcontent-ng-c3189555329="" viewBox="0 0 12 12" aria-hidden="true"><path _ngcontent-ng-c3189555329="" d="M6 2.6V9.4M2.6 6H9.4"></path></svg>Log</button><span _ngcontent-ng-c3189555329="" class="day-total" style="width: 7ch;">12h 31m</span></div><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><app-logged-panel _ngcontent-ng-c3189555329="" _nghost-ng-c1309666480=""><div _ngcontent-ng-c1309666480="" class="lp-table"><div _ngcontent-ng-c1309666480="" class="lp-mid"><app-suggestion-row _ngcontent-ng-c3189555329="" _nghost-ng-c3545032674=""><div _ngcontent-ng-c3545032674="" class="sug2"><div _ngcontent-ng-c3545032674="" class="r-l1"><span _ngcontent-ng-c3545032674="" class="chip key"><span _ngcontent-ng-c3545032674="" class="k-ind"><svg _ngcontent-ng-c3545032674="" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" class="k-spark"><path _ngcontent-ng-c3545032674="" d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"></path></svg></span>ATL-101</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-title">Daily standup</span><span _ngcontent-ng-c3545032674="" class="s-dur">15m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c3545032674="" class="r-l2"><div _ngcontent-ng-c3545032674="" class="rv"><span _ngcontent-ng-c3545032674="" class="s-when">09:30–09:45</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-src">meeting</span><span _ngcontent-ng-c3545032674="" class="s-act"><button _ngcontent-ng-c3545032674="" type="button" class="lnk-deny">Deny</button><button _ngcontent-ng-c3545032674="" type="button" class="btn-log">Log…</button><!--bindings={
+  "ng-reflect-ng-if": "[object Object]"
+}--></span></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div></div></app-suggestion-row><app-suggestion-row _ngcontent-ng-c3189555329="" _nghost-ng-c3545032674=""><div _ngcontent-ng-c3545032674="" class="sug2"><div _ngcontent-ng-c3545032674="" class="r-l1"><button _ngcontent-ng-c3545032674="" type="button" class="chip ask"><span _ngcontent-ng-c3545032674="" class="k-ind"><svg _ngcontent-ng-c3545032674="" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" class="k-spark dim"><path _ngcontent-ng-c3545032674="" d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"></path></svg></span>task?</button><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-title">Incident postmortem</span><span _ngcontent-ng-c3545032674="" class="s-dur">45m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c3545032674="" class="r-l2"><div _ngcontent-ng-c3545032674="" class="rv"><span _ngcontent-ng-c3545032674="" class="s-when">10:00–10:45</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-src">meeting</span><span _ngcontent-ng-c3545032674="" class="s-act"><button _ngcontent-ng-c3545032674="" type="button" class="lnk-deny">Deny</button><!--bindings={}--></span></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div></div></app-suggestion-row><app-suggestion-row _ngcontent-ng-c3189555329="" _nghost-ng-c3545032674=""><div _ngcontent-ng-c3545032674="" class="sug2"><div _ngcontent-ng-c3545032674="" class="r-l1"><button _ngcontent-ng-c3545032674="" type="button" class="chip ask"><span _ngcontent-ng-c3545032674="" class="k-ind"><svg _ngcontent-ng-c3545032674="" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" class="k-spark dim"><path _ngcontent-ng-c3545032674="" d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"></path></svg></span>task?</button><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-title">Private appointment</span><span _ngcontent-ng-c3545032674="" class="s-dur">30m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c3545032674="" class="r-l2"><div _ngcontent-ng-c3545032674="" class="rv"><span _ngcontent-ng-c3545032674="" class="s-when">11:00–11:30</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-src">meeting</span><span _ngcontent-ng-c3545032674="" class="s-act"><button _ngcontent-ng-c3545032674="" type="button" class="lnk-deny">Deny</button><!--bindings={}--></span></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div></div></app-suggestion-row><app-suggestion-row _ngcontent-ng-c3189555329="" _nghost-ng-c3545032674=""><div _ngcontent-ng-c3545032674="" class="sug2"><div _ngcontent-ng-c3545032674="" class="r-l1"><span _ngcontent-ng-c3545032674="" class="chip key"><span _ngcontent-ng-c3545032674="" class="k-ind"><svg _ngcontent-ng-c3545032674="" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" class="k-spark"><path _ngcontent-ng-c3545032674="" d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"></path></svg></span>ATL-4512</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-title">[DEV] Payment retry: dedupe idempotency keys</span><span _ngcontent-ng-c3545032674="" class="s-dur">30m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c3545032674="" class="r-l2"><div _ngcontent-ng-c3545032674="" class="rv"><span _ngcontent-ng-c3545032674="" class="s-when">11:40</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-src">review</span><span _ngcontent-ng-c3545032674="" class="s-act"><button _ngcontent-ng-c3545032674="" type="button" class="lnk-deny">Deny</button><button _ngcontent-ng-c3545032674="" type="button" class="btn-log">Log…</button><!--bindings={
+  "ng-reflect-ng-if": "[object Object]"
+}--></span></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div></div></app-suggestion-row><app-suggestion-row _ngcontent-ng-c3189555329="" _nghost-ng-c3545032674=""><div _ngcontent-ng-c3545032674="" class="sug2"><div _ngcontent-ng-c3545032674="" class="r-l1"><button _ngcontent-ng-c3545032674="" type="button" class="chip ask"><span _ngcontent-ng-c3545032674="" class="k-ind"><svg _ngcontent-ng-c3545032674="" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" class="k-spark dim"><path _ngcontent-ng-c3545032674="" d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"></path></svg></span>task?</button><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-title">Backlog grooming — payments squad</span><span _ngcontent-ng-c3545032674="" class="s-dur">1h 00m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c3545032674="" class="r-l2"><div _ngcontent-ng-c3545032674="" class="rv"><span _ngcontent-ng-c3545032674="" class="s-when">13:00–14:00</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-src">meeting</span><span _ngcontent-ng-c3545032674="" class="s-act"><button _ngcontent-ng-c3545032674="" type="button" class="lnk-deny">Deny</button><!--bindings={}--></span></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div></div></app-suggestion-row><app-suggestion-row _ngcontent-ng-c3189555329="" _nghost-ng-c3545032674=""><div _ngcontent-ng-c3545032674="" class="sug2"><div _ngcontent-ng-c3545032674="" class="r-l1"><span _ngcontent-ng-c3545032674="" class="chip key"><span _ngcontent-ng-c3545032674="" class="k-ind"><svg _ngcontent-ng-c3545032674="" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" class="k-spark"><path _ngcontent-ng-c3545032674="" d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"></path></svg></span>ATL-205</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-title">Payments demo dry-run</span><span _ngcontent-ng-c3545032674="" class="s-dur">30m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c3545032674="" class="r-l2"><div _ngcontent-ng-c3545032674="" class="rv"><span _ngcontent-ng-c3545032674="" class="s-when">14:30–15:00</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-src">meeting</span><span _ngcontent-ng-c3545032674="" class="s-act"><button _ngcontent-ng-c3545032674="" type="button" class="lnk-deny">Deny</button><button _ngcontent-ng-c3545032674="" type="button" class="btn-log">Log…</button><!--bindings={
+  "ng-reflect-ng-if": "[object Object]"
+}--></span></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div></div></app-suggestion-row><app-suggestion-row _ngcontent-ng-c3189555329="" _nghost-ng-c3545032674=""><div _ngcontent-ng-c3545032674="" class="sug2"><div _ngcontent-ng-c3545032674="" class="r-l1"><button _ngcontent-ng-c3545032674="" type="button" class="chip ask"><span _ngcontent-ng-c3545032674="" class="k-ind"><svg _ngcontent-ng-c3545032674="" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" class="k-spark dim"><path _ngcontent-ng-c3545032674="" d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"></path></svg></span>task?</button><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-title">Design sync</span><span _ngcontent-ng-c3545032674="" class="s-dur">30m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c3545032674="" class="r-l2"><div _ngcontent-ng-c3545032674="" class="rv"><span _ngcontent-ng-c3545032674="" class="s-when">16:00<span _ngcontent-ng-c3545032674="" class="ar">→</span><span _ngcontent-ng-c3545032674="" class="lv">live</span></span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3545032674="" class="s-src">meeting</span><span _ngcontent-ng-c3545032674="" class="s-act"><button _ngcontent-ng-c3545032674="" type="button" class="lnk-deny">Deny</button><!--bindings={}--></span></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div></div></app-suggestion-row><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object],[object Object"
+}--></div><div _ngcontent-ng-c1309666480="" class="lp-cold-mark"></div><div _ngcontent-ng-c1309666480="" class="blk hot" data-task="ATL-6781" style="order: 0; --heat: 250 197 150;"><div _ngcontent-ng-c1309666480="" class="blk-id"><span _ngcontent-ng-c1309666480="" class="tkt anc">ATL-6781</span><span _ngcontent-ng-c1309666480="" class="c-nm">Daily standup and team sync</span><span _ngcontent-ng-c1309666480="" class="sum">5h 34m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c1309666480="" class="blk-body"><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><app-session-row _ngcontent-ng-c1309666480="" _nghost-ng-c3459772310="" class="sr lead" style="--heat: 250 197 150; --heat-lite: 255 243 207; --stam: 0.62;"><button _ngcontent-ng-c3459772310="" type="button" class="tb aq anc lead"><span _ngcontent-ng-c3459772310="" class="liq"><i _ngcontent-ng-c3459772310=""></i></span><span _ngcontent-ng-c3459772310="" aria-hidden="true" class="k-ind"><svg _ngcontent-ng-c3459772310="" viewBox="0 0 10 10" class="k-lamp"><path _ngcontent-ng-c3459772310="" d="M2 1 L9 5 L2 9 Z"></path></svg><svg _ngcontent-ng-c3459772310="" viewBox="0 0 10 10" class="k-act"><rect _ngcontent-ng-c3459772310="" x="1.4" y="1" width="2.8" height="8" rx="0.8"></rect><rect _ngcontent-ng-c3459772310="" x="5.8" y="1" width="2.8" height="8" rx="0.8"></rect></svg></span><span _ngcontent-ng-c3459772310="" class="k-word"><span _ngcontent-ng-c3459772310="" class="k-txt">Tracking</span><span _ngcontent-ng-c3459772310="" class="k-alt">Paused</span></span></button><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3459772310="" class="repo">web-frontend</span><span _ngcontent-ng-c3459772310="" class="sc rng"><i _ngcontent-ng-c3459772310="" class="csep">·</i><span _ngcontent-ng-c3459772310="" class="rv">09:18–now</span></span><span _ngcontent-ng-c3459772310="" class="sc com"><i _ngcontent-ng-c3459772310="" class="csep">·</i><svg _ngcontent-ng-c3459772310="" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true" class="g"><line _ngcontent-ng-c3459772310="" x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"></line><circle _ngcontent-ng-c3459772310="" cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"></circle><line _ngcontent-ng-c3459772310="" x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"></line></svg><span _ngcontent-ng-c3459772310="" class="s-com">5</span></span><span _ngcontent-ng-c3459772310="" class="sc diff"><i _ngcontent-ng-c3459772310="" class="csep">·</i><b _ngcontent-ng-c3459772310="" class="plus">+312</b><b _ngcontent-ng-c3459772310="" class="minus">−88</b></span><span _ngcontent-ng-c3459772310="" class="dur">4h 12m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></app-session-row><app-session-row _ngcontent-ng-c1309666480="" _nghost-ng-c3459772310="" class="sr frost" style="--heat: 160 166 223; --heat-lite: 204 209 254; --stam: 0.18;"><button _ngcontent-ng-c3459772310="" type="button" class="tb frost anc"><span _ngcontent-ng-c3459772310="" aria-hidden="true" class="k-ind"><span _ngcontent-ng-c3459772310="" class="k-stop"></span></span><span _ngcontent-ng-c3459772310="" class="k-txt">Waiting</span></button><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3459772310="" class="repo">infra-scripts</span><span _ngcontent-ng-c3459772310="" class="sc rng"><i _ngcontent-ng-c3459772310="" class="csep">·</i><span _ngcontent-ng-c3459772310="" class="rv">11:30–now</span></span><span _ngcontent-ng-c3459772310="" class="sc com"><i _ngcontent-ng-c3459772310="" class="csep">·</i><svg _ngcontent-ng-c3459772310="" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true" class="g"><line _ngcontent-ng-c3459772310="" x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"></line><circle _ngcontent-ng-c3459772310="" cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"></circle><line _ngcontent-ng-c3459772310="" x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"></line></svg><span _ngcontent-ng-c3459772310="" class="s-com">0</span></span><span _ngcontent-ng-c3459772310="" class="sc diff"><i _ngcontent-ng-c3459772310="" class="csep">·</i><b _ngcontent-ng-c3459772310="" class="plus">+18</b><b _ngcontent-ng-c3459772310="" class="minus">−4</b></span><span _ngcontent-ng-c3459772310="" class="dur">22m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></app-session-row><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object],[object Object"
+}--><div _ngcontent-ng-c1309666480="" class="wl manline"><span _ngcontent-ng-c1309666480="" class="c-type anc">Development</span><span _ngcontent-ng-c1309666480="" class="c-ds man"><span _ngcontent-ng-c1309666480="">manual added</span><svg _ngcontent-ng-c1309666480="" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true" class="mg"><circle _ngcontent-ng-c1309666480="" cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width="0.9"></circle><line _ngcontent-ng-c1309666480="" x1="4.5" y1="2.5" x2="4.5" y2="6.5" stroke="currentColor" stroke-width="1.1"></line><line _ngcontent-ng-c1309666480="" x1="2.5" y1="4.5" x2="6.5" y2="4.5" stroke="currentColor" stroke-width="1.1"></line></svg></span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c1309666480="" class="c-dur">45m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><!--bindings={
+  "ng-reflect-ng-if": "[object Object]"
+}--><div _ngcontent-ng-c1309666480="" class="wl ent" data-eid="m1"><span _ngcontent-ng-c1309666480="" class="c-type anc">Other</span><span _ngcontent-ng-c1309666480="" class="c-ds">daily standup</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c1309666480="" class="c-dur">15m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--container--><!--ng-container--><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object]"
+}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--></div><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></div><div _ngcontent-ng-c1309666480="" class="blk" data-task="ATL-6712" style="order: 2;"><div _ngcontent-ng-c1309666480="" class="blk-id"><span _ngcontent-ng-c1309666480="" class="tkt anc">ATL-6712</span><span _ngcontent-ng-c1309666480="" class="c-nm">Existing Transaction: add missing reactive behaviour for Policy Dictionaries</span><span _ngcontent-ng-c1309666480="" class="sum">4h 37m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c1309666480="" class="blk-body"><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><app-session-row _ngcontent-ng-c1309666480="" _nghost-ng-c3459772310="" class="sr closed" style="--heat: 248 179 142; --heat-lite: 255 226 198; --stam: 0.5;"><span _ngcontent-ng-c3459772310="" class="c-type anc">Development</span><!--ng-container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3459772310="" class="repo">api-backend</span><span _ngcontent-ng-c3459772310="" class="sc rng"><i _ngcontent-ng-c3459772310="" class="csep">·</i><span _ngcontent-ng-c3459772310="" class="rv">13:05–13:50</span></span><span _ngcontent-ng-c3459772310="" class="sc com"><i _ngcontent-ng-c3459772310="" class="csep">·</i><svg _ngcontent-ng-c3459772310="" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true" class="g"><line _ngcontent-ng-c3459772310="" x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"></line><circle _ngcontent-ng-c3459772310="" cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"></circle><line _ngcontent-ng-c3459772310="" x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"></line></svg><span _ngcontent-ng-c3459772310="" class="s-com">1</span></span><span _ngcontent-ng-c3459772310="" class="sc diff"><i _ngcontent-ng-c3459772310="" class="csep">·</i><b _ngcontent-ng-c3459772310="" class="plus">+40</b><b _ngcontent-ng-c3459772310="" class="minus">−9</b></span><span _ngcontent-ng-c3459772310="" class="dur">45m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></app-session-row><app-session-row _ngcontent-ng-c1309666480="" _nghost-ng-c3459772310="" class="sr closed" style="--heat: 250 194 147; --heat-lite: 255 240 205; --stam: 0.6;"><span _ngcontent-ng-c3459772310="" class="c-type anc">Development</span><!--ng-container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3459772310="" class="repo">web-frontend</span><span _ngcontent-ng-c3459772310="" class="sc rng"><i _ngcontent-ng-c3459772310="" class="csep">·</i><span _ngcontent-ng-c3459772310="" class="rv">09:18–10:45</span></span><span _ngcontent-ng-c3459772310="" class="sc com"><i _ngcontent-ng-c3459772310="" class="csep">·</i><svg _ngcontent-ng-c3459772310="" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true" class="g"><line _ngcontent-ng-c3459772310="" x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"></line><circle _ngcontent-ng-c3459772310="" cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"></circle><line _ngcontent-ng-c3459772310="" x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"></line></svg><span _ngcontent-ng-c3459772310="" class="s-com">1</span></span><span _ngcontent-ng-c3459772310="" class="sc diff"><i _ngcontent-ng-c3459772310="" class="csep">·</i><b _ngcontent-ng-c3459772310="" class="plus">+88</b><b _ngcontent-ng-c3459772310="" class="minus">−14</b></span><span _ngcontent-ng-c3459772310="" class="dur">1h 27m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></app-session-row><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object],[object Object"
+}--><div _ngcontent-ng-c1309666480="" class="wl manline"><span _ngcontent-ng-c1309666480="" class="c-type anc">Development</span><span _ngcontent-ng-c1309666480="" class="c-ds man"><span _ngcontent-ng-c1309666480="">manual added</span><svg _ngcontent-ng-c1309666480="" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true" class="mg"><circle _ngcontent-ng-c1309666480="" cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width="0.9"></circle><line _ngcontent-ng-c1309666480="" x1="4.5" y1="2.5" x2="4.5" y2="6.5" stroke="currentColor" stroke-width="1.1"></line><line _ngcontent-ng-c1309666480="" x1="2.5" y1="4.5" x2="6.5" y2="4.5" stroke="currentColor" stroke-width="1.1"></line></svg></span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c1309666480="" class="c-dur">1h 25m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><!--bindings={
+  "ng-reflect-ng-if": "[object Object]"
+}--><div _ngcontent-ng-c1309666480="" class="wl ent" data-eid="m2"><span _ngcontent-ng-c1309666480="" class="c-type anc">Code Review</span><span _ngcontent-ng-c1309666480="" class="c-ds">PR #214 review with team</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c1309666480="" class="c-dur">30m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--container--><!--ng-container--><div _ngcontent-ng-c1309666480="" class="wl ent" data-eid="m7"><span _ngcontent-ng-c1309666480="" class="c-type anc">Other</span><span _ngcontent-ng-c1309666480="" class="c-ds">sprint planning</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c1309666480="" class="c-dur">30m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--container--><!--ng-container--><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object],[object Object"
+}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--></div><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></div><div _ngcontent-ng-c1309666480="" class="blk one" data-task="APP-1024" style="order: 2;"><div _ngcontent-ng-c1309666480="" class="blk-id"><span _ngcontent-ng-c1309666480="" class="tkt anc">APP-1024</span><span _ngcontent-ng-c1309666480="" class="c-nm none">— name not cached</span><span _ngcontent-ng-c1309666480="" class="sum">45m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c1309666480="" class="blk-body"><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={}--><div _ngcontent-ng-c1309666480="" class="wl ent" data-eid="m3"><span _ngcontent-ng-c1309666480="" class="c-type anc">Other</span><span _ngcontent-ng-c1309666480="" class="c-ds">sprint planning</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c1309666480="" class="c-dur"></span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><!--container--><!--ng-container--><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object]"
+}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--></div><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></div><div _ngcontent-ng-c1309666480="" class="blk one" data-task="—" style="order: 2;"><div _ngcontent-ng-c1309666480="" class="blk-id"><span _ngcontent-ng-c1309666480="" class="tkt anc">—</span><span _ngcontent-ng-c1309666480="" class="c-nm none">— name not cached</span><span _ngcontent-ng-c1309666480="" class="sum">20m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c1309666480="" class="blk-body"><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><app-session-row _ngcontent-ng-c1309666480="" _nghost-ng-c3459772310="" class="sr closed" style="--heat: 163 164 222; --heat-lite: 206 207 253; --stam: 0.2;"><span _ngcontent-ng-c3459772310="" class="c-type anc">Development</span><!--ng-container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3459772310="" class="repo">infra-scripts</span><span _ngcontent-ng-c3459772310="" class="sc rng"><i _ngcontent-ng-c3459772310="" class="csep">·</i><span _ngcontent-ng-c3459772310="" class="rv">14:10–14:30</span></span><span _ngcontent-ng-c3459772310="" class="sc com"><i _ngcontent-ng-c3459772310="" class="csep">·</i><svg _ngcontent-ng-c3459772310="" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true" class="g"><line _ngcontent-ng-c3459772310="" x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"></line><circle _ngcontent-ng-c3459772310="" cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"></circle><line _ngcontent-ng-c3459772310="" x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"></line></svg><span _ngcontent-ng-c3459772310="" class="s-com">0</span></span><span _ngcontent-ng-c3459772310="" class="sc diff"><i _ngcontent-ng-c3459772310="" class="csep">·</i><b _ngcontent-ng-c3459772310="" class="plus">+3</b><b _ngcontent-ng-c3459772310="" class="minus">−1</b></span><span _ngcontent-ng-c3459772310="" class="dur"></span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></app-session-row><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object]"
+}--><!--bindings={}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--></div><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></div><div _ngcontent-ng-c1309666480="" class="blk one" data-task="APP-1019" style="order: 2;"><div _ngcontent-ng-c1309666480="" class="blk-id"><span _ngcontent-ng-c1309666480="" class="tkt anc">APP-1019</span><span _ngcontent-ng-c1309666480="" class="c-nm">Pricing engine: clean up dead code branches</span><span _ngcontent-ng-c1309666480="" class="sum">1h 15m</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></div><div _ngcontent-ng-c1309666480="" class="blk-body"><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><app-session-row _ngcontent-ng-c1309666480="" _nghost-ng-c3459772310="" class="sr closed" style="--heat: 250 212 163; --heat-lite: 255 250 213; --stam: 0.7;"><span _ngcontent-ng-c3459772310="" class="c-type anc">Development</span><!--ng-container--><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--><span _ngcontent-ng-c3459772310="" class="repo">api-backend</span><span _ngcontent-ng-c3459772310="" class="sc rng"><i _ngcontent-ng-c3459772310="" class="csep">·</i><span _ngcontent-ng-c3459772310="" class="rv">11:35–12:50</span></span><span _ngcontent-ng-c3459772310="" class="sc com"><i _ngcontent-ng-c3459772310="" class="csep">·</i><svg _ngcontent-ng-c3459772310="" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true" class="g"><line _ngcontent-ng-c3459772310="" x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"></line><circle _ngcontent-ng-c3459772310="" cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"></circle><line _ngcontent-ng-c3459772310="" x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"></line></svg><span _ngcontent-ng-c3459772310="" class="s-com">2</span></span><span _ngcontent-ng-c3459772310="" class="sc diff"><i _ngcontent-ng-c3459772310="" class="csep">·</i><b _ngcontent-ng-c3459772310="" class="plus">+124</b><b _ngcontent-ng-c3459772310="" class="minus">−22</b></span><span _ngcontent-ng-c3459772310="" class="dur"></span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--><!--container--></app-session-row><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object]"
+}--><!--bindings={}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-for-of": ""
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": null
+}--></div><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></div><!--bindings={
+  "ng-reflect-ng-for-of": "[object Object],[object Object"
+}--></div><!--container--><!--container--></app-logged-panel></div><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--><div _ngcontent-ng-c3189555329="" class="cloud-backdrop"></div><app-log-cloud _ngcontent-ng-c3189555329="" _nghost-ng-c88576605="" style="top: 0px;"><div _ngcontent-ng-c88576605="" class="cloud-filter"><span _ngcontent-ng-c88576605="" class="f-ic">⌕</span><input _ngcontent-ng-c88576605="" type="text" autocomplete="off" placeholder="no match → search Jira" class="ng-untouched ng-pristine ng-valid"><button _ngcontent-ng-c88576605="" type="button" title="collect several · Ctrl+click a chip" class="f-batch">⧉ multi</button><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></div><!--container--><div _ngcontent-ng-c88576605="" class="cloud-body"><div _ngcontent-ng-c88576605="" class="cloud-chips"><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><span _ngcontent-ng-c88576605="" class="row-label jira">jira · in progress</span><span _ngcontent-ng-c88576605="" class="fav jira mine" title="ATL-7001 · Payment gateway timeout on 3DS callback · right-click: save as favorite" style="animation-delay: 30ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-7001</span><span _ngcontent-ng-c88576605="" class="f-name">Payment gateway timeout on 3DS callback</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--></span><span _ngcontent-ng-c88576605="" class="fav jira mine" title="ATL-7002 · Reactivity: stale premium after coverage change · right-click: save as favorite" style="animation-delay: 42ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-7002</span><span _ngcontent-ng-c88576605="" class="f-name">Reactivity: stale premium after coverage change</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--></span><span _ngcontent-ng-c88576605="" class="fav jira mine" title="ATL-7014 · Save pipeline drops middle names on import · right-click: save as favorite" style="animation-delay: 54ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-7014</span><span _ngcontent-ng-c88576605="" class="f-name">Save pipeline drops middle names on import</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--></span><span _ngcontent-ng-c88576605="" class="fav jira mine" title="ATL-7020 · Organization tree: drag-and-drop reorder · right-click: save as favorite" style="animation-delay: 66ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-7020</span><span _ngcontent-ng-c88576605="" class="f-name">Organization tree: drag-and-drop reorder</span><!--bindings={
+  "ng-reflect-ng-if-else": "[object Object]"
+}--></span><!--bindings={
+  "ng-reflect-ng-for-track-by": "trackByJira(_i, h) {\n    retur"
+}--><!--ng-container--><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--><span _ngcontent-ng-c88576605="" class="row-label">favorites</span><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--><span _ngcontent-ng-c88576605="" class="fav" title="Other · Ctrl+click: collect" style="animation-delay: 78ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-10</span><span _ngcontent-ng-c88576605="" class="f-name">standup</span><span _ngcontent-ng-c88576605="" class="f-min">15m</span><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></span><span _ngcontent-ng-c88576605="" class="fav" title="CodeReview · Ctrl+click: collect" style="animation-delay: 90ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-6712</span><span _ngcontent-ng-c88576605="" class="f-name">code review</span><span _ngcontent-ng-c88576605="" class="f-min">30m</span><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></span><span _ngcontent-ng-c88576605="" class="fav" title="Other · Ctrl+click: collect" style="animation-delay: 102ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-10</span><span _ngcontent-ng-c88576605="" class="f-name">planning</span><span _ngcontent-ng-c88576605="" class="f-min">1h 00m</span><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></span><span _ngcontent-ng-c88576605="" class="fav" title="Estimation · Ctrl+click: collect" style="animation-delay: 114ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-6802</span><span _ngcontent-ng-c88576605="" class="f-name">estimation</span><span _ngcontent-ng-c88576605="" class="f-min">45m</span><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></span><span _ngcontent-ng-c88576605="" class="fav" title="DesignAnalysis · Ctrl+click: collect" style="animation-delay: 126ms;"><span _ngcontent-ng-c88576605="" class="f-task">ATL-6900</span><span _ngcontent-ng-c88576605="" class="f-name">arch review</span><span _ngcontent-ng-c88576605="" class="f-min">45m</span><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></span><!--bindings={
+  "ng-reflect-ng-for-track-by": "trackByFavorite(_i, f) {\n    r"
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--></div></div><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--></app-log-cloud><!--bindings={
+  "ng-reflect-ng-if": "true"
+}--></app-day-view><!--bindings={
+  "ng-reflect-ng-switch-case": "day"
+}--><!--bindings={
+  "ng-reflect-ng-switch-case": "sheet"
+}--><!--bindings={
+  "ng-reflect-ng-switch-case": "setup"
+}--><!--bindings={
+  "ng-reflect-ng-switch-case": "set"
+}--><!--ng-container--><!--bindings={
+  "ng-reflect-ng-if": null
+}--><!--bindings={
+  "ng-reflect-ng-if": "false"
+}--></div></app-root></template>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const ngOf = (el) => [...el.attributes].find((a) => a.name.startsWith('_ngcontent')).name;
+
+  // ── glyphs ───────────────────────────────────────────────────────
+  const PLAY = '<svg class="g-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.7l5.2 3.3L3 8.3z"/></svg>';
+  const PZ = '<svg class="g-pz" viewBox="0 0 10 10" aria-hidden="true"><rect x="1.6" y="1.2" width="2.5" height="7.6" rx=".8"/><rect x="5.9" y="1.2" width="2.5" height="7.6" rx=".8"/></svg>';
+  const X = '<svg class="g-x" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3L3 9"/></svg>';
+  const DIAL_S = '<svg class="g-dial" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.4 1.2h3.2M8 1.2v2.2"/><circle cx="8" cy="9.2" r="5.6"/><path d="M8 9.2V6.2"/></svg>';
+  // the titlebar dial (v12 T2): sector = minutes of the hour, red bars when paused
+  function dialSvg(run, min) {
+    const fr = (min % 60) / 60, a = fr * 2 * Math.PI, cx = 8, cy = 9.2, rs = 4.1, rh = 3.4;
+    const sec = `<path class="sec" d="M${cx} ${cy} L${cx} ${(cy - rs).toFixed(2)} A${rs} ${rs} 0 ${fr > 0.5 ? 1 : 0} 1 ${(cx + rs * Math.sin(a)).toFixed(2)} ${(cy - rs * Math.cos(a)).toFixed(2)} Z"/>`;
+    const inner = run
+      ? `<path class="hand" d="M${cx} ${cy} L${(cx + rh * Math.sin(a)).toFixed(2)} ${(cy - rh * Math.cos(a)).toFixed(2)}"/>`
+      : '<rect class="pz" x="5.85" y="7.1" width="1.55" height="4.2" rx=".55"/><rect class="pz" x="8.6" y="7.1" width="1.55" height="4.2" rx=".55"/>';
+    return `<svg class="tm-dial" viewBox="0 0 16 16" aria-hidden="true"><path class="crown" d="M6.4 1.2h3.2M8 1.2v2.2"/><circle class="ring" cx="${cx}" cy="${cy}" r="5.6"/>${sec}${inner}</svg>`;
+  }
+
+  const T1 = { desc: 'разбор 500-х на checkout', time: '47m 15s' };
+  const T2 = { desc: 'помог соседней команде с деплоем', time: '12m 40s' };
+
+  // ── one cell = a fresh copy of the app, cropped ──────────────────
+  const tpl = $('#tpl-app');
+  function mkCell(height, keepTitle = false) {
+    const cv = document.createElement('div');
+    cv.className = 'cv';
+    cv.style.height = `${height}px`;
+    cv.append(tpl.content.cloneNode(true));
+    const app = $('.app', cv);
+    if (!keepTitle) $('.header', app).remove();
+    const x = { cv, app, title: $('.header', app), head: $('.day-head', app), logBtn: $('.g-btn', app), cloud: $('app-log-cloud', app), backdrop: $('.cloud-backdrop', app) };
+    x.NGC = ngOf($('.fav', x.cloud));
+    return x;
+  }
+
+  // ── where an anonymous timer shows when the cloud is closed ───────
+  function headerShow(x, how, run) {
+    const time = run ? T1.time : T1.time;
+    const g = run ? PLAY : PZ;
+    if (how === 'in') {
+      x.logBtn.insertAdjacentHTML('beforeend', `<span class="lg-sep"></span><span class="lg-tm${run ? ' run' : ''}">${g}<b>${time}</b></span>`);
+    }
+    if (how === 'beside') {
+      x.logBtn.insertAdjacentHTML('beforebegin', `<span class="tmh${run ? ' run' : ''}">${g}<b>${time}</b></span>`);
+    }
+    if (how === 'title') {
+      const sw = $('.view-switcher', x.title);
+      sw.insertAdjacentHTML('afterend', `<span class="tm-ndiv"></span><span class="tm-nav ${run ? 'run' : 'pause'}"><span class="tm-dw">${dialSvg(run, 47)}</span><span class="tm-min">${time}</span></span>`);
+    }
+  }
+
+  // ── the cloud with the anonymous timers as its first section ──────
+  function openCloud(x, o = {}) {
+    x.app.append(x.backdrop, x.cloud);
+    x.cloud.classList.add('open');
+    x.backdrop.classList.add('open');
+    const N = x.NGC;
+    if (o.timers) {
+      const rows = o.timers.map((t, i) => `<div class="tmr-row${t.run ? ' run' : ''}${o.sel === i ? ' sel' : ''}">`
+        + `<button type="button" class="tmr-g">${t.run ? PLAY : PZ}</button><b class="tmr-time">${t.time}</b>`
+        + `<span class="tmr-desc">${esc(t.desc)}</span><button type="button" class="tmr-key">task?</button>`
+        + `<button type="button" class="tmr-x">${X}</button></div>`).join('');
+      $('.cloud-filter', x.cloud).insertAdjacentHTML('afterend', `<div class="tmr"><span ${N} class="row-label tmr-lbl">timers</span>${rows}</div>`);
+      if (o.sel != null) $('.cloud-filter input', x.cloud).setAttribute('placeholder', `ticket for «${o.timers[o.sel].desc}»`);
+    }
+    if (o.form) {
+      x.cloud.classList.add('form-mode');
+      x.cloud.insertAdjacentHTML('beforeend', `<div ${N} class="cloud-form"><div ${N} class="cf-top"><span ${N} class="cf-key">ATL-7014</span>`
+        + `<span ${N} class="cf-name">Save pipeline drops middle names on import</span></div><div ${N} class="cf-ctl">`
+        + `<button ${N} type="button" class="cf-back">←</button><select ${N} class="cf-act"><option>Development</option></select>`
+        + `<input ${N} class="cf-min" ${o.form.min ? `value="${o.form.min}"` : 'placeholder="45m"'}>`
+        + `<button type="button" class="cf-tm${o.form.on ? ' on' : ''}">${DIAL_S}timer</button>`
+        + `<input ${N} class="cf-desc" placeholder="description"><button ${N} type="button" class="cf-submit">Log</button></div></div>`);
+    }
+  }
+  function placeCloud(x) {
+    if (!x.cloud.classList.contains('open')) return;
+    let top = 0;
+    for (let el = x.head; el && el !== x.app; el = el.offsetParent) top += el.offsetTop;
+    x.cloud.style.top = `${top + x.head.offsetHeight - 4}px`;
+  }
+
+  // ── the grid ─────────────────────────────────────────────────────
+  const grid = $('#grid');
+  const cells = [];
+  function section(title, note) {
+    grid.insertAdjacentHTML('beforeend', `<h2>${title}</h2>${note ? `<p class="note">${note}</p>` : ''}<div class="row"></div>`);
+    return grid.lastElementChild;
+  }
+  function cell(row, x, cap) {
+    const c = document.createElement('div');
+    c.className = 'cell';
+    c.append(x.cv);
+    c.insertAdjacentHTML('beforeend', `<div class="cap">${cap}</div>`);
+    row.append(c);
+    cells.push(x);
+  }
+
+  const HOWS = [
+    ['in', 'H1 · время внутри + Log', 'капсула одна, время — её второй сегмент'],
+    ['beside', 'H2 · время рядом с + Log, без стекла', 'просто число с глифом, как подпись к кнопке'],
+    ['title', 'H3 · шапка дня не меняется', 'время — только у циферблата в заголовке окна (v12 T2), с любой вкладки'],
+  ];
+  const head = section('1 · Облако закрыто: где видно анонимный таймер',
+    'Показывается один — идущий, а если ни один не идёт — последний на паузе. Остальные — только в облаке. Пауза = то же время, серое, с красным ⏸.');
+  for (const [how, name, note] of HOWS) {
+    for (const run of [true, false]) {
+      const x = mkCell(how === 'title' ? 164 : 128, how === 'title');
+      headerShow(x, how, run);
+      cell(head, x, `<b>${name}</b> · ${run ? 'идёт' : 'на паузе'}<br>${run ? note : ''}`);
+    }
+  }
+
+  const cl = section('2 · Облако + Log: анонимные таймеры — его первый раздел',
+    'Это не меню вместо облака, а раздел в том же облаке: обычное логирование чипами работает как сегодня. Таймер без тикета — это «отложенный Log», поэтому живёт там же, где родился (Start timer «…»).');
+  {
+    const x = mkCell(470);
+    headerShow(x, 'beside', true);
+    openCloud(x, { timers: [{ ...T1, run: true }, { ...T2 }] });
+    cell(cl, x, '<b>Клик по + Log</b><br>сверху timers: ▶/⏸ · время · описание · task? · ✕; ниже чипы — обычный Log');
+  }
+  {
+    const x = mkCell(470);
+    headerShow(x, 'beside', true);
+    openCloud(x, { timers: [{ ...T1, run: true }, { ...T2 }], sel: 0 });
+    cell(cl, x, '<b>task? у таймера → привязка</b><br>строка выбрана, поиск ищет тикет для неё; чип → таймер уходит в карточку тикета, total растёт; Esc — обратно к обычному Log');
+  }
+
+  const fm = section('3 · Форма после выбора тикета: одна кнопка Log, таймер — опция',
+    'Переключатель того же вида, что ⧉ multi. Выключен — форма как сегодня. Включён — Log пишет запись с вписанными минутами (пусто = 0), и дальше её питает таймер.');
+  {
+    const x = mkCell(250);
+    openCloud(x, { form: { on: false } });
+    cell(fm, x, '<b>timer выключен</b><br>как сегодня');
+  }
+  {
+    const x = mkCell(250);
+    openCloud(x, { form: { on: true, min: '45m' } });
+    cell(fm, x, '<b>timer включён, вписано 45m</b><br>«залогировал 45 минут и дальше по таймеру»');
+  }
+
+  for (const x of cells) placeCloud(x);
+  const setZoom = (z) => {
+    document.documentElement.style.setProperty('--z', z);
+    for (const b of $$('[data-z]')) b.classList.toggle('on', b.dataset.z === String(z));
+  };
+  $('#toolbar').addEventListener('click', (e) => { const b = e.target.closest('[data-z]'); if (b) setZoom(b.dataset.z); });
+  setZoom('.7');
+})();
+
+</script>
+</body>
+</html>
