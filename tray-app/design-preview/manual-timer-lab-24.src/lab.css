@@ -110,7 +110,7 @@ body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace;
 /* v24: total on the date's axis, + Log on the timer line */
 .day-head.v24 { grid-template-areas: "date total" "tm log"; }
 .day-head.v24 .day-total { top: -5.65px; }
-.day-head.v24 .g-btn { top: 0; align-self: center; }
+.day-head.v24 .g-btn { top: -1px; align-self: center; }
 /* the dial (titlebar v12–v19) instead of ▶ and ▾ */
 .tmx.dl { gap: 6px; }
 .tmx-ic { display: inline-flex; flex-shrink: 0; }
