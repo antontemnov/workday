@@ -7,7 +7,7 @@
          [ngModel]="filter"
          (ngModelChange)="onFilterInput($event)"
          (keydown.enter)="onFilterEnter()"
-         [placeholder]="isAcceptMode ? 'pick a ticket — no match → search Jira' : 'no match → search Jira'"
+         [placeholder]="isAcceptMode ? 'pick a ticket — favorites and Jira' : 'search favorites and Jira'"
          autocomplete="off" />
   <button type="button"
           *ngIf="!isAcceptMode"
@@ -70,7 +70,8 @@
       <span class="f-min" *ngIf="!isAcceptMode">{{ formatMinutes(f.minutes) }}</span>
     </span>
 
-    <!-- Jira zone — stage 2/3 of the search, only when favorites don't match. -->
+    <!-- Jira zone — stage 2/3 of the search, hidden only when a chip above
+         carries the exact ticket key typed; tickets already above are skipped. -->
     <ng-container *ngIf="jiraZone !== 'idle'">
       <span class="row-label jira">⌕ jira</span>
 

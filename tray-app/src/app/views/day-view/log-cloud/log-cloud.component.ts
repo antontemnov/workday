@@ -41,9 +41,13 @@ interface BasketItem {
 
 type CloudMode = 'chips' | 'form' | 'review';
 
-// State of the Jira zone under the favorites — shown only when the local
-// filter has no matches. 'idle' = zone hidden.
+// State of the Jira zone under the favorites — hidden only when a local chip
+// carries the exact ticket key typed. 'idle' = zone hidden.
 type JiraZone = 'idle' | 'short' | 'loading' | 'results' | 'empty' | 'error' | 'notConfigured';
+
+type EnterTarget =
+  | { readonly src: 'jira'; readonly hit: JiraSearchHit }
+  | { readonly src: 'fav'; readonly fav: Favorite };
 
 const SPAWN_MS = 450;
 const JIRA_DEBOUNCE_MS = 350;
@@ -56,6 +60,7 @@ const FAV_FEEDBACK_MS = 1200;
 const SHRINK_STAGGER_MS = 40;
 const SHRINK_ANIM_MS = 180;
 const IN_PROGRESS_STORAGE_KEY = 'wd.logCloud.inProgress';
+const TICKET_KEY_QUERY_RE = /^[a-z][a-z0-9]+-\d+$/;
 
 /**
  * Log cloud — the chip overlay that opens from the day header's Log capsule.
@@ -249,12 +254,12 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
     this.filter = value;
     const q = this.query;
     this.cancelJira();
-    if (!q || this.filteredFavorites.length > 0 || this.filteredInProgress.length > 0) return; // stage 1 covers it
+    if (!q || this.localKeys().has(q)) return;
     if (q.length < JIRA_MIN_QUERY) {
-      this.jiraZone = 'short';
+      if (this.filteredFavorites.length === 0 && this.filteredInProgress.length === 0) this.jiraZone = 'short';
       return;
     }
-    // Stage 2: no local match → debounced live Jira search via the daemon.
+    // Stage 2: a partial local match is no answer — debounced live Jira search via the daemon.
     this.jiraZone = 'loading';
     const seq = this.jiraSeq;
     this.jiraTimer = setTimeout(() => void this.searchJira(q, seq), JIRA_DEBOUNCE_MS);
@@ -271,13 +276,22 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
     const res = await this.api.searchJira(query);
     if (seq !== this.jiraSeq || !this.open) return; // superseded by newer input
     if (res.ok && res.data) {
-      this.jiraHits = res.data.hits.slice(0, JIRA_MAX_HITS);
-      this.jiraZone = this.jiraHits.length ? 'results' : 'empty';
+      const shown = this.localKeys();
+      this.jiraHits = res.data.hits.filter(h => !shown.has(h.key.toLowerCase())).slice(0, JIRA_MAX_HITS);
+      if (this.jiraHits.length > 0) this.jiraZone = 'results';
+      else this.jiraZone = res.data.hits.length > 0 ? 'idle' : 'empty';
     } else if (res.errorCode === ApiErrorCode.JiraNotConfigured) {
       this.jiraZone = 'notConfigured';
     } else {
       this.jiraZone = 'error'; // network fail → quiet status, per design
     }
+  }
+
+  private localKeys(): Set<string> {
+    return new Set([
+      ...this.filteredInProgress.map(h => h.key.toLowerCase()),
+      ...this.filteredFavorites.map(f => f.task.toLowerCase()),
+    ]);
   }
 
   // ─── Picks (instant / batch collect) ───────────────────────────────────
@@ -327,49 +341,46 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   // Jira results → first one into the form. Batch: collect the first chip,
   // clear the filter for the next pick; empty filter + basket → review.
   onFilterEnter(): void {
-    // Enter takes the first chip on screen: in-progress sits above favorites.
-    const top = this.filteredInProgress[0];
-    if (this.isAcceptMode) {
-      if (top) { this.acceptPicked.emit({ task: top.key }); return; }
-      const fav = this.filteredFavorites[0];
-      if (fav) { this.acceptPicked.emit({ task: fav.task }); return; }
-      if (this.jiraZone === 'results' && this.jiraHits.length > 0) {
-        this.acceptPicked.emit({ task: this.jiraHits[0].key });
-      }
-      return;
-    }
     const q = this.query;
+    if (this.batch && !this.isAcceptMode && !q && this.basket.length) {
+      this.openReview();
+      return;
+    }
+    const target = this.enterTarget(q);
+    if (!target) return;
+    if (this.isAcceptMode) {
+      this.acceptPicked.emit({ task: target.src === 'fav' ? target.fav.task : target.hit.key });
+      return;
+    }
     if (this.batch) {
-      if (!q && this.basket.length) {
-        this.openReview();
-        return;
-      }
-      const item = this.firstEnterBasketItem();
-      if (item) {
-        this.toggleBasket(item);
-        if (q) this.onFilterInput('');
-      }
+      this.toggleBasket(target.src === 'fav' ? this.favBasketItem(target.fav) : this.jiraBasketItem(target.hit));
+      if (q) this.onFilterInput('');
       return;
     }
-    if (top) { this.enterForm(top); return; }
+    if (target.src === 'jira') { this.enterForm(target.hit); return; }
     if (this.actionPending) return;
-    const fav = this.filteredFavorites[0];
-    if (fav) {
-      this.emitPickFromKeyboard({ task: fav.task, minutes: fav.minutes, description: fav.name, activity: fav.activity }, fav.name);
-      return;
-    }
-    if (this.jiraZone === 'results' && this.jiraHits.length > 0) {
-      this.enterForm(this.jiraHits[0]);
-    }
+    const fav = target.fav;
+    this.emitPickFromKeyboard({ task: fav.task, minutes: fav.minutes, description: fav.name, activity: fav.activity }, fav.name);
   }
 
-  private firstEnterBasketItem(): BasketItem | null {
-    const top = this.filteredInProgress[0];
-    if (top) return this.jiraBasketItem(top);
+  // Enter takes the first chip on screen (in-progress → favorites → Jira).
+  // A typed ticket key takes only that very ticket, never a longer key
+  // that merely starts with it.
+  private enterTarget(q: string): EnterTarget | null {
+    const jiraHits = this.jiraZone === 'results' ? this.jiraHits : [];
+    if (TICKET_KEY_QUERY_RE.test(q)) {
+      const mine = this.filteredInProgress.find(h => h.key.toLowerCase() === q);
+      if (mine) return { src: 'jira', hit: mine };
+      const fav = this.filteredFavorites.find(f => f.task.toLowerCase() === q);
+      if (fav) return { src: 'fav', fav };
+      const hit = jiraHits.find(h => h.key.toLowerCase() === q);
+      return hit ? { src: 'jira', hit } : null;
+    }
+    const mine = this.filteredInProgress[0];
+    if (mine) return { src: 'jira', hit: mine };
     const fav = this.filteredFavorites[0];
-    if (fav) return this.favBasketItem(fav);
-    if (this.jiraZone === 'results' && this.jiraHits.length > 0) return this.jiraBasketItem(this.jiraHits[0]);
-    return null;
+    if (fav) return { src: 'fav', fav };
+    return jiraHits[0] ? { src: 'jira', hit: jiraHits[0] } : null;
   }
 
   private emitPickFromKeyboard(entry: ManualEntryInput, label: string): void {
