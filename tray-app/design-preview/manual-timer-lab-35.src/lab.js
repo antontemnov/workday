@@ -675,7 +675,7 @@
     closeMenu();
     const items = [`<div class="ctx-item" data-a="time"><span class="ci-ic">${MI.add}</span>Add time</div>`];
     // one bare timer per card: once it is there, its own ▶ / ⏸ is the control
-    if (!cardTimer(blk)) items.push(`<div class="ctx-item" data-a="timer"><span class="ci-ic">${MI.timer}</span>Add timer</div>`);
+    if (!cardTimer(blk)) items.push(`<div class="ctx-item" data-a="timer"><span class="ci-ic">${MI.timer}</span>New timer</div>`);
     items.push(`<div class="ctx-item" data-a="web"><span class="ci-ic">${MI.globe}</span>Open in browser</div>`, '<div class="ctx-sep"></div>',
       `<div class="ctx-item" data-a="kill"><span class="ci-ic">${MI.x}</span>${blk === hotBlk ? 'Stop and Delete' : 'Delete'}</div>`);
     const el = document.createElement('div');
@@ -697,7 +697,7 @@
       if (act === 'web' || act === 'kill') log('этот пункт — из приложения, в макете он не работает');
     });
   }
-  // Add timer: a bare timer on the card's ticket — its manual added line ticks.
+  // New timer in the card's menu: a bare timer on the card's ticket — its manual added line ticks.
   // While the card's own session counts, the timer does not take the lead: it waits and fills the gaps.
   function addCardTimer(blk, task, title) {
     const r = bareRec(task, title);
@@ -708,11 +708,11 @@
       r.runSince = null;
       if (!S.order.includes(r)) S.order.push(r);
       touch(r);
-      log(`Add timer → на карточке ${task} появился таймер (строка manual added). Сейчас считает сессия — таймер ждёт и пойдёт сам, когда она угаснет`);
+      log(`New timer в меню карточки → на ${task} появился таймер (строка manual added). Сейчас считает сессия — таймер ждёт и пойдёт сам, когда она угаснет`);
       renderAll();
     } else {
       start(r);
-      log(`Add timer → на карточке ${task} появился таймер (строка manual added) и сразу считает`);
+      log(`New timer в меню карточки → на ${task} появился таймер (строка manual added) и сразу считает`);
     }
     land(r.el);
   }
@@ -1045,5 +1045,5 @@
   setInterval(tick, 200);
 
   preset('empty');
-  log('макет готов — клик по «Timer» в шапке или по ключу ATL-6781 → Add timer');
+  log('макет готов — клик по «Timer» в шапке или по ключу ATL-6781 → New timer');
 })();

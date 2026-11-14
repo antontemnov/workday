@@ -55,8 +55,8 @@ body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace;
 .tchip.ghost { background: none; box-shadow: inset 0 0 0 1px #313244; color: #9399b2; font-weight: 700; padding: 0 10px 0 8px; }
 .tchip.ghost .t-ic { color: #7f849c; }
 .tchip.ghost.open { color: #cdd6f4; box-shadow: inset 0 0 0 1px #45475a; }
-/* an empty island: the word stands where the descriptions would */
-.tnone { height: 30px; display: flex; align-items: center; padding: 0 5px 0 33px; color: #585b70; }
+/* an empty island: the word stands in the middle */
+.tnone { height: 30px; display: flex; align-items: center; justify-content: center; padding: 0 5px; color: #585b70; }
 .wd .blk-id .tkt { cursor: pointer; }
 
 /* ── the island: the header itself flows down at the right edge (2/3 of the window) ── */
