@@ -1,0 +1,63 @@
+:root { --tm: 252 146 48; }
+html, body { margin: 0; background: #0f0f17; }
+body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace; padding: 22px 26px 80px; }
+.lab h1 { font-size: 14px; margin: 0 0 4px; }
+.lab h2 { font-size: 12px; margin: 30px 0 3px; }
+.lab .sub, .lab .q { color: #7f849c; font-size: 11px; max-width: 1080px; margin: 0 0 12px; }
+.lab .sub b, .lab .q b { color: #a6adc8; }
+.lab ol.q, .lab ul.q { padding-left: 20px; }
+.lab .q li { margin-bottom: 4px; }
+/* canvases are nudged onto the screen pixel grid, see alignCanvases() */
+.lab canvas { position: relative; }
+.grid { display: flex; flex-wrap: wrap; gap: 18px 26px; align-items: flex-start; }
+.grid + .grid { margin-top: 16px; }
+.cell { display: flex; flex-direction: column; gap: 6px; }
+.cap { color: #7f849c; font-size: 10.5px; line-height: 1.4; max-width: 330px; }
+.cap b { color: #cdd6f4; font-weight: 400; }
+.vt { font-size: 11.5px; color: #cdd6f4; margin: 18px 0 2px; }
+.vt i { font-style: normal; color: rgb(var(--tm)); }
+
+/* ── the icon size switch stays on screen ── */
+.bar { position: sticky; top: 0; z-index: 9; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 0; margin: 4px 0; background: #0f0f17; border-bottom: 1px solid #1e1e2e; }
+.lbl { color: #7f849c; font-size: 10.5px; }
+.lbl b { color: #a6adc8; font-weight: 400; }
+.seg { display: inline-flex; border: 1px solid #313244; border-radius: 6px; overflow: hidden; }
+.seg button { font: inherit; font-size: 11px; color: #a6adc8; background: none; border: none; padding: 4px 9px; cursor: pointer; }
+.seg button + button { border-left: 1px solid #313244; }
+.seg button.on { background: #313244; color: #cdd6f4; }
+
+/* ── one icon, three ways: big pixels on a dark and on a light taskbar, and true size inside a piece of the taskbar ── */
+.shot { display: flex; align-items: flex-end; gap: 8px; }
+.dark { background: #202020; }
+.light { background: #f3f3f3; }
+.zoom { display: flex; padding: 8px; border-radius: 8px; }
+.zoom.dark { box-shadow: inset 0 0 0 1px #2e2e2e; }
+.zoom.light { box-shadow: inset 0 0 0 1px #dcdcdc; }
+.zoom canvas, .tb canvas { display: block; image-rendering: pixelated; }
+.tbs { display: flex; flex-direction: column; gap: 6px; }
+/* a piece of the taskbar; --u is one taskbar pixel at the chosen scale, in CSS pixels of this screen */
+.tb { --u: 1px; display: flex; align-items: center; width: max-content; height: calc(var(--u) * 48); padding: 0 calc(var(--u) * 8); border-radius: 4px; position: relative; }
+.tb.dark { color: #fff; }
+.tb.light { color: #1b1b1b; }
+.tb .slot { width: calc(var(--u) * 26); height: calc(var(--u) * 32); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tb .slot svg { width: calc(var(--u) * 16); height: calc(var(--u) * 16); display: block; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.tb .clock { margin-left: calc(var(--u) * 6); text-align: right; white-space: nowrap; font: calc(var(--u) * 12) / 1.32 'Segoe UI Variable Text', 'Segoe UI', sans-serif; }
+
+/* sizes side by side */
+.sizes { display: flex; align-items: flex-end; gap: 10px; }
+.sizes .cell { align-items: center; }
+.sizes .cap { text-align: center; }
+
+/* ── the hint the system shows over the icon ── */
+.tipscene { position: relative; padding-top: 58px; }
+.tip { position: absolute; left: 0; bottom: 56px; padding: 6px 9px 7px; border-radius: 4px; background: #2b2b2b; border: 1px solid #454545; color: #fff; white-space: pre; font: 12px/1.35 'Segoe UI Variable Text', 'Segoe UI', sans-serif; box-shadow: 0 4px 12px rgb(0 0 0 / .45); }
+
+/* ── sandbox ── */
+.sand { display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start; }
+.sand-view { display: flex; flex-direction: column; gap: 10px; }
+.sand-ctl { display: grid; grid-template-columns: max-content 1fr; gap: 9px 12px; align-items: center; max-width: 560px; }
+.sand-ctl input[type=range] { width: 190px; accent-color: rgb(var(--tm)); }
+.sand-ctl .val { color: #a6adc8; font-size: 10.5px; margin-left: 8px; }
+.readout { color: #7f849c; font-size: 10.5px; }
+.readout b { color: #cdd6f4; font-weight: 400; }
+.tipline { font: 12px/1.35 'Segoe UI Variable Text', 'Segoe UI', sans-serif; color: #fff; background: #2b2b2b; border: 1px solid #454545; border-radius: 4px; padding: 6px 9px 7px; white-space: pre; width: max-content; }
