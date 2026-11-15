@@ -296,12 +296,13 @@ console.log('The daemon\'s life');
 test('downtime is cut where the timer was last seen; it goes on by itself', () => {
   const r = rig();
   const timer = r.timers.create('deploy');
+  const lastSeen = ago(90);
   timer.spans[0] = { from: ago(120), to: null };
-  timer.lastSeenAt = ago(90);
+  timer.lastSeenAt = lastSeen;
   assert.equal(r.timers.skipDowntime(), 1);
   assert.equal(timer.state, TimerState.Running);
   assert.equal(timer.spans.length, 2);
-  assert.equal(timer.spans[0].to, ago(90));
+  assert.equal(timer.spans[0].to, lastSeen);
   const view = r.timers.getTimers().timers[0];
   assert.equal(Math.floor(view.totalMs / MINUTE), 30, 'the 90 minutes of downtime are nobody\'s');
 });
