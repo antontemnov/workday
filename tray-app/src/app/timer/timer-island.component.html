@@ -1,0 +1,65 @@
+<div class="tnone" *ngIf="timers.length === 0">No timers</div>
+
+<div class="trow"
+     *ngFor="let t of rows; trackBy: trackById"
+     [attr.data-id]="t.id"
+     [class.tk]="t.entryId !== null"
+     [class.an]="t.entryId === null"
+     [class.run]="isRunning(t)"
+     [class.wait]="isWaiting(t)"
+     [class.pause]="isPaused(t)">
+
+  <!-- ⏸ while the timer is switched on (dimmed when a session counts), ▶ at rest. -->
+  <button *ngIf="isLive(t); else goBtn"
+          type="button"
+          class="tbtn pz"
+          [class.dim]="isWaiting(t)"
+          aria-label="Pause timer"
+          (click)="toggled.emit(t)">
+    <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>
+  </button>
+  <ng-template #goBtn>
+    <button type="button"
+            class="tbtn go"
+            aria-label="Start timer"
+            [disabled]="locked"
+            (click)="toggled.emit(t)">
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>
+    </button>
+  </ng-template>
+
+  <ng-container *ngIf="t.entryId !== null; else looseRow">
+    <span class="tkey">{{ t.task }}</span>
+    <span class="tfield">{{ t.added ? 'manual added' : t.description }}</span>
+    <app-timer-time class="ttime" [timer]="t" [asOf]="asOf" />
+  </ng-container>
+
+  <ng-template #looseRow>
+    <button type="button"
+            class="chip ask tq"
+            [class.armed]="anchorId === t.id"
+            [disabled]="locked"
+            (click)="taskRequested.emit(t)">task?</button>
+    <input class="tfield"
+           placeholder="description"
+           spellcheck="false"
+           autocomplete="off"
+           [value]="descriptionOf(t)"
+           (focus)="onDescFocus(t)"
+           (input)="onDescInput(t, $any($event.target).value)"
+           (keydown)="onDescKeydown(t, $event)"
+           (blur)="onDescBlur(t)" />
+    <app-timer-time class="ttime" [timer]="t" [asOf]="asOf" />
+    <button type="button" class="lnk-deny tdel" (click)="deleted.emit(t)">Delete</button>
+  </ng-template>
+</div>
+
+<ng-container *ngIf="anchorId === null">
+  <div class="tsep"></div>
+  <div class="tbot">
+    <button type="button" class="tnew" [disabled]="locked" (click)="created.emit()">
+      <span class="nt-g"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg></span>
+      <span>New timer</span>
+    </button>
+  </div>
+</ng-container>

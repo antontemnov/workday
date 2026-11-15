@@ -21,7 +21,7 @@
        [style.--heat]="b.heat || null"
        [class.hot]="b.hot"
        [class.quiet]="b.quiet"
-       [class.one]="b.rowCount <= 1 && draftTask !== b.task"
+       [class.one]="b.rowCount <= 1 && draftTask !== b.task && !blockHasTimer(b)"
        [class.deleted]="taskDeleted(b.task)"
        [class.removing]="removingTasks.has(b.task)"
        [class.folding]="foldingTasks.has(b.task)"
@@ -70,6 +70,8 @@
       <div class="wl manline"
            *ngIf="b.folded[0] as m"
            [class.editing]="editingId === m.id"
+           [class.tm-live]="timerRunning(m)"
+           [class.tm-wait]="timerWaiting(m)"
            [class.deleted]="foldedDeleted(b)"
            [class.removing]="foldedRemoving(b)"
            (dblclick)="onRowDblClick(m)">
@@ -94,9 +96,14 @@
                  (keydown.escape)="cancelForm(); $event.stopPropagation()"
                  title="1h 15m · 90 · 45m — wheel: ±15m" />
           <ng-template #foldedViewDur>
-            <span class="c-dur"
-                  [class.wheel]="foldedHasFresh(b)"
-                  (wheel)="onFoldedWheel(b, $event)">{{ showFoldedDur(b) ? formatDurationHm(displayMinutes(m) * 60000) : '' }}</span>
+            <span class="c-dur rt" *ngIf="timerOf(m) as t; else foldedPlainDur">
+              <ng-container *ngTemplateOutlet="timerSlot; context: { $implicit: t, entry: m }" />
+            </span>
+            <ng-template #foldedPlainDur>
+              <span class="c-dur"
+                    [class.wheel]="foldedHasFresh(b)"
+                    (wheel)="onFoldedWheel(b, $event)">{{ showFoldedDur(b) ? formatDurationHm(displayMinutes(m) * 60000) : '' }}</span>
+            </ng-template>
           </ng-template>
         </ng-template>
       </div>
@@ -140,6 +147,8 @@
                [class.pop]="poppingIds.has(e.id)"
                [style.animation-delay.ms]="popDelayMs.get(e.id)"
                [class.editing]="editingId === e.id"
+               [class.tm-live]="timerRunning(e)"
+               [class.tm-wait]="timerWaiting(e)"
                [class.deleted]="isDeleted(e)"
                [class.removing]="removingIds.has(e.id)"
                [class.fav-done]="favDoneId === e.id"
@@ -167,9 +176,14 @@
                      (keydown.escape)="cancelForm(); $event.stopPropagation()"
                      title="1h 15m · 90 · 45m — wheel: ±15m" />
               <ng-template #viewDur>
-                <span class="c-dur"
-                      [class.wheel]="isFresh(e)"
-                      (wheel)="onFreshWheel(e, $event)">{{ showEntryDur(b, e) ? formatDurationHm(displayMinutes(e) * 60000) : '' }}</span>
+                <span class="c-dur rt" *ngIf="timerOf(e) as t; else plainDur">
+                  <ng-container *ngTemplateOutlet="timerSlot; context: { $implicit: t, entry: e }" />
+                </span>
+                <ng-template #plainDur>
+                  <span class="c-dur"
+                        [class.wheel]="isFresh(e)"
+                        (wheel)="onFreshWheel(e, $event)">{{ showEntryDur(b, e) ? formatDurationHm(displayMinutes(e) * 60000) : '' }}</span>
+                </ng-template>
               </ng-template>
             </ng-template>
           </div>
@@ -216,6 +230,29 @@
     </div>
   </div>
 </div>
+
+<!-- The time slot of a record a timer feeds: ⏸ while the timer is switched
+     on (dimmed when a session counts instead) and the time ticks with its
+     seconds; a quiet ▶ and whole minutes at rest. -->
+<ng-template #timerSlot let-t let-e="entry">
+  <button type="button"
+          class="rt-b"
+          [class.run]="timerLive(t)"
+          [class.dim]="timerDim(t)"
+          [class.rest]="!timerLive(t)"
+          [disabled]="actionPending || readOnly"
+          [attr.aria-label]="timerLive(t) ? 'Pause timer' : 'Start timer'"
+          (click)="onTimerToggle(t, $event)"
+          (dblclick)="$event.stopPropagation()">
+    <svg *ngIf="timerLive(t)" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>
+    <svg *ngIf="!timerLive(t)" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>
+  </button>
+  <app-timer-time *ngIf="timerLive(t); else restTime"
+                  [timer]="t"
+                  [asOf]="timersAsOf"
+                  (minuteChanged)="onTimerMinute()" />
+  <ng-template #restTime>{{ formatDurationHm(displayMinutes(e) * 60000) }}</ng-template>
+</ng-template>
 
 <!-- One side of a conflict: ticket and day only where the sides part, the
      fields that differ lit. -->

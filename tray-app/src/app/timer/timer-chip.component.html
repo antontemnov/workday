@@ -1,0 +1,16 @@
+<button type="button"
+        class="tchip"
+        [class.ghost]="!timer"
+        [class.open]="open"
+        [class.wait]="waiting"
+        [class.pause]="paused"
+        (click)="toggled.emit()">
+  <!-- A ring and a hand to 12; paused — two bars inside the ring. -->
+  <svg class="t-ic" viewBox="0 0 14 14" aria-hidden="true">
+    <circle cx="7" cy="7" r="5.4"/>
+    <path *ngIf="!paused" d="M7 7V3.8"/>
+    <path *ngIf="paused" d="M5.7 5.1v3.8M8.3 5.1v3.8"/>
+  </svg>
+  <app-timer-time *ngIf="timer; else word" class="tchip-time" [timer]="timer" [asOf]="asOf" [pinWidth]="true" />
+  <ng-template #word>Timer</ng-template>
+</button>

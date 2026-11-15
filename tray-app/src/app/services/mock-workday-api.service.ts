@@ -47,6 +47,7 @@ import {
   TimersResponse,
   TimerActionResponse,
   TimerBindInput,
+  TimerState,
   DEVELOPMENT_ACTIVITY,
   Favorite,
   FavoritesResponse,
@@ -76,6 +77,24 @@ import {
   SetupValidateResponse,
   SetupProbeResult,
 } from '../models/workday.models';
+
+// A manual timer as the mock keeps it: the share counted so far, and the
+// moment it started running (null at rest).
+interface MockTimer {
+  readonly id: string;
+  entryId: string | null;
+  description: string;
+  state: TimerState;
+  shareMs: number;
+  runningSince: number | null;
+  credited: number;          // whole minutes of the share already in the entry
+  touchedAt: string;
+  hidden: boolean;
+}
+
+function minutesAgo(minutes: number): string {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
+}
 
 // Local-only preview service — returns rich mock data so the UI can be
 // inspected end-to-end without a running daemon. Selected through a query
@@ -437,6 +456,9 @@ export class MockWorkdayApiService extends WorkdayApiService {
   }
 
   async getToday(): Promise<ApiResponse<TodayResponse>> {
+    // Timers first: the read credits their minutes into the entries.
+    const timers = this.mockTimersData();
+    const timerCounts = this.mockTimerRunning();
     const day = this.buildToday();
     const sessions = day.sessions
       .filter(s => !this.mockDeletedSessionIds.has(s.id))
@@ -445,8 +467,12 @@ export class MockWorkdayApiService extends WorkdayApiService {
         ...s,
         sensitivity: this.mockRepoSensitivity.get(s.repo) ?? s.sensitivity,
         ...(this.mockManualPaused.has(s.repo) ? { paused: true, pauseSource: 'manual' } : {}),
-      });
-    return { ok: true, data: { ...day, sessions } };
+      })
+      // One counts at a time: under a running timer the tracking session waits.
+      .map(s => timerCounts && !s.closedBy && !s.paused && s.state === 'active'
+        ? { ...s, paused: true, pauseSource: 'superseded', isLeader: false, pauseEtaMs: null }
+        : s);
+    return { ok: true, data: { ...day, sessions, timers } };
   }
 
   async getDay(_date: string): Promise<ApiResponse<TodayResponse>> {
@@ -626,8 +652,18 @@ export class MockWorkdayApiService extends WorkdayApiService {
     if (!updated.description && updated.activity !== DEVELOPMENT_ACTIVITY) {
       return { ok: false, error: 'Description is required (only Development may omit it)' };
     }
+    if (updated.minutes !== this.mockManualEntries[idx].minutes) this.retireMockShare(target);
     this.mockManualEntries = this.mockManualEntries.map((e, i) => i === idx ? updated : e);
     return { ok: true, data: this.toEntryResponse(updated) };
+  }
+
+  // The entry's time was set by hand: the number is the new base of its timer.
+  private retireMockShare(entryId: string): void {
+    const timer = this.mockTimers.find(t => t.entryId === entryId);
+    if (!timer) return;
+    timer.shareMs = 0;
+    timer.credited = 0;
+    if (timer.runningSince !== null) timer.runningSince = Date.now();
   }
 
   async deleteManualEntry(target: string, _date?: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
@@ -635,6 +671,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
     const removed = this.mockManualEntries.find(e => e.id === target);
     if (!removed) return { ok: false, error: `Manual entry not found: ${target}` };
     this.mockManualEntries = this.mockManualEntries.filter(e => e.id !== target);
+    this.mockTimers = this.mockTimers.filter(t => t.entryId !== target);
     return {
       ok: true,
       data: { id: removed.id, task: removed.task, minutes: removed.minutes,
@@ -652,29 +689,253 @@ export class MockWorkdayApiService extends WorkdayApiService {
   }
 
   // ─── Manual timer mocks ───────────────────────────────────────────────
-  // Placeholder until the timer UI lands: an empty island, actions refused.
+  // The daemon's rules in miniature: a timer feeds its entry whole minutes
+  // and remembers its share; one timer is live at a time; a running timer
+  // supersedes the tracking session (see getToday). No takeover by edits —
+  // the mock's sessions never move. ?timers=1 starts with a few timers.
 
-  async getTimers(): Promise<ApiResponse<TimersResponse>> {
+  private mockTimers: MockTimer[] = typeof location !== 'undefined' && location.search.includes('timers=1')
+    ? [
+        { id: 't1', entryId: 'm2', description: '', state: TimerState.Paused, shareMs: 12 * 60_000,
+          runningSince: null, credited: 12, touchedAt: minutesAgo(180), hidden: false },
+        { id: 't2', entryId: null, description: 'helped the ops team with the deploy', state: TimerState.Paused,
+          shareMs: 12 * 60_000 + 40_000, runningSince: null, credited: 0, touchedAt: minutesAgo(90), hidden: false },
+        { id: 't3', entryId: null, description: 'incident call', state: TimerState.Running,
+          shareMs: 47 * 60_000 + 15_000, runningSince: Date.now(), credited: 0, touchedAt: minutesAgo(47), hidden: false },
+      ]
+    : [];
+  private mockTimerSeq = 4;
+  private mockTimerBirth: { id: string; displaced: { id: string; state: TimerState } | null } | null = null;
+
+  private mockTimerShare(timer: MockTimer, nowMs: number): number {
+    return timer.shareMs + (timer.runningSince !== null ? nowMs - timer.runningSince : 0);
+  }
+
+  private mockTimerRunning(): boolean {
+    return this.mockTimers.some(t => t.state === TimerState.Running);
+  }
+
+  // Whole minutes every timer has counted go into its entry.
+  private creditMockTimers(nowMs: number): void {
+    for (const timer of this.mockTimers) {
+      if (timer.entryId === null) continue;
+      const credited = Math.floor(this.mockTimerShare(timer, nowMs) / 60_000);
+      if (credited === timer.credited) continue;
+      const delta = credited - timer.credited;
+      timer.credited = credited;
+      this.mockManualEntries = this.mockManualEntries.map(e =>
+        e.id === timer.entryId ? { ...e, minutes: e.minutes + delta } : e);
+    }
+  }
+
+  private mockTimersData(): TimersResponse {
+    const nowMs = Date.now();
+    this.creditMockTimers(nowMs);
     return {
-      ok: true,
-      data: { date: this.today, asOf: new Date().toISOString(), counting: 'none', desktopWidget: true, timers: [] },
+      date: this.today,
+      asOf: new Date(nowMs).toISOString(),
+      counting: this.mockTimerRunning() ? 'timer' : 'session',
+      desktopWidget: true,
+      timers: this.mockTimers.map(timer => {
+        const entry = this.mockManualEntries.find(e => e.id === timer.entryId);
+        const share = this.mockTimerShare(timer, nowMs);
+        const typed = entry ? entry.minutes - timer.credited : 0;
+        return {
+          id: timer.id,
+          state: timer.state,
+          entryId: timer.entryId,
+          task: entry?.task ?? null,
+          activity: entry?.activity ?? null,
+          added: entry?.added === true,
+          description: entry ? entry.description : timer.description,
+          totalMs: typed * 60_000 + share,
+          shareMs: share,
+          handMinutes: typed,
+          hidden: timer.hidden,
+          touchedAt: timer.touchedAt,
+        };
+      }),
     };
   }
 
-  private timersNotMocked(): Promise<ApiResponse<TimerActionResponse>> {
-    return Promise.resolve({ ok: false, error: 'Timers are not in the mock yet' });
+  private mockTimerAnswer(timerId: string | null, extra: Partial<TimerActionResponse> = {}): ApiResponse<TimerActionResponse> {
+    return { ok: true, data: { ...this.mockTimersData(), timerId, ...extra } };
   }
 
-  newTimer(_description?: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  startTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  startEntryTimer(_entryId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  pauseTimer(_timerId?: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  describeTimer(_timerId: string, _description: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  bindTimer(_timerId: string, _input: TimerBindInput): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  removeEntryTimer(_entryId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  deleteTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  cancelTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
-  hideTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  private haltMockTimer(timer: MockTimer, nowMs: number): void {
+    timer.shareMs = this.mockTimerShare(timer, nowMs);
+    timer.runningSince = null;
+    timer.state = TimerState.Paused;
+  }
+
+  // The timer runs; whatever other timer was live goes on pause.
+  private runMockTimer(timer: MockTimer): { id: string; state: TimerState } | null {
+    const nowMs = Date.now();
+    let displaced: { id: string; state: TimerState } | null = null;
+    for (const other of this.mockTimers) {
+      if (other === timer || other.state === TimerState.Paused) continue;
+      displaced = { id: other.id, state: other.state };
+      this.haltMockTimer(other, nowMs);
+    }
+    if (timer.state !== TimerState.Running) {
+      timer.state = TimerState.Running;
+      timer.runningSince = nowMs;
+    }
+    timer.touchedAt = new Date(nowMs).toISOString();
+    timer.hidden = false;
+    return displaced;
+  }
+
+  private newMockTimer(entryId: string | null, description: string): MockTimer {
+    const timer: MockTimer = {
+      id: `t${this.mockTimerSeq++}`, entryId, description, state: TimerState.Paused,
+      shareMs: 0, runningSince: null, credited: 0, touchedAt: new Date().toISOString(), hidden: false,
+    };
+    this.mockTimers.push(timer);
+    return timer;
+  }
+
+  async getTimers(): Promise<ApiResponse<TimersResponse>> {
+    return { ok: true, data: this.mockTimersData() };
+  }
+
+  async newTimer(description?: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(120);
+    const timer = this.newMockTimer(null, (description ?? '').trim());
+    this.mockTimerBirth = { id: timer.id, displaced: this.runMockTimer(timer) };
+    return this.mockTimerAnswer(timer.id);
+  }
+
+  async startTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(120);
+    const timer = this.mockTimers.find(t => t.id === timerId);
+    if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
+    this.runMockTimer(timer);
+    return this.mockTimerAnswer(timer.id);
+  }
+
+  async startEntryTimer(entryId: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(120);
+    if (!this.mockManualEntries.some(e => e.id === entryId)) return { ok: false, error: `Manual entry not found: ${entryId}` };
+    const timer = this.mockTimers.find(t => t.entryId === entryId) ?? this.newMockTimer(entryId, '');
+    this.runMockTimer(timer);
+    return this.mockTimerAnswer(timer.id);
+  }
+
+  async pauseTimer(timerId?: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(120);
+    const timer = timerId
+      ? this.mockTimers.find(t => t.id === timerId)
+      : this.mockTimers.find(t => t.state !== TimerState.Paused);
+    if (!timer) return { ok: false, error: timerId ? `Timer not found: ${timerId}` : 'No timer is running' };
+    this.haltMockTimer(timer, Date.now());
+    timer.touchedAt = new Date().toISOString();
+    return this.mockTimerAnswer(timer.id);
+  }
+
+  async describeTimer(timerId: string, description: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(120);
+    const timer = this.mockTimers.find(t => t.id === timerId);
+    if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
+    if (timer.entryId !== null) return { ok: false, error: 'A timer with a ticket takes its description from the entry' };
+    timer.description = description.trim();
+    return this.mockTimerAnswer(timer.id);
+  }
+
+  async bindTimer(timerId: string, input: TimerBindInput): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(250);
+    const timer = this.mockTimers.find(t => t.id === timerId);
+    if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
+    if (timer.entryId !== null) return { ok: false, error: 'The timer already has a ticket' };
+    const description = input.description.trim();
+    const bare = !description && input.activity === DEVELOPMENT_ACTIVITY;
+    if (!description && !bare) return { ok: false, error: 'Description is required (only Development may omit it)' };
+
+    let entry: ManualEntry;
+    if (bare) {
+      const record = this.mockManualEntries.find(e => e.added && e.task === input.task);
+      entry = this.putMockAdded(input.task, record?.minutes ?? 0);
+    } else {
+      entry = { id: `m${this.mockEntrySeq++}`, task: input.task, minutes: 0, description,
+                activity: input.activity, createdAt: this.nextCreatedAt() };
+      this.mockManualEntries = [...this.mockManualEntries, entry];
+    }
+    const nowMs = Date.now();
+    if (input.minutes !== undefined) {
+      // A number typed in the form is the record's base; the timer counts on from it.
+      const typed = input.minutes;
+      this.mockManualEntries = this.mockManualEntries.map(e => e.id === entry.id ? { ...e, minutes: e.minutes + typed } : e);
+      timer.shareMs = 0;
+      if (timer.runningSince !== null) timer.runningSince = nowMs;
+    }
+    const resident = this.mockTimers.find(t => t.entryId === entry.id);
+    if (resident) {
+      // The record already has a timer: it takes this one in and keeps its place.
+      resident.shareMs += this.mockTimerShare(timer, nowMs);
+      if (resident.state === TimerState.Paused && timer.state !== TimerState.Paused) {
+        resident.state = timer.state;
+        resident.runningSince = timer.state === TimerState.Running ? nowMs : null;
+      }
+      this.mockTimers = this.mockTimers.filter(t => t !== timer);
+    } else {
+      timer.entryId = entry.id;
+      timer.description = '';
+    }
+    const data = this.mockTimersData();
+    const landed = this.mockManualEntries.find(e => e.id === entry.id) ?? entry;
+    return { ok: true, data: { ...data, timerId: (resident ?? timer).id, entry: this.toEntryResponse(landed) } };
+  }
+
+  async removeEntryTimer(entryId: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(150);
+    const timer = this.mockTimers.find(t => t.entryId === entryId);
+    if (!timer) return { ok: false, error: `No timer on entry: ${entryId}` };
+    this.haltMockTimer(timer, Date.now());
+    this.creditMockTimers(Date.now());
+    const entry = this.mockManualEntries.find(e => e.id === entryId);
+    if (!entry) return { ok: false, error: `Manual entry not found: ${entryId}` };
+    if (entry.minutes - timer.credited < 1) return { ok: false, error: 'Nothing typed by hand — delete the entry instead' };
+    const removedMinutes = timer.credited;
+    const kept: ManualEntry = { ...entry, minutes: entry.minutes - removedMinutes };
+    this.mockManualEntries = this.mockManualEntries.map(e => e.id === entryId ? kept : e);
+    this.mockTimers = this.mockTimers.filter(t => t !== timer);
+    return this.mockTimerAnswer(null, { entry: this.toEntryResponse(kept), removedMinutes });
+  }
+
+  async deleteTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(120);
+    const timer = this.mockTimers.find(t => t.id === timerId);
+    if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
+    if (timer.entryId !== null) return { ok: false, error: 'A timer with a ticket is removed from its entry' };
+    this.mockTimers = this.mockTimers.filter(t => t !== timer);
+    return this.mockTimerAnswer(null);
+  }
+
+  async cancelTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    await delay(120);
+    const timer = this.mockTimers.find(t => t.id === timerId);
+    if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
+    if (timer.entryId !== null || timer.description !== '') {
+      return { ok: false, error: 'Only a fresh timer without ticket and description can be cancelled' };
+    }
+    this.mockTimers = this.mockTimers.filter(t => t !== timer);
+    const displaced = this.mockTimerBirth?.id === timerId ? this.mockTimerBirth.displaced : null;
+    this.mockTimerBirth = null;
+    const previous = displaced ? this.mockTimers.find(t => t.id === displaced.id) : undefined;
+    if (previous && displaced && previous.state === TimerState.Paused) {
+      previous.state = displaced.state;
+      previous.runningSince = displaced.state === TimerState.Running ? Date.now() : null;
+    }
+    return this.mockTimerAnswer(null);
+  }
+
+  async hideTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    const timer = this.mockTimers.find(t => t.id === timerId);
+    if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
+    if (timer.state !== TimerState.Paused) return { ok: false, error: 'Only a paused timer can be hidden' };
+    timer.hidden = true;
+    return this.mockTimerAnswer(timer.id);
+  }
 
   // ─── Favorites mocks ──────────────────────────────────────────────────
 

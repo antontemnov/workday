@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -20,7 +20,16 @@ import {
   Suggestion,
   SuggestionsResponse,
   SuggestionAcceptRequest,
+  TimerActionResponse,
+  TimerBindInput,
+  TimerState,
+  TimerView,
+  TimersResponse,
 } from './models/workday.models';
+import { TimerChipComponent } from './timer/timer-chip.component';
+import { TimerIslandComponent } from './timer/timer-island.component';
+import { currentTimer } from './timer/timer-clock.util';
+import { currentCtxMenu } from './views/day-view/ctx-menu.util';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { loadSuggestionsMode, persistSuggestionsMode, type SuggestionsMode } from './views/day-view/suggestions-mode.util';
 import { TimesheetsViewComponent, type SheetAction } from './views/timesheets-view/timesheets-view.component';
@@ -29,6 +38,16 @@ import { SetupViewComponent } from './views/setup-view/setup-view.component';
 
 // An all-day suggestions read longer than this is a calendar re-fetch.
 const ALL_DAY_SLOW_READ_MS = 200;
+
+// While a timer is switched on the daemon may hand the count over on any of
+// its ticks — the island is asked more often than the day.
+const TIMER_POLL_MS = 3_000;
+
+// Who counts and what state each timer is in — a change means the day's
+// sessions and entries moved too.
+function timersSignature(timers: TimersResponse): string {
+  return `${timers.counting}|${timers.timers.map(t => `${t.id}:${t.state}:${t.entryId ?? ''}`).join(',')}`;
+}
 
 type TrayKind = 'live' | 'pending' | 'idle' | 'paused' | 'none';
 type ActiveView = 'day' | 'sheet' | 'set' | 'setup';
@@ -42,7 +61,10 @@ interface SensitivityPillOption {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, DayViewComponent, TimesheetsViewComponent, SettingsViewComponent, SetupViewComponent],
+  imports: [
+    CommonModule, DayViewComponent, TimesheetsViewComponent, SettingsViewComponent, SetupViewComponent,
+    TimerChipComponent, TimerIslandComponent,
+  ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -134,6 +156,21 @@ export class AppComponent implements OnInit, OnDestroy {
   private suggestionsTicket: number = 0;
   private suggestionsFloor: number = 0;
 
+  // Manual timers (daemon >= 0.56.0 — null on an older one: no chip at all).
+  // The state lives in the daemon; the tray shows it and sends actions.
+  timers: TimersResponse | null = null;
+  islandOpen: boolean = false;
+  // task? was pressed on this timer: the island shrinks to its row and the
+  // Day view's ticket cloud hangs under it.
+  timerPick: TimerView | null = null;
+  // The timer New timer has just made — its description takes the caret.
+  timerBirthId: string | null = null;
+  // Timer actions go out one after another: a description committed by a
+  // blur and the click that caused the blur must both reach the daemon.
+  private timerChain: Promise<unknown> = Promise.resolve();
+  private timerPollTimer: ReturnType<typeof setInterval> | null = null;
+  @ViewChild(TimerIslandComponent, { read: ElementRef }) private islandRef?: ElementRef<HTMLElement>;
+
   // Toast + action gate
   actionError: string | null = null;
   actionPending = false;
@@ -158,6 +195,7 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(
     private api: WorkdayApiService,
     private notifications: NotificationDeliveryService,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   // Kill the WebView2 default context menu app-wide (Back/Refresh/Print…).
@@ -187,10 +225,12 @@ export class AppComponent implements OnInit, OnDestroy {
     }, 10_000);
     void this.watchdogTick();
     this.watchdogTimer = setInterval(() => void this.watchdogTick(), 15_000);
+    this.timerPollTimer = setInterval(() => void this.pollTimers(), TIMER_POLL_MS);
   }
 
   ngOnDestroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.timerPollTimer) clearInterval(this.timerPollTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     if (this.unlistenAppUpdate) this.unlistenAppUpdate();
@@ -432,6 +472,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const res = await this.api.getToday();
     if (res.ok && res.data) {
       this.data = res.data;
+      this.timers = res.data.timers ?? null;
       this.error = null;
       void this.refreshSuggestions();
       // Daemon reachable again after a failure window — e.g. it finished a
@@ -569,6 +610,142 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private repoName(repoPath: string): string {
     return repoPath.split('/').pop() ?? repoPath;
+  }
+
+  // ─── Manual timers ─────────────────────────────────────────────────────
+
+  // The chip's timer: the running one, else the waiting one, else the last
+  // touched by hand; null = the island is empty and the chip reads "Timer".
+  get chipTimer(): TimerView | null {
+    return this.timers ? currentTimer(this.timers.timers) : null;
+  }
+
+  // The chip opens and closes the island. With a ticket cloud hanging from
+  // it, the click only lets the cloud go.
+  toggleIsland(): void {
+    const wasOpen = this.islandOpen && this.timerPick === null;
+    this.closeTimerPick();
+    this.islandOpen = !wasOpen;
+  }
+
+  @HostListener('document:pointerdown', ['$event'])
+  onDocumentPointerDown(ev: PointerEvent): void {
+    if (!this.islandOpen || this.timerPick !== null) return;
+    const target = ev.target as HTMLElement | null;
+    if (target?.closest('app-timer-island, app-timer-chip')) return;
+    this.islandOpen = false;
+  }
+
+  @HostListener('document:keydown.escape')
+  onDocumentEscape(): void {
+    if (this.islandOpen && this.timerPick === null && currentCtxMenu() === null) this.islandOpen = false;
+  }
+
+  onTimerToggle(timer: TimerView): void {
+    void this.runTimerAction(() => timer.state === TimerState.Paused
+      ? this.api.startTimer(timer.id)
+      : this.api.pauseTimer(timer.id));
+  }
+
+  onTimerPause(timerId: string): void {
+    void this.runTimerAction(() => this.api.pauseTimer(timerId));
+  }
+
+  // New timer in the island: it runs at once, the caret waits in its description.
+  onTimerNew(): void {
+    void this.runTimerAction(() => this.api.newTimer(), data => {
+      this.timerBirthId = data.timerId;
+      this.islandOpen = true;
+    });
+  }
+
+  // Start timer «text» in the Log cloud: the description is there already,
+  // the chip lights up — the island stays shut.
+  onTimerStartText(text: string): void {
+    void this.runTimerAction(() => this.api.newTimer(text));
+  }
+
+  onTimerDescribe(e: { id: string; description: string }): void {
+    void this.runTimerAction(() => this.api.describeTimer(e.id, e.description));
+  }
+
+  onTimerDelete(timer: TimerView): void {
+    if (this.timerPick?.id === timer.id) this.closeTimerPick();
+    void this.runTimerAction(() => this.api.deleteTimer(timer.id));
+  }
+
+  // Esc on the fresh timer's empty description — it was started by mistake.
+  onTimerCancel(timerId: string): void {
+    this.timerBirthId = null;
+    void this.runTimerAction(() => this.api.cancelTimer(timerId));
+  }
+
+  // task?: the island shrinks to the timer's row, the ticket cloud opens
+  // under it — on the Day tab, where the cloud lives.
+  onTimerTask(timer: TimerView): void {
+    if (this.timerPick?.id === timer.id) {
+      this.closeTimerPick();
+      return;
+    }
+    this.setView('day');
+    this.timerPick = timer;
+    this.islandOpen = true;
+    // Render now: the Day view mounts and the island takes its one-row
+    // height — the cloud is measured against that, not the list it was.
+    this.cdr.detectChanges();
+    const island = this.islandRef?.nativeElement;
+    if (!island || !this.dayView) {
+      this.timerPick = null;
+      return;
+    }
+    this.dayView.openCloudForTimer(timer, this.timers?.asOf ?? '', island.getBoundingClientRect());
+  }
+
+  onTimerBind(e: { timerId: string; input: TimerBindInput }): void {
+    void this.runTimerAction(() => this.api.bindTimer(e.timerId, e.input));
+  }
+
+  onEntryTimerStart(entryId: string): void {
+    void this.runTimerAction(() => this.api.startEntryTimer(entryId));
+  }
+
+  onEntryTimerRemove(entryId: string): void {
+    void this.runTimerAction(() => this.api.removeEntryTimer(entryId));
+  }
+
+  private closeTimerPick(): void {
+    if (this.timerPick === null) return;
+    this.timerPick = null;
+    this.dayView?.closeCloud();
+  }
+
+  // One at a time, in the order they were asked for; the answer carries the
+  // day's timers, shown before the refresh brings the rest of the day.
+  private runTimerAction(
+    call: () => Promise<ApiResponse<TimerActionResponse>>,
+    done?: (data: TimerActionResponse) => void,
+  ): Promise<boolean> {
+    const result = this.timerChain.then(() => this.runAction(async () => {
+      const res = await call();
+      if (res.ok && res.data) {
+        this.timers = res.data;
+        done?.(res.data);
+      }
+      return res;
+    }));
+    this.timerChain = result.catch(() => false);
+    return result;
+  }
+
+  // A switched-on timer can change hands on a daemon tick; when it does, the
+  // sessions and entries of the day changed with it.
+  private async pollTimers(): Promise<void> {
+    const before = this.timers;
+    if (!before || this.actionPending || !before.timers.some(t => t.state !== TimerState.Paused)) return;
+    const res = await this.api.getTimers();
+    if (!res.ok || !res.data || this.actionPending || this.timers !== before) return;
+    this.timers = res.data;
+    if (timersSignature(res.data) !== timersSignature(before)) void this.refresh();
   }
 
   // ─── Add time ──────────────────────────────────────────────────────────

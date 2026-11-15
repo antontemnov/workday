@@ -1,5 +1,6 @@
 @use 'glass';
 @use 'feed';
+@use '../../../timer/timer-ink' as timer;
 
 // History feed — no panel chrome: the day view's scroll carries the blocks,
 // material is coded by the glass slab; the 8px gap keeps neighbours apart.
@@ -279,6 +280,55 @@
 // The Add time draft between Save and the entry's landing: it already reads
 // as a row, so the card keeps its height and nothing blinks.
 .wl.pending .c-dur { color: #cba6f7; }
+
+// A record a timer feeds: ⏸ / ▶ rides next to the time, the time itself
+// ticks in the timer's orange — half strength while a session counts.
+.wl .c-dur.rt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-b {
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+
+  svg { width: 7px; height: 7px; display: block; }
+
+  &.run {
+    color: timer.$run;
+    box-shadow: inset 0 0 0 1px rgb(252 146 48 / 0.85);
+
+    svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+
+    &.dim {
+      color: timer.$wait;
+      box-shadow: inset 0 0 0 1px rgb(252 146 48 / 0.45);
+    }
+  }
+
+  &.rest {
+    color: #6c7086;
+    box-shadow: inset 0 0 0 1px #45475a;
+
+    svg { fill: currentColor; transform: translateX(0.5px); }
+  }
+
+  &:disabled { cursor: default; }
+}
+
+.wl.tm-live .c-dur { color: timer.$run; }
+.wl.tm-wait .c-dur { color: timer.$wait; }
 
 // Edit: the row is marked by the form morph alone (no washes inside a block);
 // band 1 of the old card is now the lid and stays untouched.

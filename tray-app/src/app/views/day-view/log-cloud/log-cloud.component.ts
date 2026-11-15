@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   ActivityType, ApiErrorCode, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, JiraSearchHit,
-  ManualEntryInput, normalizeFavName, Suggestion, SuggestionCandidate,
+  ManualEntryInput, normalizeFavName, Suggestion, SuggestionCandidate, TimerBindInput,
 } from '../../../models/workday.models';
 import { WorkdayApiService } from '../../../services/workday-api.service';
 import { activityOptions } from '../activity.util';
@@ -25,6 +25,15 @@ export interface ChipPick {
 export interface FormPick {
   readonly entry: ManualEntryInput;
   readonly summary: string;
+}
+
+// The timer a ticket is being picked for (task? in the island): its
+// description and its whole minutes at the moment the cloud opened — the
+// form shows them, and an untouched number leaves the timer's own time.
+export interface TimerPickTarget {
+  readonly id: string;
+  readonly description: string;
+  readonly minutes: number;
 }
 
 // One collected chip in batch mode. label keeps the chip identity for the
@@ -87,10 +96,17 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   // dark, and any pick emits acceptPicked instead of morphing into the
   // form (the row hosts the accept form inline, twin of the logged edit).
   @Input() acceptTarget: Suggestion | null = null;
+  // Timer mode (task? in the island): the cloud picks the timer's ticket.
+  // Any pick opens the one-button form with the timer's minutes and
+  // description; Log emits timerBound. Batch goes dark, as in accept mode.
+  @Input() timerTarget: TimerPickTarget | null = null;
   // Jira summaries for the candidate tickets (daemon name cache; misses
   // render as bare keys and fill in with a later poll).
   @Input() issueSummaries: Readonly<Record<string, string>> = {};
 
+  @Output() timerBound = new EventEmitter<TimerBindInput>();
+  // Start timer «text»: the filter's text names a timer without a ticket.
+  @Output() timerStartRequested = new EventEmitter<string>();
   @Output() chipPicked = new EventEmitter<ChipPick>();
   // Accept mode: the chosen ticket (a candidate also carries its learned
   // activity) — the parent routes it back into the suggestion row.
@@ -115,7 +131,10 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   @HostBinding('class.form-mode') get isFormMode(): boolean { return this.mode === 'form'; }
   @HostBinding('class.review-mode') get isReviewMode(): boolean { return this.mode === 'review'; }
   @HostBinding('class.batch-mode') get isBatchMode(): boolean { return this.batch && this.mode === 'chips'; }
-  @HostBinding('class.accept-mode') get isAcceptMode(): boolean { return this.acceptTarget !== null; }
+  // The cloud only picks a ticket — for a suggestion or for a timer.
+  @HostBinding('class.accept-mode') get isPickerMode(): boolean { return this.isAcceptMode || this.isTimerMode; }
+  get isAcceptMode(): boolean { return this.acceptTarget !== null; }
+  get isTimerMode(): boolean { return this.timerTarget !== null; }
 
   filter = '';
   mode: CloudMode = 'chips';
@@ -297,6 +316,10 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   // ─── Picks (instant / batch collect) ───────────────────────────────────
 
   pickFavorite(f: Favorite, ev: MouseEvent): void {
+    if (this.isTimerMode) {
+      this.enterTimerForm(f.task, '', f.activity, f.name);
+      return;
+    }
     if (this.isAcceptMode) {
       this.acceptPicked.emit({ task: f.task });
       return;
@@ -311,6 +334,10 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   pickJira(h: JiraSearchHit, ev: MouseEvent): void {
+    if (this.isTimerMode) {
+      this.enterTimerForm(h.key, h.summary, DEVELOPMENT_ACTIVITY, '');
+      return;
+    }
     if (this.isAcceptMode) {
       this.acceptPicked.emit({ task: h.key });
       return;
@@ -324,7 +351,7 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
 
   // Ctrl+click collects even outside batch mode (and switches it on).
   private collectOnPick(ev: MouseEvent): boolean {
-    if (this.isAcceptMode) return false;
+    if (this.isPickerMode) return false;
     if (this.batch) return true;
     if (ev.ctrlKey || ev.metaKey) {
       this.batch = true;
@@ -342,12 +369,17 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   // clear the filter for the next pick; empty filter + basket → review.
   onFilterEnter(): void {
     const q = this.query;
-    if (this.batch && !this.isAcceptMode && !q && this.basket.length) {
+    if (this.batch && !this.isPickerMode && !q && this.basket.length) {
       this.openReview();
       return;
     }
     const target = this.enterTarget(q);
     if (!target) return;
+    if (this.isTimerMode) {
+      if (target.src === 'fav') this.enterTimerForm(target.fav.task, '', target.fav.activity, target.fav.name);
+      else this.enterTimerForm(target.hit.key, target.hit.summary, DEVELOPMENT_ACTIVITY, '');
+      return;
+    }
     if (this.isAcceptMode) {
       this.acceptPicked.emit({ task: target.src === 'fav' ? target.fav.task : target.hit.key });
       return;
@@ -599,6 +631,32 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
     }, 140);
   }
 
+  // A ticket for the timer: the same one-button form, with the timer's
+  // minutes (a snapshot — the timer goes on under it) and its description;
+  // a favorite lends its activity and, to a nameless timer, its name.
+  private enterTimerForm(task: string, summary: string, activity: string, fallbackDescription: string): void {
+    const target = this.timerTarget;
+    if (!target) return;
+    this.formTask = task;
+    this.formSummary = summary;
+    this.formDescription = target.description || fallbackDescription;
+    this.formMinutes = target.minutes;
+    this.formActivity = this.activityOptions.some(a => a.value === activity) ? activity : '';
+    this.formActivityNeeded = this.formActivity === '';
+    this.mode = 'form';
+    setTimeout(() => this.formDesc?.nativeElement.focus(), 140);
+  }
+
+  // The filter's text becomes a timer without a ticket.
+  get canStartTimer(): boolean {
+    return this.mode === 'chips' && !this.isPickerMode && !this.batch && this.queryLabel !== '';
+  }
+
+  startTimerFromFilter(): void {
+    if (!this.canStartTimer || this.actionPending) return;
+    this.timerStartRequested.emit(this.queryLabel);
+  }
+
   // Learned-ticket conflict of the accepted meeting — grey amber-starred
   // chips above the favorites; picking one resolves the ambiguity (and
   // teaches the uid).
@@ -635,6 +693,16 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
       return;
     }
     if (this.actionPending) return;
+    if (this.timerTarget) {
+      // An untouched number is not sent: the record takes the timer's own time.
+      this.timerBound.emit({
+        task: this.formTask,
+        activity: this.formActivity,
+        description: this.formDescription.trim(),
+        ...(this.formMinutes !== this.timerTarget.minutes ? { minutes: this.formMinutes } : {}),
+      });
+      return;
+    }
     this.formSubmitted.emit({
       entry: {
         task: this.formTask,
@@ -666,9 +734,14 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
     return `${h.key} · ${h.summary} · right-click: save as favorite`;
   }
 
-  // Accept mode neutralizes the chip hints — picks only choose the ticket.
+  get filterPlaceholder(): string {
+    if (this.timerTarget) return `ticket for «${this.timerTarget.description || 'timer'}» — favorites and Jira`;
+    return this.isAcceptMode ? 'pick a ticket — favorites and Jira' : 'search favorites and Jira';
+  }
+
+  // A picker neutralizes the chip hints — picks only choose the ticket.
   favTitle(f: Favorite): string {
-    if (this.isAcceptMode) return '';
+    if (this.isPickerMode) return '';
     return f.activity + ' · Ctrl+click: collect';
   }
 

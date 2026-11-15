@@ -17,6 +17,8 @@ export const CTX_ICON = {
   globe: svg('<circle cx="6" cy="6" r="4.6"/><ellipse cx="6" cy="6" rx="2.1" ry="4.6"/><line x1="1.4" y1="6" x2="10.6" y2="6"/>'),
   mode: svg('<path d="M3.03 9.47 A4.2 4.2 0 1 1 8.97 9.47"/><line x1="6" y1="6.5" x2="8.4" y2="3.9"/><circle cx="6" cy="6.5" r="0.9" fill="currentColor" stroke="none"/>'),
   back: svg('<path d="M7.4 2.6L3.9 6l3.5 3.4"/>'),
+  // A timer's dial struck through — the timer leaves its record.
+  timerOff: svg('<circle cx="6" cy="6" r="4.2"/><path d="M6 6V3.6M2.3 9.7l7.4-7.4"/>'),
   // Empty box — keeps the icon gutter so a ✓ sibling stays aligned.
   none: svg(''),
 } as const;
