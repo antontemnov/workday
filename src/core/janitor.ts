@@ -85,10 +85,12 @@ function migrateAdjustments(log: DailyLog): number {
 }
 
 /** A day record with zero confirmed facts — safe to delete. A pending
- *  review checkout is a fact: deleting it would kill the suggestion. */
+ *  review checkout is a fact: deleting it would kill the suggestion. So is
+ *  a manual timer: one without a ticket is the day's unlinked time. */
 export function isEmptyDayLog(log: DailyLog): boolean {
   return log.sessions.length === 0
     && (log.manualEntries ?? []).length === 0
+    && (log.timers ?? []).length === 0
     && (log.reviewCheckouts ?? []).length === 0
     && !log.pushedAt;
 }

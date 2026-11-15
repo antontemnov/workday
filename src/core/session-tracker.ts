@@ -5,6 +5,7 @@ import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, 
 import { applyLedgerUpdate, countSessionCommits, countSessionLines, createEmptyLedger } from './commit-ledger.js';
 import { isDayMaterialized } from './day-lifecycle.js';
 import { isEmptyDayLog } from './janitor.js';
+import { dropEntryTimer } from './timers.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -343,6 +344,7 @@ export class SessionTracker {
     if (this.dailyLog.manualEntries) {
       this.dailyLog.manualEntries = this.dailyLog.manualEntries.filter(e => !(isAddedEntry(e) && e.task === task));
     }
+    for (const entry of entries) dropEntryTimer(this.dailyLog, entry.id);
     for (const s of sessions) this.onSessionClosed?.(s.id);
 
     if (this.dematerializeIfEmpty()) return { ok: true, sessions, entries, dayFileDeleted: true };

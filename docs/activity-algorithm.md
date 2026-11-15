@@ -418,6 +418,55 @@ enum PauseSource {
 }
 ```
 
+### A manual timer in the leader's seat
+
+One counts at a time: a session or a manual timer. A **running** timer sits
+in the leader's seat (`processAllTicks(ticks, { timerRunning: true })`):
+
+```
+Each tick while the timer runs:
+  1. Scores and both EMAs update for every session as usual
+  2. A session (or a candidate) takes the count only if
+       - it was edited on this very tick, AND
+       - its attention > TIMER_DEFENSE_ATTENTION (0.5)
+     The most attended such session wins → leaderId = that session
+  3. Otherwise leaderId = null, timerLeads = true:
+       sessions with score > 0 → paused (PauseSource.Superseded),
+       sessions with score == 0 → paused (PauseSource.IdleTimeout),
+       candidates are not promoted (a drained one evaporates as usual)
+```
+
+A session under a timer is therefore the ordinary superseded session: its
+stamina keeps fading by the clock, it idles out at zero and closes after
+`idleCloseHours` — nothing new in its lifecycle.
+
+| Poll | One edit after silence | Edits tick after tick | Takeover |
+|------|------------------------|-----------------------|----------|
+| 15s  | 0.125                  | 0.49 on the 5th, 0.55 on the 6th | 6th tick, 75s after the first edit |
+| 30s  | 0.25                   | 0.44 → 0.58           | 3rd tick, 60s |
+| 45s  | 0.375                  | 0.61                  | 2nd tick, 45s |
+| 60s  | 0.50 (not above)       | 0.75                  | 2nd tick, 60s |
+
+At 30s polls edits rarer than once in a minute and a half never take the
+count (attention peaks at 0.43); edits once a minute do, on the fourth one.
+The threshold is a constant, not a multiple of `ATTENTION_ALPHA`: the rule
+keeps its meaning at any poll interval up to 60s.
+
+Three more rules make it hold:
+
+- **A start by hand resets attention** (`resetAttention()`): without it a
+  session that was coding a moment ago would take the count straight back on
+  its next edit.
+- **The timer gets the count back only when no session leads** — every
+  stamina has run out, or the leading session was closed or paused by hand.
+  A timer in that state is *waiting*; while it waits the evaluator runs
+  without `timerRunning` and the sessions settle the lead as usual.
+- **Starting or pausing a timer is not a tick.** `reselect()` picks the
+  leader again from the last tick's scores: no poll, no decay step, no EMA
+  move. A started timer simply holds the lead (a takeover needs an edit, and
+  an edit only shows on a tick); with the timer paused, a session with
+  stamina left counts again, and with none left nobody does.
+
 ### Key difference from previous designs
 
 | | AttentionSteal (v0) | Normalized score (v1) | Attention EMA (v2, current) |
@@ -955,9 +1004,15 @@ interface TickInput {
   // Note: manually paused sessions are NOT sent to evaluator at all (full freeze)
 }
 
+interface EvaluatorOptions {
+  readonly timerRunning?: boolean;   // a manual timer sits in the leader's seat (§6)
+}
+
 interface EvaluatorResult {
   readonly scores: Map<string, SessionScore>;
   readonly leaderId: string | null;  // attention leader (see §6), null if all scores=0
+                                     // or while a running timer keeps the lead
+  readonly timerLeads?: boolean;     // the running timer kept the lead
 }
 
 interface SessionScore {
@@ -971,7 +1026,9 @@ interface SessionScore {
 
 class ActivityEvaluator {
   constructor(diffPollSeconds: number);
-  processAllTicks(ticks: readonly TickInput[]): EvaluatorResult;
+  processAllTicks(ticks: readonly TickInput[], options?: EvaluatorOptions): EvaluatorResult;
+  reselect(options?: EvaluatorOptions): EvaluatorResult;  // leader from the last tick's scores, no time passes
+  resetAttention(): void;                                 // a timer was started by hand
   removeSession(sessionId: string): void;
 }
 ```

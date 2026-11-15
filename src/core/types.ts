@@ -212,6 +212,42 @@ export interface Favorite {
   readonly createdAt: string;     // ISO timestamp
 }
 
+// ─── Manual timer ────────────────────────────────────────────────────────
+//
+// A timer is a source of time for a ManualEntry, not a record of its own:
+// it adds whole minutes to the entry it feeds and keeps its own share apart.
+// One counts at a time — a session or a timer.
+
+export enum TimerState {
+  Running = 'running',   // counts now
+  Waiting = 'waiting',   // switched on, a session holds the count
+  Paused = 'paused',     // stopped by hand
+}
+
+// One stretch of counting; an open one is counting now.
+export interface TimerSpan {
+  readonly from: string;
+  to: string | null;
+  // The entry's time was set by hand after this stretch: it is no longer
+  // part of the timer's share.
+  off?: true;
+}
+
+export interface Timer {
+  readonly id: string;
+  entryId: string | null;      // the ManualEntry it feeds; null = no ticket
+  description: string;         // no-ticket timer only — a fed entry has its own
+  state: TimerState;
+  spans: TimerSpan[];
+  // Whole minutes of the share already inside the entry's minutes. Typed by
+  // hand = entry.minutes − creditedMinutes.
+  creditedMinutes: number;
+  lastSeenAt: string;          // last tick it was alive — where sleep and crash cut it
+  touchedAt: string;           // last start / pause by hand
+  hidden?: true;               // taken off the desktop widget (paused only)
+  readonly createdAt: string;
+}
+
 // ─── Calendar instances (meeting suggestions) ────────────────────────────
 //
 // Flat materialization of the Outlook ICS feed inside the expansion window:
@@ -386,6 +422,9 @@ export interface DailyLog {
   signals: Signal[];
   manualEntries: ManualEntry[];
   reviewCheckouts?: ReviewCheckout[];
+  // Array order = the order the timers joined the day. On a finished day a
+  // timer without an entry is unlinked time.
+  timers?: Timer[];
   pushedAt: string | null;
 }
 
@@ -1531,9 +1570,16 @@ export interface TickInput {
   readonly maxTicks: number;
 }
 
+export interface EvaluatorOptions {
+  // A manual timer is running: it sits in the leader's seat.
+  readonly timerRunning?: boolean;
+}
+
 export interface EvaluatorResult {
   readonly scores: Map<string, SessionScore>;
   readonly leaderId: string | null;
+  // The running timer kept the lead (leaderId is then null).
+  readonly timerLeads?: boolean;
 }
 
 export interface SessionScore {

@@ -86,6 +86,9 @@ export function buildReport(from: string, to: string, config: AppConfig): TaskDa
         standalone.push(entry);
         continue;
       }
+      // A record a timer has just begun to feed holds no minute yet — alone
+      // on its ticket it would round up to a whole block.
+      if (entry.minutes <= 0) continue;
       const addMs = entry.minutes * MS_PER_MINUTE;
       const existing = taskMap.get(entry.task);
       if (existing) {
