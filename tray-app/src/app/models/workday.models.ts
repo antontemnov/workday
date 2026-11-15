@@ -101,6 +101,63 @@ export interface TodayResponse {
   // The day's month is closed in Tempo: nothing is tracked or edited.
   // Absent on daemons < 0.54.1.
   monthClosed?: boolean;
+  // Manual timers — today only. Absent on daemons < 0.56.0: no timers there.
+  timers?: TimersResponse;
+}
+
+// ─── Manual timers (mirror the daemon's types) ───────────────────────────
+//
+// A timer is a source of time for a manual entry, not a record of its own.
+// One counts at a time: a session or a timer.
+
+export enum TimerState {
+  Running = 'running',   // counts now
+  Waiting = 'waiting',   // switched on, a session holds the count
+  Paused = 'paused',     // stopped by hand
+}
+
+// One row of the island / the widget.
+export interface TimerView {
+  readonly id: string;
+  readonly state: TimerState;
+  readonly entryId: string | null;
+  readonly task: string | null;
+  readonly activity: string | null;
+  readonly added: boolean;         // feeds the ticket's manual added record
+  readonly description: string;    // the entry's, or the no-ticket timer's own
+  // What the row shows at `asOf`: the entry's whole time (typed + share), or
+  // everything a no-ticket timer counted. A running one ticks on from there.
+  readonly totalMs: number;
+  readonly shareMs: number;        // the timer's share inside totalMs — what Remove timer takes out
+  readonly handMinutes: number;    // typed by hand; 0 for a no-ticket timer
+  readonly hidden: boolean;
+  readonly touchedAt: string;
+}
+
+export type TimerCounting = 'session' | 'timer' | 'none';
+
+// Array order = the order of the island's rows.
+export interface TimersResponse {
+  readonly date: string;
+  readonly asOf: string;           // the moment totalMs / shareMs were taken at
+  readonly counting: TimerCounting;
+  readonly desktopWidget: boolean;
+  readonly timers: readonly TimerView[];
+}
+
+// Answer of every timer action: the day's timers after it.
+export interface TimerActionResponse extends TimersResponse {
+  readonly timerId: string | null;         // null when the action took the timer away
+  readonly entry?: ManualEntryResponse;    // bind / remove: the record after the action
+  readonly removedMinutes?: number;        // remove
+}
+
+// task? → Log. `minutes` only when the form's number was changed.
+export interface TimerBindInput {
+  readonly task: string;
+  readonly activity: string;
+  readonly description: string;
+  readonly minutes?: number;
 }
 
 export interface StatusResponse {
@@ -768,6 +825,10 @@ export interface SettingsConfigSubset {
   // Browser exe for /api/open links, null = system default. Absent on
   // daemons < 0.42.0 — the Settings row hides itself.
   readonly browser?: string | null;
+  // Manual timer settings. Absent on daemons < 0.56.0.
+  readonly timer?: {
+    readonly desktopWidget: boolean;
+  };
 }
 
 // GET /api/settings returns config + metadata about which secrets are set

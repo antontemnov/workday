@@ -31,6 +31,15 @@ export interface AppConfig {
   // null/absent → system default browser. Windows-only feature (the
   // enumeration is registry-based); harmless elsewhere.
   readonly browser?: string | null;
+  readonly timer: TimerConfig;
+}
+
+// ─── Manual timer config ─────────────────────────────────────────────────
+
+export interface TimerConfig {
+  // The tray shows the day's timers in a small window on the desktop, on
+  // top of other windows. Default true.
+  readonly desktopWidget: boolean;
 }
 
 // ─── Git tracking scope ──────────────────────────────────────────────────
@@ -246,6 +255,46 @@ export interface Timer {
   touchedAt: string;           // last start / pause by hand
   hidden?: true;               // taken off the desktop widget (paused only)
   readonly createdAt: string;
+}
+
+// A timer as the API shows it: one row of the island / the widget.
+export interface TimerView {
+  readonly id: string;
+  readonly state: TimerState;
+  readonly entryId: string | null;
+  readonly task: string | null;
+  readonly activity: string | null;
+  readonly added: boolean;         // feeds the ticket's manual added record
+  readonly description: string;    // the entry's, or the no-ticket timer's own
+  // What the row shows at `asOf`: the entry's whole time (typed + share), or
+  // everything a no-ticket timer counted. A running one ticks on from there.
+  readonly totalMs: number;
+  readonly shareMs: number;        // the timer's share inside totalMs — what Remove timer takes out
+  readonly handMinutes: number;    // typed by hand; 0 for a no-ticket timer
+  readonly hidden: boolean;
+  readonly touchedAt: string;
+}
+
+export type TimerCounting = 'session' | 'timer' | 'none';
+
+// GET /api/timers, and the `timers` field of the Day data. Array order =
+// the order of the island's rows.
+export interface TimersResponse {
+  readonly date: string;
+  readonly asOf: string;           // the moment totalMs / shareMs were taken at
+  readonly counting: TimerCounting;
+  readonly desktopWidget: boolean; // config.timer.desktopWidget
+  readonly timers: readonly TimerView[];
+}
+
+// Answer of every timer action: the day's timers after it.
+export interface TimerActionResponse extends TimersResponse {
+  // The timer the action left behind; null when it is gone (delete, cancel, remove).
+  readonly timerId: string | null;
+  // bind / remove: the record after the action.
+  readonly entry?: ManualEntryResponse;
+  // remove: minutes the timer took with it.
+  readonly removedMinutes?: number;
 }
 
 // ─── Calendar instances (meeting suggestions) ────────────────────────────
@@ -888,6 +937,8 @@ export interface TodayResponse {
   readonly issueSummaries?: Readonly<Record<string, string>>;
   // The day's month is closed in Tempo: nothing is tracked or edited.
   readonly monthClosed?: boolean;
+  // Manual timers — today only; absent on a past day.
+  readonly timers?: TimersResponse;
 }
 
 export interface SessionDetail extends SessionSummary {
@@ -1279,6 +1330,7 @@ export interface SettingsConfigSubset {
   readonly activities: ActivityScopeConfig;
   readonly calendar: CalendarConfig;
   readonly browser: string | null;
+  readonly timer: TimerConfig;
 }
 
 export interface SettingsResponse {

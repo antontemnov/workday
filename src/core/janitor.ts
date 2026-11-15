@@ -2,6 +2,7 @@ import { readdirSync, rmdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from './config.js';
 import { readDailyLog, writeDailyLog, deleteDailyLog, trimTrailingPauses, generateSessionId, collapseAddedEntries } from './daily-log.js';
+import { settleOrphanTimers } from './timers.js';
 import { ClosedBy } from './types.js';
 import { DEFAULT_ACTIVITY } from './constants.js';
 import type { DailyLog, ManualEntry, Session } from './types.js';
@@ -34,6 +35,7 @@ export interface JanitorResult {
   readonly deletedFiles: readonly string[];
   readonly migratedAdjustments: number;
   readonly collapsedEntries: number;
+  readonly settledTimers: number;
 }
 
 /** Does this manual entry own a Tempo worklog (push-log ownership)? */
@@ -168,6 +170,7 @@ export function runStartupJanitor(currentDate: string, ownsWorklog?: EntryOwners
   let pruned = 0;
   let migrated = 0;
   let collapsed = 0;
+  let settled = 0;
   const deletedFiles: string[] = [];
 
   for (const date of listAllStoredDates()) {
@@ -184,20 +187,25 @@ export function runStartupJanitor(currentDate: string, ownsWorklog?: EntryOwners
     // Status untouched on purpose: the per-task totals are the same, a
     // re-push produces the exact same worklogs.
     const collapsedHere = collapseAddedEntries(log, ownsWorklog ? e => ownsWorklog(date, e) : undefined);
+    // Timers left live by a crash before the day's boundary end where they
+    // were last seen. The minutes they add are a real change — the day
+    // turns back into a draft through the credit itself.
+    const settledHere = settleOrphanTimers(log);
     recovered += closedHere;
     pruned += prunedHere;
     migrated += migratedHere;
     collapsed += collapsedHere;
+    settled += settledHere;
 
     if (isEmptyDayLog(log)) {
       deleteDailyLog(date);
       deletedFiles.push(date);
-    } else if (closedHere > 0 || prunedHere > 0 || migratedHere > 0 || collapsedHere > 0) {
+    } else if (closedHere > 0 || prunedHere > 0 || migratedHere > 0 || collapsedHere > 0 || settledHere > 0) {
       writeDailyLog(log);
     }
   }
 
   if (deletedFiles.length > 0) removeEmptyMonthDirs();
 
-  return { recoveredSessions: recovered, prunedSessions: pruned, deletedFiles, migratedAdjustments: migrated, collapsedEntries: collapsed };
+  return { recoveredSessions: recovered, prunedSessions: pruned, deletedFiles, migratedAdjustments: migrated, collapsedEntries: collapsed, settledTimers: settled };
 }

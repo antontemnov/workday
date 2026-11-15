@@ -7,7 +7,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { MS_PER_MINUTE } from './constants.js';
-import { DayStatus, TimerState, type DailyLog, type ManualEntry, type Timer, type TimerSpan } from './types.js';
+import { DayStatus, TimerState, type DailyLog, type ManualEntry, type Timer, type TimerSpan, type TimerView } from './types.js';
 
 /** The live timer a start put on pause — what cancelNewTimer gives back. */
 export interface DisplacedTimer {
@@ -84,6 +84,27 @@ function creditTimer(log: DailyLog, timer: Timer, nowMs: number): boolean {
   timer.creditedMinutes = credited;
   if (log.status !== DayStatus.Draft) log.status = DayStatus.Draft;
   return true;
+}
+
+/** The timer as one row of the island: an entry's whole time, or a no-ticket timer's own. */
+export function toTimerView(log: DailyLog, timer: Timer, nowMs: number): TimerView {
+  const entry = entryOf(log, timer);
+  const share = shareMs(timer, nowMs);
+  const typed = entry ? entry.minutes - timer.creditedMinutes : 0;
+  return {
+    id: timer.id,
+    state: timer.state,
+    entryId: timer.entryId,
+    task: entry?.task ?? null,
+    activity: entry?.activity ?? null,
+    added: !!entry && (!!entry.added || !!entry.sourceSessionId),
+    description: entry ? entry.description : timer.description,
+    totalMs: typed * MS_PER_MINUTE + share,
+    shareMs: share,
+    handMinutes: typed,
+    hidden: timer.hidden === true,
+    touchedAt: timer.touchedAt,
+  };
 }
 
 /** Move the whole minutes every timer has counted into its entry. True = an entry changed. */
@@ -349,21 +370,48 @@ export function skipDowntime(log: DailyLog, nowIso: string): number {
   return cut;
 }
 
-/**
- * The day is over: every timer stops at the boundary and its minutes are
- * final. Timers stay in the day's log — one without an entry is the day's
- * unlinked time; one that never counted leaves nothing behind.
- */
+// The day's minutes are final: a timer without an entry stays as the day's
+// unlinked time, one that never counted leaves nothing behind.
+function settleDay(log: DailyLog, atMs: number): void {
+  creditTimers(log, atMs);
+  const kept = getTimers(log).filter(timer => timer.entryId !== null || countedMs(timer, atMs) > 0);
+  if (kept.length > 0) log.timers = kept;
+  else delete log.timers;
+}
+
+/** The day is over: every timer stops at the boundary. Timers stay in the day's log. */
 export function stopTimersForDayEnd(log: DailyLog, boundaryIso: string): void {
-  const boundaryMs = Date.parse(boundaryIso);
   for (const timer of getTimers(log)) {
     closeSpan(timer, boundaryIso);
     timer.state = TimerState.Paused;
   }
-  creditTimers(log, boundaryMs);
-  const kept = getTimers(log).filter(timer => timer.entryId !== null || countedMs(timer, boundaryMs) > 0);
-  if (kept.length > 0) log.timers = kept;
-  else delete log.timers;
+  settleDay(log, Date.parse(boundaryIso));
+}
+
+/**
+ * A past day left with live timers (a crash or a power-off before its
+ * boundary): each ends where it was last seen. Returns how many were live.
+ */
+export function settleOrphanTimers(log: DailyLog): number {
+  let settled = 0;
+  for (const timer of getTimers(log)) {
+    if (!isLiveTimer(timer)) continue;
+    closeSpan(timer, timer.lastSeenAt);
+    timer.state = TimerState.Paused;
+    settled++;
+  }
+  if (settled > 0) settleDay(log, Date.now());
+  return settled;
+}
+
+/** Resolve a timer by id, or by its 1-based place in the day's order (#2) — a CLI fallback. */
+export function resolveTimerTarget(log: DailyLog, target: string): Timer | null {
+  const timers = getTimers(log);
+  const byId = timers.find(timer => timer.id === target);
+  if (byId) return byId;
+  const index = parseInt(target.replace('#', ''), 10);
+  if (!isNaN(index) && index >= 1 && index <= timers.length) return timers[index - 1];
+  return null;
 }
 
 /**

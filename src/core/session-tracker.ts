@@ -5,7 +5,7 @@ import type { AppConfig, DailyLog, Session, ManualEntry, PollResult, TickInput, 
 import { applyLedgerUpdate, countSessionCommits, countSessionLines, createEmptyLedger } from './commit-ledger.js';
 import { isDayMaterialized } from './day-lifecycle.js';
 import { isEmptyDayLog } from './janitor.js';
-import { dropEntryTimer } from './timers.js';
+import { creditTimers, dropEntryTimer } from './timers.js';
 import {
   generateSessionId,
   createEmptyEvidence,
@@ -448,6 +448,7 @@ export class SessionTracker {
    * file is restored on the next tick even with unchanged state.
    */
   public flush(): void {
+    creditTimers(this.dailyLog, Date.now());
     if (!isDayMaterialized(this.dailyLog, this.loadedFromDisk)) return;
     const serialized = JSON.stringify(this.dailyLog, null, 2);
     if (serialized === this.lastFlushedState && existsSync(getDailyLogPath(this.dailyLog.date))) return;
@@ -455,9 +456,25 @@ export class SessionTracker {
     this.lastFlushedState = serialized;
   }
 
+  /**
+   * Persist after a change that may have taken the day's last fact (a timer
+   * deleted): the file goes with it, otherwise a plain flush. True = the
+   * file was deleted.
+   */
+  public flushOrDropDay(): boolean {
+    if (this.dematerializeIfEmpty()) return true;
+    this.flush();
+    return false;
+  }
+
   /** Get summary of open sessions (for status display) */
   public getOpenSessions(): readonly Session[] {
     return this.dailyLog.sessions.filter(s => !s.closedBy);
+  }
+
+  /** A session is counting right now: open, activated, not paused. */
+  public hasCountingSession(): boolean {
+    return this.dailyLog.sessions.some(s => !s.closedBy && s.state === SessionState.Active && !this.hasOpenPause(s));
   }
 
   /**

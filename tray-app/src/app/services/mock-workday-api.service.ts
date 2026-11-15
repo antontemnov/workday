@@ -44,6 +44,9 @@ import {
   ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
+  TimersResponse,
+  TimerActionResponse,
+  TimerBindInput,
   DEVELOPMENT_ACTIVITY,
   Favorite,
   FavoritesResponse,
@@ -647,6 +650,31 @@ export class MockWorkdayApiService extends WorkdayApiService {
       totalManualMinutes: this.mockManualMinutes(),
     };
   }
+
+  // ─── Manual timer mocks ───────────────────────────────────────────────
+  // Placeholder until the timer UI lands: an empty island, actions refused.
+
+  async getTimers(): Promise<ApiResponse<TimersResponse>> {
+    return {
+      ok: true,
+      data: { date: this.today, asOf: new Date().toISOString(), counting: 'none', desktopWidget: true, timers: [] },
+    };
+  }
+
+  private timersNotMocked(): Promise<ApiResponse<TimerActionResponse>> {
+    return Promise.resolve({ ok: false, error: 'Timers are not in the mock yet' });
+  }
+
+  newTimer(_description?: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  startTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  startEntryTimer(_entryId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  pauseTimer(_timerId?: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  describeTimer(_timerId: string, _description: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  bindTimer(_timerId: string, _input: TimerBindInput): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  removeEntryTimer(_entryId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  deleteTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  cancelTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
+  hideTimer(_timerId: string): Promise<ApiResponse<TimerActionResponse>> { return this.timersNotMocked(); }
 
   // ─── Favorites mocks ──────────────────────────────────────────────────
 

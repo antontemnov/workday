@@ -24,6 +24,9 @@ import {
   ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
+  TimersResponse,
+  TimerActionResponse,
+  TimerBindInput,
   FavoritesResponse,
   FavoriteAddResponse,
   FavoriteRemoveResponse,
@@ -110,6 +113,29 @@ export abstract class WorkdayApiService {
   abstract updateManualEntry(target: string, patch: ManualEntryPatch, date?: string): Promise<ApiResponse<ManualEntryResponse>>;
   // Session-born entries are deletable too (unlike edit). target = #index or id.
   abstract deleteManualEntry(target: string, date?: string): Promise<ApiResponse<ManualEntryDeleteResponse>>;
+
+  // Manual timers — a source of time for a manual entry; one counts at a
+  // time, a session or a timer. Each action answers with the day's timers
+  // after it. A timer is named by its id, an entry by its id. Daemons
+  // < 0.56.0 have no timers (TodayResponse.timers is absent there).
+  abstract getTimers(): Promise<ApiResponse<TimersResponse>>;
+  // A timer without a ticket, running at once.
+  abstract newTimer(description?: string): Promise<ApiResponse<TimerActionResponse>>;
+  abstract startTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>>;
+  // Start timer on a manual entry (or start the one it has).
+  abstract startEntryTimer(entryId: string): Promise<ApiResponse<TimerActionResponse>>;
+  // No id = the live timer.
+  abstract pauseTimer(timerId?: string): Promise<ApiResponse<TimerActionResponse>>;
+  abstract describeTimer(timerId: string, description: string): Promise<ApiResponse<TimerActionResponse>>;
+  // task? → Log: the timer's time becomes a record of the ticket.
+  abstract bindTimer(timerId: string, input: TimerBindInput): Promise<ApiResponse<TimerActionResponse>>;
+  // Remove timer: its time leaves the entry, what was typed by hand stays.
+  abstract removeEntryTimer(entryId: string): Promise<ApiResponse<TimerActionResponse>>;
+  abstract deleteTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>>;
+  // Undo a New timer made by mistake (Esc on its empty description).
+  abstract cancelTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>>;
+  // Take a paused timer off the desktop widget; a start brings it back.
+  abstract hideTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>>;
 
   // Favorites — reusable log templates for the log cloud (day-independent,
   // stored in the daemon's favorites.json). target = favorite id.

@@ -56,6 +56,9 @@ import type {
   ManualEntryResponse,
   ManualEntryDeleteResponse,
   ManualAddedResponse,
+  TimersResponse,
+  TimerActionResponse,
+  TimerView,
   ActivityTypesResponse,
   MonthResponse,
   TempoImportResponse,
@@ -76,7 +79,7 @@ import type {
   OpenUrlResponse,
   SetupResponse,
 } from './core/types.js';
-import { SensitivityLevel, DayStatus, MonthDayStatus, ResolveSide, SuggestionsDayState } from './core/types.js';
+import { SensitivityLevel, DayStatus, MonthDayStatus, ResolveSide, SuggestionsDayState, TimerState } from './core/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -323,6 +326,11 @@ async function handleToday(): Promise<void> {
     return;
   }
   printTodayData(result.data!);
+  const timers = result.data!.timers;
+  if (timers && timers.timers.length > 0) {
+    console.log('');
+    printTimers(timers);
+  }
 }
 
 async function handlePause(args: string[]): Promise<void> {
@@ -1610,6 +1618,166 @@ async function handleNotifications(args: string[]): Promise<void> {
   }
 }
 
+// ─── Manual timers ───────────────────────────────────────────────────────
+
+const TIMER_USAGE = `Usage:
+  workday timer                                   Today's timers
+  workday timer new ["<description>"]             Start a timer without a ticket
+  workday timer start <#|id>                      Start a timer (the live one goes on pause)
+  workday timer start --entry <#|id>              Put a timer on a manual entry
+  workday timer pause [#|id]                      Pause a timer (default: the live one)
+  workday timer describe <#|id> "<text>"          Describe a timer without a ticket
+  workday timer bind <#|id> <task> ["<desc>"] [--activity T] [--minutes N]
+                                                  Give a timer its ticket (--minutes = a number typed by hand)
+  workday timer remove <entry #|id>               Remove the timer from an entry (its time goes)
+  workday timer delete <#|id>                     Delete a timer without a ticket
+  workday timer cancel <#|id>                     Undo a New timer made by mistake
+  workday timer hide <#|id>                       Take a paused timer off the desktop widget
+  workday timer widget [on|off]                   Desktop widget switch`;
+
+function formatTimerTime(ms: number, withSeconds: boolean): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(totalSeconds / 60) % 60;
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  const whole = hours > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${minutes}m`;
+  return withSeconds ? `${whole} ${seconds}s` : whole;
+}
+
+function formatTimerRow(timer: TimerView, index: number): string {
+  const state = timer.state === TimerState.Running ? '▶ running'
+    : timer.state === TimerState.Waiting ? '◌ waiting'
+    : '⏸ paused ';
+  // An entry at rest shows whole minutes, like any entry; whatever ticks, and
+  // a timer without a ticket, keeps its seconds.
+  const withSeconds = timer.state !== TimerState.Paused || timer.entryId === null;
+  const what = timer.task
+    ? `${timer.task} · ${timer.added ? 'manual added' : `${timer.activity} — "${timer.description}"`}`
+    : (timer.description ? `"${timer.description}"` : 'task?');
+  const share = timer.entryId !== null && timer.handMinutes > 0
+    ? `  (typed ${timer.handMinutes}m + timer ${formatTimerTime(timer.shareMs, false)})` : '';
+  return `  #${index + 1} ${timer.id}  ${state}  ${formatTimerTime(timer.totalMs, withSeconds).padStart(11)}  ${what}${share}${timer.hidden ? '  [hidden]' : ''}`;
+}
+
+function printTimers(data: TimersResponse): void {
+  const counting = data.counting === 'timer' ? 'a timer counts'
+    : data.counting === 'session' ? 'a session counts'
+    : 'nobody counts';
+  console.log(`Timers ${data.date} — ${counting} · desktop widget ${data.desktopWidget ? 'on' : 'off'}`);
+  if (data.timers.length === 0) {
+    console.log('  No timers');
+    return;
+  }
+  data.timers.forEach((timer, index) => console.log(formatTimerRow(timer, index)));
+}
+
+async function timerAction(action: string, body: Record<string, unknown>, done: (data: TimerActionResponse) => string): Promise<void> {
+  const result = await apiPost<TimerActionResponse>(`/api/timer/${action}`, body);
+  if (!result.ok || !result.data) { console.log(result.error); return; }
+  console.log(done(result.data));
+  printTimers(result.data);
+}
+
+async function handleTimer(args: string[]): Promise<void> {
+  const sub = args[0];
+  const rest = args.slice(1);
+
+  if (sub === undefined) {
+    const result = await apiGet<TimersResponse>('/api/timers');
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    printTimers(result.data);
+    return;
+  }
+
+  switch (sub) {
+    case 'new':
+      await timerAction('new', { description: rest.join(' ') }, () => 'Timer started');
+      return;
+
+    case 'start': {
+      const entry = parseArgValue(rest, '--entry');
+      if (entry) {
+        await timerAction('start', { entry }, () => 'Timer started on the entry');
+        return;
+      }
+      if (!rest[0]) break;
+      await timerAction('start', { id: rest[0] }, () => 'Timer started');
+      return;
+    }
+
+    case 'pause':
+      await timerAction('pause', rest[0] ? { id: rest[0] } : {}, () => 'Timer paused');
+      return;
+
+    case 'describe':
+      if (!rest[0]) break;
+      await timerAction('describe', { id: rest[0], description: rest.slice(1).join(' ') }, () => 'Description set');
+      return;
+
+    case 'bind': {
+      let cmdArgs = rest;
+      const activity = parseArgValue(cmdArgs, '--activity');
+      const minutesStr = parseArgValue(cmdArgs, '--minutes');
+      for (const flag of ['--activity', '--minutes']) {
+        const at = cmdArgs.indexOf(flag);
+        if (at !== -1) cmdArgs = [...cmdArgs.slice(0, at), ...cmdArgs.slice(at + 2)];
+      }
+      const [id, task, ...descriptionWords] = cmdArgs;
+      if (!id || !task) break;
+      const minutes = minutesStr === null ? null : parseInt(minutesStr, 10);
+      if (minutes !== null && (isNaN(minutes) || minutes < 0)) {
+        console.log('Minutes must be zero or a positive number');
+        return;
+      }
+      await timerAction('bind', {
+        id, task, description: descriptionWords.join(' '),
+        ...(activity ? { activity } : {}),
+        ...(minutes !== null ? { minutes } : {}),
+      }, data => (data.entry?.added
+        ? `Timer bound to ${data.entry.task} — manual added is now ${data.entry.minutes}m`
+        : `Timer bound to ${data.entry?.task}: ${data.entry?.minutes}m ${data.entry?.activity} — "${data.entry?.description}"`));
+      return;
+    }
+
+    case 'remove':
+      if (!rest[0]) break;
+      await timerAction('remove', { entry: rest[0] },
+        data => `Timer removed from ${data.entry?.task}: −${data.removedMinutes ?? 0}m, ${data.entry?.minutes}m stays`);
+      return;
+
+    case 'delete':
+      if (!rest[0]) break;
+      await timerAction('delete', { id: rest[0] }, () => 'Timer deleted');
+      return;
+
+    case 'cancel':
+      if (!rest[0]) break;
+      await timerAction('cancel', { id: rest[0] }, () => 'Timer cancelled');
+      return;
+
+    case 'hide':
+      if (!rest[0]) break;
+      await timerAction('hide', { id: rest[0] }, () => 'Timer taken off the desktop widget');
+      return;
+
+    case 'widget': {
+      if (rest[0] === undefined) {
+        const result = await apiGet<TimersResponse>('/api/timers');
+        if (!result.ok || !result.data) { console.log(result.error); return; }
+        console.log(`Desktop widget: ${result.data.desktopWidget ? 'on' : 'off'}`);
+        return;
+      }
+      if (rest[0] !== 'on' && rest[0] !== 'off') break;
+      const result = await apiPost<SettingsResponse>('/api/settings', { config: { timer: { desktopWidget: rest[0] === 'on' } } });
+      if (!result.ok || !result.data) { console.log(result.error); return; }
+      console.log(`Desktop widget: ${result.data.config.timer.desktopWidget ? 'on' : 'off'}`);
+      return;
+    }
+  }
+
+  console.log(TIMER_USAGE);
+}
+
 // ─── Calendar ────────────────────────────────────────────────────────────
 
 async function handleCalendar(args: string[]): Promise<void> {
@@ -1915,6 +2083,9 @@ async function main(): Promise<void> {
     case 'log-list':
       await handleLogList(args.slice(1));
       break;
+    case 'timer':
+      await handleTimer(args.slice(1));
+      break;
     case 'fav-add':
       await handleFavAdd(args.slice(1));
       break;
@@ -2017,6 +2188,17 @@ Usage:
   workday log-delete <#|id> [--date D]                 Delete a manual entry
   workday log-added <task> <min> [--date D]            Set a ticket's manual added total (0 removes)
   workday log-list [--date DATE]                       List manual entries
+  workday timer                                        Today's manual timers (one counts at a time: a session or a timer)
+  workday timer new ["<desc>"]                         Start a timer without a ticket
+  workday timer start <#|id> | --entry <#|id>          Start a timer / put a timer on a manual entry
+  workday timer pause [#|id]                           Pause a timer (default: the live one)
+  workday timer describe <#|id> "<text>"               Describe a timer without a ticket
+  workday timer bind <#|id> <task> ["<desc>"] [--activity T] [--minutes N]   Give a timer its ticket
+  workday timer remove <entry #|id>                    Remove the timer from an entry (its time goes)
+  workday timer delete <#|id>                          Delete a timer without a ticket
+  workday timer cancel <#|id>                          Undo a New timer made by mistake
+  workday timer hide <#|id>                            Take a paused timer off the desktop widget
+  workday timer widget [on|off]                        Desktop widget switch
   workday fav-add <task> <min> "<name>" [--activity T] Add a favorite (log template)
   workday fav-remove <#|id>                            Remove a favorite
   workday fav-list                                     List favorites
