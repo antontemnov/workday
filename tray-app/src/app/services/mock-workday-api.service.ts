@@ -120,6 +120,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockActivityValues: string[] = ['Development', 'CodeReview', 'Other'];
   private mockCalendar = { enabled: true, hidePrivate: false };
   private mockBrowser: string | null = null;
+  private mockDesktopWidget: boolean = true;
   private mockCalendarConfigured = true;
   private mockCalendarFetchedAt = new Date(Date.now() - 25 * 60_000).toISOString();
 
@@ -735,7 +736,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       date: this.today,
       asOf: new Date(nowMs).toISOString(),
       counting: this.mockTimerRunning() ? 'timer' : 'session',
-      desktopWidget: true,
+      desktopWidget: this.mockDesktopWidget,
       timers: this.mockTimers.map(timer => {
         const entry = this.mockManualEntries.find(e => e.id === timer.entryId);
         const share = this.mockTimerShare(timer, nowMs);
@@ -1247,6 +1248,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           activities: { values: [...this.mockActivityValues] },
           calendar: { ...this.mockCalendar },
           browser: this.mockBrowser,
+          timer: { desktopWidget: this.mockDesktopWidget },
         },
         secretsMeta: {
           jiraConfigured: this.mockJiraConfigured,
@@ -1279,6 +1281,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
         };
       }
       if (patch.config.browser !== undefined) this.mockBrowser = patch.config.browser ?? null;
+      if (patch.config.timer) this.mockDesktopWidget = patch.config.timer.desktopWidget;
     }
     if (patch.secrets) {
       if (patch.secrets.jiraEmail !== undefined) this.mockJiraEmail = patch.secrets.jiraEmail;

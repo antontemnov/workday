@@ -29,6 +29,8 @@ import {
 import { TimerChipComponent } from './timer/timer-chip.component';
 import { TimerIslandComponent } from './timer/timer-island.component';
 import { currentTimer } from './timer/timer-clock.util';
+import { TimerWidgetService } from './timer/timer-widget.service';
+import { WidgetAction } from './timer/timer-widget.util';
 import { currentCtxMenu } from './views/day-view/ctx-menu.util';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { loadSuggestionsMode, persistSuggestionsMode, type SuggestionsMode } from './views/day-view/suggestions-mode.util';
@@ -196,6 +198,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private api: WorkdayApiService,
     private notifications: NotificationDeliveryService,
     private cdr: ChangeDetectorRef,
+    private timerWidget: TimerWidgetService,
   ) {}
 
   // Kill the WebView2 default context menu app-wide (Back/Refresh/Print…).
@@ -211,6 +214,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.watchAppUpdates();
     void this.watchNavigateEvents();
+    void this.timerWidget.start(action => this.onWidgetAction(action));
     this.notifications.start();
     void this.refreshActivityTypes();
     void this.refreshFavorites();
@@ -235,6 +239,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     if (this.unlistenAppUpdate) this.unlistenAppUpdate();
     if (this.unlistenNavigate) this.unlistenNavigate();
+    this.timerWidget.stop();
     this.notifications.stop();
   }
 
@@ -472,7 +477,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const res = await this.api.getToday();
     if (res.ok && res.data) {
       this.data = res.data;
-      this.timers = res.data.timers ?? null;
+      this.showTimers(res.data.timers ?? null);
       this.error = null;
       void this.refreshSuggestions();
       // Daemon reachable again after a failure window — e.g. it finished a
@@ -631,14 +636,30 @@ export class AppComponent implements OnInit, OnDestroy {
   @HostListener('document:pointerdown', ['$event'])
   onDocumentPointerDown(ev: PointerEvent): void {
     if (!this.islandOpen || this.timerPick !== null) return;
-    const target = ev.target as HTMLElement | null;
-    if (target?.closest('app-timer-island, app-timer-chip')) return;
+    const target = ev.target;
+    if (target instanceof Element && target.closest('app-timer-island, app-timer-chip')) return;
     this.islandOpen = false;
   }
 
   @HostListener('document:keydown.escape')
   onDocumentEscape(): void {
     if (this.islandOpen && this.timerPick === null && currentCtxMenu() === null) this.islandOpen = false;
+  }
+
+  // The day's timers, wherever they came from — the desktop widget follows.
+  private showTimers(timers: TimersResponse | null): void {
+    this.timers = timers;
+    this.timerWidget.sync(timers);
+  }
+
+  // A click on the desktop widget: ⏸ / ▶ of a row, or the row off the desktop.
+  private onWidgetAction(action: WidgetAction): void {
+    if (action.kind === 'hide') {
+      void this.runTimerAction(() => this.api.hideTimer(action.id));
+      return;
+    }
+    const timer = this.timers?.timers.find(t => t.id === action.id);
+    if (timer) this.onTimerToggle(timer);
   }
 
   onTimerToggle(timer: TimerView): void {
@@ -728,7 +749,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const result = this.timerChain.then(() => this.runAction(async () => {
       const res = await call();
       if (res.ok && res.data) {
-        this.timers = res.data;
+        this.showTimers(res.data);
         done?.(res.data);
       }
       return res;
@@ -744,7 +765,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!before || this.actionPending || !before.timers.some(t => t.state !== TimerState.Paused)) return;
     const res = await this.api.getTimers();
     if (!res.ok || !res.data || this.actionPending || this.timers !== before) return;
-    this.timers = res.data;
+    this.showTimers(res.data);
     if (timersSignature(res.data) !== timersSignature(before)) void this.refresh();
   }
 

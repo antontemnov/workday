@@ -156,7 +156,8 @@
       [daemonStarting]="daemonStarting"
       [appUpdateVersion]="appUpdateVersion"
       (stopDaemonRequested)="endDayModalOpen = true"
-      (startDaemonRequested)="startDaemon()" />
+      (startDaemonRequested)="startDaemon()"
+      (timerSettingsChanged)="refresh()" />
   </ng-container>
 
   <!-- Toast -->
