@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, HostListener, NgZone, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -177,6 +177,9 @@ export class AppComponent implements OnInit, OnDestroy {
   private timerPollTimer: ReturnType<typeof setInterval> | null = null;
   private trayStatusSent: string = '';
   private trayStatusSentAt: number = 0;
+  // null = Rust was not told yet (or the telling failed).
+  private trayNewTimerSent: boolean | null = null;
+  private unlistenTrayNewTimer: UnlistenFn | null = null;
   @ViewChild(TimerIslandComponent, { read: ElementRef }) private islandRef?: ElementRef<HTMLElement>;
 
   // Toast + action gate
@@ -205,6 +208,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private notifications: NotificationDeliveryService,
     private cdr: ChangeDetectorRef,
     private timerWidget: TimerWidgetService,
+    private zone: NgZone,
   ) {}
 
   // Kill the WebView2 default context menu app-wide (Back/Refresh/Print…).
@@ -220,6 +224,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.watchAppUpdates();
     void this.watchNavigateEvents();
+    void this.watchTrayMenu();
     void this.timerWidget.start(action => this.onWidgetAction(action));
     this.notifications.start();
     void this.refreshActivityTypes();
@@ -245,6 +250,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     if (this.unlistenAppUpdate) this.unlistenAppUpdate();
     if (this.unlistenNavigate) this.unlistenNavigate();
+    if (this.unlistenTrayNewTimer) this.unlistenTrayNewTimer();
     this.timerWidget.stop();
     this.notifications.stop();
   }
@@ -502,6 +508,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     this.loading = false;
     this.syncTrayStatus();
+    this.syncTrayMenu();
   }
 
   // Header close glyph → CloseRequested → Rust hides to tray, never exits.
@@ -598,6 +605,26 @@ export class AppComponent implements OnInit, OnDestroy {
     void invoke('set_tray_status', { kind: status.kind, tooltip: status.tooltip }).catch(() => {});
   }
 
+  // "New timer" in the tray menu is live while a click can work: the daemon
+  // answered the last poll and the month is open.
+  private syncTrayMenu(): void {
+    const enabled = this.error === null && this.timers !== null && this.data?.monthClosed !== true;
+    if (enabled === this.trayNewTimerSent) return;
+    this.trayNewTimerSent = enabled;
+    void invoke('set_tray_new_timer', { enabled }).catch(() => {
+      this.trayNewTimerSent = null;
+    });
+  }
+
+  // Tray menu → New timer: Rust only passes the click on.
+  private async watchTrayMenu(): Promise<void> {
+    try {
+      this.unlistenTrayNewTimer = await listen('tray-new-timer', () => this.zone.run(() => this.onTrayNewTimer()));
+    } catch {
+      // Outside Tauri webview (browser dev mode) — no tray.
+    }
+  }
+
   private get openSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => !s.closedBy) ?? [];
   }
@@ -622,7 +649,8 @@ export class AppComponent implements OnInit, OnDestroy {
   onDocumentPointerDown(ev: PointerEvent): void {
     if (!this.islandOpen || this.timerPick !== null) return;
     const target = ev.target;
-    if (target instanceof Element && target.closest('app-timer-island, app-timer-chip')) return;
+    // The header is the window's handle: moving the window keeps the island.
+    if (target instanceof Element && target.closest('app-timer-island, .header')) return;
     this.islandOpen = false;
   }
 
@@ -664,6 +692,12 @@ export class AppComponent implements OnInit, OnDestroy {
       this.timerBirthId = data.timerId;
       this.islandOpen = true;
     });
+  }
+
+  // New timer in the tray menu: it runs at once, the window stays as it is —
+  // hidden or open, the island shut.
+  private onTrayNewTimer(): void {
+    void this.runTimerAction(() => this.api.newTimer());
   }
 
   // Start timer «text» in the Log cloud: the description is there already,

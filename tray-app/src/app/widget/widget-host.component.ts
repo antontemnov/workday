@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -46,6 +46,12 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
   private shown: boolean = false;
 
   public constructor(private api: WorkdayApiService, private cdr: ChangeDetectorRef) {}
+
+  // The plate has no right-click action — and no WebView2 menu either.
+  @HostListener('document:contextmenu', ['$event'])
+  onContextMenu(ev: Event): void {
+    ev.preventDefault();
+  }
 
   async ngOnInit(): Promise<void> {
     if (!IS_TAURI) {

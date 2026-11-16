@@ -42,10 +42,13 @@ resvg = "0.43"
 usvg = "0.43"
 tiny-skia = "0.11"
 
-# GetLastInputInfo for the toast presence gate (OS input idle time).
+# GetLastInputInfo for the toast presence gate (OS input idle time);
+# window z-order for a widget that stands on the taskbar.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = [
   "Win32_Foundation",
   "Win32_System_SystemInformation",
+  "Win32_UI_Accessibility",
   "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
 ] }
