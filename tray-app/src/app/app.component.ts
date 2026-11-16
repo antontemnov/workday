@@ -31,6 +31,7 @@ import { TimerIslandComponent } from './timer/timer-island.component';
 import { currentTimer } from './timer/timer-clock.util';
 import { TimerWidgetService } from './timer/timer-widget.service';
 import { WidgetAction } from './timer/timer-widget.util';
+import { trayStatus } from './tray-status.util';
 import { currentCtxMenu } from './views/day-view/ctx-menu.util';
 import { DayViewComponent } from './views/day-view/day-view.component';
 import { loadSuggestionsMode, persistSuggestionsMode, type SuggestionsMode } from './views/day-view/suggestions-mode.util';
@@ -51,7 +52,10 @@ function timersSignature(timers: TimersResponse): string {
   return `${timers.counting}|${timers.timers.map(t => `${t.id}:${t.state}:${t.entryId ?? ''}`).join(',')}`;
 }
 
-type TrayKind = 'live' | 'pending' | 'idle' | 'paused' | 'none';
+// The tray icon is told again at least this often even when nothing changed:
+// a new screen scale is picked up by the next render.
+const TRAY_RESEND_MS = 60_000;
+
 type ActiveView = 'day' | 'sheet' | 'set' | 'setup';
 
 interface SensitivityPillOption {
@@ -171,6 +175,8 @@ export class AppComponent implements OnInit, OnDestroy {
   // blur and the click that caused the blur must both reach the daemon.
   private timerChain: Promise<unknown> = Promise.resolve();
   private timerPollTimer: ReturnType<typeof setInterval> | null = null;
+  private trayStatusSent: string = '';
+  private trayStatusSentAt: number = 0;
   @ViewChild(TimerIslandComponent, { read: ElementRef }) private islandRef?: ElementRef<HTMLElement>;
 
   // Toast + action gate
@@ -580,41 +586,20 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ─── Tray icon sync ────────────────────────────────────────────────────
 
+  // Who counts — a session, a timer or nobody — and the tooltip. Rust is told
+  // only when the icon or the text changes.
   private syncTrayStatus(): void {
-    const open = this.openSessions;
-    let kind: TrayKind = 'none';
-    let label = 'Workday';
-
-    if (open.length > 0) {
-      const live    = open.find(s => !s.paused && s.state === 'active');
-      const pending = open.find(s => !s.paused && s.state !== 'active');
-      const idle    = open.find(s => s.paused && s.pauseSource === 'idle_timeout');
-      const paused  = open.find(s => s.paused);
-
-      if (live) {
-        kind = 'live';
-        label = `Workday — ${this.repoName(live.repo)}${live.task ? ' · ' + live.task : ''}`;
-      } else if (pending) {
-        kind = 'pending';
-        label = `Workday — ${this.repoName(pending.repo)} (pending)`;
-      } else if (idle) {
-        kind = 'idle';
-        label = `Workday — idle (${this.repoName(idle.repo)})`;
-      } else if (paused) {
-        kind = 'paused';
-        label = `Workday — paused (${this.repoName(paused.repo)})`;
-      }
-    }
-
-    void invoke('set_tray_status', { kind, tooltip: label }).catch(() => {});
+    const now = Date.now();
+    const status = trayStatus(this.openSessions, this.timers, now);
+    const key = status.kind + '|' + status.tooltip;
+    if (key === this.trayStatusSent && now - this.trayStatusSentAt < TRAY_RESEND_MS) return;
+    this.trayStatusSent = key;
+    this.trayStatusSentAt = now;
+    void invoke('set_tray_status', { kind: status.kind, tooltip: status.tooltip }).catch(() => {});
   }
 
   private get openSessions(): SessionDetail[] {
     return this.data?.sessions.filter(s => !s.closedBy) ?? [];
-  }
-
-  private repoName(repoPath: string): string {
-    return repoPath.split('/').pop() ?? repoPath;
   }
 
   // ─── Manual timers ─────────────────────────────────────────────────────
@@ -650,6 +635,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private showTimers(timers: TimersResponse | null): void {
     this.timers = timers;
     this.timerWidget.sync(timers);
+    this.syncTrayStatus();
   }
 
   // A click on the desktop widget: ⏸ / ▶ of a row, or the row off the desktop.

@@ -290,8 +290,8 @@ fn tray_icon_size(app: &AppHandle) -> u32 {
     ((16.0 * scale).round() as u32).clamp(16, 64)
 }
 
-/// Update the tray icon's status dot and tooltip.
-/// `kind` is one of: "live" | "pending" | "idle" | "paused" | "none".
+/// Update the tray icon's eyes and tooltip.
+/// `kind` is one of: "live" | "timer" | "pending" | "idle" | "paused" | "none".
 /// `tooltip` defaults to "Workday" when empty.
 #[tauri::command]
 fn set_tray_status(app: AppHandle, kind: String, tooltip: Option<String>) -> Result<(), String> {
