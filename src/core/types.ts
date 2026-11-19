@@ -237,8 +237,8 @@ export enum TimerState {
 export interface TimerSpan {
   readonly from: string;
   to: string | null;
-  // The entry's time was set by hand after this stretch: it is no longer
-  // part of the timer's share.
+  // A number smaller than the timer's time was typed into the entry: this
+  // stretch was cut off and is no longer part of the timer's time.
   off?: true;
 }
 
@@ -266,10 +266,12 @@ export interface TimerView {
   readonly activity: string | null;
   readonly added: boolean;         // feeds the ticket's manual added record
   readonly description: string;    // the entry's, or the no-ticket timer's own
-  // What the row shows at `asOf`: the entry's whole time (typed + share), or
-  // everything a no-ticket timer counted. A running one ticks on from there.
+  // The fed entry's whole time at `asOf` (typed + the timer's), or everything
+  // a no-ticket timer counted.
   readonly totalMs: number;
-  readonly shareMs: number;        // the timer's share inside totalMs — what Remove timer takes out
+  // The timer's own time at `asOf` — what its row shows and what Remove takes
+  // out. A running one ticks on from there.
+  readonly shareMs: number;
   readonly handMinutes: number;    // typed by hand; 0 for a no-ticket timer
   readonly hidden: boolean;
   readonly touchedAt: string;
@@ -291,9 +293,10 @@ export interface TimersResponse {
 export interface TimerActionResponse extends TimersResponse {
   // The timer the action left behind; null when it is gone (delete, cancel, remove).
   readonly timerId: string | null;
-  // bind / remove: the record after the action.
+  // bind / remove, describe and delete of a timer with a ticket: the record
+  // after the action. Absent after a delete that took the record along.
   readonly entry?: ManualEntryResponse;
-  // remove: minutes the timer took with it.
+  // remove / delete: minutes the timer took with it.
   readonly removedMinutes?: number;
 }
 

@@ -44,10 +44,10 @@ workday timer                          Today's manual timers
 workday timer new ["<desc>"]           Start a timer without a ticket
 workday timer start <#|id>             Start a timer (--entry <#|id> puts one on a manual entry)
 workday timer pause [#|id]             Pause a timer (default: the live one)
-workday timer describe <#|id> "<text>" Describe a timer without a ticket
+workday timer describe <#|id> "<text>" Describe a timer (one with a ticket: its entry's description)
 workday timer bind <#|id> <task> ["<desc>"]   Give a timer its ticket (--activity T, --minutes N)
 workday timer remove <entry #|id>      Remove the timer from an entry (its time goes)
-workday timer delete <#|id>            Delete a timer without a ticket
+workday timer delete <#|id>            Remove a timer (one with a ticket takes its time out of the entry)
 workday timer cancel <#|id>            Undo a New timer made by mistake
 workday timer hide <#|id>              Take a paused timer off the desktop widget
 workday timer widget [on|off]          Desktop widget switch
@@ -168,9 +168,12 @@ listed under Settings → Calendar and in `workday suggestions muted`.
 **Manual timers** cover work that leaves no trace in git. A timer is a source
 of time for a manual entry, not a record of its own: it adds whole minutes to
 the entry it feeds and remembers its own share, so `Remove timer` takes out
-exactly what it counted and leaves what was typed by hand. A timer started
-without a ticket (`workday timer new`) is outside the day total until it gets
-one (`workday timer bind`); bare Development time lands on the ticket's manual
+exactly what it counted and leaves what was typed by hand. A number typed
+into the entry does not touch what the timer counted; only a number smaller
+than that cuts the timer down to it. A timer with a ticket has no text of its
+own — its description is the entry's. A timer started without a ticket
+(`workday timer new`) is outside the day total until it gets one
+(`workday timer bind`); bare Development time lands on the ticket's manual
 added record, as any bare add does.
 
 One counts at a time — a session or a timer. Starting a timer supersedes the

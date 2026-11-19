@@ -118,13 +118,21 @@ test('time text: whole minutes, and seconds for what ticks', () => {
   assert.equal(formatTicking(62 * MINUTE + 5 * SECOND), '1h 02m 05s', 'seconds stay past the hour');
 });
 
+test('the row prints the timer\'s own time, not its record\'s', () => {
+  const at = nowMs;
+  const t = timer('a', TimerState.Running, { entryId: 'e1', totalMs: 4 * 60 * MINUTE + 5 * MINUTE, shareMs: 5 * MINUTE, handMinutes: 240 });
+  assert.equal(formatTimerTime(t, at, at), '5m 00s', 'four hours typed into the record are not the timer\'s');
+  assert.equal(formatTimerTime(t, at, at + 61 * SECOND), '6m 01s');
+  assert.equal(liveMinutes(t, at, at + 61 * SECOND), 246, 'the record\'s whole minutes move with it');
+});
+
 test('a record at rest reads in minutes; whatever is on, and a loose timer, keeps seconds', () => {
   const ms = 47 * MINUTE + 15 * SECOND;
   const at = nowMs;
-  assert.equal(formatTimerTime(timer('a', TimerState.Paused, { entryId: 'e1', totalMs: ms }), at, at), '47m');
-  assert.equal(formatTimerTime(timer('b', TimerState.Running, { entryId: 'e1', totalMs: ms }), at, at), '47m 15s');
-  assert.equal(formatTimerTime(timer('c', TimerState.Waiting, { entryId: 'e1', totalMs: ms }), at, at), '47m 15s');
-  assert.equal(formatTimerTime(timer('d', TimerState.Paused, { totalMs: ms }), at, at), '47m 15s');
+  assert.equal(formatTimerTime(timer('a', TimerState.Paused, { entryId: 'e1', shareMs: ms }), at, at), '47m');
+  assert.equal(formatTimerTime(timer('b', TimerState.Running, { entryId: 'e1', shareMs: ms }), at, at), '47m 15s');
+  assert.equal(formatTimerTime(timer('c', TimerState.Waiting, { entryId: 'e1', shareMs: ms }), at, at), '47m 15s');
+  assert.equal(formatTimerTime(timer('d', TimerState.Paused, { shareMs: ms }), at, at), '47m 15s');
 });
 
 test('the chip shows the running timer, else the waiting one, else the last touched', () => {
@@ -164,7 +172,7 @@ function makeTime(t: TimerView): TimeHarness {
 }
 
 test('time node: a running timer ticks by itself and tells of every crossed minute', () => {
-  const h = makeTime(timer('t1', TimerState.Running, { totalMs: 58 * SECOND }));
+  const h = makeTime(timer('t1', TimerState.Running, { totalMs: 58 * SECOND, shareMs: 58 * SECOND }));
   assert.equal(h.comp.text, '0m 58s');
   advance(SECOND);
   assert.equal(h.comp.text, '0m 59s');
@@ -181,15 +189,15 @@ test('time node: a running timer ticks by itself and tells of every crossed minu
 
 test('time node: nothing ticks at rest, a pause stops the clock', () => {
   timerQueue = [];
-  const h = makeTime(timer('t1', TimerState.Paused, { totalMs: 5 * MINUTE }));
+  const h = makeTime(timer('t1', TimerState.Paused, { shareMs: 5 * MINUTE }));
   assert.equal(timerQueue.length, 0, 'no interval for a paused timer');
-  h.set(timer('t1', TimerState.Running, { totalMs: 5 * MINUTE }));
+  h.set(timer('t1', TimerState.Running, { shareMs: 5 * MINUTE }));
   assert.equal(timerQueue.length, 1);
-  h.set(timer('t1', TimerState.Running, { totalMs: 5 * MINUTE }));
+  h.set(timer('t1', TimerState.Running, { shareMs: 5 * MINUTE }));
   assert.equal(timerQueue.length, 1, 'a poll does not start a second clock');
   advance(3 * SECOND);
   assert.equal(h.comp.text, '5m 03s');
-  h.set(timer('t1', TimerState.Waiting, { totalMs: 5 * MINUTE + 3 * SECOND }));
+  h.set(timer('t1', TimerState.Waiting, { shareMs: 5 * MINUTE + 3 * SECOND }));
   assert.equal(timerQueue.length, 0, 'a session took the count — the clock stops');
   advance(10 * SECOND);
   assert.equal(h.comp.text, '5m 03s');
@@ -197,7 +205,7 @@ test('time node: nothing ticks at rest, a pause stops the clock', () => {
 
 test('time node: a leaving node takes its clock along; a pinned box follows the text', () => {
   timerQueue = [];
-  const h = makeTime(timer('t1', TimerState.Running, { totalMs: 9 * MINUTE + 59 * SECOND }));
+  const h = makeTime(timer('t1', TimerState.Running, { shareMs: 9 * MINUTE + 59 * SECOND }));
   assert.equal(h.comp.pinnedWidth, null);
   h.comp.pinWidth = true;
   assert.equal(h.comp.pinnedWidth, '9m 59s'.length);
@@ -263,7 +271,7 @@ function makeIsland(timers: readonly TimerView[]): IslandHarness {
 }
 
 const loose = (id: string, description: string, state: TimerView['state'] = TimerState.Paused): TimerView =>
-  timer(id, state, { description, totalMs: 12 * MINUTE });
+  timer(id, state, { description, shareMs: 12 * MINUTE });
 
 test('island: every timer of the day; task? leaves only its own row', () => {
   const h = makeIsland([loose('a', 'ops help'), loose('b', 'incident call', TimerState.Running)]);
@@ -413,6 +421,71 @@ test('New timer: a click away with nothing typed ends the birth, sends nothing',
   assert.equal(h.settled(), 1);
   assert.equal(h.described.length, 0);
   assert.equal(h.cancelled.length, 0);
+});
+
+const ticketed = (id: string, description: string, over: Partial<TimerView> = {}): TimerView =>
+  timer(id, TimerState.Running, { entryId: 'e-' + id, task: 'ATL-6712', activity: 'Other', description, shareMs: 12 * MINUTE, ...over });
+
+test('island: a timer with a ticket edits its record\'s description from its row', () => {
+  const t = ticketed('a', 'release notes');
+  const h = makeIsland([t]);
+  assert.equal(h.comp.isDescribable(t), true);
+  h.comp.onDescFocus(t);
+  h.comp.onDescInput(t, 'release notes, part 2');
+  h.comp.onDescBlur(t);
+  assert.deepEqual(h.described, [{ id: 'a', description: 'release notes, part 2' }]);
+  assert.equal(h.comp.descriptionOf(t), 'release notes, part 2');
+});
+
+test('island: an emptied description of a record is put back, never sent', () => {
+  const t = ticketed('a', 'release notes');
+  const h = makeIsland([t]);
+  h.comp.onDescFocus(t);
+  h.comp.onDescInput(t, '   ');
+  const emptied = field('   ');
+  h.comp.onDescKeydown(t, key('Enter', emptied) as never);
+  assert.equal(h.described.length, 0);
+  assert.equal(emptied.value, 'release notes', 'put back at once');
+  assert.equal(h.comp.descriptionOf(t), 'release notes');
+
+  const blurred = field('');
+  h.comp.onDescFocus(t);
+  h.comp.onDescInput(t, '');
+  h.comp.onDescBlur(t, blurred as never); // a click away
+  assert.equal(h.described.length, 0);
+  assert.equal(blurred.value, 'release notes');
+
+  const own = loose('b', 'ops help');
+  h.refresh([t, own]);
+  h.comp.onDescFocus(own);
+  h.comp.onDescInput(own, '');
+  h.comp.onDescBlur(own);
+  assert.deepEqual(h.described, [{ id: 'b', description: '' }], 'a no-ticket timer may lose its text');
+});
+
+test('island: a description the daemon refused goes back to the stored text', () => {
+  const t = ticketed('a', 'release notes');
+  const h = makeIsland([t]);
+  h.comp.onDescFocus(t);
+  h.comp.onDescInput(t, 'release notes, part 2');
+  h.comp.onDescBlur(t);
+  assert.equal(h.comp.descriptionOf(t), 'release notes, part 2');
+  h.comp.forgetSent('a');
+  assert.equal(h.comp.descriptionOf(t), 'release notes');
+});
+
+test('island: manual added has no text to edit; a closed month freezes a record\'s row', () => {
+  const added = ticketed('a', '', { added: true });
+  const record = ticketed('b', 'release notes');
+  const own = loose('c', 'ops help');
+  const h = makeIsland([added, record, own]);
+  assert.equal(h.comp.isDescribable(added), false);
+  assert.equal(h.comp.isFrozen(record), false);
+  h.comp.locked = true;
+  assert.equal(h.comp.isFrozen(record), true, 'Remove and the text act on the record');
+  assert.equal(h.comp.isDescribable(record), false);
+  assert.equal(h.comp.isFrozen(own), false, 'a no-ticket timer touches no record');
+  assert.equal(h.comp.isDescribable(own), true);
 });
 
 test('island: a description sent for a timer that is gone is forgotten', () => {

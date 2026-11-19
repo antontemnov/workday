@@ -1282,9 +1282,18 @@ export class HttpServer {
         case 'pause':
           return answer(timers.pause(text('id') || undefined).id);
 
-        case 'describe':
+        case 'describe': {
           if (!text('id')) return { ok: false, error: 'Missing id' };
-          return answer(timers.describe(text('id'), text('description')).id);
+          // A timer with a ticket has no text of its own: this edits its entry.
+          if (timers.entryIdOf(text('id')) !== null) {
+            const refusal = await this.editRefusal(null);
+            if (refusal) return { ok: false, error: refusal };
+          }
+          const { timer, entry } = timers.describe(text('id'), text('description'));
+          if (!entry) return answer(timer.id);
+          this.relearnFromEditedEntry(entry);
+          return answer(timer.id, { entry: this.toEntryData(entry, log()) });
+        }
 
         case 'bind': {
           if (!text('id')) return { ok: false, error: 'Missing id' };
@@ -1311,10 +1320,17 @@ export class HttpServer {
           return answer(null, { entry: this.toEntryData(entry, log()), removedMinutes });
         }
 
-        case 'delete':
+        case 'delete': {
           if (!text('id')) return { ok: false, error: 'Missing id' };
-          timers.delete(text('id'));
-          return answer(null);
+          // A timer with a ticket takes its time out of the entry — an edit of the day.
+          if (timers.entryIdOf(text('id')) !== null) {
+            const refusal = await this.editRefusal(null);
+            if (refusal) return { ok: false, error: refusal };
+          }
+          const { entry, removedMinutes, deletedEntry } = timers.delete(text('id'));
+          if (deletedEntry) recordEntryDeletion(log().date, deletedEntry.task, deletedEntry.id);
+          return answer(null, entry ? { entry: this.toEntryData(entry, log()), removedMinutes } : {});
+        }
 
         case 'cancel':
           if (!text('id')) return { ok: false, error: 'Missing id' };

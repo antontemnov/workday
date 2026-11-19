@@ -7,8 +7,10 @@
  *   1. New timer: it counts, the Day data carries the island.
  *   2. One real edit in the repo does not take the count from it.
  *   3. task? → Log: the timer gets its ticket and goes on running.
- *   4. Pause / start; Remove timer is refused while nothing is typed by
- *      hand, and passes after the time was set by hand.
+ *   4. Pause / start; the text of a timer with a ticket is its entry's
+ *      description; Remove timer is refused while nothing is typed by hand
+ *      and passes after a number was typed; Remove in the island takes a
+ *      ticketed timer out of its entry, or the entry grown from it alone.
  *   5. The CLI drives the same timers.
  *   6. An observation gap (sleep): the timer is cut and goes on by itself.
  *   7. The day rolls over: the timer without a ticket stays in the old
@@ -110,7 +112,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit): P
 interface ApiResult<T> { ok: boolean; data?: T; error?: string }
 interface TimerRow { id: string; state: string; entryId: string | null; task: string | null; description: string; totalMs: number; shareMs: number; handMinutes: number }
 interface Timers { date: string; counting: string; desktopWidget: boolean; timers: TimerRow[]; timerId?: string | null; entry?: { id: string; minutes: number; task: string }; removedMinutes?: number }
-interface Today { date: string; manualEntries: { id: string; minutes: number; task: string }[]; timers?: Timers }
+interface Today { date: string; manualEntries: { id: string; minutes: number; task: string; description: string }[]; timers?: Timers }
 interface StoredTimer { id: string; entryId: string | null; state: string; description: string; spans: { from: string; to: string | null }[] }
 interface StoredDay { timers?: StoredTimer[]; manualEntries: { id: string; minutes: number }[] }
 
@@ -212,6 +214,18 @@ try {
     assert.notEqual(paused.data!.counting, 'timer');
     assert.equal((await timer('start', { entry: entryId })).data!.timers[0].state, 'running');
   });
+  await check('the text of a timer with a ticket is its entry\'s description', async () => {
+    const described = await timer('describe', { id: firstId, description: 'deploy, second try' });
+    assert.equal(described.ok, true, described.error);
+    assert.equal(described.data!.timerId, firstId);
+    assert.equal(described.data!.entry?.id, entryId);
+    assert.equal(described.data!.timers[0].description, 'deploy, second try');
+    const today = (await api<Today>('/api/today')).data!;
+    assert.deepEqual(today.manualEntries.map(e => e.description), ['deploy, second try']);
+    const emptied = await timer('describe', { id: firstId, description: '  ' });
+    assert.equal(emptied.ok, false);
+    assert.match(emptied.error ?? '', /cannot be empty/);
+  });
   await check('Remove timer is refused while nothing is typed by hand', async () => {
     const refused = await timer('remove', { entry: entryId });
     assert.equal(refused.ok, false);
@@ -225,6 +239,28 @@ try {
     assert.equal(removed.data!.removedMinutes, 0);
     assert.equal(removed.data!.entry?.minutes, 25);
     assert.equal(removed.data!.timers.length, 0);
+    assert.equal(storedDay(day).timers, undefined);
+  });
+  await check('Remove in the island: a ticketed timer goes, the typed number stays', async () => {
+    const started = await timer('start', { entry: entryId });
+    assert.equal(started.ok, true, started.error);
+    const removed = await timer('delete', { id: started.data!.timerId });
+    assert.equal(removed.ok, true, removed.error);
+    assert.equal(removed.data!.entry?.minutes, 25);
+    assert.equal(removed.data!.timers.length, 0);
+    assert.notEqual(removed.data!.counting, 'timer');
+  });
+  await check('Remove in the island: an entry grown from the timer alone goes with it', async () => {
+    const fresh = await timer('new', { description: 'retro' });
+    const grown = await timer('bind', { id: fresh.data!.timerId, task: 'ATL-1', activity: 'Other', description: 'retro' });
+    assert.equal(grown.ok, true, grown.error);
+    assert.equal((await api<Today>('/api/today')).data!.manualEntries.length, 2);
+    const removed = await timer('delete', { id: grown.data!.timerId });
+    assert.equal(removed.ok, true, removed.error);
+    assert.equal(removed.data!.entry, undefined);
+    assert.equal(removed.data!.timers.length, 0);
+    const today = (await api<Today>('/api/today')).data!;
+    assert.deepEqual(today.manualEntries.map(e => e.id), [entryId]);
     assert.equal(storedDay(day).timers, undefined);
   });
 

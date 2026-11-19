@@ -102,11 +102,19 @@ const api = new Proxy({}, {
 });
 
 let zoneRuns = 0;
+// What the shell tells the desktop widget: a birth, then the rows that carry it.
+const widgetTold: string[] = [];
+const widget = {
+  start: async (): Promise<void> => {},
+  stop: (): void => {},
+  sync: (rows: TimersResponse | null): void => { widgetTold.push(`rows:${rows?.timers.map(t => t.id).join(',') ?? ''}`); },
+  announceBirth: (id: string): void => { widgetTold.push(`birth:${id}`); },
+};
 const shell = new AppComponent(
   api as never,
   { start: (): void => {}, stop: (): void => {} } as never,
   { detectChanges: (): void => {} } as never,
-  { start: async (): Promise<void> => {}, stop: (): void => {}, sync: (): void => {} } as never,
+  widget as never,
   { run: (fn: () => void): void => { zoneRuns++; fn(); } } as never,
 );
 const hidden = shell as unknown as { watchTrayMenu(): Promise<void> };
@@ -171,10 +179,16 @@ await test('a click starts a timer through the gate, inside the zone', async () 
   await settle();
   const started = apiCalls.filter(c => c.name === 'newTimer');
   assert.equal(started.length, 1);
-  assert.deepEqual(started[0].args, [], 'no description — it is typed later, in the island');
+  assert.deepEqual(started[0].args, [], 'no description — it is typed on the widget');
   assert.equal(zoneRuns, before + 1);
   assert.ok(apiCalls.some(c => c.name === 'getToday'), 'the day is read again after the action');
   assert.equal(shell.actionPending, false);
+});
+
+await test('the widget is told of the birth before the rows that carry it', async () => {
+  const birth = widgetTold.indexOf('birth:fresh');
+  assert.ok(birth >= 0, 'the row is born in the edit on the widget');
+  assert.equal(widgetTold[birth + 1], 'rows:fresh');
 });
 
 await test('the window stays as it is: the island is not opened, no caret waits', async () => {

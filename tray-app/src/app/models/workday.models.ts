@@ -127,8 +127,8 @@ export interface TimerView {
   readonly description: string;    // the entry's, or the no-ticket timer's own
   // What the row shows at `asOf`: the entry's whole time (typed + share), or
   // everything a no-ticket timer counted. A running one ticks on from there.
-  readonly totalMs: number;
-  readonly shareMs: number;        // the timer's share inside totalMs — what Remove timer takes out
+  readonly totalMs: number;        // the fed entry's whole time (typed + the timer's)
+  readonly shareMs: number;        // the timer's own time — what its row shows and what Remove takes out
   readonly handMinutes: number;    // typed by hand; 0 for a no-ticket timer
   readonly hidden: boolean;
   readonly touchedAt: string;

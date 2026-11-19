@@ -10,7 +10,8 @@
 }
 
 // At rest the plate is 65 % and the contents are full strength; under the
-// cursor it is an opaque card of the island's material.
+// cursor, and while a description is typed, it is an opaque card of the
+// island's material.
 .w {
   --plate: 0.65;
   position: absolute;
@@ -29,7 +30,7 @@
   box-shadow: inset 0 0 0 1px rgb(205 214 244 / calc(var(--plate) * 0.14));
   transition: background-color 0.35s ease, box-shadow 0.35s ease;
 
-  &:hover, &.drag {
+  &:hover, &.drag, &.ed {
     background: #181825;
     box-shadow: inset 0 0 0 1px #313244;
   }
@@ -118,7 +119,29 @@
 .w-row.pause .w-k { color: #a6adc8; }
 .w-row.pause .w-d { color: #7f849c; }
 
-// ─── Hide: not seen at rest, there when the cursor is over the widget ───
+// The description is typed right on the plate; the button in the slot keeps it.
+.w-in {
+  flex: 1;
+  min-width: 0;
+  height: 1.75em;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: #cdd6f4;
+  font: inherit;
+  line-height: 1;
+  caret-color: ink.$run;
+  box-shadow: 0 1px 0 rgb(205 214 244 / 0.2);
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+
+  &::placeholder { color: #585b70; }
+}
+
+// ─── The slot: not seen at rest, there when the cursor is over the widget ───
 .w-acts {
   margin-left: auto;
   width: 1.6em;
@@ -130,7 +153,7 @@
 }
 
 .w:hover .w-acts { opacity: 0.45; }
-.w .w-row:hover .w-acts { opacity: 1; }
+.w .w-row:hover .w-acts, .w .w-acts.on { opacity: 1; }
 
 .w-x {
   width: 1.6em;
@@ -149,6 +172,12 @@
   svg { width: 1.14em; height: 1.14em; display: block; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 
   &:hover { color: #cdd6f4; background: rgb(205 214 244 / 0.09); }
+
+  &.ok {
+    color: #cdd6f4;
+
+    svg { stroke-width: 1.7; }
+  }
 }
 
 // ─── The width changes what a row shows ─────────────────────────────────

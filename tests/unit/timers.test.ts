@@ -234,14 +234,28 @@ test('bare Development on a ticket without a record creates the record', () => {
   assert.equal(entry.minutes, 3);
 });
 
-test('a number changed in the form is typed by hand: the timer counts on from it', () => {
+test('a bigger number in the form: the record gets it, the timer keeps what it counted', () => {
+  const log = makeLog();
+  const timer = newTimer(log, 'review', ago(47)).timer;
+  const { entry } = bindTimer(log, timer.id, { task: 'ATL-7', activity: 'CodeReview', description: 'review', minutes: 60 }, config);
+  assert.equal(entry.minutes, 60);
+  assert.equal(timer.creditedMinutes, 47);
+  assert.equal(handMinutes(log, entry), 13);
+  assert.equal(timer.spans.length, 1, 'the timer is not touched');
+  assert.equal(timer.state, TimerState.Running);
+  creditTimers(log, Date.now() + 2 * MINUTE);
+  assert.equal(entry.minutes, 62);
+});
+
+test('a smaller number in the form cuts the timer down to it', () => {
   const log = makeLog();
   const timer = newTimer(log, 'review', ago(47)).timer;
   const { entry } = bindTimer(log, timer.id, { task: 'ATL-7', activity: 'CodeReview', description: 'review', minutes: 30 }, config);
   assert.equal(entry.minutes, 30);
-  assert.equal(handMinutes(log, entry), 30);
-  assert.equal(timer.creditedMinutes, 0);
-  assert.ok(shareMs(timer, Date.now()) < MINUTE, 'the share starts over');
+  assert.equal(timer.creditedMinutes, 30);
+  assert.equal(handMinutes(log, entry), 0);
+  const share = shareMs(timer, Date.now());
+  assert.ok(share >= 30 * MINUTE && share < 31 * MINUTE, 'the timer reads the record\'s number');
   assert.ok(countedMs(timer, Date.now()) >= 47 * MINUTE, 'the history stays');
   assert.equal(timer.state, TimerState.Running);
   creditTimers(log, Date.now() + 2 * MINUTE);
@@ -284,21 +298,69 @@ test('binding is validated before anything changes', () => {
   assert.equal(log.manualEntries.length, 1);
 });
 
-console.log('Timer — the entry\'s time set by hand');
+console.log('Timer — a number typed into the entry');
 
-test('a changed number is the new base; the timer counts on from it', () => {
+test('a typed number does not touch what the timer counted', () => {
+  const log = makeLog();
+  const entry = described(log, 'ATL-1', 120);
+  const timer = startEntryTimer(log, entry.id, ago(5)).timer;
+  const { entry: edited } = editManualEntry(log, entry.id, { minutes: 240 }, config);
+  assert.equal(edited.minutes, 240, 'the record is the number typed');
+  assert.equal(timer.creditedMinutes, 5, 'the timer still reads five minutes');
+  assert.equal(handMinutes(log, entry), 235);
+  assert.equal(timer.state, TimerState.Running);
+  assert.equal(timer.spans.length, 1);
+  assert.equal(timer.spans[0].off, undefined);
+  creditTimers(log, Date.now() + 3 * MINUTE);
+  assert.equal(entry.minutes, 243);
+});
+
+test('a number below the entry but not below the timer leaves the timer whole', () => {
   const log = makeLog();
   const entry = described(log, 'ATL-1', 120);
   const timer = startEntryTimer(log, entry.id, ago(47)).timer;
-  const { entry: edited } = editManualEntry(log, entry.id, { minutes: 90 }, config);
-  assert.equal(edited.minutes, 90);
-  assert.equal(handMinutes(log, entry), 90);
-  assert.equal(timer.creditedMinutes, 0);
-  assert.equal(timer.state, TimerState.Running);
-  assert.equal(timer.spans.length, 2, 'the running stretch is split at the edit');
-  assert.equal(timer.spans[0].off, true);
+  editManualEntry(log, entry.id, { minutes: 90 }, config);
+  assert.equal(entry.minutes, 90);
+  assert.equal(timer.creditedMinutes, 47);
+  assert.equal(handMinutes(log, entry), 43);
+  assert.equal(timer.spans.length, 1);
+});
+
+test('a number smaller than the timer cuts the timer down to it', () => {
+  const log = makeLog();
+  const timer = newTimer(log, 'call', ago(190)).timer;
+  const { entry } = bindTimer(log, timer.id, { task: 'ATL-1', activity: 'Meeting', description: 'call' }, config);
+  assert.equal(entry.minutes, 190, 'the timer was left running for 3h 10m');
+  editManualEntry(log, entry.id, { minutes: 150 }, config);
+  assert.equal(entry.minutes, 150);
+  assert.equal(timer.creditedMinutes, 150);
+  assert.equal(handMinutes(log, entry), 0);
+  const share = shareMs(timer, Date.now());
+  assert.ok(share >= 150 * MINUTE && share < 151 * MINUTE, 'the timer reads 2h 30m too');
+  assert.equal(timer.state, TimerState.Running, 'a running timer counts on');
+  assert.equal(timer.spans.filter(span => span.off).length, 1, 'the latest stretch is cut off');
+  assert.ok(countedMs(timer, Date.now()) >= 190 * MINUTE, 'the history stays');
   creditTimers(log, Date.now() + 3 * MINUTE);
-  assert.equal(entry.minutes, 93);
+  assert.equal(entry.minutes, 153);
+});
+
+test('the cut takes the latest stretches first and splits the one it falls into', () => {
+  const log = makeLog();
+  const entry = described(log, 'ATL-1', 10);
+  const timer = startEntryTimer(log, entry.id, ago(100)).timer;
+  pauseTimer(log, timer, ago(80));
+  startTimer(log, timer, ago(60));
+  pauseTimer(log, timer, ago(30));
+  startTimer(log, timer, ago(10));
+  pauseTimer(log, timer, ago(0));
+  assert.equal(entry.minutes, 10 + 20 + 30 + 10);
+  editManualEntry(log, entry.id, { minutes: 35 }, config);
+  assert.equal(timer.creditedMinutes, 35);
+  assert.equal(shareMs(timer, Date.now()), 35 * MINUTE);
+  assert.deepEqual(timer.spans.map(span => span.off === true), [false, false, true, true]);
+  assert.equal(timer.spans[1].to, timer.spans[2].from, 'the middle stretch is split at the cut');
+  assert.equal(timer.state, TimerState.Paused, 'a paused timer stays paused');
+  assert.equal(timer.spans.every(span => span.to !== null), true);
 });
 
 test('an unchanged number, or a description alone, leaves the timer untouched', () => {
@@ -313,7 +375,7 @@ test('an unchanged number, or a description alone, leaves the timer untouched', 
   assert.equal(timer.spans.length, 1);
 });
 
-test('manual added: an absolute set is a base, a bare add is typed on top', () => {
+test('manual added: an absolute set keeps the timer, a bare add is typed on top', () => {
   const log = makeLog();
   const record = bare(log, 'ATL-7', 30);
   const timer = startEntryTimer(log, record.id, ago(20)).timer;
@@ -327,8 +389,13 @@ test('manual added: an absolute set is a base, a bare add is typed on top', () =
 
   setAddedMinutes(log, 'ATL-7', 40, config);
   assert.equal(record.minutes, 40);
-  assert.equal(timer.creditedMinutes, 0);
-  assert.equal(handMinutes(log, record), 40);
+  assert.equal(timer.creditedMinutes, 20);
+  assert.equal(handMinutes(log, record), 20);
+
+  setAddedMinutes(log, 'ATL-7', 12, config);
+  assert.equal(record.minutes, 12);
+  assert.equal(timer.creditedMinutes, 12, 'a total below the timer cuts it down');
+  assert.equal(handMinutes(log, record), 0);
 });
 
 test('the 8h cap guards what is typed, not what the timer counted', () => {
@@ -342,16 +409,21 @@ test('the 8h cap guards what is typed, not what the timer counted', () => {
   assert.throws(() => bare(log, 'ATL-7', 440), /Max is 480/);
 });
 
-test('Tempo\'s number taken for an entry is a base as well', () => {
+test('Tempo\'s number taken for an entry follows the same rule', () => {
   const log = makeLog();
   const entry = described(log, 'ATL-1', 60);
   const timer = startEntryTimer(log, entry.id, ago(10)).timer;
   pauseTimer(log, timer, ago(0));
   overwriteEntryFromTempo(log, entry.id, { minutes: 45, description: 'incident call', activity: 'Meeting' });
   assert.equal(entry.minutes, 45);
-  assert.equal(timer.creditedMinutes, 0);
+  assert.equal(timer.creditedMinutes, 10);
+  assert.equal(handMinutes(log, entry), 35);
   overwriteEntryFromTempo(log, entry.id, { minutes: 45, description: 'renamed', activity: 'Meeting' });
-  assert.equal(timer.spans.every(span => span.off), true);
+  assert.equal(timer.spans.some(span => span.off), false);
+  overwriteEntryFromTempo(log, entry.id, { minutes: 4, description: 'renamed', activity: 'Meeting' });
+  assert.equal(entry.minutes, 4);
+  assert.equal(timer.creditedMinutes, 4);
+  assert.equal(shareMs(timer, Date.now()), 4 * MINUTE);
 });
 
 console.log('Timer — Remove timer, Delete');
@@ -376,14 +448,22 @@ test('an entry grown from the timer alone has no Remove timer', () => {
   assert.throws(() => removeEntryTimer(log, 'nope', nowIso()), /No timer on entry/);
 });
 
-test('after an edit of the time the timer leaves and the number stays', () => {
+test('after an edit of the time Remove timer still takes out what the timer counted', () => {
   const log = makeLog();
   const entry = described(log, 'ATL-1', 120);
   startEntryTimer(log, entry.id, ago(47));
   editManualEntry(log, entry.id, { minutes: 150 }, config);
   const { removedMinutes } = removeEntryTimer(log, entry.id, nowIso());
-  assert.equal(removedMinutes, 0);
-  assert.equal(entry.minutes, 150);
+  assert.equal(removedMinutes, 47);
+  assert.equal(entry.minutes, 103);
+});
+
+test('an entry cut down to its timer has nothing typed by hand left', () => {
+  const log = makeLog();
+  const entry = described(log, 'ATL-1', 120);
+  startEntryTimer(log, entry.id, ago(47));
+  editManualEntry(log, entry.id, { minutes: 30 }, config);
+  assert.throws(() => removeEntryTimer(log, entry.id, nowIso()), /Nothing typed by hand/);
 });
 
 test('deleting an entry deletes its timer', () => {
@@ -414,6 +494,19 @@ test('deleting a ticket\'s tracked block deletes the timer of its manual added r
 });
 
 console.log('Timer — entries merging');
+
+test('an entry retired into manual added with a smaller number brings a cut timer', () => {
+  const log = makeLog();
+  const record = bare(log, 'ATL-7', 30);
+  const entry = addManualEntry(log, { task: 'ATL-7', minutes: 20, description: 'spike', activity: 'Development' }, config);
+  const timer = startEntryTimer(log, entry.id, ago(40)).timer;
+  const { entry: target } = editManualEntry(log, entry.id, { description: '', minutes: 25 }, config);
+  assert.equal(target, record);
+  assert.equal(record.minutes, 55, '30 of the record + the 25 typed');
+  assert.equal(timer.entryId, record.id);
+  assert.equal(timer.creditedMinutes, 25);
+  assert.equal(handMinutes(log, record), 30);
+});
 
 test('an entry edited down to bare Development hands its timer to manual added', () => {
   const log = makeLog();

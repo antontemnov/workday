@@ -642,6 +642,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   async updateManualEntry(target: string, patch: ManualEntryPatch, _date?: string): Promise<ApiResponse<ManualEntryResponse>> {
     await delay(150);
+    this.creditMockTimers(Date.now());
     const idx = this.mockManualEntries.findIndex(e => e.id === target);
     if (idx < 0) return { ok: false, error: `Manual entry not found: ${target}` };
     const updated: ManualEntry = {
@@ -653,17 +654,18 @@ export class MockWorkdayApiService extends WorkdayApiService {
     if (!updated.description && updated.activity !== DEVELOPMENT_ACTIVITY) {
       return { ok: false, error: 'Description is required (only Development may omit it)' };
     }
-    if (updated.minutes !== this.mockManualEntries[idx].minutes) this.retireMockShare(target);
+    this.fitMockTimer(target, updated.minutes);
     this.mockManualEntries = this.mockManualEntries.map((e, i) => i === idx ? updated : e);
     return { ok: true, data: this.toEntryResponse(updated) };
   }
 
-  // The entry's time was set by hand: the number is the new base of its timer.
-  private retireMockShare(entryId: string): void {
+  // A number typed into the entry leaves its timer alone; only a number
+  // smaller than what the timer counted cuts the timer down to it.
+  private fitMockTimer(entryId: string, minutes: number): void {
     const timer = this.mockTimers.find(t => t.entryId === entryId);
-    if (!timer) return;
-    timer.shareMs = 0;
-    timer.credited = 0;
+    if (!timer || minutes >= timer.credited) return;
+    timer.shareMs = minutes * 60_000;
+    timer.credited = minutes;
     if (timer.runningSince !== null) timer.runningSince = Date.now();
   }
 
@@ -838,9 +840,18 @@ export class MockWorkdayApiService extends WorkdayApiService {
     await delay(120);
     const timer = this.mockTimers.find(t => t.id === timerId);
     if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
-    if (timer.entryId !== null) return { ok: false, error: 'A timer with a ticket takes its description from the entry' };
-    timer.description = description.trim();
-    return this.mockTimerAnswer(timer.id);
+    if (timer.entryId === null) {
+      timer.description = description.trim();
+      return this.mockTimerAnswer(timer.id);
+    }
+    // A timer with a ticket has no text of its own: this edits its entry.
+    const entry = this.mockManualEntries.find(e => e.id === timer.entryId);
+    if (!entry) return { ok: false, error: `Manual entry not found: ${timer.entryId}` };
+    if (!description.trim()) return { ok: false, error: 'Description cannot be empty' };
+    if (entry.added) return { ok: false, error: 'Manual added time takes minutes only — log a described entry instead' };
+    const edited: ManualEntry = { ...entry, description: description.trim() };
+    this.mockManualEntries = this.mockManualEntries.map(e => e.id === entry.id ? edited : e);
+    return this.mockTimerAnswer(timer.id, { entry: this.toEntryResponse(edited) });
   }
 
   async bindTimer(timerId: string, input: TimerBindInput): Promise<ApiResponse<TimerActionResponse>> {
@@ -863,11 +874,16 @@ export class MockWorkdayApiService extends WorkdayApiService {
     }
     const nowMs = Date.now();
     if (input.minutes !== undefined) {
-      // A number typed in the form is the record's base; the timer counts on from it.
+      // The record gets the typed number; the timer keeps what it counted and
+      // is cut down only when the number is smaller.
       const typed = input.minutes;
-      this.mockManualEntries = this.mockManualEntries.map(e => e.id === entry.id ? { ...e, minutes: e.minutes + typed } : e);
-      timer.shareMs = 0;
-      if (timer.runningSince !== null) timer.runningSince = nowMs;
+      const counted = Math.floor(this.mockTimerShare(timer, nowMs) / 60_000);
+      if (typed < counted) {
+        timer.shareMs = typed * 60_000;
+        if (timer.runningSince !== null) timer.runningSince = nowMs;
+      }
+      const byHand = Math.max(0, typed - counted);
+      this.mockManualEntries = this.mockManualEntries.map(e => e.id === entry.id ? { ...e, minutes: e.minutes + byHand } : e);
     }
     const resident = this.mockTimers.find(t => t.entryId === entry.id);
     if (resident) {
@@ -907,7 +923,18 @@ export class MockWorkdayApiService extends WorkdayApiService {
     await delay(120);
     const timer = this.mockTimers.find(t => t.id === timerId);
     if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
-    if (timer.entryId !== null) return { ok: false, error: 'A timer with a ticket is removed from its entry' };
+    const entryId = timer.entryId;
+    if (entryId === null) {
+      this.mockTimers = this.mockTimers.filter(t => t !== timer);
+      return this.mockTimerAnswer(null);
+    }
+    // A timer with a ticket leaves its entry with the time it counted; an
+    // entry grown from the timer alone goes with it.
+    this.haltMockTimer(timer, Date.now());
+    this.creditMockTimers(Date.now());
+    const entry = this.mockManualEntries.find(e => e.id === entryId);
+    if (entry && entry.minutes - timer.credited >= 1) return this.removeEntryTimer(entryId);
+    this.mockManualEntries = this.mockManualEntries.filter(e => e.id !== entryId);
     this.mockTimers = this.mockTimers.filter(t => t !== timer);
     return this.mockTimerAnswer(null);
   }

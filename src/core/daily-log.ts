@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
 import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualEntry, type ActiveInterval, type ReviewCheckout, type Timer } from './types.js';
-import { absorbTimer, creditTimers, dropEntryTimer, findEntryTimer, findTimer, handMinutes, markTimeSetByHand, relinkTimers, retireShare } from './timers.js';
+import { absorbTimer, creditTimers, dropEntryTimer, findEntryTimer, findTimer, fitTimerToEntry, handMinutes, relinkTimers, shareMs, trimShare } from './timers.js';
 import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ENTRY_MINUTES, MS_PER_MINUTE, DEFAULT_ACTIVITY, JIRA_KEY_PATTERN } from './constants.js';
 
 /** Generate short unique session id */
@@ -632,7 +632,7 @@ export function setAddedMinutes(log: DailyLog, taskInput: string, minutes: numbe
 
   assertWithinDayWindow(log, (minutes - (existing?.minutes ?? 0)) * MS_PER_MINUTE, config);
   unsealForEdit(log);
-  if (existing && existing.minutes !== minutes) markTimeSetByHand(log, existing.id, new Date().toISOString());
+  if (existing) fitTimerToEntry(log, existing.id, minutes, new Date().toISOString());
   return putAddedMinutes(log, task, minutes);
 }
 
@@ -749,7 +749,7 @@ export function overwriteEntryFromTempo(
   const entry = findManualEntry(log, id);
   if (!entry) throw new Error(`Manual entry not found: ${id}`);
   creditTimers(log, Date.now());
-  if (entry.minutes !== values.minutes) markTimeSetByHand(log, entry.id, new Date().toISOString());
+  fitTimerToEntry(log, entry.id, values.minutes, new Date().toISOString());
   entry.minutes = values.minutes;
   entry.description = values.description;
   entry.activity = values.activity;
@@ -767,6 +767,8 @@ export interface ManualEntryEdit {
  * Edit a manual entry (absolute set of provided fields). The manual added
  * record takes minutes only; a standalone entry edited down to bare
  * Development is absorbed by it. Budget re-checked when minutes increase.
+ * The entry's timer keeps what it counted; a number smaller than that cuts
+ * the timer down to it.
  * Validates everything before the first write. Throws on validation failure.
  */
 export function editManualEntry(
@@ -781,9 +783,6 @@ export function editManualEntry(
   if (!entry) throw new Error(`Manual entry not found: ${id}`);
 
   const minutes = patch.minutes ?? entry.minutes;
-  // A changed number is the new base of the entry's timer; an unchanged one
-  // leaves the timer alone.
-  const timeSet = patch.minutes !== undefined && patch.minutes !== entry.minutes;
   const nowIso = new Date().toISOString();
   if (patch.minutes !== undefined) {
     if (!Number.isFinite(minutes) || minutes <= 0) {
@@ -808,7 +807,7 @@ export function editManualEntry(
       throw new Error('Manual added time takes minutes only — log a described entry instead');
     }
     assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
-    if (timeSet) markTimeSetByHand(log, entry.id, nowIso);
+    fitTimerToEntry(log, entry.id, minutes, nowIso);
     entry.minutes = minutes;
     unsealForEdit(log);
     return { entry, absorbed: null };
@@ -817,12 +816,13 @@ export function editManualEntry(
   // Edited down to bare Development: the entry retires into manual added.
   if (isBareDevelopment(activity, description, entry.sourceRef)) {
     const record = findAddedEntry(log, entry.task);
-    const typed = (record ? handMinutes(log, record) : 0) + (timeSet ? minutes : handMinutes(log, entry));
+    const counted = findEntryTimer(log, entry.id)?.creditedMinutes ?? 0;
+    const typed = (record ? handMinutes(log, record) : 0) + Math.max(0, minutes - counted);
     if (typed > MAX_ENTRY_MINUTES) {
       throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h) of manual added time per ticket`);
     }
     assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
-    if (timeSet) markTimeSetByHand(log, entry.id, nowIso);
+    fitTimerToEntry(log, entry.id, minutes, nowIso);
     const absorbed = takeEntryOut(log, entry.id);
     const target = putAddedMinutes(log, absorbed.task, (record?.minutes ?? 0) + minutes);
     // The entry's timer goes on feeding the record that took its time.
@@ -831,7 +831,7 @@ export function editManualEntry(
   }
 
   assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
-  if (timeSet) markTimeSetByHand(log, entry.id, nowIso);
+  fitTimerToEntry(log, entry.id, minutes, nowIso);
   entry.minutes = minutes;
   entry.activity = activity;
   entry.description = description;
@@ -872,8 +872,9 @@ export interface TimerBinding {
  * With a description (or another activity) that is a new entry; bare
  * Development lands on the ticket's manual added record — whose own timer,
  * if it has one, takes this one in. `minutes` is passed only when the form's
- * number was changed: then the record gets that number as typed by hand and
- * the timer counts on from it. Throws on validation failure.
+ * number was changed: the record gets that number, the timer keeps what it
+ * counted and is cut down only when the number is smaller. Throws on
+ * validation failure.
  */
 export function bindTimer(
   log: DailyLog,
@@ -926,8 +927,10 @@ export function bindTimer(
   }
 
   if (typed !== undefined) {
-    retireShare(timer, nowIso);
-    entry.minutes += typed;
+    // The credit below brings the timer's minutes; the rest is typed by hand.
+    const counted = Math.floor(shareMs(timer, Date.parse(nowIso)) / MS_PER_MINUTE);
+    if (typed < counted) trimShare(timer, typed * MS_PER_MINUTE, nowIso);
+    entry.minutes += Math.max(0, typed - counted);
   }
 
   const resident = findEntryTimer(log, entry.id);

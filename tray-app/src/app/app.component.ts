@@ -181,6 +181,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private trayNewTimerSent: boolean | null = null;
   private unlistenTrayNewTimer: UnlistenFn | null = null;
   @ViewChild(TimerIslandComponent, { read: ElementRef }) private islandRef?: ElementRef<HTMLElement>;
+  @ViewChild(TimerIslandComponent) private island?: TimerIslandComponent;
 
   // Toast + action gate
   actionError: string | null = null;
@@ -666,10 +667,20 @@ export class AppComponent implements OnInit, OnDestroy {
     this.syncTrayStatus();
   }
 
-  // A click on the desktop widget: ⏸ / ▶ of a row, or the row off the desktop.
+  // The desktop widget: ⏸ / ▶ of a row, the row off the desktop, a
+  // description typed on the plate, Esc on a timer born there by mistake.
   private onWidgetAction(action: WidgetAction): void {
     if (action.kind === 'hide') {
       void this.runTimerAction(() => this.api.hideTimer(action.id));
+      return;
+    }
+    if (action.kind === 'describe') {
+      void this.runTimerAction(() => this.api.describeTimer(action.id, action.description))
+        .then(ok => { if (!ok) this.timerWidget.refuse(action.id); });
+      return;
+    }
+    if (action.kind === 'cancel') {
+      this.onTimerCancel(action.id);
       return;
     }
     const timer = this.timers?.timers.find(t => t.id === action.id);
@@ -695,9 +706,14 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   // New timer in the tray menu: it runs at once, the window stays as it is —
-  // hidden or open, the island shut.
+  // hidden or open, the island shut. On the desktop widget its row is born in
+  // the edit; with the widget switched off there is nothing to open.
   private onTrayNewTimer(): void {
-    void this.runTimerAction(() => this.api.newTimer());
+    void this.runTimerAction(() => this.api.newTimer(), data => {
+      if (data.timerId === null) return;
+      this.timerWidget.announceBirth(data.timerId);
+      this.timerWidget.sync(data);
+    });
   }
 
   // Start timer «text» in the Log cloud: the description is there already,
@@ -706,10 +722,15 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.runTimerAction(() => this.api.newTimer(text));
   }
 
+  // A timer with a ticket has no text of its own: the daemon edits its
+  // record's description, and may refuse — then the old text comes back.
   onTimerDescribe(e: { id: string; description: string }): void {
-    void this.runTimerAction(() => this.api.describeTimer(e.id, e.description));
+    void this.runTimerAction(() => this.api.describeTimer(e.id, e.description))
+      .then(ok => { if (!ok) this.island?.forgetSent(e.id); });
   }
 
+  // Remove: a no-ticket timer goes; one with a ticket leaves its record with
+  // the time it counted, a record grown from it alone goes too.
   onTimerDelete(timer: TimerView): void {
     if (this.timerPick?.id === timer.id) this.closeTimerPick();
     void this.runTimerAction(() => this.api.deleteTimer(timer.id));

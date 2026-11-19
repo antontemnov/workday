@@ -1,7 +1,8 @@
 // Desktop widget: a third webview window ("widget") that keeps the day's
 // manual timers on the desktop — transparent, always on top, off the taskbar,
-// never focusable (clicks land, focus never moves). Created on demand and
-// destroyed when there is nothing to show, like the toast.
+// not focusable (clicks land, focus never moves). Only while a description is
+// typed on it does it take the keyboard, and it gives it back after. Created
+// on demand and destroyed when there is nothing to show, like the toast.
 //
 // The window catches the mouse with its whole rectangle, so it is exactly the
 // plate: the frontend reports the plate's logical size (fit_widget) and Rust
@@ -395,6 +396,49 @@ pub fn widget_release(app: AppHandle) -> Result<(), String> {
     app.emit_to("main", "widget-geometry", geometry).map_err(|e| e.to_string())
 }
 
+/// A description is typed right on the widget: for that time the window takes
+/// the keyboard, and gives it back to the window that had it.
+#[tauri::command]
+pub fn widget_typing(app: AppHandle, on: bool) -> Result<(), String> {
+    let window = widget_window(&app)?;
+    if !on {
+        window.set_focusable(false).map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        keyboard::give_back(&window);
+        return Ok(());
+    }
+    window.set_focusable(true).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let taken = keyboard::take(&window);
+    #[cfg(not(windows))]
+    let taken = false;
+    if taken {
+        return Ok(());
+    }
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+/// The keyboard went to another window while a description is still being
+/// typed: that window is the one to get it back.
+#[tauri::command]
+pub fn widget_away(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    keyboard::remember(&widget_window(&app)?);
+    #[cfg(not(windows))]
+    let _ = app;
+    Ok(())
+}
+
+/// The daemon refused a description typed on the widget: its row shows the
+/// stored text again.
+#[tauri::command]
+pub fn widget_refused(app: AppHandle, id: String) -> Result<(), String> {
+    if app.get_webview_window(WIDGET_LABEL).is_none() {
+        return Ok(());
+    }
+    app.emit_to(WIDGET_LABEL, "widget-refused", id).map_err(|e| e.to_string())
+}
+
 /// A click on a row's button — the main window acts on it through its own gate.
 #[tauri::command]
 pub fn widget_action(app: AppHandle, action: serde_json::Value) -> Result<(), String> {
@@ -408,6 +452,57 @@ pub fn open_main(app: AppHandle) -> Result<(), String> {
     window.show().map_err(|e| e.to_string())?;
     let _ = window.unminimize();
     window.set_focus().map_err(|e| e.to_string())
+}
+
+// ─── The keyboard (Windows) ─────────────────────────────────────────────
+//
+// The widget never has the keyboard, except while a description is typed on
+// it. The window that had it before is remembered and gets it back — but only
+// if the keyboard is still on the widget: the user may be elsewhere already.
+#[cfg(windows)]
+mod keyboard {
+    use std::sync::atomic::{AtomicIsize, Ordering};
+    use tauri::WebviewWindow;
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, IsWindow, SetForegroundWindow,
+    };
+
+    /// The window the keyboard came from; 0 — none.
+    static OWNER: AtomicIsize = AtomicIsize::new(0);
+
+    fn handle(window: &WebviewWindow) -> isize {
+        window.hwnd().map(|hwnd| hwnd.0 as isize).unwrap_or(0)
+    }
+
+    pub fn remember(window: &WebviewWindow) {
+        let foreground = unsafe { GetForegroundWindow() } as isize;
+        if foreground != 0 && foreground != handle(window) {
+            OWNER.store(foreground, Ordering::Relaxed);
+        }
+    }
+
+    /// The click that asked for the edit was ours, so the plain call is
+    /// allowed to take the foreground. False — it was not: the caller falls
+    /// back to the window's own set_focus.
+    pub fn take(window: &WebviewWindow) -> bool {
+        remember(window);
+        let widget = handle(window);
+        widget != 0 && unsafe { SetForegroundWindow(widget as HWND) } != 0
+    }
+
+    pub fn give_back(window: &WebviewWindow) {
+        let owner = OWNER.swap(0, Ordering::Relaxed) as HWND;
+        unsafe {
+            if owner.is_null() || IsWindow(owner) == 0 {
+                return;
+            }
+            if GetForegroundWindow() as isize != handle(window) {
+                return;
+            }
+            SetForegroundWindow(owner);
+        }
+    }
 }
 
 // ─── On the taskbar (Windows) ───────────────────────────────────────────

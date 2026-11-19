@@ -60,12 +60,12 @@ function spanMs(span: TimerSpan, nowMs: number): number {
   return Math.max(0, end - Date.parse(span.from));
 }
 
-/** Everything the timer counted, hand-replaced stretches included. */
+/** Everything the timer counted, the stretches cut off by a smaller number included. */
 export function countedMs(timer: Timer, nowMs: number): number {
   return timer.spans.reduce((sum, span) => sum + spanMs(span, nowMs), 0);
 }
 
-/** The timer's share of its entry: what it counted since the time was last set by hand. */
+/** The timer's own time — its share of the entry it feeds. */
 export function shareMs(timer: Timer, nowMs: number): number {
   return timer.spans.reduce((sum, span) => sum + (span.off ? 0 : spanMs(span, nowMs)), 0);
 }
@@ -229,6 +229,7 @@ export function pauseAllTimers(log: DailyLog, nowIso: string): number {
 
 // ─── No-ticket timers ────────────────────────────────────────────────────
 
+/** The text of a no-ticket timer; one with a ticket has none — its text is the entry's description. */
 export function describeTimer(log: DailyLog, timerId: string, description: string): Timer {
   const timer = requireTimer(log, timerId);
   if (timer.entryId !== null) throw new Error('A timer with a ticket takes its description from the entry');
@@ -236,6 +237,7 @@ export function describeTimer(log: DailyLog, timerId: string, description: strin
   return timer;
 }
 
+/** A no-ticket timer goes; one with a ticket leaves through removeEntryTimer, or with its entry. */
 export function deleteTimer(log: DailyLog, timerId: string): Timer {
   const timer = requireTimer(log, timerId);
   if (timer.entryId !== null) throw new Error('A timer with a ticket is removed from its entry');
@@ -271,19 +273,40 @@ export function hideTimer(log: DailyLog, timerId: string): Timer {
 
 // ─── Entry ↔ timer ───────────────────────────────────────────────────────
 
-/** The timer's share so far stops being its share; it counts on from now. */
-export function retireShare(timer: Timer, nowIso: string): void {
+/**
+ * Cut the timer's time down to `keepMs`: its latest stretches stop counting,
+ * the one the cut falls into is split. A running timer counts on from now.
+ */
+export function trimShare(timer: Timer, keepMs: number, nowIso: string): void {
   const counting = timer.spans.some(span => span.to === null);
   closeSpan(timer, nowIso);
-  for (const span of timer.spans) span.off = true;
-  timer.creditedMinutes = 0;
+  let excess = shareMs(timer, Date.parse(nowIso)) - keepMs;
+  for (let index = timer.spans.length - 1; index >= 0 && excess > 0; index--) {
+    const span = timer.spans[index];
+    if (span.off || span.to === null) continue;
+    const length = Date.parse(span.to) - Date.parse(span.from);
+    if (length <= excess) {
+      span.off = true;
+      excess -= length;
+      continue;
+    }
+    const cutIso = new Date(Date.parse(span.to) - excess).toISOString();
+    timer.spans.splice(index, 1, { from: span.from, to: cutIso }, { from: cutIso, to: span.to, off: true });
+    excess = 0;
+  }
   if (counting) openSpan(timer, nowIso);
 }
 
-/** The entry's time was set by hand: the number is the new base of its timer. */
-export function markTimeSetByHand(log: DailyLog, entryId: string, nowIso: string): void {
+/**
+ * A number was typed into the entry: what its timer counted stays as it is.
+ * Only a number smaller than that cuts the timer down to it. Call with the
+ * timers credited, before the number is written.
+ */
+export function fitTimerToEntry(log: DailyLog, entryId: string, minutes: number, nowIso: string): void {
   const timer = findEntryTimer(log, entryId);
-  if (timer) retireShare(timer, nowIso);
+  if (!timer || minutes >= timer.creditedMinutes) return;
+  trimShare(timer, minutes * MS_PER_MINUTE, nowIso);
+  timer.creditedMinutes = minutes;
 }
 
 /** The entry is gone — so is its timer. */

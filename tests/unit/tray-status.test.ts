@@ -42,7 +42,7 @@ function session(over: Partial<SessionDetail>): SessionDetail {
 function timer(state: TimerView['state'], over: Partial<TimerView> = {}): TimerView {
   return {
     id: 't1', state, entryId: 'e1', task: 'ATL-6712', activity: 'Other', added: false, description: 'PR review',
-    totalMs: 47 * MINUTE, shareMs: 12 * MINUTE, handMinutes: 35, hidden: false, touchedAt: AS_OF, ...over,
+    totalMs: 82 * MINUTE, shareMs: 47 * MINUTE, handMinutes: 35, hidden: false, touchedAt: AS_OF, ...over,
   };
 }
 
@@ -77,23 +77,23 @@ test('the other session states read as they did', () => {
 
 // ─── A timer counts ───────────────────────────────────────────────────────
 
-test('a timer counts: orange eyes, its time and its ticket', () => {
+test('a timer counts: orange eyes, its own time and its ticket', () => {
   assert.deepEqual(trayStatus([SUPERSEDED], timers(timer(TimerState.Running)), NOW),
     { kind: 'timer', tooltip: 'Workday — timer 47m · ATL-6712' });
   assert.equal(trayStatus([], timers(timer(TimerState.Running)), NOW).kind, 'timer', 'with no session at all too');
 });
 
 test('the time reads to the minute and goes on', () => {
-  const running = timers(timer(TimerState.Running, { totalMs: 47 * MINUTE + 30_000 }));
+  const running = timers(timer(TimerState.Running, { shareMs: 47 * MINUTE + 30_000 }));
   assert.equal(trayStatus([], running, NOW + 29_000).tooltip, 'Workday — timer 47m · ATL-6712');
   assert.equal(trayStatus([], running, NOW + 30_000).tooltip, 'Workday — timer 48m · ATL-6712');
-  assert.equal(trayStatus([], timers(timer(TimerState.Running, { totalMs: 62 * MINUTE })), NOW).tooltip,
+  assert.equal(trayStatus([], timers(timer(TimerState.Running, { shareMs: 62 * MINUTE })), NOW).tooltip,
     'Workday — timer 1h 02m · ATL-6712');
 });
 
 test('a timer without a ticket is named by the start of its description', () => {
   const loose = (description: string): TimersResponse =>
-    timers(timer(TimerState.Running, { entryId: null, task: null, activity: null, description, totalMs: 3 * MINUTE }));
+    timers(timer(TimerState.Running, { entryId: null, task: null, activity: null, description, totalMs: 3 * MINUTE, shareMs: 3 * MINUTE }));
   assert.equal(trayStatus([], loose('incident call'), NOW).tooltip, 'Workday — timer 3m · incident call');
   assert.equal(trayStatus([], loose('helped the ops team with the staging deploy'), NOW).tooltip,
     'Workday — timer 3m · helped the ops team wit…');

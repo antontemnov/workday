@@ -259,7 +259,7 @@ test('timers are named by id or by their place in the day', () => {
   const second = r.timers.create('two');
   assert.equal(r.timers.start('#1').id, first.id);
   assert.equal(r.timers.pause(first.id).id, first.id);
-  assert.equal(r.timers.describe('#2', 'two, renamed').id, second.id);
+  assert.equal(r.timers.describe('#2', 'two, renamed').timer.id, second.id);
   assert.throws(() => r.timers.start('#9'), /Timer not found/);
   assert.throws(() => r.timers.pause(), /No timer is running/);
   assert.throws(() => r.timers.startOnEntry('#1'), /Manual entry not found/);
@@ -276,11 +276,72 @@ test('bind and remove go through the day\'s log and are written to disk', () => 
   assert.equal(onDisk.timers?.[0].entryId, entry.id);
 
   assert.throws(() => r.timers.remove(entry.id), /Nothing typed by hand/);
-  r.sessions.editManualEntry(entry.id, { minutes: 20 });
+  r.sessions.editManualEntry(entry.id, { minutes: 45 });
   const removed = r.timers.remove('#1');
-  assert.equal(removed.removedMinutes, 0);
-  assert.equal(removed.entry.minutes, 20);
+  assert.equal(removed.removedMinutes, 30);
+  assert.equal(removed.entry.minutes, 15);
   assert.equal(readDailyLog(TODAY)!.timers, undefined);
+});
+
+test('Remove on a timer with a ticket: the timer and its time go, what was typed stays', () => {
+  const r = rig();
+  const timer = r.timers.create('incident call');
+  timer.spans[0] = { from: ago(30), to: null };
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Meeting', description: 'incident call' });
+  r.sessions.editManualEntry(entry.id, { minutes: 50 });
+  assert.equal(r.timers.isRunning(), true);
+
+  const removal = r.timers.delete(timer.id);
+  assert.equal(removal.removedMinutes, 30);
+  assert.equal(removal.entry?.id, entry.id);
+  assert.equal(removal.entry?.minutes, 20);
+  assert.equal(removal.deletedEntry, null);
+  assert.equal(r.timers.isRunning(), false, 'a running timer stops first');
+  const onDisk = readDailyLog(TODAY)!;
+  assert.equal(onDisk.timers, undefined);
+  assert.equal(onDisk.manualEntries[0].minutes, 20);
+});
+
+test('Remove on a timer whose entry grew from it alone: the entry goes with it', () => {
+  const r = rig([], '2026-06-21');
+  const timer = r.timers.create('incident call');
+  timer.spans[0] = { from: ago(30), to: null };
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Meeting', description: 'incident call' });
+  assert.equal(entry.minutes, 30);
+
+  const removal = r.timers.delete(timer.id);
+  assert.equal(removal.entry, null);
+  assert.equal(removal.deletedEntry?.id, entry.id);
+  assert.equal(r.timers.getTimers().timers.length, 0);
+  assert.equal(existsSync(getDailyLogPath('2026-06-21')), false, 'the day\'s last fact is gone');
+});
+
+test('the text of a timer with a ticket is its entry\'s description', () => {
+  const r = rig();
+  const timer = r.timers.create('incident call');
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Meeting', description: 'incident call' });
+  assert.equal(r.timers.entryIdOf(timer.id), entry.id);
+
+  const described = r.timers.describe(timer.id, '  incident call, part 2 ');
+  assert.equal(described.entry?.id, entry.id);
+  assert.equal(entry.description, 'incident call, part 2');
+  assert.equal(r.timers.getTimers().timers[0].description, 'incident call, part 2');
+  assert.equal(timer.entryId, entry.id, 'the timer stays on its entry');
+  assert.equal(r.sessions.getDailyLog().manualEntries.length, 1, 'no new record');
+  assert.equal(readDailyLog(TODAY)!.manualEntries[0].description, 'incident call, part 2');
+
+  assert.throws(() => r.timers.describe(timer.id, '   '), /Description cannot be empty/);
+  assert.equal(entry.description, 'incident call, part 2');
+});
+
+test('a timer on manual added has no text to edit', () => {
+  const r = rig();
+  const timer = r.timers.create('');
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Development', description: '' });
+  assert.equal(entry.added, true);
+  assert.throws(() => r.timers.describe(timer.id, 'spike'), /Manual added time takes minutes only/);
+  assert.equal(entry.description, '');
+  assert.equal(r.sessions.getDailyLog().manualEntries.length, 1);
 });
 
 test('the last timer deleted takes the day\'s file with it', () => {

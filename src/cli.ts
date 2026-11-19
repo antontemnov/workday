@@ -1626,11 +1626,11 @@ const TIMER_USAGE = `Usage:
   workday timer start <#|id>                      Start a timer (the live one goes on pause)
   workday timer start --entry <#|id>              Put a timer on a manual entry
   workday timer pause [#|id]                      Pause a timer (default: the live one)
-  workday timer describe <#|id> "<text>"          Describe a timer without a ticket
+  workday timer describe <#|id> "<text>"          Describe a timer (one with a ticket: its entry's description)
   workday timer bind <#|id> <task> ["<desc>"] [--activity T] [--minutes N]
                                                   Give a timer its ticket (--minutes = a number typed by hand)
   workday timer remove <entry #|id>               Remove the timer from an entry (its time goes)
-  workday timer delete <#|id>                     Delete a timer without a ticket
+  workday timer delete <#|id>                     Remove a timer (one with a ticket takes its time out of the entry)
   workday timer cancel <#|id>                     Undo a New timer made by mistake
   workday timer hide <#|id>                       Take a paused timer off the desktop widget
   workday timer widget [on|off]                   Desktop widget switch`;
@@ -1648,15 +1648,15 @@ function formatTimerRow(timer: TimerView, index: number): string {
   const state = timer.state === TimerState.Running ? '▶ running'
     : timer.state === TimerState.Waiting ? '◌ waiting'
     : '⏸ paused ';
-  // An entry at rest shows whole minutes, like any entry; whatever ticks, and
-  // a timer without a ticket, keeps its seconds.
+  // The timer's own time. On an entry at rest it reads in whole minutes, like
+  // the entry; whatever ticks, and a timer without a ticket, keeps its seconds.
   const withSeconds = timer.state !== TimerState.Paused || timer.entryId === null;
   const what = timer.task
     ? `${timer.task} · ${timer.added ? 'manual added' : `${timer.activity} — "${timer.description}"`}`
     : (timer.description ? `"${timer.description}"` : 'task?');
-  const share = timer.entryId !== null && timer.handMinutes > 0
-    ? `  (typed ${timer.handMinutes}m + timer ${formatTimerTime(timer.shareMs, false)})` : '';
-  return `  #${index + 1} ${timer.id}  ${state}  ${formatTimerTime(timer.totalMs, withSeconds).padStart(11)}  ${what}${share}${timer.hidden ? '  [hidden]' : ''}`;
+  const entry = timer.entryId !== null && timer.handMinutes > 0
+    ? `  (entry ${formatTimerTime(timer.totalMs, false)}: typed ${timer.handMinutes}m + timer)` : '';
+  return `  #${index + 1} ${timer.id}  ${state}  ${formatTimerTime(timer.shareMs, withSeconds).padStart(11)}  ${what}${entry}${timer.hidden ? '  [hidden]' : ''}`;
 }
 
 function printTimers(data: TimersResponse): void {
@@ -1747,7 +1747,9 @@ async function handleTimer(args: string[]): Promise<void> {
 
     case 'delete':
       if (!rest[0]) break;
-      await timerAction('delete', { id: rest[0] }, () => 'Timer deleted');
+      await timerAction('delete', { id: rest[0] }, data => (data.entry
+        ? `Timer removed from ${data.entry.task}: −${data.removedMinutes ?? 0}m, ${data.entry.minutes}m stays`
+        : 'Timer removed'));
       return;
 
     case 'cancel':

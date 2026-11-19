@@ -5,16 +5,19 @@ import { TimerTimeComponent } from './timer-time.component';
 
 /**
  * The island — the header itself flowing down at the right edge: every timer
- * of the day, in the order they joined it. A timer without a ticket is a
- * two-floor row (▶/⏸ · task? · description · time, Delete below); one with a
- * ticket mirrors its record in one floor and has no actions of its own — a
- * timer leaves its record only through the record's menu.
+ * of the day, in the order they joined it. Every row has two floors:
+ * ▶/⏸ · task? or the ticket · description · the timer's own time, and Remove
+ * below. Remove takes a no-ticket timer away; one with a ticket leaves its
+ * record with the time it counted — what was typed by hand stays, a record
+ * grown from the timer alone goes with it. At once, no undo.
  *
  * The description is a plain field: focus it and it is being edited; Enter
- * or a click away keeps it, Esc puts it back. Polls never touch the field
- * under the caret — rows are tracked by id and the field reads its own draft.
- * Right after New timer (birthId) the caret waits in the description, and Esc
- * on the still-empty field takes the timer back.
+ * or a click away keeps it, Esc puts it back. A timer with a ticket has no
+ * text of its own — the field edits its record's description, and an emptied
+ * one is put back, never sent. Polls never touch the field under the caret —
+ * rows are tracked by id and the field reads its own draft. Right after New
+ * timer (birthId) the caret waits in the description, and Esc on the
+ * still-empty field takes the timer back.
  */
 @Component({
   selector: 'app-timer-island',
@@ -31,7 +34,7 @@ export class TimerIslandComponent implements OnChanges {
   @Input() anchorId: string | null = null;
   // The timer New timer has just made — its description takes the caret.
   @Input() birthId: string | null = null;
-  // The month is closed in Tempo: nothing starts.
+  // The month is closed in Tempo: nothing starts, no record is edited.
   @Input() locked: boolean = false;
 
   @Output() toggled: EventEmitter<TimerView> = new EventEmitter<TimerView>();
@@ -77,6 +80,17 @@ export class TimerIslandComponent implements OnChanges {
   // A timer that is switched on (running or waiting) offers ⏸; a paused one ▶.
   isLive(timer: TimerView): boolean { return timer.state !== TimerState.Paused; }
 
+  // A timer with a ticket acts on its record — a closed month lets nothing through.
+  isFrozen(timer: TimerView): boolean { return this.locked && timer.entryId !== null; }
+
+  // Manual added time has no description to edit.
+  isDescribable(timer: TimerView): boolean { return !timer.added && !this.isFrozen(timer); }
+
+  /** The daemon refused a description: the field shows the stored text again. */
+  public forgetSent(timerId: string): void {
+    this.sent.delete(timerId);
+  }
+
   // ─── Description field ────────────────────────────────────────────────
 
   descriptionOf(timer: TimerView): string {
@@ -101,7 +115,7 @@ export class TimerIslandComponent implements OnChanges {
     const field = ev.target as HTMLInputElement;
     if (ev.key === 'Enter') {
       ev.preventDefault();
-      this.keepDescription(timer);
+      this.keepDescription(timer, field);
       field.blur();
       return;
     }
@@ -120,16 +134,22 @@ export class TimerIslandComponent implements OnChanges {
     field.blur();
   }
 
-  onDescBlur(timer: TimerView): void {
-    this.keepDescription(timer);
+  onDescBlur(timer: TimerView, field?: HTMLInputElement): void {
+    this.keepDescription(timer, field);
   }
 
   // Enter or a click away: what was typed is the description.
-  private keepDescription(timer: TimerView): void {
+  private keepDescription(timer: TimerView, field?: HTMLInputElement): void {
     if (this.editingId !== timer.id) return;
     this.editingId = null;
     if (this.birthId === timer.id) this.birthSettled.emit();
     const description = this.draft.trim();
+    // A record's description is never emptied from here: the stored text is
+    // put back at once.
+    if (description === '' && timer.entryId !== null) {
+      if (field) field.value = this.storedDescription(timer);
+      return;
+    }
     if (description === this.storedDescription(timer)) return;
     this.sent.set(timer.id, description);
     this.described.emit({ id: timer.id, description });

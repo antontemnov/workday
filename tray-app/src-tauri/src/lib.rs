@@ -397,7 +397,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart-launch"]),
         ))
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, daemon_installed, node_version, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, set_tray_new_timer, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, load_prefs, save_prefs, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view, widget::sync_widget, widget::get_pending_widget, widget::fit_widget, widget::widget_grab, widget::widget_drag, widget::widget_release, widget::widget_action, widget::open_main])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, daemon_installed, node_version, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, set_tray_new_timer, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, load_prefs, save_prefs, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view, widget::sync_widget, widget::get_pending_widget, widget::fit_widget, widget::widget_grab, widget::widget_drag, widget::widget_release, widget::widget_typing, widget::widget_away, widget::widget_refused, widget::widget_action, widget::open_main])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

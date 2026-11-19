@@ -28,30 +28,36 @@
     </button>
   </ng-template>
 
-  <ng-container *ngIf="t.entryId !== null; else looseRow">
-    <span class="tkey">{{ t.task }}</span>
-    <span class="tfield">{{ t.added ? 'manual added' : t.description }}</span>
-    <app-timer-time class="ttime" [timer]="t" [asOf]="asOf" />
-  </ng-container>
-
-  <ng-template #looseRow>
+  <span *ngIf="t.entryId !== null; else askTask" class="tkey">{{ t.task }}</span>
+  <ng-template #askTask>
     <button type="button"
             class="chip ask tq"
             [class.armed]="anchorId === t.id"
             [disabled]="locked"
             (click)="taskRequested.emit(t)">task?</button>
-    <input class="tfield"
-           placeholder="description"
-           spellcheck="false"
-           autocomplete="off"
-           [value]="descriptionOf(t)"
-           (focus)="onDescFocus(t)"
-           (input)="onDescInput(t, $any($event.target).value)"
-           (keydown)="onDescKeydown(t, $event)"
-           (blur)="onDescBlur(t)" />
-    <app-timer-time class="ttime" [timer]="t" [asOf]="asOf" />
-    <button type="button" class="lnk-deny tdel" (click)="deleted.emit(t)">Delete</button>
   </ng-template>
+
+  <!-- The text of a timer with a ticket is its record's description; manual
+       added has none, and a closed month edits nothing. -->
+  <input *ngIf="isDescribable(t); else plainText"
+         class="tfield"
+         placeholder="description"
+         spellcheck="false"
+         autocomplete="off"
+         [value]="descriptionOf(t)"
+         (focus)="onDescFocus(t)"
+         (input)="onDescInput(t, $any($event.target).value)"
+         (keydown)="onDescKeydown(t, $event)"
+         (blur)="onDescBlur(t, $any($event.target))" />
+  <ng-template #plainText>
+    <span class="tfield">{{ t.added ? 'manual added' : t.description }}</span>
+  </ng-template>
+
+  <app-timer-time class="ttime" [timer]="t" [asOf]="asOf" />
+  <button type="button"
+          class="lnk-deny tdel"
+          [disabled]="isFrozen(t)"
+          (click)="deleted.emit(t)">Remove</button>
 </div>
 
 <ng-container *ngIf="anchorId === null">

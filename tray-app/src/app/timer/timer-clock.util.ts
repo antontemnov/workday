@@ -9,12 +9,12 @@ function countedSince(timer: TimerView, asOfMs: number, nowMs: number): number {
   return timer.state === TimerState.Running ? Math.max(0, nowMs - asOfMs) : 0;
 }
 
-/** What the row shows right now: an entry's whole time, or a no-ticket timer's own. */
+/** The fed entry's whole time right now — what its record shows. */
 export function liveTotalMs(timer: TimerView, asOfMs: number, nowMs: number): number {
   return timer.totalMs + countedSince(timer, asOfMs, nowMs);
 }
 
-/** The timer's share of its entry right now — what Remove timer would take out. */
+/** The timer's own time right now — what its row shows and what Remove takes out. */
 export function liveShareMs(timer: TimerView, asOfMs: number, nowMs: number): number {
   return timer.shareMs + countedSince(timer, asOfMs, nowMs);
 }
@@ -40,12 +40,12 @@ export function formatTicking(ms: number): string {
 }
 
 /**
- * The time a timer's row prints: an entry at rest reads in whole minutes,
- * like any entry; whatever is switched on, and a timer without a ticket,
- * keeps its seconds.
+ * The time a timer's row prints — the timer's own, not its entry's. On an
+ * entry at rest it reads in whole minutes, like the entry; whatever is
+ * switched on, and a timer without a ticket, keeps its seconds.
  */
 export function formatTimerTime(timer: TimerView, asOfMs: number, nowMs: number): string {
-  const ms = liveTotalMs(timer, asOfMs, nowMs);
+  const ms = liveShareMs(timer, asOfMs, nowMs);
   return timer.entryId !== null && timer.state === TimerState.Paused ? formatMinutes(ms) : formatTicking(ms);
 }
 

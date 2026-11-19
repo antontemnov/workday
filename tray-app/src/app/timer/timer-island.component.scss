@@ -51,12 +51,15 @@
   color: #585b70;
 }
 
+// Every row is the layout of a suggestion card: the row itself, Remove below.
 .trow {
   display: grid;
   grid-template-columns: 20px auto minmax(0, 1fr) auto;
+  grid-template-areas: "b k f t" ". . . d";
+  grid-template-rows: 26px 18px;
   column-gap: 8px;
   align-items: center;
-  padding: 0 5px;
+  padding: 2px 5px 4px;
 
   & + & { border-top: 1px solid rgba(205, 214, 244, 0.06); }
 
@@ -65,20 +68,6 @@
   > .tfield { grid-area: f; }
   > .ttime { grid-area: t; }
   > .tdel { grid-area: d; justify-self: end; }
-
-  // A timer that has a ticket — the mirror of a record: one floor, no actions.
-  &.tk {
-    grid-template-areas: "b k f t";
-    min-height: 30px;
-  }
-
-  // A timer without a ticket — the layout of a suggestion card, always two floors.
-  &.an {
-    grid-template-areas: "b k f t" ". . . d";
-    grid-template-rows: 26px 18px;
-    padding-top: 2px;
-    padding-bottom: 4px;
-  }
 }
 
 .tbtn {
@@ -197,8 +186,9 @@ input.tfield {
 
 .trow.tk.pause .tkey { color: #a6adc8; }
 .trow.tk .tfield { color: #7f849c; }
+.trow.tk input.tfield:focus { color: #cdd6f4; }
 
-// Delete — the quiet word of a suggestion card's Deny; at once, no undo.
+// Remove — the quiet word of a suggestion card's Deny; at once, no undo.
 .lnk-deny {
   background: none;
   border: none;
@@ -210,7 +200,8 @@ input.tfield {
   cursor: pointer;
   transition: color 0.15s ease;
 
-  &:hover { color: #f38ba8; }
+  &:hover:not(:disabled) { color: #f38ba8; }
+  &:disabled { opacity: 0.35; cursor: default; }
 }
 
 .tsep {

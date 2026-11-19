@@ -1,5 +1,5 @@
 import { SessionDetail, TimerState, TimerView, TimersResponse } from './models/workday.models';
-import { formatMinutes, liveTotalMs } from './timer/timer-clock.util';
+import { formatMinutes, liveShareMs } from './timer/timer-clock.util';
 
 export type TrayKind = 'live' | 'timer' | 'pending' | 'idle' | 'paused' | 'none';
 
@@ -45,7 +45,7 @@ function sessionStatus(open: readonly SessionDetail[]): TrayStatus {
 
 // 47m · ATL-6712 — the time, then the ticket or the start of the description.
 function timerLabel(timer: TimerView, timers: TimersResponse, nowMs: number): string {
-  const time = formatMinutes(liveTotalMs(timer, Date.parse(timers.asOf), nowMs));
+  const time = formatMinutes(liveShareMs(timer, Date.parse(timers.asOf), nowMs));
   const name = timer.task ?? shortened(timer.description.trim());
   return name ? `${time} · ${name}` : time;
 }

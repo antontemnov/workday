@@ -6,8 +6,10 @@ import {
   creditTimers,
   deleteTimer,
   describeTimer,
+  dropEntryTimer,
   findLiveTimer,
   getTimers,
+  handMinutes,
   hideTimer,
   markTimersAlive,
   newTimer,
@@ -26,6 +28,15 @@ import {
 } from './timers.js';
 import { TimerState } from './types.js';
 import type { AppConfig, DailyLog, EvaluatorOptions, EvaluatorResult, ManualEntry, Timer, TimersResponse } from './types.js';
+
+/** What a Remove left behind. */
+export interface TimerRemoval {
+  // The entry that keeps what was typed by hand; null when no entry is left.
+  readonly entry: ManualEntry | null;
+  readonly removedMinutes: number;
+  // The entry that grew from the timer alone and went with it.
+  readonly deletedEntry: ManualEntry | null;
+}
 
 /**
  * Manual timers of the live day: the timer actions, and the glue between
@@ -123,10 +134,28 @@ export class TimerTracker {
     return timer;
   }
 
-  public describe(target: string, description: string): Timer {
-    const timer = describeTimer(this.log, this.requireTimer(target).id, description);
+  /** The entry a timer feeds; null = no ticket. */
+  public entryIdOf(target: string): string | null {
+    return this.requireTimer(target).entryId;
+  }
+
+  /**
+   * A no-ticket timer's own text. A timer with a ticket has none: the text
+   * is its entry's description, edited by the entry's rules — that entry is
+   * returned. An empty text never empties an entry from here.
+   */
+  public describe(target: string, description: string): { timer: Timer; entry: ManualEntry | null } {
+    const timer = this.requireTimer(target);
+    if (timer.entryId === null) {
+      describeTimer(this.log, timer.id, description);
+      this.sessionTracker.flush();
+      return { timer, entry: null };
+    }
+    if (!description.trim()) throw new Error('Description cannot be empty');
+    const result = this.sessionTracker.editManualEntry(timer.entryId, { description });
+    if (!result.ok || !result.edit) throw new Error(result.error ?? 'The entry was not edited');
     this.sessionTracker.flush();
-    return timer;
+    return { timer, entry: result.edit.entry };
   }
 
   /** task? → Log: the timer gets its ticket. */
@@ -145,10 +174,35 @@ export class TimerTracker {
     return removed;
   }
 
-  public delete(target: string): Timer {
-    const timer = deleteTimer(this.log, this.requireTimer(target).id);
+  /**
+   * Remove. A no-ticket timer just goes. One with a ticket leaves its entry
+   * and takes its time along, what was typed by hand stays; an entry grown
+   * from the timer alone has nothing to keep and goes with it.
+   */
+  public delete(target: string): TimerRemoval {
+    const timer = this.requireTimer(target);
+    if (timer.entryId === null) {
+      deleteTimer(this.log, timer.id);
+      this.settleLead();
+      return { entry: null, removedMinutes: 0, deletedEntry: null };
+    }
+
+    const entry = resolveManualEntryTarget(this.log, timer.entryId);
+    if (!entry) {
+      dropEntryTimer(this.log, timer.entryId);
+      this.settleLead();
+      return { entry: null, removedMinutes: 0, deletedEntry: null };
+    }
+    if (handMinutes(this.log, entry) >= 1) {
+      const removed = removeEntryTimer(this.log, entry.id, nowIso());
+      this.settleLead();
+      return { ...removed, deletedEntry: null };
+    }
+
+    const result = this.sessionTracker.deleteManualEntry(entry.id);
+    if (!result.ok || !result.deleted) throw new Error(result.error ?? 'The entry was not deleted');
     this.settleLead();
-    return timer;
+    return { entry: null, removedMinutes: 0, deletedEntry: result.deleted };
   }
 
   /** Undo a New timer made by mistake: whoever it put on pause is back as it was. */

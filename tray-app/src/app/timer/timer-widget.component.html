@@ -1,7 +1,9 @@
 <div class="w"
      [class.list]="list"
      [class.drag]="dragging"
+     [class.ed]="editingId !== null"
      [style.--tw]="timeColumn"
+     (mousedown)="onMouseDown($event)"
      (pointerdown)="onPress($event, 'move')"
      (pointermove)="onPointerMove($event)"
      (pointerup)="onPointerEnd($event)"
@@ -35,25 +37,58 @@
 
     <app-timer-time class="w-t" [timer]="t" [asOf]="asOf" (minuteChanged)="onMinute()" />
 
-    <span class="w-tx" *ngIf="t.task || t.description">
+    <!-- Under the edit the key stays and the description is a field. -->
+    <ng-container *ngIf="editingId === t.id; else shownText">
       <span class="w-k" *ngIf="t.task">{{ t.task }}</span>
-      <span class="w-d" *ngIf="t.description">{{ t.description }}</span>
-    </span>
+      <input class="w-in"
+             placeholder="description"
+             spellcheck="false"
+             autocomplete="off"
+             [value]="draft"
+             (input)="onEditInput($any($event.target).value)"
+             (keydown)="onEditKeydown(t, $event)" />
+    </ng-container>
+    <ng-template #shownText>
+      <span class="w-tx" *ngIf="t.task || textOf(t)">
+        <span class="w-k" *ngIf="t.task">{{ t.task }}</span>
+        <span class="w-d" *ngIf="textOf(t)">{{ textOf(t) }}</span>
+      </span>
+    </ng-template>
 
-    <!-- The slot is in every row, so nothing shifts when a timer stops;
-         only a timer at rest can leave the desktop. -->
-    <span class="w-acts">
-      <button *ngIf="isPaused(t)"
+    <!-- One slot in every row, so nothing shifts when a timer stops: a timer
+         at rest can leave the desktop, one that is switched on can be
+         described, and under the edit the slot keeps what was typed. -->
+    <span class="w-acts" [class.on]="editingId === t.id">
+      <button *ngIf="editingId === t.id; else atRest"
               type="button"
-              class="w-x"
-              aria-label="Hide from the desktop"
-              (click)="rowHidden.emit(t.id)">
-        <svg viewBox="0 0 12 12" aria-hidden="true">
-          <path d="M1.3 6c1.2-2 2.8-3 4.7-3s3.5 1 4.7 3c-1.2 2-2.8 3-4.7 3S2.5 8 1.3 6z"/>
-          <circle cx="6" cy="6" r="1.3"/>
-          <path d="M2.5 10.2l7-8.4"/>
-        </svg>
+              class="w-x ok"
+              aria-label="Keep the description"
+              (click)="keep(t)">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.6 6.4l2.4 2.4 4.5-5.2"/></svg>
       </button>
+      <ng-template #atRest>
+        <button *ngIf="isPaused(t)"
+                type="button"
+                class="w-x"
+                aria-label="Hide from the desktop"
+                (click)="rowHidden.emit(t.id)">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M1.3 6c1.2-2 2.8-3 4.7-3s3.5 1 4.7 3c-1.2 2-2.8 3-4.7 3S2.5 8 1.3 6z"/>
+            <circle cx="6" cy="6" r="1.3"/>
+            <path d="M2.5 10.2l7-8.4"/>
+          </svg>
+        </button>
+        <button *ngIf="isDescribable(t)"
+                type="button"
+                class="w-x"
+                aria-label="Edit the description"
+                (click)="onPencil(t)">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2.3 9.7l.5-2.3 5.3-5.3a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.6 9.2z"/>
+            <path d="M7.3 2.9l1.8 1.8"/>
+          </svg>
+        </button>
+      </ng-template>
     </span>
   </div>
 
