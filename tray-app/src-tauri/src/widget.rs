@@ -459,6 +459,8 @@ pub fn open_main(app: AppHandle) -> Result<(), String> {
 // The widget never has the keyboard, except while a description is typed on
 // it. The window that had it before is remembered and gets it back — but only
 // if the keyboard is still on the widget: the user may be elsewhere already.
+// The same call takes a keyboard that reached the widget with nothing to type
+// back to the window remembered last.
 #[cfg(windows)]
 mod keyboard {
     use std::sync::atomic::{AtomicIsize, Ordering};
@@ -492,7 +494,7 @@ mod keyboard {
     }
 
     pub fn give_back(window: &WebviewWindow) {
-        let owner = OWNER.swap(0, Ordering::Relaxed) as HWND;
+        let owner = OWNER.load(Ordering::Relaxed) as HWND;
         unsafe {
             if owner.is_null() || IsWindow(owner) == 0 {
                 return;

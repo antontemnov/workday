@@ -71,6 +71,8 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
   private takenBirthId: string | null = null;
   // The field of a fresh edit is not drawn yet — the caret goes there once it is.
   private caretPending: boolean = false;
+  // The edit is moving to another row: the window keeps the keyboard.
+  private handingOver: boolean = false;
   // A description sent to the main window, shown until the rows carry it.
   private readonly sent: Map<string, string> = new Map<string, string>();
   private layout: WidgetLayout | null = null;
@@ -199,7 +201,10 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
   // Another row takes the edit: what was typed in this one is kept, as by Enter.
   private keepCurrent(): void {
     const current = this.timers.find(t => t.id === this.editingId);
-    if (current) this.keep(current);
+    if (!current) return;
+    this.handingOver = true;
+    this.keep(current);
+    this.handingOver = false;
   }
 
   private setEdit(timer: TimerView | null): void {
@@ -208,7 +213,7 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
     this.draft = timer ? this.textOf(timer) : '';
     this.bornId = null;
     this.caretPending = timer !== null;
-    if (was !== (timer !== null)) this.typing.emit(timer !== null);
+    if (was !== (timer !== null) && !this.handingOver) this.typing.emit(timer !== null);
     this.measure();
   }
 

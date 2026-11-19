@@ -69,9 +69,13 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     if (this.plate?.editingId) this.send('widget_away');
   }
 
+  // The window has the keyboard only while a description is typed: one that
+  // came with nothing to type (not by the mouse — the window ignores it then)
+  // goes straight back.
   @HostListener('window:focus')
   onWindowFocus(): void {
-    this.plate?.takeCaret();
+    if (this.plate?.editingId) this.plate.takeCaret();
+    else this.send('widget_typing', { on: false });
   }
 
   async ngOnInit(): Promise<void> {

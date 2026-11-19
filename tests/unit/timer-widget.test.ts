@@ -441,7 +441,9 @@ await test('edit: another row\'s pencil keeps the text typed in this one', () =>
   assert.deepEqual(h.described, [{ id: 'deploy', description: 'rollout' }]);
   assert.equal(h.comp.editingId, 'loose');
   assert.equal(h.comp.draft, 'standup notes');
-  assert.deepEqual(h.typing, [true, false, true]);
+  assert.deepEqual(h.typing, [true, true], 'the keyboard stays on the widget between the two rows');
+  h.comp.keep(LOOSE);
+  assert.deepEqual(h.typing, [true, true, false]);
 });
 
 await test('edit: a row that left the desktop takes its edit along', () => {
