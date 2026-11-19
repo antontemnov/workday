@@ -459,19 +459,33 @@ pub fn open_main(app: AppHandle) -> Result<(), String> {
 // The widget never has the keyboard, except while a description is typed on
 // it. The window that had it before is remembered and gets it back — but only
 // if the keyboard is still on the widget: the user may be elsewhere already.
-// The same call takes a keyboard that reached the widget with nothing to type
-// back to the window remembered last.
+//
+// An activation may already be on its way when the edit ends (a press made
+// through the accessibility tree focuses the window after its click), and the
+// page learns nothing of it. So for a short while after the edit the keyboard
+// is handed back whenever it turns up on the widget. The system lets a window
+// pass the keyboard on only when the last input was its own; when it was not,
+// the widget presses a modifier key itself and asks once more.
 #[cfg(windows)]
 mod keyboard {
-    use std::sync::atomic::{AtomicIsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+    use std::time::Duration;
     use tauri::WebviewWindow;
     use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_MENU,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetForegroundWindow, IsWindow, SetForegroundWindow,
     };
 
+    const GUARD_STEP: Duration = Duration::from_millis(100);
+    const GUARD_STEPS: u32 = 20;
+
     /// The window the keyboard came from; 0 — none.
     static OWNER: AtomicIsize = AtomicIsize::new(0);
+    /// A description is being typed on the widget.
+    static TYPING: AtomicBool = AtomicBool::new(false);
 
     fn handle(window: &WebviewWindow) -> isize {
         window.hwnd().map(|hwnd| hwnd.0 as isize).unwrap_or(0)
@@ -488,22 +502,54 @@ mod keyboard {
     /// allowed to take the foreground. False — it was not: the caller falls
     /// back to the window's own set_focus.
     pub fn take(window: &WebviewWindow) -> bool {
+        TYPING.store(true, Ordering::Relaxed);
         remember(window);
         let widget = handle(window);
         widget != 0 && unsafe { SetForegroundWindow(widget as HWND) } != 0
     }
 
     pub fn give_back(window: &WebviewWindow) {
+        TYPING.store(false, Ordering::Relaxed);
+        let widget = handle(window);
+        pass_on(widget, false);
+        std::thread::spawn(move || {
+            let mut tries = 0;
+            for _ in 0..GUARD_STEPS {
+                std::thread::sleep(GUARD_STEP);
+                if TYPING.load(Ordering::Relaxed) || tries > 1 {
+                    return;
+                }
+                if pass_on(widget, tries == 1) {
+                    tries += 1;
+                }
+            }
+        });
+    }
+
+    /// Give the keyboard, if the widget holds it, to the window it came from.
+    /// `insist` — the plain call was refused: a key press of the widget's own
+    /// comes first. True — the widget held the keyboard.
+    fn pass_on(widget: isize, insist: bool) -> bool {
+        if widget == 0 || unsafe { GetForegroundWindow() } as isize != widget {
+            return false;
+        }
         let owner = OWNER.load(Ordering::Relaxed) as HWND;
         unsafe {
             if owner.is_null() || IsWindow(owner) == 0 {
-                return;
+                return true;
             }
-            if GetForegroundWindow() as isize != handle(window) {
-                return;
+            if insist {
+                let mut keys: [INPUT; 2] = std::mem::zeroed();
+                for key in keys.iter_mut() {
+                    key.r#type = INPUT_KEYBOARD;
+                    key.Anonymous.ki.wVk = VK_MENU;
+                }
+                keys[1].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                SendInput(2, keys.as_ptr(), std::mem::size_of::<INPUT>() as i32);
             }
             SetForegroundWindow(owner);
         }
+        true
     }
 }
 
