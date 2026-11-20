@@ -194,6 +194,7 @@ interface PlateHarness {
   asked: () => number;
   searches: string[];
   bound: { id: string; task: string }[];
+  hidden: string[];
 }
 
 function makePlate(timers: readonly TimerView[]): PlateHarness {
@@ -214,6 +215,8 @@ function makePlate(timers: readonly TimerView[]): PlateHarness {
   comp.ticketsRequested.subscribe(() => { asked++; });
   comp.searchRequested.subscribe((query: string) => searches.push(query));
   comp.bound.subscribe((b: { id: string; task: string }) => bound.push(b));
+  const hidden: string[] = [];
+  comp.rowHidden.subscribe((id: string) => hidden.push(id));
   const layouts: WidgetLayout[] = [];
   const grabs: WidgetGrab[] = [];
   let drags = 0;
@@ -232,7 +235,7 @@ function makePlate(timers: readonly TimerView[]): PlateHarness {
   rows(timers);
   return {
     comp, layouts, grabs, drags: () => drags, releases: () => releases, opens: () => opens, rows,
-    described, cancelled, births, typing, carets: () => carets, asked: () => asked, searches, bound,
+    described, cancelled, births, typing, carets: () => carets, asked: () => asked, searches, bound, hidden,
   };
 }
 
@@ -562,8 +565,10 @@ const TODAY = {
     { task: 'ATL-6781', createdAt: '2026-11-16T08:00:00.000Z' },
   ],
   sessions: [
-    { task: 'ATL-6781', lastSeenAt: '2026-11-16T10:00:00.000Z' },
-    { task: null, lastSeenAt: '2026-11-16T11:00:00.000Z' },
+    { task: 'ATL-6781', activatedAt: '2026-11-16T09:30:00.000Z', lastSeenAt: '2026-11-16T10:00:00.000Z' },
+    { task: null, activatedAt: '2026-11-16T10:30:00.000Z', lastSeenAt: '2026-11-16T11:00:00.000Z' },
+    // A candidate: a branch was seen, nothing was done on it — the Day tab has no card for it.
+    { task: 'ATL-8779', activatedAt: null, lastSeenAt: '2026-11-16T12:00:00.000Z' },
   ],
   issueSummaries: { 'ATL-6781': 'Public API review' },
 } as unknown as TodayResponse;
@@ -573,7 +578,8 @@ await test('tickets: the day\'s, Jira in progress, favorites — no ticket twice
   const favorites = [favorite('ATL-6795', 'Daily'), favorite('ATL-6795', 'Retro'), favorite('ATL-6790', 'Deploy day'), favorite('ATL-6712', 'notes')];
   const groups = ticketGroups(TODAY, inProgress, favorites);
   assert.deepEqual(groups.map(g => g.label), ['today', 'jira · in progress', 'favorites']);
-  assert.deepEqual(groups[0].tickets, [ticket('ATL-6781', 'Public API review'), ticket('ATL-6712', '')], 'the one touched last comes first');
+  assert.deepEqual(groups[0].tickets, [ticket('ATL-6781', 'Public API review'), ticket('ATL-6712', '')],
+    'the one touched last comes first; a session that never came alive is not a ticket of the day');
   assert.deepEqual(groups[1].tickets, [ticket('ATL-6790', 'Deploy checklist')], 'a ticket of the day is not repeated');
   assert.deepEqual(groups[2].tickets, [ticket('ATL-6795', 'Daily')], 'one row per ticket, named by its first favorite');
 });
@@ -700,8 +706,8 @@ await test('ticket: the block goes with its row, and when the row has its ticket
   assert.equal(g.comp.pickId, null);
 });
 
-await test('ticket: the block ends an edit as Enter does; the pencil shuts the block', () => {
-  const h = makePlate([LOOSE]);
+await test('ticket: the block ends an edit as Enter does; another row\'s pencil shuts the block', () => {
+  const h = makePlate([DEPLOY, LOOSE]);
   h.comp.onPencil(LOOSE);
   h.comp.onEditInput('retro prep');
   h.comp.onTag(LOOSE);
@@ -710,10 +716,50 @@ await test('ticket: the block ends an edit as Enter does; the pencil shuts the b
   assert.equal(h.comp.editingId, null);
   assert.equal(h.comp.pickId, 'loose');
   assert.deepEqual(h.typing, [true, false], 'the block needs no keyboard');
-  h.comp.onPencil(LOOSE);
+  h.comp.onPencil(DEPLOY);
   assert.equal(h.comp.pickId, null);
-  assert.equal(h.comp.editingId, 'loose');
+  assert.equal(h.comp.editingId, 'deploy');
   assert.deepEqual(h.typing, [true, false, true]);
+});
+
+await test('ticket: while the block is open the slot next to its glyph is dead', () => {
+  const idle = { ...LOOSE, id: 'idle', state: TimerState.Paused };
+  const h = openBlock([idle, CALL, LOOSE], idle);
+  assert.equal(h.comp.isBlocked(idle), true);
+  assert.equal(h.comp.isBlocked(CALL), false);
+  h.comp.onHide(idle);
+  assert.deepEqual(h.hidden, [], 'a click that missed the glyph does not take the row off the desktop');
+  assert.equal(h.comp.pickId, 'idle');
+  h.comp.onHide(CALL);
+  assert.deepEqual(h.hidden, ['call'], 'the other rows are as they were');
+
+  const g = openBlock([LOOSE], LOOSE);
+  g.comp.onPencil(LOOSE);
+  assert.equal(g.comp.editingId, null, 'nor does it open the description');
+  assert.equal(g.comp.pickId, 'loose');
+  g.comp.onTag(LOOSE);
+  g.comp.onPencil(LOOSE);
+  assert.equal(g.comp.editingId, 'loose', 'with the block shut the pencil is a pencil again');
+});
+
+await test('ticket: Esc anywhere on the widget shuts the block', () => {
+  const press = (handled = false): { defaultPrevented: boolean; prevented: boolean; preventDefault(): void } =>
+    ({ defaultPrevented: handled, prevented: false, preventDefault(): void { this.prevented = true; } });
+  const h = openBlock([LOOSE], LOOSE);
+  h.comp.onFind();
+  const esc = press();
+  h.comp.onEscape(esc as never);
+  assert.equal(h.comp.pickId, null);
+  assert.equal(esc.prevented, true);
+  assert.deepEqual(h.typing, [true, false], 'the keyboard goes back');
+
+  const idle = press();
+  h.comp.onEscape(idle as never);
+  assert.equal(idle.prevented, false, 'no block — the key is not the widget\'s');
+
+  const g = openBlock([LOOSE], LOOSE);
+  g.comp.onEscape(press(true) as never);
+  assert.equal(g.comp.pickId, 'loose', 'a key a field has taken already is left alone');
 });
 
 await test('search: the line takes the keyboard on a click, not before', () => {
@@ -726,9 +772,12 @@ await test('search: the line takes the keyboard on a click, not before', () => {
   assert.equal(h.carets(), 1, 'the caret goes to the search line');
   h.comp.onFind();
   assert.deepEqual(h.typing, [true], 'a second click changes nothing');
-  h.comp.onPencil(LOOSE);
-  assert.deepEqual(h.typing, [true, true], 'the keyboard stays on the widget between the search and a description');
-  assert.equal(h.comp.findOn, false);
+
+  const g = openBlock([DEPLOY, LOOSE], LOOSE);
+  g.comp.onFind();
+  g.comp.onPencil(DEPLOY);
+  assert.deepEqual(g.typing, [true, true], 'the keyboard stays on the widget between the search and a description');
+  assert.equal(g.comp.findOn, false);
 });
 
 await test('search: what is typed filters the known tickets at once and goes to Jira after a pause', async () => {

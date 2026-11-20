@@ -177,7 +177,10 @@
 
   svg { width: 1.14em; height: 1.14em; display: block; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 
-  &:hover { color: #cdd6f4; background: rgb(205 214 244 / 0.09); }
+  &:hover:not(:disabled) { color: #cdd6f4; background: rgb(205 214 244 / 0.09); }
+
+  // Dead while the ticket block of its row is open.
+  &:disabled { opacity: 0.3; cursor: default; }
 
   &.ok {
     color: #cdd6f4;

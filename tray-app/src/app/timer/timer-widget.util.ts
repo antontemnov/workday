@@ -146,7 +146,9 @@ export function widgetLayout(
 
 // ─── The ticket block ───────────────────────────────────────────────────
 
-// The day's tickets, the one touched last first.
+// The tickets that have a card in the day, the one touched last first. A
+// session that never came alive (a candidate the Day tab does not show) is
+// not one of them.
 function dayTickets(today: TodayResponse | null): readonly string[] {
   if (!today) return [];
   const touched = new Map<string, string>();
@@ -154,7 +156,9 @@ function dayTickets(today: TodayResponse | null): readonly string[] {
     if (task && at > (touched.get(task) ?? '')) touched.set(task, at);
   };
   for (const entry of today.manualEntries ?? []) note(entry.task, entry.createdAt);
-  for (const session of today.sessions ?? []) note(session.task, session.lastSeenAt);
+  for (const session of today.sessions ?? []) {
+    if (session.activatedAt !== null) note(session.task, session.lastSeenAt);
+  }
   return [...touched.keys()].sort((a, b) => (touched.get(b) as string).localeCompare(touched.get(a) as string));
 }
 

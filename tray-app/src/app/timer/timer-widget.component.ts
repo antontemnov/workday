@@ -1,4 +1,6 @@
-import { AfterViewChecked, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output } from '@angular/core';
+import {
+  AfterViewChecked, Component, ElementRef, EventEmitter, HostListener, Input, OnChanges, OnDestroy, Output,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TimerState, TimerView } from '../models/workday.models';
 import { TimerTimeComponent } from './timer-time.component';
@@ -52,9 +54,11 @@ interface Found {
  * height. A click on a ticket binds the timer; the glyph again shuts the
  * block. The search line takes the keyboard only when it is clicked: what is
  * typed filters the known tickets at once and, after a pause, goes to Jira.
- * Enter takes the row under the highlight, the arrows move it, Esc shuts the
- * block. One thing at a time: the block ends an edit as Enter does, and the
- * pencil shuts the block.
+ * Enter takes the row under the highlight, the arrows move it; Esc shuts the
+ * block from anywhere on the widget while it has the keyboard. One thing at
+ * a time: the block ends an edit as Enter does, another row's pencil shuts
+ * the block, and the slot next to the glyph of the open block is dead — a
+ * missed click neither hides nor edits the row.
  */
 @Component({
   selector: 'app-timer-widget',
@@ -224,8 +228,17 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
     this.birthTaken.emit(born.id);
   }
 
+  // While a row's ticket block is open, the slot next to its glyph is dead:
+  // a click meant for the glyph must not hide or edit the row.
+  isBlocked(timer: TimerView): boolean { return this.pickId === timer.id; }
+
+  onHide(timer: TimerView): void {
+    if (this.isBlocked(timer)) return;
+    this.rowHidden.emit(timer.id);
+  }
+
   onPencil(timer: TimerView): void {
-    if (this.editingId === timer.id) return;
+    if (this.editingId === timer.id || this.isBlocked(timer)) return;
     this.yieldPick();
     this.keepCurrent();
     this.setEdit(timer);
@@ -375,6 +388,15 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
 
   onListScroll(): void {
     this.settleList();
+  }
+
+  // Esc anywhere on the widget while it has the keyboard — not only in the
+  // search line — shuts the ticket block.
+  @HostListener('document:keydown.escape', ['$event'])
+  onEscape(ev: Event): void {
+    if (ev.defaultPrevented || this.pickId === null) return;
+    ev.preventDefault();
+    this.closePick();
   }
 
   private openAsked(): void {
