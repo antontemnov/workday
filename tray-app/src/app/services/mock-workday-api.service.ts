@@ -655,8 +655,29 @@ export class MockWorkdayApiService extends WorkdayApiService {
       return { ok: false, error: 'Description is required (only Development may omit it)' };
     }
     this.fitMockTimer(target, updated.minutes);
-    this.mockManualEntries = this.mockManualEntries.map((e, i) => i === idx ? updated : e);
-    return { ok: true, data: this.toEntryResponse(updated) };
+    return { ok: true, data: this.toEntryResponse(this.settleMockEntry(idx, updated)) };
+  }
+
+  // Mirrors the daemon: Development without a description is the ticket's
+  // one bare record. Given a text (or another type) it is an entry of its
+  // own under the same id; a Development entry that lost its text goes into
+  // the bare record, its timer along.
+  private settleMockEntry(idx: number, updated: ManualEntry): ManualEntry {
+    const before = this.mockManualEntries[idx];
+    const bare = !updated.description && updated.activity === DEVELOPMENT_ACTIVITY;
+    if (before.added || !bare) {
+      const { added: _added, ...named } = updated;
+      const entry: ManualEntry = bare ? updated : named;
+      this.mockManualEntries = this.mockManualEntries.map((e, i) => i === idx ? entry : e);
+      return entry;
+    }
+    this.mockManualEntries = this.mockManualEntries.filter((_e, i) => i !== idx);
+    const record = this.mockManualEntries.find(e => e.added && e.task === updated.task);
+    const target = this.putMockAdded(updated.task, (record?.minutes ?? 0) + updated.minutes);
+    for (const timer of this.mockTimers) {
+      if (timer.entryId === before.id) timer.entryId = target.id;
+    }
+    return target;
   }
 
   // A number typed into the entry leaves its timer alone; only a number
@@ -845,13 +866,13 @@ export class MockWorkdayApiService extends WorkdayApiService {
       return this.mockTimerAnswer(timer.id);
     }
     // A timer with a ticket has no text of its own: this edits its entry.
-    const entry = this.mockManualEntries.find(e => e.id === timer.entryId);
-    if (!entry) return { ok: false, error: `Manual entry not found: ${timer.entryId}` };
-    if (!description.trim()) return { ok: false, error: 'Description cannot be empty' };
-    if (entry.added) return { ok: false, error: 'Manual added time takes minutes only — log a described entry instead' };
-    const edited: ManualEntry = { ...entry, description: description.trim() };
-    this.mockManualEntries = this.mockManualEntries.map(e => e.id === entry.id ? edited : e);
-    return this.mockTimerAnswer(timer.id, { entry: this.toEntryResponse(edited) });
+    const idx = this.mockManualEntries.findIndex(e => e.id === timer.entryId);
+    if (idx < 0) return { ok: false, error: `Manual entry not found: ${timer.entryId}` };
+    const edited: ManualEntry = { ...this.mockManualEntries[idx], description: description.trim() };
+    if (!edited.description && edited.activity !== DEVELOPMENT_ACTIVITY) {
+      return { ok: false, error: 'Description is required (only Development may omit it)' };
+    }
+    return this.mockTimerAnswer(timer.id, { entry: this.toEntryResponse(this.settleMockEntry(idx, edited)) });
   }
 
   async bindTimer(timerId: string, input: TimerBindInput): Promise<ApiResponse<TimerActionResponse>> {

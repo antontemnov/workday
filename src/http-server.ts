@@ -1289,8 +1289,9 @@ export class HttpServer {
             const refusal = await this.editRefusal(null);
             if (refusal) return { ok: false, error: refusal };
           }
-          const { timer, entry } = timers.describe(text('id'), text('description'));
+          const { timer, entry, absorbed } = timers.describe(text('id'), text('description'));
           if (!entry) return answer(timer.id);
+          if (absorbed) recordEntryDeletion(log().date, absorbed.task, absorbed.id);
           this.relearnFromEditedEntry(entry);
           return answer(timer.id, { entry: this.toEntryData(entry, log()) });
         }

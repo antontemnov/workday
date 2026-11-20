@@ -330,17 +330,50 @@ test('the text of a timer with a ticket is its entry\'s description', () => {
   assert.equal(r.sessions.getDailyLog().manualEntries.length, 1, 'no new record');
   assert.equal(readDailyLog(TODAY)!.manualEntries[0].description, 'incident call, part 2');
 
-  assert.throws(() => r.timers.describe(timer.id, '   '), /Description cannot be empty/);
+  assert.throws(() => r.timers.describe(timer.id, '   '), /Description is required/, 'only Development may go without one');
   assert.equal(entry.description, 'incident call, part 2');
 });
 
-test('a timer on manual added has no text to edit', () => {
+test('the ticket first, the description after: a timer on manual added names its record', () => {
   const r = rig();
   const timer = r.timers.create('');
+  timer.spans[0] = { from: ago(5), to: null };
   const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Development', description: '' });
   assert.equal(entry.added, true);
-  assert.throws(() => r.timers.describe(timer.id, 'spike'), /Manual added time takes minutes only/);
-  assert.equal(entry.description, '');
+  assert.equal(r.timers.getTimers().timers[0].added, true);
+
+  const described = r.timers.describe(timer.id, 'spike');
+  assert.equal(described.absorbed, null);
+  assert.equal(described.entry?.id, entry.id, 'the same record');
+  assert.equal(described.timer.id, timer.id);
+  assert.equal(entry.added, undefined);
+  assert.equal(entry.description, 'spike');
+  assert.equal(entry.minutes, 5, 'the time it counted stays on the record');
+  assert.equal(timer.entryId, entry.id, 'the timer goes on feeding it');
+  const view = r.timers.getTimers().timers[0];
+  assert.equal(view.added, false);
+  assert.equal(view.description, 'spike');
+  assert.equal(view.state, TimerState.Running);
+  assert.equal(r.sessions.getDailyLog().manualEntries.length, 1, 'no new record');
+  assert.equal(readDailyLog(TODAY)!.manualEntries[0].description, 'spike');
+});
+
+test('a Development text taken away from the timer\'s side: the record is bare again, the timer goes on', () => {
+  const r = rig();
+  const timer = r.timers.create('spike');
+  timer.spans[0] = { from: ago(7), to: null };
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Development', description: 'spike' });
+  assert.equal(entry.added, undefined);
+
+  const emptied = r.timers.describe(timer.id, '  ');
+  assert.equal(emptied.absorbed?.id, entry.id, 'the caller tombstones its worklog by this id');
+  assert.equal(emptied.entry?.added, true);
+  assert.equal(emptied.entry?.minutes, 7);
+  assert.equal(emptied.timer.entryId, emptied.entry?.id);
+  const view = r.timers.getTimers().timers[0];
+  assert.equal(view.added, true);
+  assert.equal(view.description, '');
+  assert.equal(view.state, TimerState.Running);
   assert.equal(r.sessions.getDailyLog().manualEntries.length, 1);
 });
 

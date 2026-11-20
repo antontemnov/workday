@@ -111,7 +111,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit): P
 
 interface ApiResult<T> { ok: boolean; data?: T; error?: string }
 interface TimerRow { id: string; state: string; entryId: string | null; task: string | null; description: string; totalMs: number; shareMs: number; handMinutes: number }
-interface Timers { date: string; counting: string; desktopWidget: boolean; timers: TimerRow[]; timerId?: string | null; entry?: { id: string; minutes: number; task: string }; removedMinutes?: number }
+interface Timers { date: string; counting: string; desktopWidget: boolean; timers: TimerRow[]; timerId?: string | null; entry?: { id: string; minutes: number; task: string; description: string; added?: true }; removedMinutes?: number }
 interface Today { date: string; manualEntries: { id: string; minutes: number; task: string; description: string }[]; timers?: Timers }
 interface StoredTimer { id: string; entryId: string | null; state: string; description: string; spans: { from: string; to: string | null }[] }
 interface StoredDay { timers?: StoredTimer[]; manualEntries: { id: string; minutes: number }[] }
@@ -224,7 +224,7 @@ try {
     assert.deepEqual(today.manualEntries.map(e => e.description), ['deploy, second try']);
     const emptied = await timer('describe', { id: firstId, description: '  ' });
     assert.equal(emptied.ok, false);
-    assert.match(emptied.error ?? '', /cannot be empty/);
+    assert.match(emptied.error ?? '', /Description is required/, 'only Development may go without one');
   });
   await check('Remove timer is refused while nothing is typed by hand', async () => {
     const refused = await timer('remove', { entry: entryId });
@@ -262,6 +262,36 @@ try {
     const today = (await api<Today>('/api/today')).data!;
     assert.deepEqual(today.manualEntries.map(e => e.id), [entryId]);
     assert.equal(storedDay(day).timers, undefined);
+  });
+  await check('the ticket first, the description after — and the description taken away again', async () => {
+    const fresh = await timer('new', {});
+    const freshId = fresh.data!.timerId as string;
+    const bare = await timer('bind', { id: freshId, task: 'ATL-1', activity: 'Development', description: '' });
+    assert.equal(bare.ok, true, bare.error);
+    assert.equal(bare.data!.entry?.added, true, 'no description — the ticket\'s bare Development time');
+    const bareId = bare.data!.entry!.id;
+
+    const named = await timer('describe', { id: freshId, description: 'spike' });
+    assert.equal(named.ok, true, named.error);
+    assert.equal(named.data!.entry?.id, bareId, 'the same record');
+    assert.equal(named.data!.entry?.added, undefined);
+    assert.equal(named.data!.entry?.description, 'spike');
+    assert.equal(named.data!.timerId, freshId);
+    assert.equal(named.data!.timers.find(t => t.id === freshId)?.state, 'running');
+    let today = (await api<Today>('/api/today')).data!;
+    assert.equal(today.manualEntries.length, 2, 'no new record');
+
+    const emptied = await timer('describe', { id: freshId, description: '' });
+    assert.equal(emptied.ok, true, emptied.error);
+    assert.equal(emptied.data!.entry?.added, true);
+    assert.equal(emptied.data!.timers.find(t => t.id === freshId)?.state, 'running', 'the timer goes on');
+    today = (await api<Today>('/api/today')).data!;
+    assert.equal(today.manualEntries.length, 2);
+
+    const removed = await timer('delete', { id: freshId });
+    assert.equal(removed.ok, true, removed.error);
+    today = (await api<Today>('/api/today')).data!;
+    assert.deepEqual(today.manualEntries.map(e => e.id), [entryId]);
   });
 
   // ─── 5. The CLI ─────────────────────────────────────────────────────────

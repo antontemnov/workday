@@ -7,6 +7,7 @@ import {
   deleteTimer,
   describeTimer,
   dropEntryTimer,
+  findEntryTimer,
   findLiveTimer,
   getTimers,
   handMinutes,
@@ -36,6 +37,16 @@ export interface TimerRemoval {
   readonly removedMinutes: number;
   // The entry that grew from the timer alone and went with it.
   readonly deletedEntry: ManualEntry | null;
+}
+
+/** What an edit of a timer's text did. */
+export interface TimerDescription {
+  // The timer the text belongs to now — absorbed, it may be another one.
+  readonly timer: Timer;
+  // The entry whose description this was; null for a timer without a ticket.
+  readonly entry: ManualEntry | null;
+  // The entry that lost its text and went into the ticket's manual added record.
+  readonly absorbed: ManualEntry | null;
 }
 
 /**
@@ -142,20 +153,23 @@ export class TimerTracker {
   /**
    * A no-ticket timer's own text. A timer with a ticket has none: the text
    * is its entry's description, edited by the entry's rules — that entry is
-   * returned. An empty text never empties an entry from here.
+   * returned. A text given to a record without one names it; a Development
+   * entry's text taken away sends it into the ticket's manual added record
+   * (`absorbed` — the entry that is no more), and the timer goes on there.
    */
-  public describe(target: string, description: string): { timer: Timer; entry: ManualEntry | null } {
+  public describe(target: string, description: string): TimerDescription {
     const timer = this.requireTimer(target);
     if (timer.entryId === null) {
       describeTimer(this.log, timer.id, description);
       this.sessionTracker.flush();
-      return { timer, entry: null };
+      return { timer, entry: null, absorbed: null };
     }
-    if (!description.trim()) throw new Error('Description cannot be empty');
     const result = this.sessionTracker.editManualEntry(timer.entryId, { description });
     if (!result.ok || !result.edit) throw new Error(result.error ?? 'The entry was not edited');
     this.sessionTracker.flush();
-    return { timer, entry: result.edit.entry };
+    const { entry, absorbed } = result.edit;
+    // Absorbed, the timer may have joined the one the record already had.
+    return { timer: findEntryTimer(this.log, entry.id) ?? timer, entry, absorbed };
   }
 
   /** task? → Log: the timer gets its ticket. */

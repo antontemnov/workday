@@ -765,8 +765,11 @@ export interface ManualEntryEdit {
 
 /**
  * Edit a manual entry (absolute set of provided fields). The manual added
- * record takes minutes only; a standalone entry edited down to bare
- * Development is absorbed by it. Budget re-checked when minutes increase.
+ * record is the ticket's Development time without a description, nothing
+ * more: given a description (or another type) it becomes an entry of its
+ * own, the same record under the same id, its timer still on it. The other
+ * way, a standalone entry edited down to bare Development is absorbed by
+ * the ticket's manual added record. Budget re-checked when minutes increase.
  * The entry's timer keeps what it counted; a number smaller than that cuts
  * the timer down to it.
  * Validates everything before the first write. Throws on validation failure.
@@ -803,12 +806,18 @@ export function editManualEntry(
   }
 
   if (isAddedEntry(entry)) {
-    if (activity !== DEFAULT_ACTIVITY || description) {
-      throw new Error('Manual added time takes minutes only — log a described entry instead');
-    }
     assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
     fitTimerToEntry(log, entry.id, minutes, nowIso);
     entry.minutes = minutes;
+    if (activity !== DEFAULT_ACTIVITY || description) {
+      // Named, it leaves the ticket's common worklog for one of its own. It
+      // never owned a worklog, so the id is free to stay.
+      const named = entry as { added?: true; sourceSessionId?: string };
+      delete named.added;
+      delete named.sourceSessionId;
+      entry.activity = activity;
+      entry.description = description;
+    }
     unsealForEdit(log);
     return { entry, absorbed: null };
   }

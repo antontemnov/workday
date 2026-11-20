@@ -348,12 +348,12 @@ const LOOSE = timer('loose', TimerState.Running, { description: 'standup notes' 
 const keyOf = (name: string): { key: string; prevented: boolean; preventDefault(): void } =>
   ({ key: name, prevented: false, preventDefault(): void { this.prevented = true; } });
 
-await test('edit: the pencil is on a timer that is switched on, not on manual added, not at rest', () => {
+await test('edit: the pencil is on a timer that is switched on, not on one at rest', () => {
   const h = makePlate([DEPLOY, CALL, ADDED]);
   assert.equal(h.comp.isDescribable(DEPLOY), true);
   assert.equal(h.comp.isDescribable(timer('w', TimerState.Waiting)), true, 'waiting is switched on too');
   assert.equal(h.comp.isDescribable(CALL), false, 'a timer at rest has the eye in the slot');
-  assert.equal(h.comp.isDescribable(ADDED), false, 'manual added has no text');
+  assert.equal(h.comp.isDescribable(ADDED), true, 'a record without a description gets one here');
 });
 
 await test('edit: the pencil opens a field, the plate asks for the keyboard and for room', () => {
@@ -425,18 +425,34 @@ await test('edit: a click away and a poll leave the edit as it is', () => {
   assert.deepEqual(h.typing, [true]);
 });
 
-await test('edit: a record\'s description is never emptied; a no-ticket timer may lose its text', () => {
+await test('edit: a text taken away is sent like any other; refused, the stored one is back', () => {
   const h = makePlate([DEPLOY, LOOSE]);
   h.comp.onPencil(DEPLOY);
   h.comp.onEditInput('   ');
   h.comp.keep(DEPLOY);
-  assert.equal(h.described.length, 0);
+  assert.deepEqual(h.described, [{ id: 'deploy', description: '' }], 'the daemon knows which record may go without a text');
+  assert.equal(h.comp.textOf(DEPLOY), '');
+  h.comp.forgetSent('deploy');
   assert.equal(h.comp.textOf(DEPLOY), 'staging release');
 
   h.comp.onPencil(LOOSE);
   h.comp.onEditInput('');
   h.comp.keep(LOOSE);
-  assert.deepEqual(h.described, [{ id: 'loose', description: '' }]);
+  assert.deepEqual(h.described.at(-1), { id: 'loose', description: '' });
+});
+
+await test('edit: the ticket first, the text after — a timer on a record without a description names it', () => {
+  const h = makePlate([ADDED]);
+  h.comp.onPencil(ADDED);
+  assert.equal(h.comp.editingId, 'added');
+  assert.equal(h.comp.draft, '');
+  h.comp.onEditInput('fixing tests');
+  h.comp.keep(ADDED);
+  assert.deepEqual(h.described, [{ id: 'added', description: 'fixing tests' }]);
+  h.comp.onPencil(ADDED);
+  h.comp.onEditInput('fixing tests');
+  h.comp.keep(ADDED);
+  assert.equal(h.described.length, 1, 'the same text is not sent twice');
 });
 
 await test('edit: the sent text holds until the rows carry it; a refusal brings the old one back', () => {

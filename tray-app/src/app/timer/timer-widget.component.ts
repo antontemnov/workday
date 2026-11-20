@@ -43,8 +43,9 @@ interface Found {
  * The pencil turns the description into a field right on the plate. The
  * button in the slot keeps what was typed, Enter does the same, Esc puts the
  * text back; a click away changes nothing — the edit stays on. A timer with
- * a ticket has no text of its own: the field edits its record's description,
- * and an emptied one is never sent. A timer made by New timer of the tray
+ * a ticket has no text of its own: the field edits its record's description
+ * — a record without one gets it here, so the ticket may be picked first and
+ * the text typed after. A timer made by New timer of the tray
  * menu (birthId) is born in the edit, and Esc on its still-empty field takes
  * the timer back.
  *
@@ -179,8 +180,8 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
   isWaiting(timer: TimerView): boolean { return timer.state === TimerState.Waiting; }
   isPaused(timer: TimerView): boolean { return timer.state === TimerState.Paused; }
 
-  // The pencil: any timer that is switched on, but manual added time — it has no text.
-  isDescribable(timer: TimerView): boolean { return !this.isPaused(timer) && !timer.added; }
+  // The pencil: any timer that is switched on.
+  isDescribable(timer: TimerView): boolean { return !this.isPaused(timer); }
 
   // The ticket glyph: a timer that has no ticket yet.
   isPickable(timer: TimerView): boolean { return timer.entryId === null; }
@@ -266,8 +267,6 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
     if (this.editingId !== timer.id) return;
     const description = this.draft.trim();
     this.setEdit(null);
-    // A record's description is never emptied from here.
-    if (description === '' && timer.entryId !== null) return;
     if (description === this.textOf(timer)) return;
     this.sent.set(timer.id, description);
     this.described.emit({ id: timer.id, description });

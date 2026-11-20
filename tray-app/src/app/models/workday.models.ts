@@ -67,8 +67,10 @@ export interface ActiveInterval {
 // Declared time on a task. Mirrors the daemon's ManualEntry. Standalone
 // entries (via "Log") become their own Tempo worklogs; the manual added
 // record (`added`) is the ticket's bare Development time — at most one per
-// task per day, every bare Development add lands on it, only its minutes
-// are editable, and it folds into the session aggregate at push time.
+// task per day, every bare Development add lands on it, and it folds into
+// the session aggregate at push time. Given a description it becomes a
+// standalone entry under the same id; a Development entry that loses its
+// description goes back into it.
 export interface ManualEntry {
   readonly id: string;
   readonly task: string;

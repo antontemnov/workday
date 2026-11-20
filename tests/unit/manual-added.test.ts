@@ -153,17 +153,57 @@ test('a Tempo-imported bare worklog stays its own entry', () => {
 console.log('');
 console.log('Manual added — edits');
 
-test('the record takes minutes only', () => {
+test('minutes change the record; it stays the ticket\'s bare time', () => {
   const log = makeLog();
   const record = bare(log, 'ATL-10', 30);
   const { entry, absorbed } = editManualEntry(log, record.id, { minutes: 50 }, config);
   assert.equal(entry.minutes, 50);
   assert.equal(absorbed, null);
-  // a form echoing the fixed fields back is fine
+  // a form echoing the same fields back is fine
   editManualEntry(log, record.id, { minutes: 40, description: '', activity: 'Development' }, config);
-  assert.throws(() => editManualEntry(log, record.id, { description: 'now named' }, config), /minutes only/);
-  assert.throws(() => editManualEntry(log, record.id, { activity: 'CodeReview', description: 'x' }, config), /minutes only/);
-  assert.equal(findAddedEntry(log, 'ATL-10')?.minutes, 40, 'rejected edits write nothing');
+  assert.equal(findAddedEntry(log, 'ATL-10')?.minutes, 40);
+  assert.equal(findAddedEntry(log, 'ATL-10')?.id, record.id);
+});
+
+test('given a description the record becomes an entry of its own, under the same id', () => {
+  const log = makeLog();
+  const record = bare(log, 'ATL-10', 30);
+  const { entry, absorbed } = editManualEntry(log, record.id, { description: ' now named ' }, config);
+  assert.equal(absorbed, null);
+  assert.equal(entry.id, record.id, 'the same record — no new row');
+  assert.equal(entry.added, undefined);
+  assert.equal(entry.description, 'now named');
+  assert.equal(entry.activity, 'Development');
+  assert.equal(entry.minutes, 30, 'all of its time goes with it');
+  assert.equal(findAddedEntry(log, 'ATL-10'), undefined, 'the ticket has no bare time left');
+  assert.equal(log.manualEntries.length, 1);
+
+  // The next bare add starts a new record; it does not rejoin the named one.
+  bare(log, 'ATL-10', 15);
+  assert.equal(findAddedEntry(log, 'ATL-10')?.minutes, 15);
+  assert.equal(log.manualEntries.length, 2);
+});
+
+test('another type names the record too, minutes in the same edit', () => {
+  const log = makeLog();
+  const record = bare(log, 'ATL-10', 30);
+  const { entry } = editManualEntry(log, record.id, { activity: 'CodeReview', description: 'PR 214', minutes: 45 }, config);
+  assert.equal(entry.added, undefined);
+  assert.equal(entry.activity, 'CodeReview');
+  assert.equal(entry.minutes, 45);
+  assert.throws(() => editManualEntry(log, bare(log, 'ATL-11', 10).id, { activity: 'Meeting' }, config), /Description is required/);
+  assert.equal(findAddedEntry(log, 'ATL-11')?.added, true, 'a rejected edit writes nothing');
+});
+
+test('named and emptied again: the time is back in the ticket\'s bare record', () => {
+  const log = makeLog();
+  const record = bare(log, 'ATL-10', 30);
+  editManualEntry(log, record.id, { description: 'pairing' }, config);
+  const { entry, absorbed } = editManualEntry(log, record.id, { description: '' }, config);
+  assert.equal(absorbed?.id, record.id);
+  assert.equal(entry.added, true);
+  assert.equal(entry.minutes, 30);
+  assert.equal(log.manualEntries.length, 1);
 });
 
 test('a standalone entry edited down to bare Development is absorbed', () => {

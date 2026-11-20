@@ -1097,7 +1097,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return e.id === this.freshId && this.freshMinutes !== null;
   }
 
-  // The manual added record edits too — its form locks everything but time.
+  // The record without a description edits like any other.
   canEdit(e: ManualEntry): boolean {
     return !this.isFresh(e);
   }
@@ -1164,12 +1164,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     ]);
   }
 
-  // The manual added row: its time is all there is to edit.
+  // The row of the record without a description: the same menu, less the
+  // favorite — there is no text to name a template by.
   onAddedMenu(b: TicketBlock, m: ManualEntry, ev: MouseEvent): void {
     if (!this.addedMenuReady(b)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
       ...this.startTimerItems(m),
-      { icon: CTX_ICON.edit, label: 'Edit time', action: () => this.onRowDblClick(m) },
+      { icon: CTX_ICON.edit, label: 'Edit', action: () => this.onRowDblClick(m) },
       ...this.removeTimerItems(m),
       { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteFolded(b) },
     ]);
@@ -1485,9 +1486,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.editPinnedActivity = this.editActivity;
     this.editDescription = this.displayDescription(e);
     // Focus once the form morph renders. The description — no select() on
-    // the frameless time (the highlight box reads as a glitch there); the
-    // locked manual added form has only its time to offer.
-    this.focusForm(e.added ? '.c-dur.edit' : '.le-desc');
+    // the frameless time (the highlight box reads as a glitch there).
+    this.focusForm('.le-desc');
   }
 
   // Add time: a new row born as its own form at the foot of the card.

@@ -13,8 +13,9 @@ import { TimerTimeComponent } from './timer-time.component';
  *
  * The description is a plain field: focus it and it is being edited; Enter
  * or a click away keeps it, Esc puts it back. A timer with a ticket has no
- * text of its own — the field edits its record's description, and an emptied
- * one is put back, never sent. Polls never touch the field under the caret —
+ * text of its own — the field edits its record's description: a record
+ * without one gets it here, and a text taken away goes to the daemon like
+ * any other (it knows which record may go without). Polls never touch the field under the caret —
  * rows are tracked by id and the field reads its own draft. Right after New
  * timer (birthId) the caret waits in the description, and Esc on the
  * still-empty field takes the timer back.
@@ -83,8 +84,8 @@ export class TimerIslandComponent implements OnChanges {
   // A timer with a ticket acts on its record — a closed month lets nothing through.
   isFrozen(timer: TimerView): boolean { return this.locked && timer.entryId !== null; }
 
-  // Manual added time has no description to edit.
-  isDescribable(timer: TimerView): boolean { return !timer.added && !this.isFrozen(timer); }
+  // The text is a field unless the month is closed for the timer's record.
+  isDescribable(timer: TimerView): boolean { return !this.isFrozen(timer); }
 
   /** The daemon refused a description: the field shows the stored text again. */
   public forgetSent(timerId: string): void {
@@ -139,17 +140,11 @@ export class TimerIslandComponent implements OnChanges {
   }
 
   // Enter or a click away: what was typed is the description.
-  private keepDescription(timer: TimerView, field?: HTMLInputElement): void {
+  private keepDescription(timer: TimerView, _field?: HTMLInputElement): void {
     if (this.editingId !== timer.id) return;
     this.editingId = null;
     if (this.birthId === timer.id) this.birthSettled.emit();
     const description = this.draft.trim();
-    // A record's description is never emptied from here: the stored text is
-    // put back at once.
-    if (description === '' && timer.entryId !== null) {
-      if (field) field.value = this.storedDescription(timer);
-      return;
-    }
     if (description === this.storedDescription(timer)) return;
     this.sent.set(timer.id, description);
     this.described.emit({ id: timer.id, description });

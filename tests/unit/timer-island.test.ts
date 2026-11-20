@@ -463,23 +463,24 @@ test('island: a timer with a ticket edits its record\'s description from its row
   assert.equal(h.comp.descriptionOf(t), 'release notes, part 2');
 });
 
-test('island: an emptied description of a record is put back, never sent', () => {
+test('island: a text taken away is sent like any other; refused, the stored one is back', () => {
   const t = ticketed('a', 'release notes');
   const h = makeIsland([t]);
   h.comp.onDescFocus(t);
   h.comp.onDescInput(t, '   ');
-  const emptied = field('   ');
-  h.comp.onDescKeydown(t, key('Enter', emptied) as never);
-  assert.equal(h.described.length, 0);
-  assert.equal(emptied.value, 'release notes', 'put back at once');
+  h.comp.onDescKeydown(t, key('Enter', field('   ')) as never);
+  assert.deepEqual(h.described, [{ id: 'a', description: '' }], 'the daemon knows which record may go without a text');
+  assert.equal(h.comp.descriptionOf(t), '');
+  h.comp.forgetSent('a'); // not a Development record — the daemon refused
   assert.equal(h.comp.descriptionOf(t), 'release notes');
 
-  const blurred = field('');
   h.comp.onDescFocus(t);
   h.comp.onDescInput(t, '');
-  h.comp.onDescBlur(t, blurred as never); // a click away
-  assert.equal(h.described.length, 0);
-  assert.equal(blurred.value, 'release notes');
+  h.comp.onDescBlur(t, field('') as never); // a click away
+  assert.equal(h.described.length, 2);
+  h.refresh([ticketed('a', '', { added: true })]); // a Development record: it is bare now
+  assert.equal(h.comp.descriptionOf(ticketed('a', '', { added: true })), '');
+  h.described.length = 0;
 
   const own = loose('b', 'ops help');
   h.refresh([t, own]);
@@ -500,12 +501,16 @@ test('island: a description the daemon refused goes back to the stored text', ()
   assert.equal(h.comp.descriptionOf(t), 'release notes');
 });
 
-test('island: manual added has no text to edit; a closed month freezes a record\'s row', () => {
+test('island: a record without a description gets one here; a closed month freezes a record\'s row', () => {
   const added = ticketed('a', '', { added: true });
   const record = ticketed('b', 'release notes');
   const own = loose('c', 'ops help');
   const h = makeIsland([added, record, own]);
-  assert.equal(h.comp.isDescribable(added), false);
+  assert.equal(h.comp.isDescribable(added), true, 'the ticket first, the text after');
+  h.comp.onDescFocus(added);
+  h.comp.onDescInput(added, 'fixing tests');
+  h.comp.onDescBlur(added);
+  assert.deepEqual(h.described, [{ id: 'a', description: 'fixing tests' }]);
   assert.equal(h.comp.isFrozen(record), false);
   h.comp.locked = true;
   assert.equal(h.comp.isFrozen(record), true, 'Remove and the text act on the record');
