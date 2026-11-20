@@ -8,9 +8,9 @@
 // plate: the frontend reports the plate's logical size (fit_widget) and Rust
 // sizes the window to it in physical pixels. The height follows the rows; only
 // the width is the user's. The window grows away from the screen edge it is
-// nearest to — that edge (the anchor) stays put. On Windows the widget may
-// stand on the taskbar as well; there it is kept above the taskbar (see the
-// taskbar module below).
+// nearest to — that edge (the anchor) stays put. The widget stands in the
+// work area only: the taskbar is a topmost window as well, the shell puts it
+// above the others whenever it likes, and no window of ours can stay on it.
 //
 // The main window is the brain: it decides whether the widget exists and hands
 // it the rows (sync_widget); the widget only shows them and sends clicks back
@@ -110,11 +110,6 @@ fn keep_inside(rect: Rect, bounds: Rect) -> Rect {
     Rect { x, y, w, h: rect.h }
 }
 
-/// Some of the window lies outside the work area — on the taskbar.
-fn on_taskbar(rect: Rect, work: Rect) -> bool {
-    keep_inside(rect, work) != rect
-}
-
 /// The rectangle a drag has reached. Only the width is ever dragged.
 fn dragged(drag: &Drag, cursor: (f64, f64), min_width: i32) -> Rect {
     let dx = (cursor.0 - drag.cursor.0).round() as i32;
@@ -156,6 +151,8 @@ fn default_geometry(work: Rect, scale: f64) -> WidgetGeometry {
 
 // ─── Screen ─────────────────────────────────────────────────────────────
 
+/// Where the widget may stand: the taskbar, the Dock and the menu bar draw
+/// over any window of ours.
 fn work_rect(monitor: &Monitor) -> Rect {
     let area = monitor.work_area();
     Rect {
@@ -163,19 +160,6 @@ fn work_rect(monitor: &Monitor) -> Rect {
         y: area.position.y,
         w: area.size.width as i32,
         h: area.size.height as i32,
-    }
-}
-
-/// Where the widget may stand. On Windows — the whole screen: the taskbar is a
-/// place too. Elsewhere — the work area: the Dock and the menu bar draw over
-/// any window of ours.
-fn bounds_rect(monitor: &Monitor) -> Rect {
-    if cfg!(windows) {
-        let position = monitor.position();
-        let size = monitor.size();
-        Rect { x: position.x, y: position.y, w: size.width as i32, h: size.height as i32 }
-    } else {
-        work_rect(monitor)
     }
 }
 
@@ -223,18 +207,6 @@ fn widget_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window(WIDGET_LABEL).ok_or_else(|| "widget window not found".to_string())
 }
 
-/// The window has taken its place: on the taskbar it is kept above it.
-#[cfg(windows)]
-fn settle(window: &WebviewWindow, rect: Rect, work: Rect) {
-    match window.hwnd() {
-        Ok(hwnd) if on_taskbar(rect, work) => taskbar::keep_above(hwnd.0 as isize),
-        _ => taskbar::leave(),
-    }
-}
-
-#[cfg(not(windows))]
-fn settle(_window: &WebviewWindow, _rect: Rect, _work: Rect) {}
-
 // ─── Commands ───────────────────────────────────────────────────────────
 
 /// The main window's word on the widget: rows to show, or none — then the
@@ -253,8 +225,6 @@ pub async fn sync_widget(
             state.payload = None;
             state.drag = None;
         }
-        #[cfg(windows)]
-        taskbar::leave();
         if let Some(window) = app.get_webview_window(WIDGET_LABEL) {
             window.close().map_err(|e| e.to_string())?;
         }
@@ -321,11 +291,9 @@ pub fn fit_widget(app: AppHandle, min_width: f64, height: f64) -> Result<(), Str
     let geometry = stored.unwrap_or_else(|| default_geometry(work, scale));
     STATE.lock().unwrap().geometry = Some(geometry);
 
-    let rect = place(&geometry, plate_size(geometry.width, min_width, height, scale), bounds_rect(&monitor));
+    let rect = place(&geometry, plate_size(geometry.width, min_width, height, scale), work);
     apply_rect(&window, rect)?;
-    window.show().map_err(|e| e.to_string())?;
-    settle(&window, rect, work);
-    Ok(())
+    window.show().map_err(|e| e.to_string())
 }
 
 /// A drag begins: by the body (move) or by an edge (width).
@@ -353,9 +321,9 @@ pub fn widget_drag(app: AppHandle) -> Result<(), String> {
     apply_rect(&window, rect)
 }
 
-/// The drag is over: the window settles inside its screen (on Windows the
-/// taskbar is part of it), its nearest corner becomes the anchor, and the main
-/// window gets the geometry to keep.
+/// The drag is over: the window settles inside the work area (one dropped on
+/// the taskbar comes to stand right above it), its nearest corner becomes the
+/// anchor, and the main window gets the geometry to keep.
 #[tauri::command]
 pub fn widget_release(app: AppHandle) -> Result<(), String> {
     let (drag, stored, min_width, height) = {
@@ -369,26 +337,24 @@ pub fn widget_release(app: AppHandle) -> Result<(), String> {
         return Ok(());
     };
     let work = work_rect(&monitor);
-    let bounds = bounds_rect(&monitor);
     let scale = monitor.scale_factor();
-    let settled = keep_inside(rect, bounds);
+    let settled = keep_inside(rect, work);
     // A move leaves the user's width as it was: the window may be wider than
     // it only because its rows need more.
     let width = match (drag.grab, stored) {
         (Grab::Move, Some(g)) => g.width,
         _ => settled.w as f64 / scale,
     };
-    let geometry = anchor_of(settled, bounds, width);
+    let geometry = anchor_of(settled, work, width);
     // The plate as its rows want it now — they may have changed under the drag.
     let fitted = if height > 0.0 {
-        place(&geometry, plate_size(geometry.width, min_width, height, scale), bounds)
+        place(&geometry, plate_size(geometry.width, min_width, height, scale), work)
     } else {
         settled
     };
     if fitted != rect {
         apply_rect(&window, fitted)?;
     }
-    settle(&window, fitted, work);
     if stored == Some(geometry) {
         return Ok(());
     }
@@ -570,151 +536,12 @@ mod keyboard {
     }
 }
 
-// ─── On the taskbar (Windows) ───────────────────────────────────────────
-//
-// The taskbar is a topmost window as well, and every click on it brings it
-// above the other topmost ones — over a widget standing on it. Such a widget
-// is put back on top: at once when the foreground window changes (a click on
-// the taskbar is one), and on a slow timer for what comes without that event.
-// Only a taskbar lying over the widget moves it; menus and tooltips do not.
-#[cfg(windows)]
-mod taskbar {
-    use std::sync::atomic::{AtomicIsize, Ordering};
-    use std::sync::Once;
-    use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT};
-    use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, EnumWindows, GetClassNameW, GetMessageW, GetWindowRect, IsWindow,
-        IsWindowVisible, SetTimer, SetWindowPos, EVENT_SYSTEM_FOREGROUND, HWND_TOPMOST, MSG,
-        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WINEVENT_OUTOFCONTEXT, WM_TIMER,
-    };
-
-    const RECHECK_MS: u32 = 500;
-    const TASKBAR_CLASSES: [&str; 2] = ["Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
-
-    /// The widget's window while it stands on the taskbar; 0 — it does not.
-    static WIDGET: AtomicIsize = AtomicIsize::new(0);
-    static WATCH: Once = Once::new();
-
-    struct Probe {
-        widget: HWND,
-        rect: RECT,
-        covered: bool,
-    }
-
-    /// The widget stands on the taskbar from now on.
-    pub fn keep_above(hwnd: isize) {
-        WIDGET.store(hwnd, Ordering::Relaxed);
-        // The watch starts with the first widget put on the taskbar and lives
-        // on: without one it has nothing to lift.
-        WATCH.call_once(|| {
-            std::thread::spawn(watch);
-        });
-        lift();
-    }
-
-    /// The widget left the taskbar, or is gone.
-    pub fn leave() {
-        WIDGET.store(0, Ordering::Relaxed);
-    }
-
-    // The hook's callbacks arrive through this thread's message loop.
-    fn watch() {
-        unsafe {
-            SetWinEventHook(
-                EVENT_SYSTEM_FOREGROUND,
-                EVENT_SYSTEM_FOREGROUND,
-                std::ptr::null_mut(),
-                Some(on_foreground),
-                0,
-                0,
-                WINEVENT_OUTOFCONTEXT,
-            );
-            SetTimer(std::ptr::null_mut(), 0, RECHECK_MS, None);
-            let mut message: MSG = std::mem::zeroed();
-            while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
-                if message.message == WM_TIMER {
-                    lift();
-                }
-                DispatchMessageW(&message);
-            }
-        }
-    }
-
-    unsafe extern "system" fn on_foreground(
-        _hook: HWINEVENTHOOK,
-        _event: u32,
-        _hwnd: HWND,
-        _object: i32,
-        _child: i32,
-        _thread: u32,
-        _time: u32,
-    ) {
-        lift();
-    }
-
-    fn lift() {
-        let widget = WIDGET.load(Ordering::Relaxed) as HWND;
-        if widget.is_null() {
-            return;
-        }
-        unsafe {
-            let mut probe = Probe { widget, rect: std::mem::zeroed(), covered: false };
-            if IsWindow(widget) == 0 || GetWindowRect(widget, &mut probe.rect) == 0 {
-                return;
-            }
-            EnumWindows(Some(above), &mut probe as *mut Probe as LPARAM);
-            if probe.covered {
-                SetWindowPos(
-                    widget,
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
-                );
-            }
-        }
-    }
-
-    // Windows come from the top down: a taskbar met before the widget lies over it.
-    unsafe extern "system" fn above(hwnd: HWND, lparam: LPARAM) -> i32 {
-        let probe = &mut *(lparam as *mut Probe);
-        if hwnd == probe.widget {
-            return 0;
-        }
-        if is_taskbar(hwnd) && IsWindowVisible(hwnd) != 0 && overlaps(hwnd, &probe.rect) {
-            probe.covered = true;
-            return 0;
-        }
-        1
-    }
-
-    unsafe fn is_taskbar(hwnd: HWND) -> bool {
-        let mut name = [0u16; 32];
-        let length = GetClassNameW(hwnd, name.as_mut_ptr(), name.len() as i32);
-        let class = String::from_utf16_lossy(&name[..length.max(0) as usize]);
-        TASKBAR_CLASSES.contains(&class.as_str())
-    }
-
-    unsafe fn overlaps(hwnd: HWND, rect: &RECT) -> bool {
-        let mut other: RECT = std::mem::zeroed();
-        GetWindowRect(hwnd, &mut other) != 0
-            && other.left < rect.right
-            && rect.left < other.right
-            && other.top < rect.bottom
-            && rect.top < other.bottom
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // A 1920x1080 screen at 125 % with a 48px taskbar at the bottom.
     const WORK: Rect = Rect { x: 0, y: 0, w: 1920, h: 1032 };
-    const SCREEN: Rect = Rect { x: 0, y: 0, w: 1920, h: 1080 };
 
     fn geometry(anchor_x: i32, anchor_y: i32, from_right: bool, from_bottom: bool, width: f64) -> WidgetGeometry {
         WidgetGeometry { anchor_x, anchor_y, from_right, from_bottom, width }
@@ -778,24 +605,23 @@ mod tests {
     }
 
     #[test]
-    fn the_taskbar_is_a_place_too() {
+    fn the_taskbar_is_not_a_place() {
         let on_the_bar = Rect { x: 1372, y: 1040, w: 328, h: 33 };
-        assert_eq!(keep_inside(on_the_bar, SCREEN), on_the_bar, "the screen keeps it where it was put");
-        assert!(on_taskbar(on_the_bar, WORK));
-        assert!(on_taskbar(Rect { y: 1010, ..on_the_bar }, WORK), "half on it counts");
-        assert!(!on_taskbar(Rect { y: 999, ..on_the_bar }, WORK), "right above it does not");
+        let settled = keep_inside(on_the_bar, WORK);
+        assert_eq!(settled, Rect { y: 999, ..on_the_bar }, "a widget dropped on it stands right above it");
+        assert_eq!(anchor_of(settled, WORK, 262.0), geometry(1700, 1032, true, true, 262.0));
 
-        let stored = anchor_of(on_the_bar, SCREEN, 262.0);
-        assert_eq!(stored, geometry(1700, 1073, true, true, 262.0));
-        assert_eq!(place(&stored, (328, 33), SCREEN), on_the_bar, "and it comes back there");
-        let two_rows = place(&stored, (328, 66), SCREEN);
-        assert_eq!(two_rows.y + two_rows.h, 1073, "rows still grow upwards from it");
+        // A place kept from the days the taskbar was one.
+        let stored = geometry(1700, 1073, true, true, 262.0);
+        assert_eq!(place(&stored, (328, 33), WORK), settled, "it comes back above the taskbar");
+        let two_rows = place(&stored, (328, 66), WORK);
+        assert_eq!(two_rows.y + two_rows.h, 1032, "and its rows grow upwards from there");
     }
 
     #[test]
-    fn a_drag_past_the_screen_edge_is_brought_back_to_it() {
-        let below = keep_inside(Rect { x: 1700, y: 1070, w: 328, h: 33 }, SCREEN);
-        assert_eq!(below, Rect { x: 1592, y: 1047, w: 328, h: 33 });
+    fn a_drag_past_the_work_area_is_brought_back_to_it() {
+        let below = keep_inside(Rect { x: 1700, y: 1070, w: 328, h: 33 }, WORK);
+        assert_eq!(below, Rect { x: 1592, y: 999, w: 328, h: 33 });
     }
 
     #[test]
