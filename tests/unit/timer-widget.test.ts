@@ -660,7 +660,8 @@ await test('ticket: the glyph asks for the tickets; the block opens when they co
   assert.equal(h.comp.rows, null, 'nothing is typed — the groups are shown');
   assert.equal(h.layouts.at(-1)?.minWidth, 262);
   close(h.layouts.at(-1)?.height ?? 0, (2.28 + 0.4 + 2.28 + 14.5) * 10.5);
-  assert.deepEqual(h.typing, [], 'the keyboard stays with the window that had it');
+  assert.deepEqual(h.typing, [true], 'the block takes the keyboard as it opens — Esc and the search work at once');
+  assert.equal(h.comp.findOn, true);
 });
 
 await test('ticket: the glyph again shuts the block; the side is taken when the block opens', () => {
@@ -692,7 +693,17 @@ await test('ticket: a click on a ticket binds the timer and shuts the block', ()
   h.comp.onTicket('ATL-6790');
   assert.deepEqual(h.bound, [{ id: 'loose', task: 'ATL-6790' }]);
   assert.equal(h.comp.pickId, null);
-  assert.deepEqual(h.typing, [], 'by the mouse alone — the keyboard was never taken');
+  assert.deepEqual(h.typing, [true, false], 'the keyboard goes back to the window that had it');
+});
+
+await test('ticket: the block moves to another row without giving the keyboard away', () => {
+  const idle = { ...LOOSE, id: 'idle', state: TimerState.Paused };
+  const h = openBlock([idle, LOOSE], idle);
+  h.comp.onTag(LOOSE);
+  h.comp.setKnown(KNOWN);
+  assert.equal(h.comp.pickId, 'loose');
+  assert.deepEqual(h.typing, [true, true]);
+  assert.equal(h.asked(), 2);
 });
 
 await test('ticket: the block goes with its row, and when the row has its ticket', () => {
@@ -715,11 +726,11 @@ await test('ticket: the block ends an edit as Enter does; another row\'s pencil 
   assert.deepEqual(h.described, [{ id: 'loose', description: 'retro prep' }]);
   assert.equal(h.comp.editingId, null);
   assert.equal(h.comp.pickId, 'loose');
-  assert.deepEqual(h.typing, [true, false], 'the block needs no keyboard');
+  assert.deepEqual(h.typing, [true, true], 'the keyboard stays on the widget — the block has it now');
   h.comp.onPencil(DEPLOY);
   assert.equal(h.comp.pickId, null);
   assert.equal(h.comp.editingId, 'deploy');
-  assert.deepEqual(h.typing, [true, false, true]);
+  assert.deepEqual(h.typing, [true, true, true]);
 });
 
 await test('ticket: while the block is open the slot next to its glyph is dead', () => {
@@ -762,19 +773,17 @@ await test('ticket: Esc anywhere on the widget shuts the block', () => {
   assert.equal(g.comp.pickId, 'loose', 'a key a field has taken already is left alone');
 });
 
-await test('search: the line takes the keyboard on a click, not before', () => {
+await test('search: the caret is in the line as soon as the block is open', () => {
   const h = openBlock([LOOSE], LOOSE);
-  assert.equal(h.comp.wantsKeyboard, false);
-  h.comp.onFind();
+  assert.equal(h.comp.wantsKeyboard, true);
   assert.equal(h.comp.findOn, true);
   assert.deepEqual(h.typing, [true]);
   h.comp.ngAfterViewChecked();
   assert.equal(h.carets(), 1, 'the caret goes to the search line');
   h.comp.onFind();
-  assert.deepEqual(h.typing, [true], 'a second click changes nothing');
+  assert.deepEqual(h.typing, [true], 'a click on the line changes nothing');
 
   const g = openBlock([DEPLOY, LOOSE], LOOSE);
-  g.comp.onFind();
   g.comp.onPencil(DEPLOY);
   assert.deepEqual(g.typing, [true, true], 'the keyboard stays on the widget between the search and a description');
   assert.equal(g.comp.findOn, false);
@@ -862,7 +871,7 @@ await test('search: Esc shuts the block and gives the keyboard back', () => {
   h.comp.onTag(LOOSE);
   h.comp.setKnown(KNOWN);
   assert.equal(h.comp.query, '', 'the block opens clean');
-  assert.equal(h.comp.findOn, false);
+  assert.deepEqual(h.typing, [true, false, true]);
 });
 
 // ─── The main window's service ────────────────────────────────────────────

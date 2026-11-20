@@ -52,10 +52,10 @@ interface Found {
  * ticket block next to the row, on the side the window grows to: a search
  * line and the tickets the app knows already, scrolling inside a list of one
  * height. A click on a ticket binds the timer; the glyph again shuts the
- * block. The search line takes the keyboard only when it is clicked: what is
- * typed filters the known tickets at once and, after a pause, goes to Jira.
- * Enter takes the row under the highlight, the arrows move it; Esc shuts the
- * block from anywhere on the widget while it has the keyboard. One thing at
+ * block. The block takes the keyboard as it opens, the caret in the search
+ * line: what is typed filters the known tickets at once and, after a pause,
+ * goes to Jira. Enter takes the row under the highlight, the arrows move it;
+ * Esc shuts the block from anywhere on the widget. One thing at
  * a time: the block ends an edit as Enter does, another row's pencil shuts
  * the block, and the slot next to the glyph of the open block is dead — a
  * missed click neither hides nor edits the row.
@@ -338,7 +338,7 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
     this.showRows();
   }
 
-  /** A click on the search line: it takes the keyboard. */
+  /** The search line takes the keyboard: when the block opens, and by a click if it was given away since. */
   onFind(): void {
     if (this.pickId === null || this.findOn) return;
     this.findOn = true;
@@ -405,15 +405,19 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
     const timer = this.timers.find(t => t.id === this.askedId);
     this.askedId = null;
     if (!timer || !this.isPickable(timer)) return;
-    this.closePick();
-    // What was typed in a description is kept, as by Enter — the block needs no keyboard.
-    const edited = this.timers.find(t => t.id === this.editingId);
-    if (edited) this.keep(edited);
+    // Another row's block shuts; the keyboard stays for this one.
+    this.yieldPick();
+    // What was typed in a description is kept, as by Enter; the keyboard
+    // stays on the widget for the block.
+    this.keepCurrent();
     this.pickId = timer.id;
     this.pickUp = this.growsUp;
     this.listEm = pickListEm(this.known);
     this.showRows();
     this.measure();
+    // The block takes the keyboard as it opens: Esc shuts it at once, and
+    // what is typed goes to the search line.
+    this.onFind();
   }
 
   private closePick(): void {
