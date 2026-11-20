@@ -2,7 +2,7 @@ import {
   ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, HostBinding, Input, NgZone, OnChanges, OnDestroy, Output,
 } from '@angular/core';
 import { TimerState, TimerView } from '../models/workday.models';
-import { formatTimerTime, liveMinutes } from './timer-clock.util';
+import { formatRecordTime, formatTimerTime, liveMinutes } from './timer-clock.util';
 
 const TICK_MS = 250;
 
@@ -11,6 +11,10 @@ const TICK_MS = 250;
  * lives outside the Angular zone and repaints this one node, so a second of
  * a timer never re-checks the whole app. Crossing a whole minute is the one
  * thing the rest of the screen cares about (sums move) — minuteChanged.
+ *
+ * The island, the chip and the widget print the timer's own time; a record's
+ * row in a card (`whole`) prints the record's — what was typed by hand and
+ * what the timer counted.
  */
 @Component({
   selector: 'app-timer-time',
@@ -25,6 +29,8 @@ export class TimerTimeComponent implements OnChanges, OnDestroy {
   // Fix the box to the text's character count — digits swapping must not
   // tremble what stands next to it.
   @Input() pinWidth: boolean = false;
+  // The fed record's whole time instead of the timer's own.
+  @Input() whole: boolean = false;
   @Output() minuteChanged: EventEmitter<void> = new EventEmitter<void>();
 
   text: string = '';
@@ -40,7 +46,7 @@ export class TimerTimeComponent implements OnChanges, OnDestroy {
 
   ngOnChanges(): void {
     const now = Date.now();
-    this.text = formatTimerTime(this.timer, Date.parse(this.asOf), now);
+    this.text = this.print(Date.parse(this.asOf), now);
     this.minutes = liveMinutes(this.timer, Date.parse(this.asOf), now);
     if (this.timer.state === TimerState.Running) this.start();
     else this.stop();
@@ -48,6 +54,10 @@ export class TimerTimeComponent implements OnChanges, OnDestroy {
 
   ngOnDestroy(): void {
     this.stop();
+  }
+
+  private print(asOfMs: number, nowMs: number): string {
+    return this.whole ? formatRecordTime(this.timer, asOfMs, nowMs) : formatTimerTime(this.timer, asOfMs, nowMs);
   }
 
   private start(): void {
@@ -66,7 +76,7 @@ export class TimerTimeComponent implements OnChanges, OnDestroy {
   private tick(): void {
     const now = Date.now();
     const asOfMs = Date.parse(this.asOf);
-    const text = formatTimerTime(this.timer, asOfMs, now);
+    const text = this.print(asOfMs, now);
     if (text !== this.text) {
       this.text = text;
       this.cdr.detectChanges();

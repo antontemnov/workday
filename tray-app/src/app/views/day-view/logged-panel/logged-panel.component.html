@@ -250,6 +250,7 @@
   <app-timer-time *ngIf="timerLive(t); else restTime"
                   [timer]="t"
                   [asOf]="timersAsOf"
+                  [whole]="true"
                   (minuteChanged)="onTimerMinute()" />
   <ng-template #restTime>{{ formatDurationHm(displayMinutes(e) * 60000) }}</ng-template>
 </ng-template>

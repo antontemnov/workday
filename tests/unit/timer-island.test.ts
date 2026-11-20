@@ -52,7 +52,7 @@ const change = (currentValue: unknown): { previousValue: null; currentValue: unk
 await import(new URL('../../tray-app/node_modules/@angular/compiler/fesm2022/compiler.mjs', import.meta.url).href);
 const { TimerState } = await import('../../tray-app/src/app/models/workday.models');
 const {
-  currentTimer, formatMinutes, formatTicking, formatTimerTime, liveMinutes, liveShareMs, liveTotalMs,
+  currentTimer, formatMinutes, formatRecordTime, formatTicking, formatTimerTime, liveMinutes, liveShareMs, liveTotalMs,
 } = await import('../../tray-app/src/app/timer/timer-clock.util');
 const { TimerTimeComponent } = await import('../../tray-app/src/app/timer/timer-time.component');
 const { TimerIslandComponent } = await import('../../tray-app/src/app/timer/timer-island.component');
@@ -126,6 +126,17 @@ test('the row prints the timer\'s own time, not its record\'s', () => {
   assert.equal(liveMinutes(t, at, at + 61 * SECOND), 246, 'the record\'s whole minutes move with it');
 });
 
+test('a card prints the record\'s whole time while its timer is on', () => {
+  const at = nowMs;
+  // 1h 14m typed by hand, 3m 36s counted by the timer.
+  const t = timer('a', TimerState.Running, { entryId: 'e1', totalMs: 77 * MINUTE + 36 * SECOND, shareMs: 3 * MINUTE + 36 * SECOND, handMinutes: 74 });
+  assert.equal(formatRecordTime(t, at, at), '1h 17m 36s');
+  assert.equal(formatRecordTime(t, at, at + 24 * SECOND), '1h 18m 00s');
+  assert.equal(formatTimerTime(t, at, at), '3m 36s', 'the island, the chip and the widget keep the timer\'s own');
+  const waiting = { ...t, state: TimerState.Waiting };
+  assert.equal(formatRecordTime(waiting, at, at + MINUTE), '1h 17m 36s', 'a timer that waits does not count');
+});
+
 test('a record at rest reads in minutes; whatever is on, and a loose timer, keeps seconds', () => {
   const ms = 47 * MINUTE + 15 * SECOND;
   const at = nowMs;
@@ -155,12 +166,13 @@ interface TimeHarness {
   set: (t: TimerView) => void;
 }
 
-function makeTime(t: TimerView): TimeHarness {
+function makeTime(t: TimerView, whole = false): TimeHarness {
   let repaints = 0;
   let minutes = 0;
   const zone = { runOutsideAngular: (fn: () => void): void => fn(), run: (fn: () => void): void => fn() };
   const cdr = { detectChanges: (): void => { repaints++; }, markForCheck(): void {} };
   const comp = new TimerTimeComponent(zone as never, cdr as never);
+  comp.whole = whole;
   comp.minuteChanged.subscribe(() => { minutes++; });
   const set = (next: TimerView): void => {
     comp.timer = next;
@@ -185,6 +197,20 @@ test('time node: a running timer ticks by itself and tells of every crossed minu
   assert.equal(h.minutes(), 2);
   assert.equal(h.repaints(), 62, 'one repaint a second, not one a tick');
   h.comp.ngOnDestroy();
+});
+
+test('time node: in a card it ticks the record\'s time, elsewhere the timer\'s', () => {
+  const fed = timer('t1', TimerState.Running, { entryId: 'e1', totalMs: 77 * MINUTE + 36 * SECOND, shareMs: 3 * MINUTE + 36 * SECOND, handMinutes: 74 });
+  const card = makeTime(fed, true);
+  const island = makeTime(fed);
+  assert.equal(card.comp.text, '1h 17m 36s');
+  assert.equal(island.comp.text, '3m 36s');
+  advance(24 * SECOND);
+  assert.equal(card.comp.text, '1h 18m 00s');
+  assert.equal(island.comp.text, '4m 00s');
+  assert.equal(card.minutes(), 1, 'the minute the sums move on is the record\'s');
+  card.comp.ngOnDestroy();
+  island.comp.ngOnDestroy();
 });
 
 test('time node: nothing ticks at rest, a pause stops the clock', () => {

@@ -49,6 +49,11 @@ export function formatTimerTime(timer: TimerView, asOfMs: number, nowMs: number)
   return timer.entryId !== null && timer.state === TimerState.Paused ? formatMinutes(ms) : formatTicking(ms);
 }
 
+/** The time a record's row prints while its timer is on: the record's whole time — typed and counted. */
+export function formatRecordTime(timer: TimerView, asOfMs: number, nowMs: number): string {
+  return formatTicking(liveTotalMs(timer, asOfMs, nowMs));
+}
+
 /** The timer the header chip shows: the running one, else the waiting one, else the last touched by hand. */
 export function currentTimer(timers: readonly TimerView[]): TimerView | null {
   const live = timers.find(t => t.state === TimerState.Running) ?? timers.find(t => t.state === TimerState.Waiting);
