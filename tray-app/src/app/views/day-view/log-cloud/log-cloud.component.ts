@@ -8,6 +8,7 @@ import {
   ActivityType, ApiErrorCode, DEVELOPMENT_ACTIVITY, Favorite, FavoriteInput, JiraSearchHit,
   ManualEntryInput, normalizeFavName, Suggestion, SuggestionCandidate, TimerBindInput,
 } from '../../../models/workday.models';
+import { loadStoredInProgress, sameHits, storeInProgress } from '../../../services/jira-in-progress.store';
 import { WorkdayApiService } from '../../../services/workday-api.service';
 import { activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
@@ -68,7 +69,6 @@ const FAV_FEEDBACK_MS = 1200;
 // Removed favorite chips shrink away (staggered in batch) before the emit.
 const SHRINK_STAGGER_MS = 40;
 const SHRINK_ANIM_MS = 180;
-const IN_PROGRESS_STORAGE_KEY = 'wd.logCloud.inProgress';
 const TICKET_KEY_QUERY_RE = /^[a-z][a-z0-9]+-\d+$/;
 
 /**
@@ -172,7 +172,7 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   public constructor(private api: WorkdayApiService) {}
 
   ngOnInit(): void {
-    this.inProgress = this.loadStoredInProgress();
+    this.inProgress = loadStoredInProgress();
     void this.refreshInProgress();
   }
 
@@ -244,29 +244,12 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
     if (res.errorCode === ApiErrorCode.JiraNotConfigured) { this.setInProgress([]); return; }
     if (!res.ok || !res.data) return;
     const hits = res.data.hits;
-    const same = hits.length === this.inProgress.length
-      && hits.every((h, i) => h.key === this.inProgress[i].key && h.summary === this.inProgress[i].summary);
-    if (!same) this.setInProgress(hits);
+    if (!sameHits(hits, this.inProgress)) this.setInProgress(hits);
   }
 
   private setInProgress(hits: readonly JiraSearchHit[]): void {
     this.inProgress = hits;
-    try {
-      localStorage.setItem(IN_PROGRESS_STORAGE_KEY, JSON.stringify(hits));
-    } catch { /* storage is a convenience — the block works without it */ }
-  }
-
-  // Last list from the previous run: the first open after a restart paints
-  // at once instead of growing a block when Jira answers.
-  private loadStoredInProgress(): readonly JiraSearchHit[] {
-    try {
-      const raw: unknown = JSON.parse(localStorage.getItem(IN_PROGRESS_STORAGE_KEY) ?? '[]');
-      if (!Array.isArray(raw)) return [];
-      return raw.filter((h): h is JiraSearchHit =>
-        typeof h?.key === 'string' && typeof h?.summary === 'string');
-    } catch {
-      return [];
-    }
+    storeInProgress(hits);
   }
 
   onFilterInput(value: string): void {

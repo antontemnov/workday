@@ -1,17 +1,31 @@
-import { AfterViewChecked, Component, ElementRef, EventEmitter, Input, OnChanges, Output } from '@angular/core';
+import { AfterViewChecked, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TimerState, TimerView } from '../models/workday.models';
 import { TimerTimeComponent } from './timer-time.component';
-import { showsHours, WidgetGrab, WidgetLayout, widgetLayout } from './timer-widget.util';
+import {
+  matchTickets, mergeFound, pickListEm, showsHours, WidgetGrab, WidgetLayout, widgetLayout, WidgetTicket, WidgetTicketGroup,
+} from './timer-widget.util';
 
 // A press becomes a drag only past this — a click or a double click stays one.
 const DRAG_THRESHOLD_PX = 3;
+// A text shorter than this is not sent to Jira; the pause lets a word be finished.
+const FIND_MIN_LENGTH = 2;
+const FIND_PAUSE_MS = 350;
+// The ticket block opens with the tickets it is handed; this long without
+// them, it opens with what it had.
+const KNOWN_WAIT_MS = 400;
 
 interface Press {
   readonly grab: WidgetGrab;
   readonly x: number;
   readonly y: number;
   readonly pointerId: number;
+}
+
+interface Found {
+  readonly query: string;
+  // null — Jira did not answer.
+  readonly tickets: readonly WidgetTicket[] | null;
 }
 
 /**
@@ -31,6 +45,16 @@ interface Press {
  * and an emptied one is never sent. A timer made by New timer of the tray
  * menu (birthId) is born in the edit, and Esc on its still-empty field takes
  * the timer back.
+ *
+ * A timer without a ticket has a second slot, the ticket glyph. It opens the
+ * ticket block next to the row, on the side the window grows to: a search
+ * line and the tickets the app knows already, scrolling inside a list of one
+ * height. A click on a ticket binds the timer; the glyph again shuts the
+ * block. The search line takes the keyboard only when it is clicked: what is
+ * typed filters the known tickets at once and, after a pause, goes to Jira.
+ * Enter takes the row under the highlight, the arrows move it, Esc shuts the
+ * block. One thing at a time: the block ends an edit as Enter does, and the
+ * pencil shuts the block.
  */
 @Component({
   selector: 'app-timer-widget',
@@ -39,7 +63,7 @@ interface Press {
   templateUrl: './timer-widget.component.html',
   styleUrl: './timer-widget.component.scss',
 })
-export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
+export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDestroy {
   @Input() timers: readonly TimerView[] = [];
   @Input() asOf: string = '';
   // The timer New timer of the tray menu has just made — its row is born in the edit.
@@ -53,8 +77,13 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
   @Output() cancelled: EventEmitter<string> = new EventEmitter<string>();
   // The born row is in the edit — the birth needs no more telling.
   @Output() birthTaken: EventEmitter<string> = new EventEmitter<string>();
-  // A description is being typed (the window needs the keyboard), or no more.
+  // Something is being typed (the window needs the keyboard), or no more.
   @Output() typing: EventEmitter<boolean> = new EventEmitter<boolean>();
+  // The ticket block is about to open: it wants the tickets the app knows.
+  @Output() ticketsRequested: EventEmitter<void> = new EventEmitter<void>();
+  // A text for Jira, after a pause in the typing.
+  @Output() searchRequested: EventEmitter<string> = new EventEmitter<string>();
+  @Output() bound: EventEmitter<{ id: string; task: string }> = new EventEmitter<{ id: string; task: string }>();
   // The plate's size for its rows changed — the window follows.
   @Output() layoutChanged: EventEmitter<WidgetLayout> = new EventEmitter<WidgetLayout>();
   @Output() grabbed: EventEmitter<WidgetGrab> = new EventEmitter<WidgetGrab>();
@@ -66,17 +95,43 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
   dragging: boolean = false;
   editingId: string | null = null;
   draft: string = '';
+
+  // The window grows upward from its anchor: the ticket block stands above its row.
+  growsUp: boolean = true;
+  // The row whose ticket block is open, and the side the block took when it opened.
+  pickId: string | null = null;
+  pickUp: boolean = true;
+  known: readonly WidgetTicketGroup[] = [];
+  // The height of the block's list, em — taken when the block opens.
+  listEm: number = 0;
+  query: string = '';
+  // The search line has the keyboard.
+  findOn: boolean = false;
+  searching: boolean = false;
+  // What the typed text leaves; null — nothing is typed, the groups are shown.
+  rows: readonly WidgetTicket[] | null = null;
+  highlight: number = 0;
+  note: string = '';
+
   // The edit of a row born in it: Esc on the empty field takes the timer back.
   private bornId: string | null = null;
   private takenBirthId: string | null = null;
   // The field of a fresh edit is not drawn yet — the caret goes there once it is.
   private caretPending: boolean = false;
-  // The edit is moving to another row: the window keeps the keyboard.
+  // The keyboard is moving to another field of the plate: the window keeps it.
   private handingOver: boolean = false;
   // A description sent to the main window, shown until the rows carry it.
   private readonly sent: Map<string, string> = new Map<string, string>();
   private layout: WidgetLayout | null = null;
   private press: Press | null = null;
+  // The ticket glyph was pressed; the block opens when the tickets come.
+  private askedId: string | null = null;
+  private knownTimer: ReturnType<typeof setTimeout> | null = null;
+  private findTimer: ReturnType<typeof setTimeout> | null = null;
+  private found: Found | null = null;
+  // The list shows other rows — it starts from the top; the highlight moved — it stays in sight.
+  private listReset: boolean = false;
+  private highlightMoved: boolean = false;
 
   public constructor(private host: ElementRef<HTMLElement>) {}
 
@@ -86,17 +141,30 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
   }
 
   ngAfterViewChecked(): void {
-    if (!this.caretPending) return;
-    this.caretPending = false;
-    this.takeCaret();
+    if (this.caretPending) {
+      this.caretPending = false;
+      this.takeCaret();
+    }
+    this.settleList();
   }
 
+  ngOnDestroy(): void {
+    if (this.knownTimer !== null) clearTimeout(this.knownTimer);
+    if (this.findTimer !== null) clearTimeout(this.findTimer);
+  }
+
+  // With the ticket block the plate is a list, whatever the number of rows.
   get list(): boolean {
-    return this.timers.length > 1;
+    return this.timers.length > 1 || this.pickId !== null;
   }
 
   get timeColumn(): string {
     return this.hours ? '10ch' : '7ch';
+  }
+
+  /** Something on the plate is typed in: the window holds the keyboard for it. */
+  get wantsKeyboard(): boolean {
+    return this.editingId !== null || this.findOn;
   }
 
   trackById(_index: number, timer: TimerView): string {
@@ -110,6 +178,9 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
   // The pencil: any timer that is switched on, but manual added time — it has no text.
   isDescribable(timer: TimerView): boolean { return !this.isPaused(timer) && !timer.added; }
 
+  // The ticket glyph: a timer that has no ticket yet.
+  isPickable(timer: TimerView): boolean { return timer.entryId === null; }
+
   textOf(timer: TimerView): string {
     return this.sent.get(timer.id) ?? timer.description;
   }
@@ -121,7 +192,10 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
 
   private measure(): void {
     this.hours = showsHours(this.timers, Date.parse(this.asOf), Date.now());
-    const next = widgetLayout(this.timers.length, this.hours, this.editingId !== null);
+    const next = widgetLayout(this.timers.length, this.hours, this.editingId !== null, {
+      pickListEm: this.pickId !== null ? this.listEm : null,
+      tagged: this.timers.some(timer => this.isPickable(timer)),
+    });
     if (this.layout && this.layout.minWidth === next.minWidth && this.layout.height === next.height) return;
     this.layout = next;
     this.layoutChanged.emit(next);
@@ -136,10 +210,14 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
     }
     // The row under the edit is gone — so is the edit.
     if (this.editingId !== null && !this.timers.some(t => t.id === this.editingId)) this.setEdit(null);
+    // The row of the ticket block is gone, or has its ticket — so is the block.
+    const pickedId = this.pickId ?? this.askedId;
+    if (pickedId !== null && !this.timers.some(t => t.id === pickedId && this.isPickable(t))) this.closePick();
     if (!this.birthId || this.birthId === this.takenBirthId) return;
     const born = this.timers.find(t => t.id === this.birthId);
     if (!born) return;
     this.takenBirthId = born.id;
+    this.yieldPick();
     this.keepCurrent();
     this.setEdit(born);
     this.bornId = born.id;
@@ -148,6 +226,7 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
 
   onPencil(timer: TimerView): void {
     if (this.editingId === timer.id) return;
+    this.yieldPick();
     this.keepCurrent();
     this.setEdit(timer);
   }
@@ -186,16 +265,16 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
     this.sent.delete(timerId);
   }
 
-  /** The window has the keyboard: the caret goes to the field under the edit. */
+  /** The window has the keyboard: the caret goes to the field that is typed in. */
   public takeCaret(): void {
-    if (this.editingId === null) return;
-    this.host.nativeElement.querySelector<HTMLInputElement>('input.w-in')?.focus();
+    const field = this.findOn ? 'input.w-fi' : this.editingId !== null ? 'input.w-in' : null;
+    if (field !== null) this.host.nativeElement.querySelector<HTMLInputElement>(field)?.focus();
   }
 
-  // While a description is typed, a press anywhere on the plate leaves the
-  // caret where it is — the button in the slot included.
+  // While something is typed, a press anywhere on the plate leaves the caret
+  // where it is — the button in the slot and a row of the list included.
   onMouseDown(ev: MouseEvent): void {
-    if (this.editingId !== null && !(ev.target as HTMLElement).closest('input')) ev.preventDefault();
+    if (this.wantsKeyboard && !(ev.target as HTMLElement).closest('input')) ev.preventDefault();
   }
 
   // Another row takes the edit: what was typed in this one is kept, as by Enter.
@@ -217,11 +296,164 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
     this.measure();
   }
 
+  // ─── The ticket block ──────────────────────────────────────────────────
+
+  /** The ticket glyph: the block opens once the tickets are here; pressed again, it shuts. */
+  onTag(timer: TimerView): void {
+    if (this.pickId === timer.id) {
+      this.closePick();
+      return;
+    }
+    this.askedId = timer.id;
+    if (this.knownTimer !== null) clearTimeout(this.knownTimer);
+    this.knownTimer = setTimeout(() => this.openAsked(), KNOWN_WAIT_MS);
+    this.ticketsRequested.emit();
+  }
+
+  /** The tickets the app knows: they open the block that waits for them, or renew the open one. */
+  public setKnown(groups: readonly WidgetTicketGroup[]): void {
+    this.known = groups;
+    if (this.askedId !== null) this.openAsked();
+    else this.showRows();
+  }
+
+  /** Jira's answer to a text; one for a text that is no longer in the field is dropped. */
+  public setFound(query: string, tickets: readonly WidgetTicket[] | null): void {
+    if (this.pickId === null || query !== this.query.trim()) return;
+    this.found = { query, tickets };
+    this.searching = false;
+    this.showRows();
+  }
+
+  /** A click on the search line: it takes the keyboard. */
+  onFind(): void {
+    if (this.pickId === null || this.findOn) return;
+    this.findOn = true;
+    this.caretPending = true;
+    this.typing.emit(true);
+  }
+
+  onFindInput(value: string): void {
+    this.query = value;
+    this.highlight = 0;
+    this.listReset = true;
+    if (this.findTimer !== null) clearTimeout(this.findTimer);
+    this.findTimer = null;
+    const text = value.trim();
+    this.searching = text.length >= FIND_MIN_LENGTH && this.found?.query !== text;
+    if (this.searching) this.findTimer = setTimeout(() => this.searchRequested.emit(text), FIND_PAUSE_MS);
+    this.showRows();
+  }
+
+  onFindKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      this.closePick();
+      return;
+    }
+    const rows = this.rows;
+    if (rows === null || rows.length === 0) return;
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      const step = ev.key === 'ArrowDown' ? 1 : -1;
+      this.highlight = Math.max(0, Math.min(rows.length - 1, this.highlight + step));
+      this.highlightMoved = true;
+      return;
+    }
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    this.onTicket(rows[this.highlight].key);
+  }
+
+  /** A ticket of the list: the timer is bound to it, the block shuts. */
+  onTicket(key: string): void {
+    const id = this.pickId;
+    if (id === null) return;
+    this.closePick();
+    this.bound.emit({ id, task: key });
+  }
+
+  onListScroll(): void {
+    this.settleList();
+  }
+
+  private openAsked(): void {
+    if (this.knownTimer !== null) clearTimeout(this.knownTimer);
+    this.knownTimer = null;
+    const timer = this.timers.find(t => t.id === this.askedId);
+    this.askedId = null;
+    if (!timer || !this.isPickable(timer)) return;
+    this.closePick();
+    // What was typed in a description is kept, as by Enter — the block needs no keyboard.
+    const edited = this.timers.find(t => t.id === this.editingId);
+    if (edited) this.keep(edited);
+    this.pickId = timer.id;
+    this.pickUp = this.growsUp;
+    this.listEm = pickListEm(this.known);
+    this.showRows();
+    this.measure();
+  }
+
+  private closePick(): void {
+    if (this.pickId === null && this.askedId === null) return;
+    if (this.knownTimer !== null) clearTimeout(this.knownTimer);
+    if (this.findTimer !== null) clearTimeout(this.findTimer);
+    this.knownTimer = null;
+    this.findTimer = null;
+    this.askedId = null;
+    const hadKeyboard = this.findOn;
+    this.pickId = null;
+    this.query = '';
+    this.found = null;
+    this.searching = false;
+    this.findOn = false;
+    this.showRows();
+    if (hadKeyboard && !this.handingOver) this.typing.emit(false);
+    this.measure();
+  }
+
+  // A description takes the plate: the block shuts, the keyboard stays where it is.
+  private yieldPick(): void {
+    this.handingOver = true;
+    this.closePick();
+    this.handingOver = false;
+  }
+
+  private showRows(): void {
+    const text = this.query.trim();
+    if (this.pickId === null || text === '') {
+      this.rows = null;
+      this.note = '';
+      this.highlight = 0;
+      return;
+    }
+    const local = matchTickets(this.known.flatMap(group => group.tickets), text);
+    const answer = this.found?.query === text ? this.found : null;
+    const rows = mergeFound(local, answer?.tickets ?? [], text);
+    this.rows = rows;
+    this.highlight = Math.max(0, Math.min(rows.length - 1, this.highlight));
+    if (answer === null) this.note = '';
+    else if (answer.tickets === null) this.note = 'Jira unreachable';
+    else this.note = rows.length === 0 ? 'No tickets' : '';
+  }
+
+  // The list fades at the edge that hides more of it.
+  private settleList(): void {
+    const list = this.host.nativeElement.querySelector<HTMLElement>('.w-scroll');
+    if (!list || !list.classList) return;
+    if (this.listReset) list.scrollTop = 0;
+    if (this.highlightMoved) list.querySelector('.w-li.h')?.scrollIntoView({ block: 'nearest' });
+    this.listReset = false;
+    this.highlightMoved = false;
+    list.classList.toggle('more-up', list.scrollTop > 1);
+    list.classList.toggle('more-down', list.scrollTop + list.clientHeight < list.scrollHeight - 1);
+  }
+
   // ─── Mouse: move by the body, width by an edge, double click opens ─────
 
   onPress(ev: PointerEvent, grab: WidgetGrab): void {
     if (ev.button !== 0 || this.press !== null) return;
-    if (grab === 'move' && (ev.target as HTMLElement).closest('button, input, .rz')) return;
+    if (grab === 'move' && (ev.target as HTMLElement).closest('button, input, .rz, .w-pick')) return;
     ev.stopPropagation();
     this.press = { grab, x: ev.screenX, y: ev.screenY, pointerId: ev.pointerId };
     (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
@@ -249,7 +481,7 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked {
   }
 
   onDoubleClick(ev: MouseEvent): void {
-    if ((ev.target as HTMLElement).closest('button, input')) return;
+    if ((ev.target as HTMLElement).closest('button, input, .w-pick')) return;
     this.opened.emit();
   }
 }

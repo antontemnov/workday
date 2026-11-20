@@ -439,6 +439,23 @@ pub fn widget_refused(app: AppHandle, id: String) -> Result<(), String> {
     app.emit_to(WIDGET_LABEL, "widget-refused", id).map_err(|e| e.to_string())
 }
 
+/// The ticket block is about to open: up — the window grows upward from its
+/// anchor, and the block stands above its row.
+#[tauri::command]
+pub fn widget_grows_up() -> bool {
+    STATE.lock().unwrap().geometry.map_or(true, |geometry| geometry.from_bottom)
+}
+
+/// The main window's answer to the widget's ticket block: the tickets the app
+/// knows, or what Jira found.
+#[tauri::command]
+pub fn widget_tickets(app: AppHandle, message: serde_json::Value) -> Result<(), String> {
+    if app.get_webview_window(WIDGET_LABEL).is_none() {
+        return Ok(());
+    }
+    app.emit_to(WIDGET_LABEL, "widget-tickets", message).map_err(|e| e.to_string())
+}
+
 /// A click on a row's button — the main window acts on it through its own gate.
 #[tauri::command]
 pub fn widget_action(app: AppHandle, action: serde_json::Value) -> Result<(), String> {

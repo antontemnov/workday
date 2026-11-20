@@ -3,7 +3,8 @@
  * side. Rust owns the menu and only passes the click on; the main window
  * starts the timer through its own gate and leaves the window as it is. The
  * item is live only while a click can work: the daemon answered the last
- * poll and the month is open.
+ * poll and the month is open. Also the shell's part in the widget's ticket
+ * block: it tells what it knows and binds the picked ticket through the gate.
  *
  * Headless: a fake Tauri bridge (invoke + events) on `window`, a fake API.
  *
@@ -109,6 +110,9 @@ const widget = {
   stop: (): void => {},
   sync: (rows: TimersResponse | null): void => { widgetTold.push(`rows:${rows?.timers.map(t => t.id).join(',') ?? ''}`); },
   announceBirth: (id: string): void => { widgetTold.push(`birth:${id}`); },
+  tellKnown: (day: TodayResponse | null, favorites: readonly unknown[]): void => {
+    widgetTold.push(`known:${day?.date ?? ''}:${favorites.length}`);
+  },
 };
 const shell = new AppComponent(
   api as never,
@@ -117,7 +121,7 @@ const shell = new AppComponent(
   widget as never,
   { run: (fn: () => void): void => { zoneRuns++; fn(); } } as never,
 );
-const hidden = shell as unknown as { watchTrayMenu(): Promise<void> };
+const hidden = shell as unknown as { watchTrayMenu(): Promise<void>; onWidgetAction(action: unknown): void };
 const menuCalls = (): boolean[] => calls.filter(c => c.cmd === 'set_tray_new_timer').map(c => c.args['enabled'] as boolean);
 
 // ─── When the item is live ────────────────────────────────────────────────
@@ -195,6 +199,32 @@ await test('the window stays as it is: the island is not opened, no caret waits'
   assert.equal(shell.islandOpen, false);
   assert.equal(shell.timerBirthId, null);
   assert.deepEqual(shell.timers?.timers.map(t => t.id), ['fresh'], 'the chip and the widget have the timer');
+});
+
+// ─── The widget's ticket block ────────────────────────────────────────────
+
+await test('the ticket block is told what the shell knows', () => {
+  widgetTold.length = 0;
+  hidden.onWidgetAction({ kind: 'tickets' });
+  assert.deepEqual(widgetTold, ['known:2026-11-16:0']);
+});
+
+await test('a ticket picked on the widget binds the timer through the gate', async () => {
+  apiCalls.length = 0;
+  hidden.onWidgetAction({ kind: 'bind', id: 'fresh', task: 'ATL-6790' });
+  await settle();
+  const bound = apiCalls.filter(c => c.name === 'bindTimer');
+  assert.equal(bound.length, 1);
+  assert.deepEqual(bound[0].args, ['fresh', { task: 'ATL-6790', activity: 'Development', description: '' }]);
+  assert.equal(shell.actionPending, false);
+});
+
+await test('a ticket for a timer that is not there is not sent', async () => {
+  apiCalls.length = 0;
+  hidden.onWidgetAction({ kind: 'bind', id: 'gone', task: 'ATL-6790' });
+  hidden.onWidgetAction({ kind: 'search', query: 'dep' });
+  await settle();
+  assert.deepEqual(apiCalls.filter(c => c.name === 'bindTimer' || c.name === 'searchJira'), []);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

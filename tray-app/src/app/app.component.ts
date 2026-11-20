@@ -30,7 +30,7 @@ import { TimerChipComponent } from './timer/timer-chip.component';
 import { TimerIslandComponent } from './timer/timer-island.component';
 import { currentTimer } from './timer/timer-clock.util';
 import { TimerWidgetService } from './timer/timer-widget.service';
-import { WidgetAction } from './timer/timer-widget.util';
+import { WidgetAction, widgetBindInput } from './timer/timer-widget.util';
 import { trayStatus } from './tray-status.util';
 import { currentCtxMenu } from './views/day-view/ctx-menu.util';
 import { DayViewComponent } from './views/day-view/day-view.component';
@@ -668,8 +668,20 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   // The desktop widget: ⏸ / ▶ of a row, the row off the desktop, a
-  // description typed on the plate, Esc on a timer born there by mistake.
+  // description typed on the plate, Esc on a timer born there by mistake,
+  // and its ticket block — the tickets the app knows, a ticket picked there.
   private onWidgetAction(action: WidgetAction): void {
+    if (action.kind === 'tickets') {
+      this.timerWidget.tellKnown(this.data, this.favorites);
+      return;
+    }
+    // Jira is asked by the widget's service itself.
+    if (action.kind === 'search') return;
+    if (action.kind === 'bind') {
+      const loose = this.timers?.timers.find(t => t.id === action.id && t.entryId === null);
+      if (loose) void this.runTimerAction(() => this.api.bindTimer(loose.id, widgetBindInput(action.task, loose)));
+      return;
+    }
     if (action.kind === 'hide') {
       void this.runTimerAction(() => this.api.hideTimer(action.id));
       return;

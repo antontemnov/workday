@@ -6,9 +6,11 @@
  * press becomes a drag only past a threshold, the body moves, an edge sets
  * the width, buttons never drag; the description typed on the plate: the
  * pencil, the button that keeps the text, Enter and Esc, a row born in the
- * edit; and the main window's service: it hands the widget its rows only
- * when they change, passes the stored place along, keeps the place the
- * widget reports, routes the widget's clicks and tells it of a birth.
+ * edit; the ticket block of a timer without a ticket: the tickets the app
+ * knows, the search line and what it leaves, the keys, the binding; and the
+ * main window's service: it hands the widget its rows only when they change,
+ * passes the stored place along, keeps the place the widget reports, routes
+ * the widget's clicks, tells it of a birth and answers its ticket block.
  *
  * Headless: fake clock, a fake Tauri bridge (invoke + events) on `window`.
  *
@@ -66,13 +68,16 @@ const settle = (): Promise<void> => new Promise(resolve => setImmediate(resolve)
 await import(new URL('../../tray-app/node_modules/@angular/compiler/fesm2022/compiler.mjs', import.meta.url).href);
 const { TimerState } = await import('../../tray-app/src/app/models/workday.models');
 const {
-  parseWidgetGeometry, showsHours, WIDGET_GEOMETRY_PREF, widgetLayout, widgetPayload, widgetRows,
+  matchTickets, mergeFound, parseWidgetGeometry, pickListEm, showsHours, ticketGroups, WIDGET_GEOMETRY_PREF,
+  widgetBindInput, widgetLayout, widgetPayload, widgetRows,
 } = await import('../../tray-app/src/app/timer/timer-widget.util');
 const { TimerWidgetComponent } = await import('../../tray-app/src/app/timer/timer-widget.component');
 const { TimerWidgetService } = await import('../../tray-app/src/app/timer/timer-widget.service');
 const { loadTrayPrefs, readPref } = await import('../../tray-app/src/app/services/tray-prefs.store');
-import type { TimerView, TimersResponse } from '../../tray-app/src/app/models/workday.models';
-import type { WidgetAction, WidgetGeometry, WidgetGrab, WidgetLayout } from '../../tray-app/src/app/timer/timer-widget.util';
+import type { ApiResponse, Favorite, JiraSearchResponse, TimerView, TimersResponse, TodayResponse } from '../../tray-app/src/app/models/workday.models';
+import type {
+  WidgetAction, WidgetGeometry, WidgetGrab, WidgetLayout, WidgetTicket, WidgetTicketGroup, WidgetTickets,
+} from '../../tray-app/src/app/timer/timer-widget.util';
 
 let passed = 0;
 let failed = 0;
@@ -186,6 +191,9 @@ interface PlateHarness {
   births: string[];
   typing: boolean[];
   carets: () => number;
+  asked: () => number;
+  searches: string[];
+  bound: { id: string; task: string }[];
 }
 
 function makePlate(timers: readonly TimerView[]): PlateHarness {
@@ -200,6 +208,12 @@ function makePlate(timers: readonly TimerView[]): PlateHarness {
   comp.cancelled.subscribe((id: string) => cancelled.push(id));
   comp.birthTaken.subscribe((id: string) => births.push(id));
   comp.typing.subscribe((on: boolean) => typing.push(on));
+  let asked = 0;
+  const searches: string[] = [];
+  const bound: { id: string; task: string }[] = [];
+  comp.ticketsRequested.subscribe(() => { asked++; });
+  comp.searchRequested.subscribe((query: string) => searches.push(query));
+  comp.bound.subscribe((b: { id: string; task: string }) => bound.push(b));
   const layouts: WidgetLayout[] = [];
   const grabs: WidgetGrab[] = [];
   let drags = 0;
@@ -218,7 +232,7 @@ function makePlate(timers: readonly TimerView[]): PlateHarness {
   rows(timers);
   return {
     comp, layouts, grabs, drags: () => drags, releases: () => releases, opens: () => opens, rows,
-    described, cancelled, births, typing, carets: () => carets,
+    described, cancelled, births, typing, carets: () => carets, asked: () => asked, searches, bound,
   };
 }
 
@@ -527,6 +541,281 @@ await test('birth: Esc on a field opened by the pencil never takes a timer back'
   assert.equal(h.cancelled.length, 0);
 });
 
+// ─── The ticket block: the rules ──────────────────────────────────────────
+
+const close = (a: number, b: number): void => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≈ ${b}`);
+const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+const ticket = (key: string, name: string): WidgetTicket => ({ key, name });
+const keysOf = (tickets: readonly WidgetTicket[] | null): string[] => (tickets ?? []).map(t => t.key);
+const favorite = (task: string, name: string): Favorite =>
+  ({ id: `${task}-${name}`, name, task, minutes: 30, activity: 'Other', createdAt: iso() });
+
+const KNOWN: WidgetTicketGroup[] = [
+  { label: 'today', tickets: [ticket('ATL-6781', 'Public API review'), ticket('ATL-6712', 'Release notes for 4.2')] },
+  { label: 'jira · in progress', tickets: [ticket('ATL-6790', 'Deploy checklist')] },
+  { label: 'favorites', tickets: [ticket('ATL-6795', 'Team ceremonies')] },
+];
+const ALL = KNOWN.flatMap(group => group.tickets);
+const TODAY = {
+  manualEntries: [
+    { task: 'ATL-6712', createdAt: '2026-11-16T09:00:00.000Z' },
+    { task: 'ATL-6781', createdAt: '2026-11-16T08:00:00.000Z' },
+  ],
+  sessions: [
+    { task: 'ATL-6781', lastSeenAt: '2026-11-16T10:00:00.000Z' },
+    { task: null, lastSeenAt: '2026-11-16T11:00:00.000Z' },
+  ],
+  issueSummaries: { 'ATL-6781': 'Public API review' },
+} as unknown as TodayResponse;
+
+await test('tickets: the day\'s, Jira in progress, favorites — no ticket twice', () => {
+  const inProgress = [{ key: 'ATL-6790', summary: 'Deploy checklist' }, { key: 'ATL-6781', summary: 'Public API review' }];
+  const favorites = [favorite('ATL-6795', 'Daily'), favorite('ATL-6795', 'Retro'), favorite('ATL-6790', 'Deploy day'), favorite('ATL-6712', 'notes')];
+  const groups = ticketGroups(TODAY, inProgress, favorites);
+  assert.deepEqual(groups.map(g => g.label), ['today', 'jira · in progress', 'favorites']);
+  assert.deepEqual(groups[0].tickets, [ticket('ATL-6781', 'Public API review'), ticket('ATL-6712', '')], 'the one touched last comes first');
+  assert.deepEqual(groups[1].tickets, [ticket('ATL-6790', 'Deploy checklist')], 'a ticket of the day is not repeated');
+  assert.deepEqual(groups[2].tickets, [ticket('ATL-6795', 'Daily')], 'one row per ticket, named by its first favorite');
+});
+
+await test('tickets: a group with nothing left is not there; a known summary names a favorite\'s ticket', () => {
+  assert.deepEqual(ticketGroups(null, [], []), []);
+  const only = ticketGroups(null, [{ key: 'ATL-6790', summary: 'Deploy checklist' }], [favorite('ATL-6790', 'Deploy day')]);
+  assert.deepEqual(only.map(g => g.label), ['jira · in progress']);
+  const named = ticketGroups(TODAY, [], [favorite('ATL-6781', 'API')]);
+  assert.deepEqual(named.map(g => g.label), ['today']);
+  const fav = ticketGroups({ ...TODAY, manualEntries: [], sessions: [] } as unknown as TodayResponse, [], [favorite('ATL-6781', 'API')]);
+  assert.deepEqual(fav[0].tickets, [ticket('ATL-6781', 'Public API review')]);
+});
+
+await test('search: a text is looked for in the key and in the name', () => {
+  assert.deepEqual(keysOf(matchTickets(ALL, ' Deploy ')), ['ATL-6790']);
+  assert.deepEqual(keysOf(matchTickets(ALL, '67')), ['ATL-6781', 'ATL-6712', 'ATL-6790', 'ATL-6795']);
+  assert.equal(matchTickets(ALL, '  ').length, 4, 'nothing typed — nothing is left out');
+});
+
+await test('search: the ticket the text names, then the app\'s own, then Jira\'s — no ticket twice', () => {
+  const jira = [ticket('ATL-7110', 'Deploy to staging times out'), ticket('ATL-6790', 'Deploy checklist')];
+  assert.deepEqual(keysOf(mergeFound(matchTickets(ALL, 'deploy'), jira, 'deploy')), ['ATL-6790', 'ATL-7110']);
+  const numbered = [ticket('ATL-16790', 'older'), ticket('ATL-6790', 'Deploy checklist')];
+  assert.deepEqual(keysOf(mergeFound([ticket('ATL-67901', 'own')], numbered, '6790')), ['ATL-6790', 'ATL-67901', 'ATL-16790']);
+  assert.equal(mergeFound([], numbered, ' atl-6790 ')[0].key, 'ATL-6790');
+});
+
+await test('layout: the ticket block makes the plate a list — taller, and never narrow', () => {
+  const open = widgetLayout(1, false, false, { pickListEm: 15.75 });
+  close(open.height, (2.28 + 0.4 + 2.28 + 15.75) * 10.5);
+  assert.equal(open.minWidth, 262);
+  close(widgetLayout(3, false, false, { pickListEm: 8.8 }).height, (3 * 2.28 + 0.4 + 2.28 + 8.8) * 10.5);
+  assert.equal(widgetLayout(1, false, false, { tagged: true }).minWidth, 122, 'a lone row has room for the ticket glyph');
+  assert.equal(widgetLayout(2, false, false, { tagged: true }).minWidth, 168, 'a list has it already');
+});
+
+await test('layout: the block\'s list is as tall as its tickets, between the least and the most', () => {
+  close(pickListEm([]), 8.8);
+  close(pickListEm(KNOWN), 3 * 1.9 + 4 * 2.1 + 0.4);
+  const many = [{ label: 'favorites', tickets: Array.from({ length: 12 }, (_v, i) => ticket(`ATL-${i}`, 'x')) }];
+  close(pickListEm(many), 15.75);
+});
+
+await test('bind: the record is Development with the timer\'s own description', () => {
+  assert.deepEqual(widgetBindInput('ATL-6790', timer('t', TimerState.Running, { description: 'standup notes' })),
+    { task: 'ATL-6790', activity: 'Development', description: 'standup notes' });
+});
+
+// ─── The ticket block: the plate ──────────────────────────────────────────
+
+function openBlock(timers: readonly TimerView[], on: TimerView, growsUp = false): PlateHarness {
+  const h = makePlate(timers);
+  h.comp.growsUp = growsUp;
+  h.comp.onTag(on);
+  h.comp.setKnown(KNOWN);
+  return h;
+}
+
+await test('ticket: the glyph is on a timer without a ticket, running or at rest', () => {
+  const h = makePlate([DEPLOY, CALL, LOOSE]);
+  assert.equal(h.comp.isPickable(LOOSE), true);
+  assert.equal(h.comp.isPickable(CALL), true);
+  assert.equal(h.comp.isPickable(DEPLOY), false);
+  assert.equal(makePlate([LOOSE]).layouts[0].minWidth, 122);
+});
+
+await test('ticket: the glyph asks for the tickets; the block opens when they come', () => {
+  const h = makePlate([LOOSE]);
+  h.comp.growsUp = false;
+  h.comp.onTag(LOOSE);
+  assert.equal(h.asked(), 1);
+  assert.equal(h.comp.pickId, null, 'not before the tickets');
+  h.comp.setKnown(KNOWN);
+  assert.equal(h.comp.pickId, 'loose');
+  assert.equal(h.comp.pickUp, false, 'the window grows down — the block is under its row');
+  assert.equal(h.comp.list, true);
+  assert.equal(h.comp.rows, null, 'nothing is typed — the groups are shown');
+  assert.equal(h.layouts.at(-1)?.minWidth, 262);
+  close(h.layouts.at(-1)?.height ?? 0, (2.28 + 0.4 + 2.28 + 14.5) * 10.5);
+  assert.deepEqual(h.typing, [], 'the keyboard stays with the window that had it');
+});
+
+await test('ticket: the glyph again shuts the block; the side is taken when the block opens', () => {
+  const h = openBlock([LOOSE], LOOSE, true);
+  assert.equal(h.comp.pickUp, true);
+  h.comp.growsUp = false;
+  assert.equal(h.comp.pickUp, true, 'an open block does not jump to the other side');
+  h.comp.onTag(LOOSE);
+  assert.equal(h.comp.pickId, null);
+  assert.equal(h.comp.list, false);
+  assert.equal(h.layouts.at(-1)?.minWidth, 122);
+  close(h.layouts.at(-1)?.height ?? 0, 26.04);
+  assert.equal(h.asked(), 1);
+});
+
+await test('ticket: no word about the tickets — the block opens with what it had', async () => {
+  const h = makePlate([LOOSE]);
+  h.comp.onTag(LOOSE);
+  await wait(450);
+  assert.equal(h.comp.pickId, 'loose');
+  close(h.comp.listEm, 8.8);
+  h.comp.setKnown(KNOWN);
+  assert.equal(h.comp.known.length, 3, 'tickets that come late fill the open block');
+  close(h.comp.listEm, 8.8, 'the block keeps the height it opened with');
+});
+
+await test('ticket: a click on a ticket binds the timer and shuts the block', () => {
+  const h = openBlock([DEPLOY, LOOSE], LOOSE);
+  h.comp.onTicket('ATL-6790');
+  assert.deepEqual(h.bound, [{ id: 'loose', task: 'ATL-6790' }]);
+  assert.equal(h.comp.pickId, null);
+  assert.deepEqual(h.typing, [], 'by the mouse alone — the keyboard was never taken');
+});
+
+await test('ticket: the block goes with its row, and when the row has its ticket', () => {
+  const h = openBlock([DEPLOY, LOOSE], LOOSE);
+  h.rows([DEPLOY, { ...LOOSE, shareMs: 13 * MINUTE }]);
+  assert.equal(h.comp.pickId, 'loose', 'a poll leaves the block as it is');
+  h.rows([DEPLOY, { ...LOOSE, entryId: 'e9', task: 'ATL-6790' }]);
+  assert.equal(h.comp.pickId, null);
+  const g = openBlock([DEPLOY, LOOSE], LOOSE);
+  g.rows([DEPLOY]);
+  assert.equal(g.comp.pickId, null);
+});
+
+await test('ticket: the block ends an edit as Enter does; the pencil shuts the block', () => {
+  const h = makePlate([LOOSE]);
+  h.comp.onPencil(LOOSE);
+  h.comp.onEditInput('retro prep');
+  h.comp.onTag(LOOSE);
+  h.comp.setKnown(KNOWN);
+  assert.deepEqual(h.described, [{ id: 'loose', description: 'retro prep' }]);
+  assert.equal(h.comp.editingId, null);
+  assert.equal(h.comp.pickId, 'loose');
+  assert.deepEqual(h.typing, [true, false], 'the block needs no keyboard');
+  h.comp.onPencil(LOOSE);
+  assert.equal(h.comp.pickId, null);
+  assert.equal(h.comp.editingId, 'loose');
+  assert.deepEqual(h.typing, [true, false, true]);
+});
+
+await test('search: the line takes the keyboard on a click, not before', () => {
+  const h = openBlock([LOOSE], LOOSE);
+  assert.equal(h.comp.wantsKeyboard, false);
+  h.comp.onFind();
+  assert.equal(h.comp.findOn, true);
+  assert.deepEqual(h.typing, [true]);
+  h.comp.ngAfterViewChecked();
+  assert.equal(h.carets(), 1, 'the caret goes to the search line');
+  h.comp.onFind();
+  assert.deepEqual(h.typing, [true], 'a second click changes nothing');
+  h.comp.onPencil(LOOSE);
+  assert.deepEqual(h.typing, [true, true], 'the keyboard stays on the widget between the search and a description');
+  assert.equal(h.comp.findOn, false);
+});
+
+await test('search: what is typed filters the known tickets at once and goes to Jira after a pause', async () => {
+  const h = openBlock([LOOSE], LOOSE);
+  h.comp.onFind();
+  h.comp.onFindInput('dep');
+  assert.deepEqual(keysOf(h.comp.rows), ['ATL-6790']);
+  assert.equal(h.comp.searching, true);
+  assert.deepEqual(h.searches, [], 'not on every key');
+  h.comp.onFindInput('depl');
+  await wait(400);
+  assert.deepEqual(h.searches, ['depl'], 'one question for the text the typing stopped at');
+  h.comp.setFound('depl', [ticket('ATL-7110', 'Deploy to staging times out'), ticket('ATL-6790', 'Deploy checklist')]);
+  assert.deepEqual(keysOf(h.comp.rows), ['ATL-6790', 'ATL-7110']);
+  assert.equal(h.comp.searching, false);
+  assert.equal(h.comp.note, '');
+});
+
+await test('search: a short text stays here; an answer for another text is dropped', async () => {
+  const h = openBlock([LOOSE], LOOSE);
+  h.comp.onFind();
+  h.comp.onFindInput('d');
+  assert.equal(h.comp.searching, false);
+  await wait(400);
+  assert.deepEqual(h.searches, []);
+  h.comp.onFindInput('deploy');
+  h.comp.setFound('dep', [ticket('ATL-7110', 'Deploy to staging times out')]);
+  assert.deepEqual(keysOf(h.comp.rows), ['ATL-6790']);
+  assert.equal(h.comp.searching, true, 'Jira has not answered this text yet');
+  h.comp.onFindInput('');
+  assert.equal(h.comp.rows, null, 'the field is empty — the groups are back');
+  assert.equal(h.comp.searching, false);
+});
+
+await test('search: nothing found is said in a word; Jira silent — the app\'s own matches stay', () => {
+  const h = openBlock([LOOSE], LOOSE);
+  h.comp.onFind();
+  h.comp.onFindInput('zzz');
+  assert.equal(h.comp.note, '', 'not before Jira answered');
+  h.comp.setFound('zzz', []);
+  assert.equal(h.comp.note, 'No tickets');
+  assert.deepEqual(keysOf(h.comp.rows), []);
+  h.comp.onFindInput('deploy');
+  h.comp.setFound('deploy', null);
+  assert.equal(h.comp.note, 'Jira unreachable');
+  assert.deepEqual(keysOf(h.comp.rows), ['ATL-6790']);
+  assert.equal(h.comp.searching, false);
+});
+
+await test('search: the arrows move the highlight, Enter takes the row', () => {
+  const h = openBlock([LOOSE], LOOSE);
+  h.comp.onFind();
+  const idle = keyOf('Enter');
+  h.comp.onFindKeydown(idle as never);
+  assert.deepEqual(h.bound, [], 'nothing is typed — Enter has no row to take');
+  h.comp.onFindInput('67');
+  assert.equal(h.comp.highlight, 0);
+  h.comp.onFindKeydown(keyOf('ArrowDown') as never);
+  h.comp.onFindKeydown(keyOf('ArrowDown') as never);
+  assert.equal(h.comp.highlight, 2);
+  for (let i = 0; i < 5; i++) h.comp.onFindKeydown(keyOf('ArrowUp') as never);
+  assert.equal(h.comp.highlight, 0, 'it stops at the first row');
+  for (let i = 0; i < 9; i++) h.comp.onFindKeydown(keyOf('ArrowDown') as never);
+  assert.equal(h.comp.highlight, 3, 'and at the last');
+  h.comp.onFindKeydown(keyOf('ArrowUp') as never);
+  const enter = keyOf('Enter');
+  h.comp.onFindKeydown(enter as never);
+  assert.equal(enter.prevented, true);
+  assert.deepEqual(h.bound, [{ id: 'loose', task: 'ATL-6790' }]);
+  assert.equal(h.comp.pickId, null);
+  assert.deepEqual(h.typing, [true, false], 'the keyboard goes back to the window that had it');
+});
+
+await test('search: Esc shuts the block and gives the keyboard back', () => {
+  const h = openBlock([LOOSE], LOOSE);
+  h.comp.onFind();
+  h.comp.onFindInput('dep');
+  h.comp.onFindKeydown(keyOf('Escape') as never);
+  assert.equal(h.comp.pickId, null);
+  assert.deepEqual(h.bound, []);
+  assert.deepEqual(h.typing, [true, false]);
+  h.comp.onTag(LOOSE);
+  h.comp.setKnown(KNOWN);
+  assert.equal(h.comp.query, '', 'the block opens clean');
+  assert.equal(h.comp.findOn, false);
+});
+
 // ─── The main window's service ────────────────────────────────────────────
 
 const STORED: WidgetGeometry = { anchorX: 1905, anchorY: 1017, fromRight: true, fromBottom: true, width: 262 };
@@ -535,7 +824,19 @@ await loadTrayPrefs();
 
 const actions: WidgetAction[] = [];
 let zoneRuns = 0;
-const service = new TimerWidgetService({ run: (fn: () => void): void => { zoneRuns++; fn(); } } as never);
+// Jira behind the daemon: what it says about the in-progress list and about a text.
+let inProgressAnswer: ApiResponse<JiraSearchResponse> = { ok: true, data: { hits: [] } };
+let searchAnswer: ApiResponse<JiraSearchResponse> = { ok: true, data: { hits: [] } };
+const searched: string[] = [];
+const jiraApi = {
+  getJiraInProgress: async (): Promise<ApiResponse<JiraSearchResponse>> => inProgressAnswer,
+  searchJira: async (query: string): Promise<ApiResponse<JiraSearchResponse>> => {
+    searched.push(query);
+    return searchAnswer;
+  },
+};
+const service = new TimerWidgetService({ run: (fn: () => void): void => { zoneRuns++; fn(); } } as never, jiraApi as never);
+const told = (): WidgetTickets[] => calls.filter(c => c.cmd === 'widget_tickets').map(c => c.args['message'] as WidgetTickets);
 await service.start(action => actions.push(action));
 const syncs = (): Call[] => calls.filter(c => c.cmd === 'sync_widget');
 
@@ -597,6 +898,52 @@ await test('service: a description typed on the widget reaches the shell; a refu
   assert.deepEqual(actions, [{ kind: 'describe', id: 'deploy', description: 'rollout' }, { kind: 'cancel', id: 'fresh' }]);
   service.refuse('deploy');
   assert.deepEqual(calls.filter(c => c.cmd === 'widget_refused').map(c => c.args), [{ id: 'deploy' }]);
+});
+
+await test('service: the ticket block\'s question reaches the shell; its search is answered here', async () => {
+  actions.length = 0;
+  calls.length = 0;
+  fire('widget-action', { kind: 'tickets' });
+  fire('widget-action', { kind: 'bind', id: 'call', task: 'ATL-6790' });
+  assert.deepEqual(actions, [{ kind: 'tickets' }, { kind: 'bind', id: 'call', task: 'ATL-6790' }]);
+  searchAnswer = { ok: true, data: { hits: [{ key: 'ATL-7110', summary: 'Deploy to staging times out' }] } };
+  fire('widget-action', { kind: 'search', query: 'dep' });
+  await settle();
+  assert.equal(actions.length, 2, 'the shell has nothing to do about a search');
+  assert.deepEqual(searched, ['dep']);
+  assert.deepEqual(told(), [{ kind: 'found', query: 'dep', tickets: [ticket('ATL-7110', 'Deploy to staging times out')] }]);
+  calls.length = 0;
+  searchAnswer = { ok: false, error: 'Jira is down' };
+  fire('widget-action', { kind: 'search', query: 'deploy' });
+  await settle();
+  assert.deepEqual(told(), [{ kind: 'found', query: 'deploy', tickets: null }], 'Jira did not answer');
+});
+
+await test('service: the known tickets go at once, and again when Jira\'s list changed', async () => {
+  const labels = (): string[][] => told().map(t => (t.kind === 'known' ? t.groups.map(g => g.label) : []));
+  calls.length = 0;
+  inProgressAnswer = { ok: true, data: { hits: [{ key: 'ATL-6790', summary: 'Deploy checklist' }] } };
+  service.tellKnown(TODAY, [favorite('ATL-6795', 'Daily')]);
+  assert.deepEqual(labels(), [['today', 'favorites']], 'what is at hand goes without waiting for Jira');
+  await settle();
+  assert.deepEqual(labels(), [['today', 'favorites'], ['today', 'jira · in progress', 'favorites']]);
+
+  calls.length = 0;
+  service.tellKnown(TODAY, []);
+  await settle();
+  assert.deepEqual(labels(), [['today', 'jira · in progress']], 'the same list is not told twice');
+
+  calls.length = 0;
+  inProgressAnswer = { ok: false, error: 'Jira is down' };
+  service.tellKnown(null, []);
+  await settle();
+  assert.deepEqual(labels(), [['jira · in progress']], 'a failure keeps the last list');
+
+  calls.length = 0;
+  inProgressAnswer = { ok: false, error: 'not set up', errorCode: 'jira-not-configured' as never };
+  service.tellKnown(null, []);
+  await settle();
+  assert.deepEqual(labels(), [['jira · in progress'], []], 'Jira is not set up — the list is empty');
 });
 
 await test('service: a birth is told until the widget takes it', () => {

@@ -184,7 +184,10 @@ self-update are simply time nobody tracked: a live timer is cut where it was
 last seen and goes on by itself. `workday stop` pauses timers. At the day
 boundary every timer stops; a timer still without a ticket stays in its day's
 file as unlinked time. `timer.desktopWidget` is the tray's switch for the
-small always-on-top list of timers.
+small always-on-top list of timers. A timer without a ticket gets one right
+there: the widget lists the tickets the tray knows already (the day's, Jira
+in progress, favorites) and searches Jira; the record is Development with the
+timer's description.
 
 Config can also live next to `package.json` for local development — the daemon checks there first before falling back to `~/.workday/`.
 
