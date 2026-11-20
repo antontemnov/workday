@@ -293,7 +293,27 @@ pub fn fit_widget(app: AppHandle, min_width: f64, height: f64) -> Result<(), Str
 
     let rect = place(&geometry, plate_size(geometry.width, min_width, height, scale), work);
     apply_rect(&window, rect)?;
-    window.show().map_err(|e| e.to_string())
+    #[cfg(windows)]
+    let appears = !window.is_visible().unwrap_or(true);
+    // Whoever has the keyboard now is the one to get it back, should the
+    // widget be handed it uninvited.
+    #[cfg(windows)]
+    keyboard::note(&window);
+    // tao shows a window with SW_SHOW, and that activates it, not-focusable
+    // or not — the app the user is in would lose the keyboard. Shown first
+    // without activation, the window is visible already when tao shows it,
+    // and SW_SHOW on a visible window does nothing.
+    #[cfg(windows)]
+    if appears {
+        keyboard::show_quietly(&window);
+    }
+    window.show().map_err(|e| e.to_string())?;
+    // Should the keyboard turn up on the widget all the same, it goes back.
+    #[cfg(windows)]
+    if appears {
+        keyboard::watch(&window);
+    }
+    Ok(())
 }
 
 /// A drag begins: by the body (move) or by an edge (width).
@@ -439,9 +459,12 @@ pub fn open_main(app: AppHandle) -> Result<(), String> {
 
 // ─── The keyboard (Windows) ─────────────────────────────────────────────
 //
-// The widget never has the keyboard, except while a description is typed on
-// it. The window that had it before is remembered and gets it back — but only
-// if the keyboard is still on the widget: the user may be elsewhere already.
+// The widget never has the keyboard, except while something is typed on it.
+// The window that had it before is remembered and gets it back — but only if
+// the keyboard is still on the widget: the user may be elsewhere already.
+// That window is noted afresh every time the plate is fitted, so a widget
+// that gets the keyboard uninvited (it does when it appears) never sends it
+// to a window remembered from an edit long over.
 //
 // An activation may already be on its way when the edit ends (a press made
 // through the accessibility tree focuses the window after its click), and the
@@ -459,7 +482,7 @@ mod keyboard {
         SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_MENU,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, IsWindow, SetForegroundWindow,
+        GetForegroundWindow, IsWindow, SetForegroundWindow, ShowWindow, SW_SHOWNOACTIVATE,
     };
 
     const GUARD_STEP: Duration = Duration::from_millis(100);
@@ -481,6 +504,29 @@ mod keyboard {
         }
     }
 
+    /// Put the window on the screen and leave the keyboard where it is.
+    pub fn show_quietly(window: &WebviewWindow) {
+        let widget = handle(window);
+        if widget != 0 {
+            unsafe { ShowWindow(widget as HWND, SW_SHOWNOACTIVATE) };
+        }
+    }
+
+    /// Nothing is typed: the window that has the keyboard now is its owner.
+    pub fn note(window: &WebviewWindow) {
+        if !TYPING.load(Ordering::Relaxed) {
+            remember(window);
+        }
+    }
+
+    /// The window has just appeared: for a short while the keyboard is handed
+    /// back if it turns up on it.
+    pub fn watch(window: &WebviewWindow) {
+        if !TYPING.load(Ordering::Relaxed) {
+            guard(handle(window));
+        }
+    }
+
     /// The click that asked for the edit was ours, so the plain call is
     /// allowed to take the foreground. False — it was not: the caller falls
     /// back to the window's own set_focus.
@@ -495,6 +541,10 @@ mod keyboard {
         TYPING.store(false, Ordering::Relaxed);
         let widget = handle(window);
         pass_on(widget, false);
+        guard(widget);
+    }
+
+    fn guard(widget: isize) {
         std::thread::spawn(move || {
             let mut tries = 0;
             for _ in 0..GUARD_STEPS {
