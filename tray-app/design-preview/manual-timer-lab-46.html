@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Подсказка и таймер знают друг о друге — мини-макеты v46</title>
+<style>
+:root { --tm: 252 146 48; --go: 48 209 88; --sg: 249 226 175; --chip: #11111b; }
+html, body { margin: 0; background: #0f0f17; }
+body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace; padding: 22px 26px 80px; }
+.lab h1 { font-size: 14px; margin: 0 0 4px; }
+.lab h2 { font-size: 12px; margin: 34px 0 3px; }
+.lab h2 i { font-style: normal; color: rgb(var(--tm)); }
+.lab .sub, .lab .q { color: #7f849c; font-size: 11px; max-width: 1120px; margin: 0 0 12px; }
+.lab .sub b, .lab .q b { color: #a6adc8; }
+.grid { display: flex; flex-wrap: wrap; gap: 16px 18px; align-items: flex-start; }
+.grid + .grid { margin-top: 16px; }
+.cell { display: flex; flex-direction: column; gap: 6px; }
+.cap { color: #7f849c; font-size: 10.5px; line-height: 1.4; max-width: 400px; }
+.cap b { color: #cdd6f4; font-weight: 400; }
+.cap u { text-decoration: none; color: rgb(var(--tm)); }
+.arrow { align-self: center; color: #585b70; font-size: 14px; }
+.bare h1, .bare .sub, .bare .toolbar { display: none; }
+.bare.lab h2 { margin-top: 0; }
+
+.toolbar { position: sticky; top: 0; z-index: 90; display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin: 0 -26px 6px; padding: 8px 26px; background: rgb(15 15 23 / .94); border-bottom: 1px solid #1e1e2e; }
+.tbg { display: inline-flex; align-items: center; gap: 6px; }
+.tbl { color: #6c7086; font-size: 10.5px; margin-right: 2px; }
+.tbb { font: inherit; font-size: 10.5px; color: #bac2de; background: #1e1e2e; border: 1px solid #313244; border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.tbb:hover { border-color: #45475a; color: #e6ebfa; }
+.tbb.on { border-color: rgb(var(--tm) / .55); color: rgb(var(--tm)); background: rgb(var(--tm) / .07); }
+
+/* ── a piece of the app window ── */
+.app { position: relative; width: 400px; border-radius: 8px; overflow: hidden; background: #1e1e2e; box-shadow: 0 0 0 1px rgb(255 255 255 / .07); flex-shrink: 0; }
+.hdr { display: flex; align-items: center; height: 29px; box-sizing: border-box; padding-left: 12px; background: #181825; border-bottom: 1px solid #26263a; }
+.vs { display: inline-flex; align-items: center; gap: 10px; color: #585b70; }
+.vs svg { width: 13px; height: 13px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.vs .on { color: #cdd6f4; }
+.tmz { margin-left: auto; display: inline-flex; align-items: center; }
+.wc { display: inline-flex; align-self: stretch; }
+.wc span { width: 32px; display: inline-flex; align-items: center; justify-content: center; color: #585b70; }
+.wc svg { width: 10px; height: 10px; display: block; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
+.feed { position: relative; padding: 10px 10px 4px; }
+.cur { position: absolute; z-index: 80; width: 12px; height: 17px; pointer-events: none; }
+.cur svg { width: 100%; height: 100%; display: block; fill: #fff; stroke: #11111b; stroke-width: 1; stroke-linejoin: round; }
+
+.t-ic { width: 12px; height: 12px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.tchip { display: inline-flex; align-items: center; gap: 5px; height: 19px; margin-right: 10px; padding: 0 9px 0 6px; border-radius: 999px; flex-shrink: 0;
+  background: var(--chip); color: rgb(var(--tm)); font-size: 10.5px; line-height: 1; white-space: nowrap; }
+.tchip-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tchip.ghost { background: none; box-shadow: inset 0 0 0 1px #313244; color: #9399b2; font-weight: 700; padding: 0 10px 0 8px; }
+.tchip.ghost .t-ic { color: #7f849c; }
+
+/* ── the island ── */
+.isl { position: relative; margin: -1px 0 0 auto; width: 333px; box-sizing: border-box; padding: 7px 8px 8px; font-size: 11px;
+  background: #181825; border-left: 1px solid #26263a; border-bottom: 1px solid #26263a; border-radius: 0 0 0 12px; box-shadow: 0 14px 24px -14px rgb(0 0 0 / .75); }
+.trow { display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center;
+  grid-template-areas: "b k f t" ". . . d"; grid-template-rows: 26px 18px; padding: 2px 5px 4px; }
+.trow > .tbtn { grid-area: b; }
+.trow > .chip.ask, .trow > .tkey { grid-area: k; }
+.trow > .tfield { grid-area: f; }
+.trow > .ttime { grid-area: t; }
+.trow > .tdel { grid-area: d; justify-self: end; }
+.tbtn { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.tbtn svg { width: 8px; height: 8px; display: block; }
+.tbtn.pz { color: rgb(var(--tm)); box-shadow: inset 0 0 0 1.5px rgb(var(--tm)); }
+.tbtn.pz svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.ttime { min-width: 7ch; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; color: rgb(var(--tm)); white-space: nowrap; }
+.tfield { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cdd6f4; }
+.trow.tk .tfield { color: #7f849c; }
+.chip.ask { display: inline-flex; align-items: center; height: 17px; box-sizing: border-box; border-radius: 7px; white-space: nowrap; color: #6c7086; border: 1px dashed #45475a; padding: 0 7px; }
+.chip.ask.armed { color: #cdd6f4; border-color: #7f849c; }
+.tkey { font-size: 10.5px; font-weight: 700; letter-spacing: .2px; color: #cdd6f4; white-space: nowrap; }
+.tdel { color: #565973; font-size: 10px; font-weight: 700; }
+
+/* ── a ticket's card (drawn roughly) ── */
+.cardp { box-sizing: border-box; padding: 7px 10px 7px; border-radius: 10px; background: rgb(30 30 46 / .9); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .09); font-size: 11px; margin-bottom: 8px; background: #232336; }
+.cardp.new { box-shadow: inset 0 0 0 1px rgb(var(--tm) / .28); }
+.blk-h { display: flex; align-items: baseline; gap: 10px; height: 22px; }
+.blk-h .bk { font-weight: 700; color: #cdd6f4; }
+.blk-h .bs { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bac2de; }
+.blk-h .bt { font-weight: 700; color: #cdd6f4; font-variant-numeric: tabular-nums; }
+.wl { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; height: 22px; }
+.wl .c-type { color: #7f849c; }
+.wl .c-ds { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7f849c; font-style: italic; }
+.wl .c-ds.none { font-style: normal; color: #585b70; }
+.wl .c-dur { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: #cdd6f4; font-variant-numeric: tabular-nums; }
+.wl.tm-live .c-dur { color: rgb(var(--tm)); }
+.rt-b { width: 13px; height: 13px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.rt-b svg { width: 7px; height: 7px; display: block; }
+.rt-b.run { color: rgb(var(--tm)); box-shadow: inset 0 0 0 1px rgb(var(--tm) / .85); }
+.rt-b.run svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.rt-b.rest { color: #6c7086; box-shadow: inset 0 0 0 1px #45475a; }
+.rt-b.rest svg { fill: currentColor; transform: translateX(.5px); }
+.rt-b.rest.h { color: rgb(var(--go)); box-shadow: inset 0 0 0 1px rgb(var(--go) / .7); }
+
+/* ── the offer: the app's own styles ── */
+.sug2 { padding: 3px 8px 4px; border: 1px dashed rgb(205 214 244 / .18); border-radius: 9px; margin-bottom: 8px; font-size: 11px; font-variant-numeric: tabular-nums;
+  background: linear-gradient(115deg, rgb(205 214 244 / .03), transparent 45%), repeating-linear-gradient(-45deg, rgb(205 214 244 / .035) 0 1px, transparent 1px 8px); }
+.sug2.hv { border-color: rgb(205 214 244 / .3); }
+.r-l1, .rv { display: grid; grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content); gap: 8px; align-items: center; }
+.r-l1 { height: 17px; }
+.r-l2 { display: flex; align-items: center; height: 20px; margin-top: 1px; }
+.rv { flex: 1; min-width: 0; }
+.sug2 .chip { justify-self: start; display: inline-flex; align-items: center; height: 17px; font-weight: 600; white-space: nowrap; }
+.sug2 .chip.key { padding: 0 0 0 7px; color: #9399b2; }
+.sug2 .chip.ask { font-weight: 400; padding: 0 8px 0 6px; }
+.k-ind { width: 9px; height: 9px; margin-right: 5px; flex-shrink: 0; display: inline-flex; }
+.k-spark { display: block; width: 9px; height: 9px; color: #f9e2af; filter: drop-shadow(0 0 3px rgb(249 226 175 / .75)) drop-shadow(0 0 6px rgb(249 226 175 / .3)); }
+.k-spark.dim { color: rgb(249 226 175 / .55); filter: none; }
+.s-title { min-width: 0; overflow: hidden; white-space: nowrap; color: #8b90ab; font-weight: 600; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); }
+.s-dur { justify-self: end; display: inline-flex; align-items: center; gap: 5px; color: #7f849c; font-weight: 700; white-space: nowrap; padding: 0 5px; }
+.s-when { color: #565973; font-size: 10.5px; white-space: nowrap; }
+.s-when .ar, .s-when .lv { color: #7f849c; }
+.s-when .ar { margin: 0 2px; }
+.s-src { color: #565973; font-size: 10px; }
+.s-act { justify-self: end; display: flex; align-items: center; gap: 8px; }
+.lnk-deny { padding: 0 2px; color: #565973; font-size: 10px; font-weight: 700; }
+.btn-log { height: 18px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; white-space: nowrap; font-size: 10px; font-weight: 700;
+  color: #f9e2af; background: rgb(var(--sg) / .12); box-shadow: inset 0 0 0 1px rgb(var(--sg) / .3); }
+/* «accept with a timer»: a worded button in the action row */
+.btn-tm { height: 18px; padding: 0 8px 0 6px; border-radius: 7px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 10px; font-weight: 700; color: #9399b2; box-shadow: inset 0 0 0 1px #313244; }
+.btn-tm .t-ic { width: 10px; height: 10px; color: #7f849c; }
+.btn-tm .g { width: 7px; height: 7px; display: block; fill: rgb(var(--go)); }
+.btn-tm.h { color: #cdd6f4; box-shadow: inset 0 0 0 1px #45475a; }
+.btn-tm.h .t-ic { color: #bac2de; }
+body.pa .only-b, body.pb .only-a { display: none; }
+.force-a .only-a, .force-b .only-b { display: inline-flex !important; }
+.force-a .only-b, .force-b .only-a { display: none !important; }
+
+/* ── a piece of the desktop with the widget ── */
+.scene { position: relative; display: flex; justify-content: flex-end; align-items: flex-start; width: 300px; box-sizing: border-box; padding: 12px; border-radius: 8px; overflow: hidden; border: 1px solid #2a2a3c; flex-shrink: 0;
+  background: radial-gradient(120% 90% at 18% 8%, #2c3150 0%, #1b1d2e 52%, #121320 100%); }
+.w { position: relative; z-index: 1; box-sizing: border-box; width: 262px; overflow: hidden; font-size: 10.5px; line-height: 1; color: #cdd6f4; white-space: nowrap; border-radius: .95em; padding: .2em 0; user-select: none;
+  background: #181825; box-shadow: inset 0 0 0 1px #313244, 0 10px 24px -10px rgb(0 0 0 / .85); }
+.w.calm { background: rgb(17 17 27 / .65); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .09); }
+.w-row { display: flex; align-items: center; gap: .55em; height: 2.28em; padding: 0 .45em 0 .6em; }
+.w-b { width: 1.72em; height: 1.72em; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: rgb(var(--tm)); }
+.g-ic { width: 1.15em; height: 1.15em; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.w-t { width: 7ch; flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; color: rgb(var(--tm)); }
+.w-tx { display: flex; align-items: center; gap: .55em; min-width: 0; flex: 1; }
+.w-k { font-weight: 700; color: #cdd6f4; }
+.w-d { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #a6adc8; }
+.w-acts { margin-left: auto; flex-shrink: 0; display: inline-flex; gap: .1em; }
+.w-x { width: 1.6em; height: 1.6em; border-radius: .5em; color: #a6adc8; display: inline-flex; align-items: center; justify-content: center; }
+.w-x svg { width: 1.14em; height: 1.14em; display: block; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.w-x.armed { color: #cdd6f4; background: rgb(205 214 244 / .09); }
+.w-x.dead { opacity: .3; }
+.w-pick { background: rgb(17 17 27 / .5); box-shadow: inset 0 1px 0 rgb(205 214 244 / .08); }
+.w-find { display: flex; align-items: center; gap: .6em; height: 2.28em; padding: 0 .9em; box-shadow: inset 0 -1px 0 rgb(205 214 244 / .08); }
+.w-find svg { width: 1.05em; height: 1.05em; flex-shrink: 0; display: block; fill: none; stroke: #6c7086; stroke-width: 1.3; stroke-linecap: round; }
+.w-fi { color: #585b70; }
+.w-scroll { height: 15.75em; overflow-y: auto; scrollbar-width: none; padding: .2em 0; box-sizing: border-box; }
+.w-scroll::-webkit-scrollbar { display: none; }
+.w-scroll.fit { height: auto; }
+.w-scroll.more-down { -webkit-mask-image: linear-gradient(#000 calc(100% - 2em), transparent); mask-image: linear-gradient(#000 calc(100% - 2em), transparent); }
+.w-scroll.more-up { -webkit-mask-image: linear-gradient(transparent, #000 2em); mask-image: linear-gradient(transparent, #000 2em); }
+.w-li { display: flex; align-items: center; gap: .7em; height: 2.1em; box-sizing: border-box; padding: 0 .9em; }
+.w-li.h { background: rgb(205 214 244 / .07); }
+.w-lk { flex-shrink: 0; font-weight: 700; color: #bac2de; }
+.w-ln { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #7f849c; }
+.w-li.h .w-lk { color: #cdd6f4; }
+.w-li.h .w-ln { color: #a6adc8; }
+.w-lg { display: block; padding: .75em 1.05em .3em; font-size: .8em; letter-spacing: .04em; color: #585b70; }
+.w-scroll > .w-lg:first-child { padding-top: .4em; }
+.w-lg.sg { color: rgb(var(--sg) / .62); }
+.w-li .k-ind { margin-right: 0; }
+.w-src { flex-shrink: 0; color: #585b70; font-size: .9em; }
+
+/* ── the app's cloud in the «ticket for the timer» mode (drawn roughly) ── */
+.cloud { margin: 0 0 8px; padding: 9px 12px 11px; border-radius: 12px; background: #161622; box-shadow: inset 0 0 0 1px rgb(205 214 244 / .12), 0 14px 26px -14px rgb(0 0 0 / .8); font-size: 11px; }
+.cl-find { display: flex; align-items: center; gap: 8px; height: 22px; color: #585b70; }
+.cl-find svg { width: 11px; height: 11px; display: block; fill: none; stroke: #6c7086; stroke-width: 1.3; stroke-linecap: round; }
+.cl-g { margin: 9px 0 6px; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #6d86c9; }
+.cl-g.sg { color: rgb(var(--sg) / .7); }
+.cl-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cl-chip { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 7px; background: rgb(205 214 244 / .05); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .1); white-space: nowrap; }
+.cl-chip b { font-weight: 700; color: #bac2de; }
+.cl-chip span { color: #7f849c; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.cl-chip.h { background: rgb(205 214 244 / .1); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .22); }
+.cl-chip.h b { color: #cdd6f4; }
+
+.todo { max-width: 1120px; margin: 0; padding-left: 18px; color: #7f849c; font-size: 11px; }
+.todo li { margin: 0 0 6px; }
+.todo b { color: #cdd6f4; font-weight: 400; }
+</style>
+</head>
+<body class="lab pa">
+
+<h1>Подсказка и таймер знают друг о друге — мини-макеты v46</h1>
+<p class="sub">Сегодня подсказка review и ваш таймер предлагают записать одну и ту же работу. Два правила: <b>кнопка Timer у строки подсказки</b> принимает её таймером вместо минут; <b>группа <i style="font-style:normal;color:rgb(249 226 175 / .8)">suggested</i> в блоке выбора тикета</b> привязывает уже идущий таймер и гасит подсказку. Кадры статичные, окно приложения и карточки нарисованы грубо; строка подсказки, остров и виджет — стилями приложения.</p>
+
+<div class="toolbar">
+  <span class="tbg"><span class="tbl">кнопка у подсказки</span><button class="tbb on" data-set="pa">А · ◔ Timer</button><button class="tbb" data-set="pb">Б · ▶ Timer</button></span>
+</div>
+
+<section data-n="1">
+<h2>1 · Как у подсказки назвать «принять таймером»</h2>
+<p class="q">Сегодня у строки два действия: <b>Deny</b> и <b>Log…</b> (форма с минутами). Добавляется третье: принять подсказку и считать время таймером. <b>Отвергнуто вами:</b> голый кружок ▶ у времени — «30m ▶» читается как «таймер пойдёт с 31-й минуты», и из него не видно, что это «залогировать с таймером». Поэтому кнопка — <b>словом и в ряду действий</b>, рядом с Log…: два способа принять стоят рядом, угаданные 30m остаются сами по себе. <b>А</b> — значок таймера и слово Timer, тот же вид, что у чипа в шапке в покое. <b>Б</b> — зелёный ▶ и слово Timer. Ставка Claude — А: это уже знакомая кнопка «завести таймер», а зелёный ▶ в приложении значит «продолжить стоящий». Переключатель вверху меняет вариант во всех кадрах ниже.</p>
+<div class="grid" id="s1"></div>
+</section>
+
+<section data-n="2">
+<h2>2 · Review: клик по Timer — <i>до → после</i></h2>
+<p class="q">Подсказка review рождается в момент checkout чужой ветки — в начале работы. Клик по Timer: подсказка принята без минут, в карточке тикета появляется запись с типом и описанием, которые подставила бы форма <b>Log…</b>, и её сразу питает таймер. Дальше это обычная запись с таймером: ⏸ у времени, строка в острове, строка на виджете.</p>
+<div class="grid" id="s2"></div>
+</section>
+
+<section data-n="3">
+<h2>3 · Митинг: Timer только пока он идёт</h2>
+<p class="q">У прошедшего митинга время известно из календаря — там остаётся <b>Log…</b>, таймеру считать нечего. У подсказки без тикета (<b>task?</b>) кнопки нет: сначала выбирается тикет. Timer есть только у идущего митинга с тикетом; таймер считает с клика, как любой другой.</p>
+<div class="grid" id="s3"></div>
+</section>
+
+<section data-n="4">
+<h2>4 · Таймер уже идёт без тикета: группа <i style="color:rgb(249 226 175 / .85)">suggested</i> на виджете</h2>
+<p class="q">Ваш случай со снимка: таймер «9349 code review» идёт, подсказка по ATL-9349 висит в ленте. В блоке выбора тикета появляется четвёртая группа. Её строки — <b>предложения, а не тикеты</b>: звезда подсказки, ключ, слово источника, название. Поэтому тикет может стоять и в <b>today</b>, и в <b>suggested</b>: выбор из today просто привязывает таймер, выбор из suggested ещё и гасит подсказку. Вы сказали «последним пунктом» — слева так и нарисовано, но до группы приходится крутить список. Справа — группа первой, когда открытые подсказки есть. Ставка Claude — первой: подсказок мало, и это то, что предлагают прямо сейчас.</p>
+<div class="grid" id="s4"></div>
+</section>
+
+<section data-n="5">
+<h2>5 · Что меняется в приложении после выбора из suggested — <i>до → после</i></h2>
+<p class="q">Таймер привязан к тикету подсказки. Запись получает <b>тип подсказки</b> (Code Review, а не Development) и <b>описание таймера</b>; если описания у таймера нет — описание подсказки. Время — то, что насчитал таймер, он идёт дальше. Подсказка из ленты уходит: записывать ту же работу второй раз больше не предлагают.</p>
+<div class="grid" id="s5"></div>
+</section>
+
+<section data-n="6">
+<h2>6 · То же в облаке приложения (<b style="font-weight:400;color:#a6adc8">task?</b> в острове)</h2>
+<p class="q">Облако в режиме «тикет для таймера» получает ту же группу. Порядок — как решим для виджета.</p>
+<div class="grid" id="s6"></div>
+</section>
+
+<section data-n="7">
+<h2>7 · Чего в группе нет</h2>
+<p class="q">Ответ на ваш вопрос: да, принятые раньше подсказки в группу не попадают. В группе ровно те предложения, которые сейчас открыты в ленте и у которых есть тикет.</p>
+<div class="grid" id="s7"></div>
+<ul class="todo" style="margin-top:14px">
+  <li><b>Нет в группе:</b> принятые (Log… или Timer), отклонённые (Deny), заглушённые серии, подсказки без тикета (task?), ещё не начавшиеся митинги.</li>
+  <li><b>Открытых подсказок нет</b> — подписи группы тоже нет, блок выглядит как сегодня.</li>
+  <li><b>У таймера с тикетом</b> блока выбора нет вовсе — группа касается только таймера без тикета.</li>
+  <li><b>Привязка к тому же тикету другим путём</b> (today, in progress, favorites, поиск) подсказку не гасит: по тикету вы могли работать сами.</li>
+  <li><b>Log… и Deny</b> работают как сегодня.</li>
+</ul>
+</section>
+
+<section data-n="8">
+<h2>Что решить</h2>
+<ul class="todo">
+  <li><b>1.</b> Кнопка «принять таймером» — словом в ряду действий: А (◔ Timer) или Б (▶ Timer). Ставка: А.</li>
+  <li><b>2.</b> Группа suggested — последней (ваше слово) или первой, когда есть открытые подсказки. Ставка: первой.</li>
+  <li><b>3.</b> Строка группы — предложение (звезда, слово источника), тикет может повторяться в today. Ставка: да.</li>
+  <li><b>4.</b> Timer у идущего митинга считает с клика, а не с начала митинга по календарю. Ставка: с клика.</li>
+  <li><b>5.</b> Запись после выбора из suggested берёт тип подсказки и описание таймера. Ставка: да.</li>
+</ul>
+</section>
+
+<script>
+const GO = '<svg viewBox="0 0 10 10"><path d="M2.5 1.4v7.2L8.6 5z"/></svg>';
+const PZ = '<svg viewBox="0 0 10 10"><path d="M3.2 1.8v6.4M6.8 1.8v6.4"/></svg>';
+const TIC = '<svg class="t-ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.2V8"/></svg>';
+const GIC = '<svg class="g-ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.2V8"/></svg>';
+const SPARK = (dim) => `<span class="k-ind"><svg class="k-spark${dim ? ' dim' : ''}" viewBox="0 0 10 10"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg></span>`;
+const TAG = '<svg viewBox="0 0 16 16"><path d="M2.6 2.6h5.2l5.6 5.6-5.2 5.2-5.6-5.6z"/><circle cx="5.4" cy="5.4" r=".8"/></svg>';
+const EYE = '<svg viewBox="0 0 16 16"><path d="M1.6 8c1.6-2.8 3.8-4.2 6.4-4.2S12.8 5.2 14.4 8c-1.6 2.8-3.8 4.2-6.4 4.2S3.2 10.8 1.6 8z"/><circle cx="8" cy="8" r="1.9"/></svg>';
+const FIND = '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 13.5 13.5"/></svg>';
+const CUR = (x, y) => `<span class="cur" style="left:${x}px;top:${y}px"><svg viewBox="0 0 12 17"><path d="M1 1v13l3.6-3.2 2.3 5 2-1-2.3-4.8H11z"/></svg></span>`;
+const TABS = '<span class="vs"><svg class="on" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6"/><circle cx="8" cy="8" r="2"/></svg></span>';
+const WC = '<span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>';
+
+const chip = (time) => time
+  ? `<span class="tchip">${TIC}<span class="tchip-time">${time}</span></span>`
+  : `<span class="tchip ghost">${TIC}Timer</span>`;
+const app = (o) => `<div class="app"><div class="hdr">${TABS}<span class="tmz">${chip(o.chip)}</span>${WC}</div>${o.isl || ''}<div class="feed">${o.feed}${o.cur || ''}</div></div>`;
+
+// an offer row; play: 'h' — Timer under the cursor, true — Timer at rest, false — no Timer
+function sug(o) {
+  const key = o.task ? `<span class="chip key">${SPARK()}${o.task}</span>` : `<span class="chip ask">${SPARK(true)}task?</span>`;
+  const h = o.play === 'h' ? ' h' : '';
+  const pa = o.play ? `<span class="btn-tm only-a${h}">${TIC}Timer</span><span class="btn-tm only-b${h}"><svg class="g" viewBox="0 0 10 10"><path d="M2.5 1.4v7.2L8.6 5z"/></svg>Timer</span>` : '';
+  const when = o.live ? `${o.when}<span class="ar">→</span><span class="lv">live</span>` : o.when;
+  return `<div class="sug2${o.play === 'h' ? ' hv' : ''}"><div class="r-l1">${key}<span class="s-title">${o.title}</span><span class="s-dur">${o.dur}</span></div>
+    <div class="r-l2"><div class="rv"><span class="s-when">${when}</span><span class="s-src">${o.src}</span><span class="s-act"><span class="lnk-deny">Deny</span>${pa}${o.task ? '<span class="btn-log">Log…</span>' : ''}</span></div></div></div>`;
+}
+// a record line: live — a timer feeds it
+const rec = (type, ds, dur, live) => `<div class="wl${live ? ' tm-live' : ''}"><span class="c-type">${type}</span><span class="c-ds${ds ? '' : ' none'}">${ds || 'no description'}</span><span class="c-dur"><span class="rt-b ${live ? 'run' : 'rest'}">${live ? PZ : GO}</span>${dur}</span></div>`;
+const card = (key, name, total, recs, fresh) => `<div class="cardp${fresh ? ' new' : ''}"><div class="blk-h"><span class="bk">${key}</span><span class="bs">${name}</span><span class="bt">${total}</span></div>${recs.join('')}</div>`;
+const isl = (rows) => `<div class="isl">${rows.join('')}</div>`;
+const trow = (o) => `<div class="trow${o.key ? ' tk' : ''}"><span class="tbtn pz">${PZ}</span>${o.key ? `<span class="tkey">${o.key}</span>` : `<span class="chip ask${o.armed ? ' armed' : ''}">task?</span>`}<span class="tfield">${o.text}</span><span class="ttime">${o.time}</span><span class="tdel">Remove</span></div>`;
+
+const C8110 = card('ATL-8110', 'Invoice export: totals by currency', '1h 40m', [rec('Development', '', '1h 40m')]);
+const SUG_REVIEW = (play) => sug({ task: 'ATL-9349', title: 'Fix rounding in invoice totals', dur: '30m', when: '14:02', src: 'review', play });
+const SUG_MEET_PAST = sug({ task: 'ATL-7104', title: 'Daily standup', dur: '15m', when: '10:00–10:15', src: 'meeting', play: false });
+
+const cell = (html, cap) => `<div class="cell">${html}<div class="cap">${cap}</div></div>`;
+const ARROW = '<span class="arrow">→</span>';
+
+// ── 1 ──
+const S1 = (play) => sug({ task: 'ATL-9349', title: 'Fix rounding in invoice totals', dur: '30m', when: '14:02', src: 'review', play });
+const forced = (html, v) => `<div class="force-${v}">${html}</div>`;
+document.getElementById('s1').innerHTML =
+  cell(app({ feed: S1(false) }), '<b>Сегодня.</b> Deny и Log….') +
+  cell(forced(app({ feed: S1(true) }), 'a'), '<b>А · значок таймера и слово.</b> Тот же вид, что у чипа Timer в шапке окна.') +
+  cell(forced(app({ feed: S1(true) }), 'b'), '<b>Б · зелёный ▶ и слово.</b> Зелёный — цвет «пуск», как у стоящего таймера в острове.');
+
+// ── 2 ──
+document.getElementById('s2').innerHTML =
+  cell(app({ feed: SUG_REVIEW('h') + C8110, cur: CUR(304, 44) }), '<b>До.</b> Checkout чужой ветки дал подсказку review. Курсор на Timer.') + ARROW +
+  cell(app({ chip: '0m 03s', feed: card('ATL-9349', 'Fix rounding in invoice totals', '0m', [rec('Code Review', 'Fix rounding in invoice totals', '0m 03s', true)], true) + C8110 }), '<b>После.</b> Подсказки нет. В ленте карточка ATL-9349 с записью Code Review; время <u>оранжевое, с секундами</u>, рядом ⏸. В шапке чип идущего таймера.') +
+  cell(`<div class="scene"><div class="w calm"><div class="w-row"><span class="w-b">${GIC}</span><span class="w-t">0m 03s</span><span class="w-tx"><span class="w-k">ATL-9349</span><span class="w-d">Fix rounding in invoice totals</span></span></div></div></div>`, '<b>На виджете</b> — обычная строка таймера с тикетом.');
+
+// ── 3 ──
+document.getElementById('s3').innerHTML =
+  cell(app({ feed:
+    sug({ task: 'ATL-7104', title: 'Sprint planning', dur: '1h', when: '15:00', live: true, src: 'meeting', play: 'h' }) +
+    SUG_MEET_PAST +
+    sug({ title: 'Sync with platform team', dur: '30m', when: '11:30–12:00', src: 'meeting', play: false }),
+    cur: CUR(304, 44) }),
+    '<b>До.</b> Сверху вниз: идущий митинг с тикетом — Timer есть; прошедший — только Log…; без тикета — только task?.') + ARROW +
+  cell(app({ chip: '0m 02s', feed:
+    card('ATL-7104', 'Team ceremonies', '0m', [rec('Meeting', 'Sprint planning', '0m 02s', true)], true) +
+    SUG_MEET_PAST +
+    sug({ title: 'Sync with platform team', dur: '30m', when: '11:30–12:00', src: 'meeting', play: false }) }),
+    '<b>После.</b> Запись Meeting с названием митинга, таймер считает с клика. Остальные подсказки на месте.');
+
+// ── 4 ──
+const li = (k, n, h) => `<div class="w-li${h ? ' h' : ''}"><span class="w-lk">${k}</span><span class="w-ln">${n}</span></div>`;
+const lis = (k, src, n, h) => `<div class="w-li${h ? ' h' : ''}">${SPARK()}<span class="w-lk">${k}</span><span class="w-src">${src}</span><span class="w-ln">${n}</span></div>`;
+const G_TODAY = '<span class="w-lg">today</span>' + li('ATL-8110', 'Invoice export: totals by currency') + li('ATL-7733', 'Payment retry: backoff policy');
+const G_JIRA = '<span class="w-lg">jira · in progress</span>' + li('ATL-8200', 'Tenant settings: audit trail') + li('ATL-8231', 'Billing: proration on plan change');
+const G_FAV = '<span class="w-lg">favorites</span>' + li('ATL-100', 'Meetings') + li('ATL-101', 'Onboarding and mentoring');
+const G_SUG = (h) => '<span class="w-lg sg">suggested</span>' + lis('ATL-9349', 'review', 'Fix rounding in invoice totals', h) + lis('ATL-7104', 'meeting', 'Sprint planning');
+const wrow = (o) => `<div class="w-row"><span class="w-b">${GIC}</span><span class="w-t">${o.time}</span><span class="w-tx">${o.key ? `<span class="w-k">${o.key}</span>` : ''}<span class="w-d">${o.text}</span></span>${o.pick ? `<span class="w-acts"><span class="w-x armed">${TAG}</span><span class="w-x dead">${EYE}</span></span>` : ''}</div>`;
+const wpick = (inner, cls, attr) => `<div class="w-pick"><div class="w-find">${FIND}<span class="w-fi">ticket</span></div><div class="w-scroll ${cls}"${attr || ''}>${inner}</div></div>`;
+const scene = (inner, cur) => `<div class="scene">${inner}${cur || ''}</div>`;
+document.getElementById('s4').innerHTML =
+  cell(scene(`<div class="w">${wrow({ time: '24m 28s', text: '9349 code review', pick: true })}${wpick(G_TODAY + G_JIRA + G_FAV + G_SUG(), 'more-down')}</div>`), '<b>Последней — блок только открыт.</b> Группы не видно: семь строк заняты today, in progress и favorites.') +
+  cell(scene(`<div class="w">${wrow({ time: '24m 28s', text: '9349 code review', pick: true })}${wpick(G_TODAY + G_JIRA + G_FAV + G_SUG(true), 'more-up', ' data-end="1"')}</div>`, CUR(236, 190)), '<b>Последней — список докручен.</b> Группа suggested внизу; курсор на предложении review.') +
+  cell(scene(`<div class="w">${wrow({ time: '24m 28s', text: '9349 code review', pick: true })}${wpick(G_SUG(true) + G_TODAY + G_JIRA + G_FAV, 'more-down')}</div>`, CUR(236, 88)), '<b>Первой.</b> Предложения видны сразу, остальной список — как сегодня.') + ARROW +
+  cell(scene(`<div class="w calm">${wrow({ time: '24m 31s', key: 'ATL-9349', text: '9349 code review' })}</div>`), '<b>После клика.</b> Блок закрылся, у строки ключ тикета.');
+
+// ── 5 ──
+document.getElementById('s5').innerHTML =
+  cell(app({ chip: '24m 28s', isl: isl([trow({ text: '9349 code review', time: '24m 28s' })]), feed: SUG_REVIEW(true) + C8110 }), '<b>До.</b> В острове таймер без тикета, в ленте подсказка по той же работе.') + ARROW +
+  cell(app({ chip: '24m 31s', isl: isl([trow({ key: 'ATL-9349', text: '9349 code review', time: '24m 31s' })]), feed: card('ATL-9349', 'Fix rounding in invoice totals', '24m', [rec('Code Review', '9349 code review', '24m 31s', true)], true) + C8110 }), '<b>После.</b> Подсказки нет. Запись Code Review с описанием таймера, время таймера, он идёт дальше.');
+
+// ── 6 ──
+const cc = (k, n, h, star) => `<span class="cl-chip${h ? ' h' : ''}">${star ? SPARK() : ''}<b>${k}</b><span>${n}</span></span>`;
+document.getElementById('s6').innerHTML =
+  cell(app({ chip: '24m 28s', isl: isl([trow({ text: '9349 code review', time: '24m 28s', armed: true })]), feed:
+    `<div class="cloud"><div class="cl-find">${FIND}ticket for «9349 code review»</div>
+      <div class="cl-g sg">suggested</div><div class="cl-row">${cc('ATL-9349', 'review · Fix rounding in invoice totals', true, true)}${cc('ATL-7104', 'meeting · Sprint planning', false, true)}</div>
+      <div class="cl-g">jira · in progress</div><div class="cl-row">${cc('ATL-8200', 'Tenant settings: audit trail')}${cc('ATL-8231', 'Billing: proration')}</div>
+      <div class="cl-g">favorites</div><div class="cl-row">${cc('ATL-100', 'Meetings')}${cc('ATL-101', 'Onboarding and mentoring')}</div></div>` + SUG_REVIEW(true),
+    cur: CUR(100, 73) }), '<b>Облако выбора тикета для таймера.</b> Группа suggested нарисована первой; чип предложения — со звездой подсказки и словом источника. Результат клика — кадр «после» из раздела 5.');
+
+// ── 7 ──
+document.getElementById('s7').innerHTML =
+  cell(scene(`<div class="w">${wrow({ time: '3m 10s', text: 'help with deploy', pick: true })}${wpick('<span class="w-lg sg">suggested</span>' + lis('ATL-7104', 'meeting', 'Sprint planning') + G_TODAY + G_JIRA + G_FAV, 'more-down')}</div>`), '<b>Review по ATL-9349 уже принят</b> (кадры 2 и 5) — в группе остался только идущий митинг.') +
+  cell(scene(`<div class="w">${wrow({ time: '3m 10s', text: 'help with deploy', pick: true })}${wpick(G_TODAY + G_JIRA + G_FAV, 'fit')}</div>`), '<b>Открытых подсказок нет</b> — группы нет, блок как сегодня.');
+
+// the list that is shown scrolled to its end
+for (const el of document.querySelectorAll('[data-end]')) el.scrollTop = el.scrollHeight;
+
+// toolbar and hooks: ?only=N, ?bare=1, ?play=a|b
+const q = new URLSearchParams(location.search);
+function setPlay(v) {
+  document.body.classList.toggle('pa', v === 'pa');
+  document.body.classList.toggle('pb', v === 'pb');
+  for (const b of document.querySelectorAll('.tbb')) b.classList.toggle('on', b.dataset.set === v);
+}
+for (const b of document.querySelectorAll('.tbb')) b.addEventListener('click', () => setPlay(b.dataset.set));
+if (q.get('play') === 'a') setPlay('pa');
+if (q.get('bare')) document.body.classList.add('bare');
+if (q.get('only')) for (const s of document.querySelectorAll('section')) if (s.dataset.n !== q.get('only')) s.style.display = 'none';
+</script>
+</body>
+</html>

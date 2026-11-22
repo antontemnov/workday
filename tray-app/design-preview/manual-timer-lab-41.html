@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Остров в два этажа с Delete, карандаш у идущего таймера — мини-макеты v41</title>
+<style>
+:root { --tm: 252 146 48; --go: 48 209 88; --chip: #11111b; }
+html, body { margin: 0; background: #0f0f17; }
+body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace; padding: 22px 26px 80px; }
+.lab h1 { font-size: 14px; margin: 0 0 4px; }
+.lab h2 { font-size: 12px; margin: 30px 0 3px; }
+.lab .sub, .lab .q { color: #7f849c; font-size: 11px; max-width: 1120px; margin: 0 0 12px; }
+.lab .q.after { margin-top: 12px; }
+.lab .sub b, .lab .q b { color: #a6adc8; }
+.grid { display: flex; flex-wrap: wrap; gap: 16px 18px; align-items: flex-start; }
+.grid + .grid { margin-top: 16px; }
+.cell { display: flex; flex-direction: column; gap: 6px; }
+.cap { color: #7f849c; font-size: 10.5px; line-height: 1.4; max-width: 400px; }
+.cap.wide { max-width: 830px; }
+.cap b { color: #cdd6f4; font-weight: 400; }
+.pair { display: flex; gap: 10px; align-items: flex-start; }
+.arrow { align-self: center; color: #585b70; font-size: 14px; }
+.stack > * + * { margin-top: 8px; }
+
+/* ── toolbar ── */
+.toolbar { position: sticky; top: 0; z-index: 90; display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin: 0 -26px 6px; padding: 8px 26px; background: rgb(15 15 23 / .94); border-bottom: 1px solid #1e1e2e; }
+.tbg { display: inline-flex; align-items: center; gap: 6px; }
+.tbl { color: #6c7086; font-size: 10.5px; margin-right: 2px; }
+.tbb { font: inherit; font-size: 10.5px; color: #bac2de; background: #1e1e2e; border: 1px solid #313244; border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.tbb:hover { border-color: #45475a; color: #e6ebfa; }
+.tbb.on { border-color: rgb(var(--tm) / .55); color: rgb(var(--tm)); background: rgb(var(--tm) / .07); }
+
+/* ── a piece of the app window: the header strip and the island under it ── */
+.app { position: relative; width: 400px; border-radius: 8px; overflow: hidden; background: #1e1e2e; box-shadow: 0 0 0 1px rgb(255 255 255 / .07); flex-shrink: 0; }
+.hdr { display: flex; align-items: center; height: 29px; box-sizing: border-box; padding-left: 12px; background: #181825; border-bottom: 1px solid #26263a; }
+.vs { display: inline-flex; align-items: center; gap: 10px; color: #585b70; }
+.vs svg { width: 13px; height: 13px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.vs .on { color: #cdd6f4; }
+.tmz { margin-left: auto; display: inline-flex; align-items: center; }
+.wc { display: inline-flex; align-self: stretch; }
+.wc span { width: 32px; display: inline-flex; align-items: center; justify-content: center; color: #585b70; }
+.wc svg { width: 10px; height: 10px; display: block; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
+.body { position: relative; min-height: 64px; padding-bottom: 14px; }
+.dayh { position: absolute; left: 14px; top: 12px; }
+.dayh small { display: block; font-size: 8px; letter-spacing: .06em; color: #585b70; }
+.dayh span { font-size: 11.5px; font-weight: 700; color: #7f849c; }
+.cur { position: absolute; z-index: 80; width: 12px; height: 17px; pointer-events: none; }
+.cur svg { width: 100%; height: 100%; display: block; fill: #fff; stroke: #11111b; stroke-width: 1; stroke-linejoin: round; }
+
+/* the chip: flat, no glass and no glow */
+.t-ic { width: 12px; height: 12px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.tchip { display: inline-flex; align-items: center; gap: 5px; height: 19px; margin-right: 10px; padding: 0 9px 0 6px; border: none; border-radius: 999px; flex-shrink: 0;
+  background: var(--chip); color: rgb(var(--tm)); font-family: inherit; font-size: 10.5px; line-height: 1; white-space: nowrap; cursor: default; }
+.sand .tchip { cursor: pointer; }
+.tchip-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tchip.pause { color: #7f849c; }
+.tchip.ghost { background: none; box-shadow: inset 0 0 0 1px #313244; color: #9399b2; font-weight: 700; padding: 0 10px 0 8px; }
+.tchip.ghost .t-ic { color: #7f849c; }
+.tchip.ghost.open { color: #cdd6f4; box-shadow: inset 0 0 0 1px #45475a; }
+.tchip.ghost.open .t-ic { color: #bac2de; }
+
+/* ── the island ── */
+.isl { position: relative; margin: -1px 0 0 auto; width: 333px; box-sizing: border-box; padding: 7px 8px 8px; font-size: 11px;
+  background: #181825; border-left: 1px solid #26263a; border-bottom: 1px solid #26263a; border-radius: 0 0 0 12px; box-shadow: 0 14px 24px -14px rgb(0 0 0 / .75); }
+.isl::before { content: ''; position: absolute; left: -10px; top: 0; width: 9px; height: 9px;
+  background: radial-gradient(circle at 0 100%, transparent 8px, #26263a 8px, #26263a 9px, #181825 9px); }
+.isl::after { content: ''; position: absolute; left: -1px; top: 0; width: 1px; height: 9px; background: #181825; }
+.tnone { height: 30px; display: flex; align-items: center; justify-content: center; padding: 0 5px; color: #585b70; }
+/* NEW: every row has two floors — the first is the row itself, the second holds Delete */
+.trow { display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center;
+  grid-template-areas: "b k f t" ". . . d"; grid-template-rows: 26px 18px; padding: 2px 5px 4px; }
+.trow + .trow { border-top: 1px solid rgb(205 214 244 / .06); }
+.trow > .tbtn { grid-area: b; }
+.trow > .tq, .trow > .tkey { grid-area: k; }
+.trow > .tfield { grid-area: f; }
+.trow > .ttime { grid-area: t; }
+.trow > .tdel { grid-area: d; justify-self: end; }
+/* today's look, for comparison: a row with a ticket has one floor and no Delete */
+.isl.now .trow.tk { grid-template-areas: "b k f t"; grid-template-rows: auto; min-height: 30px; padding: 0 5px; }
+.tbtn { width: 20px; height: 20px; border-radius: 50%; border: none; padding: 0; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.tbtn svg { width: 8px; height: 8px; display: block; }
+.tbtn.pz { color: rgb(var(--tm)); box-shadow: inset 0 0 0 1.5px rgb(var(--tm)); }
+.tbtn.pz svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.tbtn.go { background: rgb(var(--go) / .2); color: rgb(var(--go)); }
+.tbtn.go svg { fill: currentColor; transform: translateX(.6px); }
+.ttime { min-width: 7ch; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; color: #7f849c; white-space: nowrap; }
+.trow.run .ttime { color: rgb(var(--tm)); }
+.tfield { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cdd6f4; }
+.trow.pause .tfield { color: #a6adc8; }
+.tfield.ph { color: #585b70; }
+input.tfield { width: 100%; height: 20px; box-sizing: border-box; padding: 0; border: none; outline: none; background: none; font: inherit; caret-color: rgb(var(--tm)); }
+input.tfield::placeholder { color: #585b70; }
+input.tfield:hover, input.tfield:focus { box-shadow: 0 1px 0 rgb(205 214 244 / .2); }
+.chip.ask { display: inline-flex; align-items: center; height: 17px; box-sizing: border-box; border-radius: 7px; white-space: nowrap; font: inherit; color: #6c7086; background: transparent; border: 1px dashed #45475a; padding: 0 7px; cursor: default; }
+.sand .chip.ask { cursor: pointer; }
+.sand .chip.ask:hover { color: #a6adc8; border-color: #585b70; }
+.tkey { font-size: 10.5px; font-weight: 700; letter-spacing: .2px; color: #cdd6f4; white-space: nowrap; }
+.trow.tk.pause .tkey { color: #a6adc8; }
+.trow.tk .tfield { color: #7f849c; }
+.lnk-deny { background: none; border: none; padding: 0 2px; color: #565973; font-family: inherit; font-size: 10px; font-weight: 700; cursor: pointer; transition: color .15s ease; }
+.lnk-deny.tdel:hover, .lnk-deny.tdel.h { color: #f38ba8; }
+.tsep { height: 1px; margin: 4px 6px 3px; background: rgb(205 214 244 / .08); }
+.tbot { display: flex; align-items: center; height: 24px; padding: 0 5px; }
+.tnew { display: inline-flex; align-items: center; gap: 8px; height: 24px; padding: 0; border: none; background: none; color: #7f849c; font: inherit; cursor: pointer; }
+.tnew .nt-g { width: 20px; display: inline-flex; justify-content: center; color: rgb(var(--go)); }
+.tnew svg { width: 8px; height: 8px; display: block; fill: currentColor; }
+.tnew:hover { color: #cdd6f4; }
+.caret { display: inline-block; flex-shrink: 0; width: 1px; height: 1.25em; margin: 0 1px; background: rgb(var(--tm)); vertical-align: -.25em; }
+
+/* ── a record in a ticket's card (drawn roughly) ── */
+.cardp { width: 400px; box-sizing: border-box; padding: 7px 10px 7px; border-radius: 10px; background: rgb(30 30 46 / .9); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .09); font-size: 11px; flex-shrink: 0; }
+.cardp + .cardp { margin-top: 8px; }
+.cardp.ghost { height: 58px; display: flex; align-items: center; justify-content: center; background: none; box-shadow: none; border: 1px dashed #313244; color: #585b70; }
+.blk-h { display: flex; align-items: baseline; gap: 10px; height: 22px; }
+.blk-h .bk { font-weight: 700; color: #cdd6f4; }
+.blk-h .bs { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bac2de; }
+.blk-h .bt { font-weight: 700; color: #cdd6f4; font-variant-numeric: tabular-nums; }
+.wl { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; height: 22px; }
+.wl .c-type { color: #7f849c; }
+.wl .c-ds { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7f849c; font-style: italic; }
+.wl span.c-dur { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: #cdd6f4; font-variant-numeric: tabular-nums; }
+.wl.tm-live span.c-dur { color: rgb(var(--tm)); }
+.rt-b { width: 13px; height: 13px; padding: 0; border: none; border-radius: 50%; background: none; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; }
+.rt-b svg { width: 7px; height: 7px; display: block; }
+.rt-b.run { color: rgb(var(--tm)); box-shadow: inset 0 0 0 1px rgb(var(--tm) / .85); }
+.rt-b.run svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.rt-b.rest { color: #6c7086; box-shadow: inset 0 0 0 1px #45475a; }
+.rt-b.rest svg { fill: currentColor; transform: translateX(.5px); }
+.rt-b.rest:hover { color: rgb(var(--go)); box-shadow: inset 0 0 0 1px rgb(var(--go) / .7); }
+
+/* the record's edit form — the app's own: one number, the record's time */
+.wl.editing { grid-template-columns: minmax(0, 1fr) auto; }
+.rf { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.rf select, .rf input { box-sizing: border-box; background: rgb(17 17 27 / .85); border: 1px solid #313244; border-radius: 5px; color: #cdd6f4; font-family: inherit; font-size: 10.5px; padding: 2px 7px; height: 20px; outline: none; }
+.rf select:focus, .rf input:focus { border-color: #cba6f7; }
+.rf .le-act { width: 74px; flex-shrink: 0; font-size: 10px; color: #bac2de; padding: 2px 3px; }
+.rf .le-desc { flex: 1; min-width: 0; }
+.rf .le-back { flex-shrink: 0; background: none; border: none; color: #6c7086; font-family: inherit; font-size: 12px; cursor: pointer; padding: 0 2px; height: 20px; }
+.rf .le-back:hover { color: #a6adc8; }
+.rf .le-save { flex-shrink: 0; height: 18px; padding: 0 10px; border: none; border-radius: 5px; background: rgb(203 166 247 / .13); box-shadow: inset 0 0 0 1px rgb(203 166 247 / .32); color: #cba6f7; font-family: inherit; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
+input.c-dur.edit { box-sizing: border-box; width: 62px; height: 20px; padding: 0 5px; background: transparent; border: 1px solid rgb(203 166 247 / .28); border-radius: 5px; color: #cba6f7; font-family: inherit; font-size: 11px; font-weight: 700; text-align: right; outline: none; }
+input.c-dur.edit:focus { border-color: #cba6f7; }
+
+/* ── a piece of the desktop with the widget ── */
+.scene { position: relative; width: 300px; height: 104px; border-radius: 8px; overflow: hidden; border: 1px solid #2a2a3c; flex-shrink: 0;
+  background: radial-gradient(120% 90% at 18% 8%, #2c3150 0%, #1b1d2e 52%, #121320 100%); }
+.scene .nowg { position: absolute; right: 12px; bottom: 10px; color: rgb(205 214 244 / .3); font-size: 10.5px; }
+.w { --plate: .65; position: absolute; right: 10px; bottom: 10px; box-sizing: border-box; max-width: calc(100% - 20px);
+  font-size: 10.5px; line-height: 1; color: #cdd6f4; white-space: nowrap; border-radius: 1.25em; cursor: default; user-select: none;
+  background: rgb(17 17 27 / var(--plate)); box-shadow: inset 0 0 0 1px rgb(205 214 244 / calc(var(--plate) * .14));
+  transition: background-color .35s ease, box-shadow .35s ease; }
+.w:hover, .w.hov, .w.ed { background: #181825; box-shadow: inset 0 0 0 1px #313244, 0 10px 24px -10px rgb(0 0 0 / .85); }
+.w-row { display: flex; align-items: center; gap: .55em; height: 2.48em; padding: 0 .45em 0 .6em; }
+.w-b { position: relative; width: 1.72em; height: 1.72em; flex-shrink: 0; padding: 0; border: none; background: none; border-radius: 50%; color: inherit; font: inherit; cursor: pointer; }
+.w-b > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: opacity .35s ease; }
+.w-b .at-hov { opacity: 0; }
+.w-row:hover .at-rest, .w-row.rh .at-rest { opacity: 0; }
+.w-row:hover .at-hov, .w-row.rh .at-hov { opacity: 1; }
+.g-ic { width: 1.15em; height: 1.15em; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.g-pz { width: .76em; height: .76em; display: block; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.g-go { width: .76em; height: .76em; display: block; fill: currentColor; transform: translateX(.06em); }
+.w-row.run .at-rest { color: rgb(var(--tm)); }
+.w-row.pause .at-rest { color: #7f849c; }
+.w-row.run .at-hov { color: rgb(var(--tm)); box-shadow: inset 0 0 0 .14em rgb(var(--tm)); }
+.w-row.pause .at-hov { color: rgb(var(--go)); background: rgb(var(--go) / .2); }
+.w-t { font-weight: 700; font-variant-numeric: tabular-nums; }
+.w-row.run .w-t { color: rgb(var(--tm)); }
+.w-row.pause .w-t { color: #9399b2; }
+.w-tx { display: flex; align-items: baseline; gap: .55em; min-width: 0; flex: 1; }
+.w-k { font-weight: 700; color: #cdd6f4; }
+.w-d { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #a6adc8; }
+.w-row.pause .w-k { color: #a6adc8; }
+.w-row.pause .w-d { color: #7f849c; }
+.w-acts { margin-left: auto; width: 1.6em; height: 1.6em; flex-shrink: 0; display: inline-flex; }
+.w-row > .w-acts { opacity: 0; transition: opacity .35s ease; }
+.w:hover .w-row > .w-acts, .w.hov .w-row > .w-acts { opacity: .45; }
+.w .w-row:hover > .w-acts, .w .w-row.rh > .w-acts { opacity: 1; }
+.w-x { width: 1.6em; height: 1.6em; padding: 0; border: none; border-radius: .5em; background: none; color: #a6adc8; display: inline-flex; align-items: center; justify-content: center; font: inherit; cursor: pointer; }
+.w-x svg { width: 1.14em; height: 1.14em; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.w-x:hover, .w-x.h { color: #cdd6f4; background: rgb(205 214 244 / .09); }
+.w.list { border-radius: .95em; padding: .2em 0; }
+.w.list .w-row { height: 2.28em; }
+.w.list .w-t { width: var(--tw, 7ch); flex-shrink: 0; }
+
+/* NEW: the description is typed right on the widget; the button in the slot keeps it */
+.w-in { flex: 1; min-width: 0; height: 1.75em; box-sizing: border-box; padding: 0; border: none; outline: none; background: none; color: #cdd6f4; font: inherit; line-height: 1;
+  caret-color: rgb(var(--tm)); box-shadow: 0 1px 0 rgb(205 214 244 / .2); user-select: text; }
+span.w-in { display: flex; align-items: center; overflow: hidden; white-space: pre; }
+span.w-in.ph { color: #585b70; }
+span.w-in .caret { vertical-align: 0; }
+input.w-in::placeholder { color: #585b70; }
+.w.ed .w-row > .w-acts.on { opacity: 1; }
+.w-x.ok { color: #cdd6f4; }
+.w-x.ok svg { stroke-width: 1.7; }
+
+/* ── the sandbox ── */
+.sand { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.side-h { color: #7f849c; font-size: 10.5px; margin: 0 0 6px; }
+.gap { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.evlog { width: 400px; min-height: 104px; margin-top: 10px; color: #6c7086; font-size: 10.5px; line-height: 1.5; }
+.evlog div:first-child { color: #bac2de; }
+.todo { max-width: 1120px; margin: 0; padding-left: 18px; color: #7f849c; font-size: 11px; }
+.todo li { margin: 0 0 6px; }
+.todo b { color: #cdd6f4; font-weight: 400; }
+.rule { max-width: 1120px; margin: 0 0 12px; padding: 9px 12px; border: 1px solid #26263a; border-radius: 8px; background: #161622; color: #a6adc8; font-size: 11px; }
+.rule b { color: #cdd6f4; font-weight: 400; }
+</style>
+</head>
+<body class="lab">
+
+<h1>Остров в два этажа с Delete · карандаш у идущего таймера — мини-макеты v41</h1>
+<p class="sub">Продолжение v40. Складки и Done нет: остров — один список, все строки в два этажа, Delete есть у каждой. Время в острове, чипе и на виджете — насчитанное таймером (правило принято 2026-11-18). На виджете карандаш есть у любого идущего таймера, а правку фиксирует отдельная кнопка. Картинки неподвижные; внизу песочница.</p>
+
+<div class="toolbar">
+  <div class="tbg"><span class="tbl">чип, когда стоят только таймеры с тикетом</span>
+    <button class="tbb" data-chip="grey">серое время, как сейчас</button>
+    <button class="tbb" data-chip="rest">в покое</button></div>
+</div>
+
+<h2>1 · Остров: все строки в два этажа</h2>
+<p class="q">Одна раскладка для всех таймеров: на первом этаже — кнопка, ключ или task?, описание и время таймера; на втором — Delete. Описанию строки с тикетом остаётся столько же места, сколько сейчас: новых слотов в строке нет.</p>
+<div class="grid" id="g-rows"></div>
+
+<h2>2 · Delete у таймера с тикетом: что уходит</h2>
+<p class="q">Это то же действие, что на карточке: таймер уходит вместе со временем, которое насчитал. Слово стоит под числом, которое уйдёт.</p>
+<div class="grid" id="g-del"></div>
+<p class="q after">Идущий таймер Delete сначала останавливает. Отмены нет — как у Remove timer на карточке и у Delete таймера без тикета.</p>
+
+<h2>3 · Вечер</h2>
+<div class="rule"><b>Убрать строку из острова можно только вместе с её временем.</b> Delete — это «насчитал не то», а не «закончил». Жеста «время оставь, строку убери» в этом варианте нет: стоящие строки живут до 04:00, как сейчас. Переключатель наверху меняет только чип.</div>
+<div class="grid" id="g-eve"></div>
+
+<h2>4 · Виджет: карандаш у любого идущего таймера</h2>
+<p class="q">В строке по-прежнему один слот и одна иконка. У <b>идущего</b> таймера — карандаш, с тикетом или без. У <b>стоящего</b> — глаз «убрать со стола», как сейчас. Во время правки в слоте стоит <b>кнопка фиксации</b>.</p>
+<div class="grid" id="g-pen"></div>
+<div class="grid" id="g-new"></div>
+<p class="q after">Сейчас виджет фокус не берёт вообще. На время правки его придётся брать и возвращать окну, где вы были; как это ведёт себя в WebView2, видно только на настоящем окне.</p>
+
+<h2>5 · Песочница</h2>
+<p class="q">Шапка окна с островом, записи и рабочий стол. Работают ⏸ и ▶ везде, Delete у каждой строки острова, описание таймера без тикета в острове, карандаш и кнопка фиксации на виджете, оба New timer. Двойной клик по записи открывает форму: впишите время (4h, 90, 2h 30m) и нажмите Enter. task? в песочнице сразу привязывает таймер к тикету. Время идёт.</p>
+<div class="sand">
+  <div>
+    <div class="side-h">шапка окна и остров</div>
+    <div id="s-app"></div>
+    <div class="evlog" id="s-log"></div>
+  </div>
+  <div>
+    <div class="side-h">вкладка Day — записи в карточках</div>
+    <div id="s-cards"></div>
+  </div>
+  <div>
+    <div class="side-h">рабочий стол</div>
+    <div id="s-widget"></div>
+    <div class="gap"><button class="tbb" data-act="tray">New timer из меню трея</button><button class="tbb" id="b-reset">начать заново</button></div>
+  </div>
+</div>
+
+<h2>Что решить</h2>
+<ol class="todo">
+  <li><b>Delete у таймера с тикетом</b> забирает из записи время таймера, отмены нет (раздел 2). Так и задумано?</li>
+  <li><b>Запись, выросшая только из таймера,</b> уходит вместе с ним — сразу или с окном отмены, как Delete на карточке? Ставка Claude — с окном отмены: это удаление целой записи.</li>
+  <li><b>Вечер</b> (раздел 3): чип серый, как сейчас, или в покое, когда стоят только таймеры с тикетом? Ставка Claude — в покое: серый чип тогда значит «есть незаписанное время».</li>
+  <li><b>Правка на виджете:</b> Enter — то же, что кнопка; Esc и клик мимо — отмена. Так?</li>
+  <li><b>Новый таймер рождается в правке там, где создан:</b> New timer в острове — курсор в острове, как сейчас; New timer из меню трея — на виджете.</li>
+  <li><b>Карандаш у таймера на записи manual added:</b> описания у этой записи нет. Ставка Claude — набранное описание выносит время таймера в отдельную запись с описанием, как task? → Log с описанием. Либо карандаша там нет.</li>
+</ol>
+
+<script>
+const SEC = 1000, MIN = 60 * SEC, HOUR = 60 * MIN;
+const PLAY = '<svg viewBox="0 0 10 10"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>';
+const PAUSE = '<svg viewBox="0 0 10 10"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>';
+const EYE = '<svg viewBox="0 0 12 12"><path d="M1.3 6c1.2-2 2.8-3 4.7-3s3.5 1 4.7 3c-1.2 2-2.8 3-4.7 3S2.5 8 1.3 6z"/><circle cx="6" cy="6" r="1.3"/><path d="M2.5 10.2l7-8.4"/></svg>';
+const PEN = '<svg viewBox="0 0 12 12"><path d="M2.3 9.7l.5-2.3 5.3-5.3a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.6 9.2z"/><path d="M7.3 2.9l1.8 1.8"/></svg>';
+const OK = '<svg viewBox="0 0 12 12"><path d="M2.6 6.4l2.4 2.4 4.5-5.2"/></svg>';
+const CURSOR = '<svg viewBox="0 0 12 17"><path d="M1 1v13l3.2-3 2.1 4.8 2-.9-2.1-4.7H11z"/></svg>';
+const ring = paused => `<svg class="t-ic" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.4"/><path d="${paused ? 'M5.7 5.1v3.8M8.3 5.1v3.8' : 'M7 7V3.8'}"/></svg>`;
+const wring = paused => `<svg class="g-ic" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.4"/><path d="${paused ? 'M5.7 5.1v3.8M8.3 5.1v3.8' : 'M7 7V3.8'}"/></svg>`;
+const esc = text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+// What the chip shows when only stopped timers with a ticket are left: 'grey' — the last one's time, as today; 'rest' — nothing.
+let CHIP = 'grey';
+
+function fmt(ms, live) {
+  const h = Math.floor(ms / HOUR), m = Math.floor(ms % HOUR / MIN), s = Math.floor(ms % MIN / SEC);
+  let out = h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+  if (live) out += ` ${String(s).padStart(2, '0')}s`;
+  return out;
+}
+// A record and its timer. ms — what the timer counted; hand — what was typed by hand; the record's time is their sum.
+// timer: false — the timer is deleted, the record stays with what was typed by hand.
+const T = (id, task, desc, ms, state, extra = {}) => ({ id, task, desc, ms, hand: 0, state, hidden: false, timer: true, touched: 0, ...extra });
+const live = t => t.timer && t.state === 'run';
+const rec = t => t.hand + t.ms;
+const timersOf = list => list.filter(t => t.timer);
+const timeSpan = (t, o, seconds, cls) =>
+  `<span class="${cls}" data-time="${t.id}"${o.now ? ' data-rec="1"' : ''}${seconds ? ' data-s="1"' : ''}>${fmt(o.now ? rec(t) : t.ms, seconds && live(t))}</span>`;
+
+// o.now — today's look: every number is the record's time, a row with a ticket has one floor and no Delete.
+function chipHtml(list, o) {
+  const timers = timersOf(list);
+  const stopped = [...timers].sort((a, b) => b.touched - a.touched);
+  const cur = timers.find(live) ?? (o.now || CHIP === 'grey' ? stopped[0] : stopped.find(t => !t.task));
+  if (!cur) return `<button class="tchip ghost${o.open ? ' open' : ''}" data-act="chip">${ring(false)}Timer</button>`;
+  return `<button class="tchip${live(cur) ? '' : ' pause'}" data-act="chip">${ring(!live(cur))}${timeSpan(cur, o, true, 'tchip-time')}</button>`;
+}
+
+// o.dh — the row whose Delete is under the cursor; o.caret — the row just born, the cursor in its description; o.real — live inputs.
+function rowHtml(t, o) {
+  const btn = live(t)
+    ? `<button class="tbtn pz" data-act="toggle" data-id="${t.id}">${PAUSE}</button>`
+    : `<button class="tbtn go" data-act="toggle" data-id="${t.id}">${PLAY}</button>`;
+  const del = o.now && t.task ? '' : `<button class="lnk-deny tdel${o.dh === t.id ? ' h' : ''}" data-act="del" data-id="${t.id}">Delete</button>`;
+  let who = `<span class="tkey">${t.task}</span>`;
+  let what = `<span class="tfield">${esc(t.desc)}</span>`;
+  if (!t.task) {
+    who = `<button class="chip ask tq" data-act="log" data-id="${t.id}">task?</button>`;
+    if (o.real) what = `<input class="tfield" data-desc="${t.id}" value="${esc(t.desc)}" placeholder="description" spellcheck="false" autocomplete="off">`;
+    else if (o.caret === t.id) what = '<span class="tfield ph"><i class="caret"></i>description</span>';
+    else what = `<span class="tfield${t.desc ? '' : ' ph'}">${esc(t.desc) || 'description'}</span>`;
+  }
+  return `<div class="trow ${t.task ? 'tk' : 'an'} ${t.state}" data-id="${t.id}">${btn}${who}${what}${timeSpan(t, o, true, 'ttime')}${del}</div>`;
+}
+
+function islandHtml(list, o) {
+  const rows = timersOf(list);
+  const body = rows.length ? rows.map(t => rowHtml(t, o)).join('') : '<div class="tnone">No timers</div>';
+  return `<div class="isl${o.now ? ' now' : ''}">${body}<div class="tsep"></div><div class="tbot">`
+    + `<button class="tnew" data-act="new"><span class="nt-g">${PLAY}</span><span>New timer</span></button></div></div>`;
+}
+
+// A piece of the app window. o: now, dh, caret, real, open, cur [x, y] from the island's corner.
+function appHtml(list, o = {}) {
+  const opt = { open: true, ...o };
+  const cursor = opt.cur ? `<span class="cur" style="left:${67 + opt.cur[0]}px;top:${28 + opt.cur[1]}px">${CURSOR}</span>` : '';
+  return `<div class="app"><div class="hdr"><span class="vs">`
+    + `<svg class="on" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.4"/><path d="M7 4v3l2 1.3"/></svg>`
+    + `<svg viewBox="0 0 14 14"><rect x="2" y="2.6" width="10" height="8.8" rx="1.4"/><path d="M2 6h10M6 6v5.4"/></svg>`
+    + `<svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="2"/><circle cx="7" cy="7" r="5"/></svg></span>`
+    + `<span class="tmz">${chipHtml(list, opt)}</span>`
+    + `<span class="wc"><span><svg viewBox="0 0 10 10"><path d="M2 5h6"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></span></div>`
+    + `<div class="body"><div class="dayh"><small>WEDNESDAY</small><span>18 Nov</span></div>${opt.open ? islandHtml(list, opt) : ''}</div>${cursor}</div>`;
+}
+
+// A record in its card: the number is the record's time. A record without a timer has no ▶ at the time. o.form — the row as its edit form.
+function cardHtml(t, title, o = {}) {
+  const head = `<div class="blk-h"><span class="bk">${t.task}</span><span class="bs">${title}</span><span class="bt" data-time="${t.id}" data-rec="1">${fmt(rec(t), false)}</span></div>`;
+  if (o.form) {
+    return `<div class="cardp">${head}<div class="wl editing" data-id="${t.id}"><div class="rf">`
+      + `<button class="le-back" data-act="fcancel">←</button><select class="le-act"><option>Other</option></select>`
+      + `<input class="le-desc" value="${esc(o.form.desc)}" placeholder="description" spellcheck="false">`
+      + `<button class="le-save" data-act="fsave">Save</button></div>`
+      + `<input class="c-dur edit" value="${esc(o.form.time)}" spellcheck="false" autocomplete="off"></div></div>`;
+  }
+  let btn = '';
+  if (t.timer) {
+    btn = live(t)
+      ? `<button class="rt-b run" data-act="toggle" data-id="${t.id}">${PAUSE}</button>`
+      : `<button class="rt-b rest" data-act="toggle" data-id="${t.id}">${PLAY}</button>`;
+  }
+  return `<div class="cardp">${head}<div class="wl${live(t) ? ' tm-live' : ''}" data-id="${t.id}" data-dbl="1"><span class="c-type">Other</span><span class="c-ds">${esc(t.desc)}</span>`
+    + `<span class="c-dur">${btn}<span data-time="${t.id}" data-rec="1" data-s="1">${fmt(rec(t), live(t))}</span></span></div></div>`;
+}
+const ghostCard = task => `<div class="cardp ghost">${task} — записи больше нет</div>`;
+
+// o: hov, rh (row under the cursor), ih (icon under the cursor), cur, width, edit (row id), text, real (a live input).
+function widgetHtml(list, o = {}) {
+  const rows = timersOf(list).filter(t => !t.hidden);
+  if (!rows.length) return '<div class="scene"><span class="nowg">виджета нет</span></div>';
+  const width = Math.max(...rows.map(t => fmt(t.ms, false).length));
+  const cursor = o.cur ? `<span class="cur" style="left:${o.cur[0]}px;top:${o.cur[1]}px">${CURSOR}</span>` : '';
+  const cls = `w${rows.length > 1 ? ' list' : ''}${o.hov ? ' hov' : ''}${o.edit ? ' ed' : ''}`;
+  return `<div class="scene" style="height:${Math.max(104, rows.length * 24 + 36)}px"><div class="${cls}" style="--tw:${width}ch${o.width ? `;width:${o.width}px` : ''}">` + rows.map(t => {
+    const paused = !live(t);
+    const editing = o.edit === t.id;
+    const hot = o.ih === t.id ? ' h' : '';
+    const key = t.task ? `<span class="w-k">${t.task}</span>` : '';
+    let middle = `<span class="w-tx">${key}${t.desc ? `<span class="w-d">${esc(t.desc)}</span>` : ''}</span>`;
+    let action = paused
+      ? `<button class="w-x${hot}" data-act="eye" data-id="${t.id}">${EYE}</button>`
+      : `<button class="w-x${hot}" data-act="pen" data-id="${t.id}">${PEN}</button>`;
+    if (editing) {
+      const text = o.text ?? t.desc;
+      middle = key + (o.real
+        ? `<input class="w-in" value="${esc(text)}" placeholder="description" spellcheck="false" autocomplete="off">`
+        : `<span class="w-in${text ? '' : ' ph'}">${esc(text)}<i class="caret"></i>${text ? '' : 'description'}</span>`);
+      action = `<button class="w-x ok${hot}" data-act="ok" data-id="${t.id}">${OK}</button>`;
+    }
+    return `<div class="w-row ${t.state}${o.rh === t.id ? ' rh' : ''}"><button class="w-b" data-act="toggle" data-id="${t.id}"><span class="at-rest">${wring(paused)}</span>`
+      + `<span class="at-hov">${paused ? '<svg class="g-go" viewBox="0 0 10 10"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>' : '<svg class="g-pz" viewBox="0 0 10 10"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>'}</span></button>`
+      + `${timeSpan(t, {}, false, 'w-t')}${middle}<span class="w-acts${editing ? ' on' : ''}">${action}</span></div>`;
+  }).join('') + `</div>${cursor}</div>`;
+}
+
+const cell = (html, cap, wide) => `<div class="cell">${html}<div class="cap${wide ? ' wide' : ''}">${cap}</div></div>`;
+const fill = (id, cells) => { document.getElementById(id).innerHTML = cells.join(''); };
+const stack = (...parts) => `<div class="stack">${parts.join('')}</div>`;
+
+// ── the cast ──
+const NOTES = 'release notes';
+const titles = { 'ATL-6712': 'Release notes for 4.2', 'ATL-6781': 'Public API review', 'ATL-6790': 'Deploy checklist', 'ATL-6795': 'Team ceremonies', 'ATL-6802': 'Support rotation', 'ATL-6810': 'Onboarding docs' };
+const day = () => [
+  T('b', 'ATL-6781', 'API review', 47 * MIN + 15 * SEC, 'run', { touched: 4 }),
+  T('c', null, 'standup notes', 12 * MIN, 'pause', { touched: 2 }),
+  T('a', 'ATL-6712', NOTES, 2 * HOUR + 10 * MIN, 'pause', { touched: 3 }),
+  T('d', 'ATL-6790', 'deploy check', 35 * MIN, 'pause', { touched: 1, hand: HOUR }),
+];
+const evening = () => [
+  T('a', 'ATL-6712', NOTES, 2 * HOUR + 10 * MIN, 'pause', { touched: 3 }),
+  T('b', 'ATL-6781', 'API review', 80 * MIN, 'pause', { touched: 1 }),
+  T('d', 'ATL-6790', 'deploy check', 35 * MIN, 'pause', { touched: 2, hand: HOUR }),
+];
+
+function draw() {
+  const height = '<b data-h>—</b>px';
+  fill('g-rows', [
+    cell(appHtml(day(), { now: true }), `<b>Как сейчас.</b> Строка с тикетом — в один этаж, без Delete; число — время записи. Остров — ${height}.`),
+    cell(appHtml(day()), `<b>Все строки в два этажа.</b> Число — время таймера: у ATL-6790 в строке 35m, в записи 1h 35m. Остров — ${height}.`),
+    cell(appHtml(day(), { dh: 'a', cur: [301, 149] }), '<b>Курсор на Delete.</b> Слово краснеет, как у таймера без тикета. Над ним — 2h 10m: это и уйдёт.'),
+  ]);
+
+  const running = () => T('b', 'ATL-6781', 'API review', 47 * MIN + 15 * SEC, 'run', { touched: 4 });
+  const mixed = [running(), T('d', 'ATL-6790', 'deploy check', 35 * MIN, 'pause', { touched: 1, hand: HOUR })];
+  const mixedAfter = [running(), T('d', 'ATL-6790', 'deploy check', 0, 'pause', { hand: HOUR, timer: false })];
+  const grown = [running(), T('a', 'ATL-6712', NOTES, 2 * HOUR + 10 * MIN, 'pause', { touched: 3 })];
+  fill('g-del', [
+    cell(`<div class="pair">${stack(appHtml(mixed, { dh: 'd', cur: [301, 98] }), cardHtml(mixed[1], titles['ATL-6790']))}<span class="arrow">→</span>`
+      + `${stack(appHtml(mixedAfter), cardHtml(mixedAfter[1], titles['ATL-6790']))}</div>`,
+      '<b>В записи есть вбитое руками.</b> ATL-6790: в записи 1h 35m, из них таймер насчитал 35m. Delete убирает таймер и его 35m; остаётся вбитый час, ▶ у времени больше нет. На карточке это же делает Remove timer −35m.', true),
+    cell(`<div class="pair">${stack(appHtml(grown, { dh: 'a', cur: [301, 98] }), cardHtml(grown[1], titles['ATL-6712']))}<span class="arrow">→</span>`
+      + `${stack(appHtml([running()]), ghostCard('ATL-6712'))}</div>`,
+      '<b>Запись выросла только из таймера.</b> ATL-6712: все 2h 10m насчитал таймер. Delete убирает таймер, и запись уходит вместе с ним. На карточке у такой записи и сейчас стоит Delete вместо Remove timer.', true),
+  ]);
+
+  fill('g-eve', [
+    cell(appHtml(evening()), `<b>Вечер, остров открыт.</b> Три стоящих таймера с тикетом, у каждого свой Delete. Остров — ${height}.`),
+    cell(appHtml(evening(), { open: false }), CHIP === 'grey'
+      ? '<b>Остров закрыт.</b> Чип серый до 04:00 — как сейчас.'
+      : '<b>Остров закрыт.</b> Чип в покое: незаписанного времени нет. Серым он горит, только когда стоит таймер без тикета.'),
+  ]);
+
+  const desk = () => [
+    T('b', 'ATL-6781', 'API review', 47 * MIN + 15 * SEC, 'run', { touched: 5 }),
+    T('c', null, 'standup notes', 12 * MIN, 'pause', { touched: 4 }),
+    T('a', 'ATL-6712', NOTES, 2 * HOUR + 10 * MIN, 'pause', { touched: 3 }),
+  ];
+  const renamed = desk();
+  renamed[0].desc = 'paging review';
+  const W = 272;
+  fill('g-pen', [
+    cell(widgetHtml(desk(), { hov: true, rh: 'b', ih: 'b', cur: [280, 39], width: W }), '<b>Курсор на идущей строке.</b> Карандаш — у таймера с тикетом тоже. У стоящих строк в том же слоте глаз.'),
+    cell(widgetHtml(desk(), { edit: 'b', text: 'paging review', ih: 'b', cur: [280, 39], width: W }), '<b>Правка.</b> Ключ на месте, описание — поле. В слоте — кнопка фиксации: клик сохраняет набранное. Enter — то же самое. Esc и клик мимо — отмена.'),
+    cell(stack(widgetHtml(renamed, { width: W }), cardHtml(renamed[0], titles['ATL-6781'])), '<b>Зафиксировано.</b> У таймера с тикетом это описание записи: в карточке и в острове оно то же.'),
+  ]);
+
+  const born = [
+    T('b', 'ATL-6781', 'API review', 47 * MIN, 'pause', { touched: 4 }),
+    T('a', 'ATL-6712', NOTES, 2 * HOUR + 10 * MIN, 'pause', { touched: 3 }),
+    T('n', null, '', 2 * SEC, 'run', { touched: 6 }),
+  ];
+  const told = born.map(t => t.id === 'n' ? { ...t, desc: 'call with the vendor', ms: 11 * SEC } : t);
+  const inApp = [born[0], born[2]];
+  fill('g-new', [
+    cell(`<div class="pair">${widgetHtml(born, { edit: 'n', text: '', width: W })}<span class="arrow">→</span>`
+      + `${widgetHtml(born, { edit: 'n', text: 'call with the vendor', ih: 'n', cur: [280, 87], width: W })}<span class="arrow">→</span>${widgetHtml(told, { width: W })}</div>`,
+      '<b>New timer в меню значка трея.</b> Таймер рождается сразу в правке: курсор в описании, в слоте кнопка фиксации. Набрали, нажали кнопку — готово. Esc с пустым полем отменяет сам таймер, как в острове.', true),
+    cell(stack(appHtml(inApp, { caret: 'n' }), widgetHtml(inApp, { width: W })),
+      '<b>New timer в острове.</b> Курсор — в описании в острове, как сейчас; фокус остаётся в окне приложения. На виджете строка появляется без правки.'),
+  ]);
+}
+
+function measure() {
+  document.querySelectorAll('[data-h]').forEach(out => {
+    const island = out.closest('.cell').querySelector('.isl');
+    if (island) out.textContent = String(Math.round(island.getBoundingClientRect().height));
+  });
+}
+
+// ── the sandbox ──
+let S, ui, spare;
+let clock = 10;
+const sand = document.querySelector('.sand');
+const logLines = [];
+function say(text) { logLines.unshift(text); logLines.length = Math.min(logLines.length, 7); }
+const name = t => t.task ?? (t.desc ? `«${t.desc}»` : 'таймер без тикета');
+const byId = id => S.find(x => x.id === id);
+
+function reset() {
+  if (ui) clearTimeout(ui.later);
+  S = day();
+  spare = ['ATL-6795', 'ATL-6802', 'ATL-6810'];
+  ui = { open: true, form: null, pen: null, focus: null, birth: null, later: null, mute: false };
+  logLines.length = 0;
+  say('Идёт ATL-6781. Стоят таймер без тикета, ATL-6712 и ATL-6790 — в его записи час вбит руками.');
+}
+
+function drawSand() {
+  clearTimeout(ui.later);
+  ui.mute = true;
+  paintSand();
+  ui.mute = false;
+}
+// The fields are rebuilt here; a field that goes away with the old markup has not been left by the person.
+function paintSand() {
+  document.getElementById('s-app').innerHTML = appHtml(S, { open: ui.open, real: true });
+  document.getElementById('s-cards').innerHTML = S.filter(t => t.task)
+    .map(t => cardHtml(t, titles[t.task] ?? '', ui.form && ui.form.id === t.id ? { form: ui.form } : {})).join('');
+  document.getElementById('s-widget').innerHTML = widgetHtml(S, { width: 272, edit: ui.pen, real: true });
+  document.getElementById('s-log').innerHTML = logLines.map(l => `<div>${l}</div>`).join('');
+  if (ui.focus) {
+    const field = document.querySelector(ui.focus);
+    ui.focus = null;
+    if (field) { field.focus(); field.select(); }
+  }
+}
+const fieldPath = el => el.dataset.desc ? `.sand input[data-desc="${el.dataset.desc}"]`
+  : el.matches('.w-in') ? '.sand .w-in' : el.matches('.le-desc') ? '.sand .le-desc' : '.sand input.c-dur.edit';
+// A redraw after the focus has left a field. If it went straight into another field of the sandbox, that field keeps its text and cursor.
+function later() {
+  clearTimeout(ui.later);
+  ui.later = setTimeout(() => {
+    const el = document.activeElement;
+    const held = el && el.tagName === 'INPUT' && sand.contains(el)
+      ? { path: fieldPath(el), value: el.value, from: el.selectionStart, to: el.selectionEnd } : null;
+    drawSand();
+    const again = held && document.querySelector(held.path);
+    if (!again) return;
+    ui.mute = true;
+    again.value = held.value;
+    again.focus();
+    again.setSelectionRange(held.from, held.to);
+    ui.mute = false;
+  }, 180);
+}
+
+function parseMinutes(text) {
+  const m = /^\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m?)?\s*$/i.exec(text);
+  if (!m || (m[1] === undefined && m[2] === undefined)) return null;
+  return Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0);
+}
+
+// The accepted rule: the typed number is the record's time; the timer keeps what it counted and is cut only when the record gets smaller than that.
+function saveForm() {
+  const t = byId(ui.form.id);
+  const minutes = parseMinutes(ui.form.time);
+  if (!t || minutes === null) return;
+  const total = minutes * MIN;
+  const counted = t.ms;
+  t.desc = ui.form.desc.trim() || t.desc;
+  if (total !== Math.floor(rec(t) / MIN) * MIN) {
+    t.ms = Math.min(counted, total);
+    t.hand = total - t.ms;
+    if (!t.timer) say(`${t.task}: запись — ${fmt(total, false)}.`);
+    else if (t.ms < counted) say(`${t.task}: запись — ${fmt(total, false)}. Это меньше насчитанного, таймер обрезан до ${fmt(t.ms, false)}.`);
+    else say(`${t.task}: запись — ${fmt(total, false)}. Таймер не тронут: ${fmt(t.ms, false)}.`);
+  }
+  ui.form = null;
+  drawSand();
+}
+
+function newTimer(where) {
+  const displaced = S.find(live);
+  if (displaced) displaced.state = 'pause';
+  const fresh = T('n' + (++clock), null, '', 0, 'run', { touched: clock });
+  S.push(fresh);
+  ui.birth = { id: fresh.id, displaced: displaced ? displaced.id : null };
+  if (where === 'tray') {
+    ui.pen = fresh.id;
+    ui.focus = '.sand .w-in';
+    say('New timer из меню трея: таймер идёт и сразу в правке на виджете.');
+  } else {
+    ui.pen = null;
+    ui.open = true;
+    ui.focus = `.sand input[data-desc="${fresh.id}"]`;
+    say('New timer в острове: таймер идёт, курсор в описании в острове.');
+  }
+}
+// Esc right after the birth, nothing typed: the new timer is gone, the one it stopped runs on.
+function undoBirth() {
+  const { id, displaced } = ui.birth;
+  ui.birth = null;
+  S = S.filter(x => x.id !== id);
+  const previous = byId(displaced);
+  if (previous && previous.timer) previous.state = 'run';
+  say('Esc с пустым описанием: новый таймер отменён, прежний идёт дальше.');
+}
+
+function keepIsland(id, value) {
+  const t = byId(id);
+  if (!t || t.task) return;
+  if (ui.birth && ui.birth.id === id) ui.birth = null;
+  const text = value.trim();
+  if (t.desc === text) return;
+  t.desc = text;
+  say(`Описание в острове: ${text ? `«${text}»` : 'пусто'}. На виджете то же.`);
+}
+
+// The button in the widget's slot (or Enter): what is typed becomes the description.
+function commitPen(value) {
+  const t = byId(ui.pen);
+  ui.pen = null;
+  if (t) {
+    const text = value.trim();
+    if (t.task && !text) say(`${t.task}: пустое описание у записи сохранить нельзя — осталось прежнее.`);
+    else if (t.desc !== text) {
+      t.desc = text;
+      say(t.task ? `${t.task}: описание записи — «${text}». В карточке и в острове то же.` : `Описание с виджета: ${text ? `«${text}»` : 'пусто'}. В острове то же.`);
+    }
+    if (ui.birth && ui.birth.id === t.id) ui.birth = null;
+  }
+  drawSand();
+}
+function leavePen(how) {
+  if (ui.birth && ui.birth.id === ui.pen) ui.birth = null;
+  ui.pen = null;
+  say(`${how}: правка на виджете отменена, описание прежнее.`);
+}
+
+function act(kind, id) {
+  const t = byId(id);
+  if (kind === 'chip') {
+    ui.open = !ui.open;
+  } else if (kind === 'new' || kind === 'tray') {
+    newTimer(kind === 'tray' ? 'tray' : 'island');
+  } else if (kind === 'fcancel') {
+    ui.form = null;
+  } else if (kind === 'fsave') {
+    saveForm();
+    return;
+  } else if (kind === 'ok') {
+    const field = document.querySelector('.sand .w-in');
+    commitPen(field ? field.value : '');
+    return;
+  } else if (!t) {
+    return;
+  } else if (kind === 'toggle') {
+    if (live(t)) {
+      t.state = 'pause';
+      say(`${name(t)}: пауза.`);
+    } else {
+      S.filter(live).forEach(x => { x.state = 'pause'; });
+      t.state = 'run';
+      const back = t.hidden;
+      t.hidden = false;
+      say(`${name(t)}: идёт${back ? ' и вернулся на рабочий стол' : ''}.`);
+    }
+    t.touched = ++clock;
+  } else if (kind === 'eye') {
+    if (live(t)) return;
+    t.hidden = true;
+    say(`${name(t)}: убран с рабочего стола. В острове и в записи всё по-прежнему; ▶ вернёт его на стол.`);
+  } else if (kind === 'pen') {
+    ui.pen = t.id;
+    ui.focus = '.sand .w-in';
+  } else if (kind === 'del') {
+    if (ui.pen === t.id) ui.pen = null;
+    if (ui.form && ui.form.id === t.id) ui.form = null;
+    if (!t.task) {
+      S = S.filter(x => x !== t);
+      say(`${name(t)}: удалён вместе со временем.`);
+    } else {
+      const removed = Math.floor(t.ms / MIN) * MIN;
+      const kept = Math.floor(rec(t) / MIN) * MIN - removed;
+      if (kept >= MIN) {
+        Object.assign(t, { timer: false, state: 'pause', hidden: false, ms: 0, hand: kept });
+        say(`${t.task}: таймер удалён, из записи ушло ${fmt(removed, false)}. Осталось вбитое руками — ${fmt(kept, false)}; ▶ у времени больше нет.`);
+      } else {
+        S = S.filter(x => x !== t);
+        say(`${t.task}: таймер удалён. Запись выросла только из него и ушла из ленты вместе с ${fmt(removed, false)}.`);
+      }
+    }
+  } else if (kind === 'log') {
+    const was = name(t);
+    t.task = spare.shift() ?? 'ATL-6810';
+    say(`${was} → ${t.task}: время записано, строка осталась в острове с ключом.`);
+  }
+  drawSand();
+}
+
+// The button that keeps the description must not take the focus away from the field first.
+sand.addEventListener('mousedown', ev => {
+  if (ev.target.closest('[data-act="ok"]')) ev.preventDefault();
+});
+sand.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-act]');
+  if (el) act(el.dataset.act, el.dataset.id);
+});
+sand.addEventListener('dblclick', ev => {
+  const row = ev.target.closest('.wl[data-dbl]');
+  if (!row || ev.target.closest('button')) return;
+  const t = byId(row.dataset.id);
+  ui.form = { id: t.id, time: fmt(Math.floor(rec(t) / MIN) * MIN, false), desc: t.desc };
+  ui.focus = '.sand input.c-dur.edit';
+  drawSand();
+});
+sand.addEventListener('input', ev => {
+  if (!ui.form) return;
+  if (ev.target.matches('input.c-dur.edit')) ui.form.time = ev.target.value;
+  if (ev.target.matches('.le-desc')) ui.form.desc = ev.target.value;
+});
+sand.addEventListener('keydown', ev => {
+  const el = ev.target;
+  if (el.matches('.w-in')) {
+    if (ev.key === 'Enter') commitPen(el.value);
+    if (ev.key !== 'Escape') return;
+    if (ui.birth && ui.birth.id === ui.pen && el.value.trim() === '') { ui.pen = null; undoBirth(); } else leavePen('Esc');
+    drawSand();
+  } else if (el.matches('input.tfield')) {
+    const id = el.dataset.desc;
+    if (ev.key === 'Enter') { keepIsland(id, el.value); drawSand(); }
+    if (ev.key !== 'Escape') return;
+    const t = byId(id);
+    if (ui.birth && ui.birth.id === id && el.value.trim() === '') undoBirth();
+    else if (t) el.value = t.desc;
+    drawSand();
+  } else if (ui.form && el.closest('.wl.editing')) {
+    if (ev.key === 'Enter') saveForm();
+    if (ev.key === 'Escape') { ui.form = null; drawSand(); }
+  }
+});
+sand.addEventListener('focusout', ev => {
+  const el = ev.target;
+  if (ui.mute) return;
+  if (el.matches('.w-in')) {
+    if (!ui.pen) return;
+    leavePen('Клик мимо');
+    later();
+  } else if (el.matches('input.tfield')) {
+    keepIsland(el.dataset.desc, el.value);
+    later();
+  }
+});
+document.getElementById('b-reset').addEventListener('click', () => { reset(); drawSand(); });
+
+setInterval(() => {
+  const t = S.find(live);
+  if (!t) return;
+  t.ms += SEC;
+  document.querySelectorAll(`.sand [data-time="${t.id}"]`).forEach(el => {
+    el.textContent = fmt(el.dataset.rec ? rec(t) : t.ms, el.dataset.s === '1');
+  });
+}, 1000);
+
+function syncToolbar() {
+  document.querySelectorAll('[data-chip]').forEach(b => b.classList.toggle('on', b.dataset.chip === CHIP));
+}
+document.querySelector('.toolbar').addEventListener('click', ev => {
+  const b = ev.target.closest('.tbb');
+  if (!b || !b.dataset.chip) return;
+  CHIP = b.dataset.chip;
+  syncToolbar();
+  draw();
+  measure();
+  drawSand();
+});
+
+const params = new URLSearchParams(location.search);
+if (params.get('chip')) CHIP = params.get('chip');
+if (params.get('only')) {
+  const keep = Number(params.get('only'));
+  let section = 0;
+  for (const el of [...document.body.children]) {
+    if (el.tagName === 'H2') section++;
+    if (el.tagName !== 'SCRIPT' && (section === 0 ? el.tagName !== 'H1' : section !== keep)) el.style.display = 'none';
+  }
+}
+reset();
+syncToolbar();
+draw();
+measure();
+drawSand();
+</script>
+</body>
+</html>

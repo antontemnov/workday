@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Suggested timer — живой макет v50</title>
+<style>
+:root { --tm: 252 146 48; --go: 48 209 88; --sg: 249 226 175; --chip: #11111b; }
+html, body { margin: 0; background: #0f0f17; }
+body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace; padding: 22px 26px 80px; }
+.lab h1 { font-size: 14px; margin: 0 0 4px; }
+.lab h2 { font-size: 12px; margin: 34px 0 3px; }
+.lab h2 i { font-style: normal; color: rgb(var(--tm)); }
+.lab .sub, .lab .q { color: #7f849c; font-size: 11px; max-width: 1120px; margin: 0 0 12px; }
+.lab .sub b, .lab .q b { color: #a6adc8; }
+.grid { display: flex; flex-wrap: wrap; gap: 16px 18px; align-items: flex-start; }
+.grid + .grid { margin-top: 16px; }
+.cell { display: flex; flex-direction: column; gap: 6px; }
+.cap { color: #7f849c; font-size: 10.5px; line-height: 1.4; max-width: 400px; }
+.cap b { color: #cdd6f4; font-weight: 400; }
+.cap u { text-decoration: none; color: rgb(var(--tm)); }
+.arrow { align-self: center; color: #585b70; font-size: 14px; }
+.bare h1, .bare .sub, .bare .toolbar { display: none; }
+.bare.lab h2 { margin-top: 0; }
+
+.toolbar { position: sticky; top: 0; z-index: 90; display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin: 0 -26px 6px; padding: 8px 26px; background: rgb(15 15 23 / .94); border-bottom: 1px solid #1e1e2e; }
+.tbg { display: inline-flex; align-items: center; gap: 6px; }
+.tbl { color: #6c7086; font-size: 10.5px; margin-right: 2px; }
+.tbb { font: inherit; font-size: 10.5px; color: #bac2de; background: #1e1e2e; border: 1px solid #313244; border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.tbb:hover { border-color: #45475a; color: #e6ebfa; }
+.tbb.on { border-color: rgb(var(--tm) / .55); color: rgb(var(--tm)); background: rgb(var(--tm) / .07); }
+
+/* ── a piece of the app window ── */
+.app { position: relative; width: 400px; border-radius: 8px; overflow: hidden; background: #1e1e2e; box-shadow: 0 0 0 1px rgb(255 255 255 / .07); flex-shrink: 0; }
+.hdr { display: flex; align-items: center; height: 29px; box-sizing: border-box; padding-left: 12px; background: #181825; border-bottom: 1px solid #26263a; }
+.vs { display: inline-flex; align-items: center; gap: 10px; color: #585b70; }
+.vs svg { width: 13px; height: 13px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.vs .on { color: #cdd6f4; }
+.tmz { margin-left: auto; display: inline-flex; align-items: center; }
+.wc { display: inline-flex; align-self: stretch; }
+.wc span { width: 32px; display: inline-flex; align-items: center; justify-content: center; color: #585b70; }
+.wc svg { width: 10px; height: 10px; display: block; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
+.feed { position: relative; padding: 10px 10px 4px; }
+.cur { position: absolute; z-index: 80; width: 12px; height: 17px; pointer-events: none; }
+.cur svg { width: 100%; height: 100%; display: block; fill: #fff; stroke: #11111b; stroke-width: 1; stroke-linejoin: round; }
+
+.t-ic { width: 12px; height: 12px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.tchip { display: inline-flex; align-items: center; gap: 5px; height: 19px; margin-right: 10px; padding: 0 9px 0 6px; border-radius: 999px; flex-shrink: 0;
+  background: var(--chip); color: rgb(var(--tm)); font-size: 10.5px; line-height: 1; white-space: nowrap; }
+.tchip-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tchip.ghost { background: none; box-shadow: inset 0 0 0 1px #313244; color: #9399b2; font-weight: 700; padding: 0 10px 0 8px; }
+.tchip.ghost .t-ic { color: #7f849c; }
+
+/* ── the island ── */
+.isl { position: relative; margin: -1px 0 0 auto; width: 333px; box-sizing: border-box; padding: 7px 8px 8px; font-size: 11px;
+  background: #181825; border-left: 1px solid #26263a; border-bottom: 1px solid #26263a; border-radius: 0 0 0 12px; box-shadow: 0 14px 24px -14px rgb(0 0 0 / .75); }
+.trow { display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center;
+  grid-template-areas: "b k f t" ". . . d"; grid-template-rows: 26px 18px; padding: 2px 5px 4px; }
+.trow > .tbtn { grid-area: b; }
+.trow > .chip.ask, .trow > .tkey { grid-area: k; }
+.trow > .tfield { grid-area: f; }
+.trow > .ttime { grid-area: t; }
+.trow > .tdel { grid-area: d; justify-self: end; }
+.tbtn { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.tbtn svg { width: 8px; height: 8px; display: block; }
+.tbtn.pz { color: rgb(var(--tm)); box-shadow: inset 0 0 0 1.5px rgb(var(--tm)); }
+.tbtn.pz svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.ttime { min-width: 7ch; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; color: rgb(var(--tm)); white-space: nowrap; }
+.tfield { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cdd6f4; }
+.trow.tk .tfield { color: #7f849c; }
+.chip.ask { display: inline-flex; align-items: center; height: 17px; box-sizing: border-box; border-radius: 7px; white-space: nowrap; color: #6c7086; border: 1px dashed #45475a; padding: 0 7px; }
+.chip.ask.armed { color: #cdd6f4; border-color: #7f849c; }
+.tkey { font-size: 10.5px; font-weight: 700; letter-spacing: .2px; color: #cdd6f4; white-space: nowrap; }
+.tdel { color: #565973; font-size: 10px; font-weight: 700; }
+
+/* ── a ticket's card (drawn roughly) ── */
+.cardp { box-sizing: border-box; padding: 7px 10px 7px; border-radius: 10px; background: rgb(30 30 46 / .9); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .09); font-size: 11px; margin-bottom: 8px; background: #232336; }
+.cardp.new { box-shadow: inset 0 0 0 1px rgb(var(--tm) / .28); }
+.blk-h { display: flex; align-items: baseline; gap: 10px; height: 22px; }
+.blk-h .bk { font-weight: 700; color: #cdd6f4; }
+.blk-h .bs { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bac2de; }
+.blk-h .bt { font-weight: 700; color: #cdd6f4; font-variant-numeric: tabular-nums; }
+.wl { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; height: 22px; }
+.wl .c-type { color: #7f849c; }
+.wl .c-ds { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7f849c; font-style: italic; }
+.wl .c-ds.none { font-style: normal; color: #585b70; }
+.wl .c-dur { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: #cdd6f4; font-variant-numeric: tabular-nums; }
+.wl.tm-live .c-dur { color: rgb(var(--tm)); }
+.rt-b { width: 13px; height: 13px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.rt-b svg { width: 7px; height: 7px; display: block; }
+.rt-b.run { color: rgb(var(--tm)); box-shadow: inset 0 0 0 1px rgb(var(--tm) / .85); }
+.rt-b.run svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.rt-b.rest { color: #6c7086; box-shadow: inset 0 0 0 1px #45475a; }
+.rt-b.rest svg { fill: currentColor; transform: translateX(.5px); }
+.rt-b.rest.h { color: rgb(var(--go)); box-shadow: inset 0 0 0 1px rgb(var(--go) / .7); }
+
+/* ── the offer: the app's own styles ── */
+.sug2 { padding: 3px 8px 4px; border: 1px dashed rgb(205 214 244 / .18); border-radius: 9px; margin-bottom: 8px; font-size: 11px; font-variant-numeric: tabular-nums;
+  background: linear-gradient(115deg, rgb(205 214 244 / .03), transparent 45%), repeating-linear-gradient(-45deg, rgb(205 214 244 / .035) 0 1px, transparent 1px 8px); }
+.sug2.hv { border-color: rgb(205 214 244 / .3); }
+.r-l1, .rv { display: grid; grid-template-columns: 74px minmax(0, 1fr) minmax(48px, max-content); gap: 8px; align-items: center; }
+.r-l1 { height: 17px; }
+.r-l2 { display: flex; align-items: center; height: 20px; margin-top: 1px; }
+.rv { flex: 1; min-width: 0; }
+.sug2 .chip { justify-self: start; display: inline-flex; align-items: center; height: 17px; font-weight: 600; white-space: nowrap; }
+.sug2 .chip.key { padding: 0 0 0 7px; color: #9399b2; }
+.sug2 .chip.ask { font-weight: 400; padding: 0 8px 0 6px; }
+.k-ind { width: 9px; height: 9px; margin-right: 5px; flex-shrink: 0; display: inline-flex; }
+.k-spark { display: block; width: 9px; height: 9px; color: #f9e2af; filter: drop-shadow(0 0 3px rgb(249 226 175 / .75)) drop-shadow(0 0 6px rgb(249 226 175 / .3)); }
+.k-spark.dim { color: rgb(249 226 175 / .55); filter: none; }
+.s-title { min-width: 0; overflow: hidden; white-space: nowrap; color: #8b90ab; font-weight: 600; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); }
+.s-dur { justify-self: end; display: inline-flex; align-items: center; gap: 5px; color: #7f849c; font-weight: 700; white-space: nowrap; padding: 0 5px; }
+.s-when { color: #565973; font-size: 10.5px; white-space: nowrap; }
+.s-when .ar, .s-when .lv { color: #7f849c; }
+.s-when .ar { margin: 0 2px; }
+.s-src { color: #565973; font-size: 10px; }
+.s-act { justify-self: end; display: flex; align-items: center; gap: 8px; }
+.lnk-deny { padding: 0 2px; color: #565973; font-size: 10px; font-weight: 700; }
+.btn-log { height: 18px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; white-space: nowrap; font-size: 10px; font-weight: 700;
+  color: #f9e2af; background: rgb(var(--sg) / .12); box-shadow: inset 0 0 0 1px rgb(var(--sg) / .3); }
+/* «accept with a timer»: a worded button in the action row */
+.btn-tm { height: 18px; padding: 0 8px 0 6px; border-radius: 7px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 10px; font-weight: 700; color: #9399b2; box-shadow: inset 0 0 0 1px #313244; }
+.btn-tm .t-ic { width: 10px; height: 10px; color: #7f849c; }
+.btn-tm .g { width: 7px; height: 7px; display: block; fill: rgb(var(--go)); }
+.btn-tm.h { color: #cdd6f4; box-shadow: inset 0 0 0 1px #45475a; }
+.btn-tm.h .t-ic { color: #bac2de; }
+body.pa .only-b, body.pb .only-a { display: none; }
+.force-a .only-a, .force-b .only-b { display: inline-flex !important; }
+.force-a .only-b, .force-b .only-a { display: none !important; }
+
+/* ── a piece of the desktop with the widget ── */
+.scene { position: relative; display: flex; justify-content: flex-end; align-items: flex-start; width: 300px; box-sizing: border-box; padding: 12px; border-radius: 8px; overflow: hidden; border: 1px solid #2a2a3c; flex-shrink: 0;
+  background: radial-gradient(120% 90% at 18% 8%, #2c3150 0%, #1b1d2e 52%, #121320 100%); }
+.w { position: relative; z-index: 1; box-sizing: border-box; width: 262px; overflow: hidden; font-size: 10.5px; line-height: 1; color: #cdd6f4; white-space: nowrap; border-radius: .95em; padding: .2em 0; user-select: none;
+  background: #181825; box-shadow: inset 0 0 0 1px #313244, 0 10px 24px -10px rgb(0 0 0 / .85); }
+.w.calm { background: rgb(17 17 27 / .65); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .09); }
+.w-row { display: flex; align-items: center; gap: .55em; height: 2.28em; padding: 0 .45em 0 .6em; }
+.w-b { width: 1.72em; height: 1.72em; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: rgb(var(--tm)); }
+.g-ic { width: 1.15em; height: 1.15em; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.w-t { width: 7ch; flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; color: rgb(var(--tm)); }
+.w-tx { display: flex; align-items: center; gap: .55em; min-width: 0; flex: 1; }
+.w-k { font-weight: 700; color: #cdd6f4; }
+.w-d { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #a6adc8; }
+.w-acts { margin-left: auto; flex-shrink: 0; display: inline-flex; gap: .1em; }
+.w-x { width: 1.6em; height: 1.6em; border-radius: .5em; color: #a6adc8; display: inline-flex; align-items: center; justify-content: center; }
+.w-x svg { width: 1.14em; height: 1.14em; display: block; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.w-x.armed { color: #cdd6f4; background: rgb(205 214 244 / .09); }
+.w-x.dead { opacity: .3; }
+.w-pick { background: rgb(17 17 27 / .5); box-shadow: inset 0 1px 0 rgb(205 214 244 / .08); }
+.w-find { display: flex; align-items: center; gap: .6em; height: 2.28em; padding: 0 .9em; box-shadow: inset 0 -1px 0 rgb(205 214 244 / .08); }
+.w-find svg { width: 1.05em; height: 1.05em; flex-shrink: 0; display: block; fill: none; stroke: #6c7086; stroke-width: 1.3; stroke-linecap: round; }
+.w-fi { color: #585b70; }
+.w-scroll { height: 15.75em; overflow-y: auto; scrollbar-width: none; padding: .2em 0; box-sizing: border-box; }
+.w-scroll::-webkit-scrollbar { display: none; }
+.w-scroll.fit { height: auto; }
+.w-scroll.more-down { -webkit-mask-image: linear-gradient(#000 calc(100% - 2em), transparent); mask-image: linear-gradient(#000 calc(100% - 2em), transparent); }
+.w-scroll.more-up { -webkit-mask-image: linear-gradient(transparent, #000 2em); mask-image: linear-gradient(transparent, #000 2em); }
+.w-li { display: flex; align-items: center; gap: .7em; height: 2.1em; box-sizing: border-box; padding: 0 .9em; }
+.w-li.h { background: rgb(205 214 244 / .07); }
+.w-lk { flex-shrink: 0; font-weight: 700; color: #bac2de; }
+.w-ln { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #7f849c; }
+.w-li.h .w-lk { color: #cdd6f4; }
+.w-li.h .w-ln { color: #a6adc8; }
+.w-lg { display: block; padding: .75em 1.05em .3em; font-size: .8em; letter-spacing: .04em; color: #585b70; }
+.w-scroll > .w-lg:first-child { padding-top: .4em; }
+.w-lg.sg { color: rgb(var(--sg) / .62); }
+.w-li .k-ind { margin-right: 0; }
+.w-src { flex-shrink: 0; color: #585b70; font-size: .9em; }
+
+/* ── the app's cloud in the «ticket for the timer» mode (drawn roughly) ── */
+.cloud { margin: 0 0 8px; padding: 9px 12px 11px; border-radius: 12px; background: #161622; box-shadow: inset 0 0 0 1px rgb(205 214 244 / .12), 0 14px 26px -14px rgb(0 0 0 / .8); font-size: 11px; }
+.cl-find { display: flex; align-items: center; gap: 8px; height: 22px; color: #585b70; }
+.cl-find svg { width: 11px; height: 11px; display: block; fill: none; stroke: #6c7086; stroke-width: 1.3; stroke-linecap: round; }
+.cl-g { margin: 9px 0 6px; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #6d86c9; }
+.cl-g.sg { color: rgb(var(--sg) / .7); }
+.cl-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cl-chip { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 7px; background: rgb(205 214 244 / .05); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .1); white-space: nowrap; }
+.cl-chip b { font-weight: 700; color: #bac2de; }
+.cl-chip span { color: #7f849c; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.cl-chip.h { background: rgb(205 214 244 / .1); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .22); }
+.cl-chip.h b { color: #cdd6f4; }
+
+.todo { max-width: 1120px; margin: 0; padding-left: 18px; color: #7f849c; font-size: 11px; }
+.todo li { margin: 0 0 6px; }
+.todo b { color: #cdd6f4; font-weight: 400; }
+
+/* ── v47: everything is live ── */
+[data-act] { cursor: pointer; }
+.sand { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.side { width: 340px; display: flex; flex-direction: column; gap: 12px; }
+.side-h { color: #7f849c; font-size: 10.5px; margin: 0 0 6px; }
+.app { min-height: 470px; }
+.feed { min-height: 120px; }
+.clock { color: #a6adc8; font-variant-numeric: tabular-nums; }
+.panel { display: flex; flex-wrap: wrap; gap: 6px; }
+.tbb.off { opacity: .35; pointer-events: none; }
+.evlog { min-height: 150px; color: #6c7086; font-size: 10.5px; line-height: 1.5; }
+.evlog div:first-child { color: #bac2de; }
+.scene { width: 340px; min-height: 196px; }
+.nowg { position: absolute; right: 14px; top: 12px; color: rgb(205 214 244 / .3); font-size: 10.5px; }
+
+/* chip */
+.tchip.pause { color: #7f849c; }
+.tchip.ghost:hover { color: #cdd6f4; box-shadow: inset 0 0 0 1px #45475a; }
+
+/* island */
+.isl { z-index: 5; }
+.trow + .trow { border-top: 1px solid rgb(205 214 244 / .06); }
+.trow .ttime { color: #7f849c; }
+.trow.run .ttime { color: rgb(var(--tm)); }
+.trow.pause .tfield { color: #a6adc8; }
+.tbtn.go { background: rgb(var(--go) / .2); color: rgb(var(--go)); }
+.tbtn.go svg { fill: currentColor; transform: translateX(.6px); }
+.tbtn.sgb .k-spark { width: 10px; height: 10px; }
+.tbtn.sgb .gg { display: none; }
+.trow.sg:hover .tbtn.sgb { background: rgb(var(--go) / .2); color: rgb(var(--go)); }
+.trow.sg:hover .tbtn.sgb .k-spark { display: none; }
+.trow.sg:hover .tbtn.sgb .gg { display: block; fill: currentColor; transform: translateX(.6px); }
+.trow.sg .ttime { color: #585b70; }
+.trow.sg .tfield { color: #7f849c; }
+.trow.sg .tkey { color: #a6adc8; }
+.tdel:hover { color: #f38ba8; }
+.tdel.sgw { color: rgb(var(--sg) / .5); font-weight: 400; cursor: default; }
+.tdel.sgw:hover { color: rgb(var(--sg) / .5); }
+input.tfield { width: 100%; height: 20px; box-sizing: border-box; padding: 0; border: none; outline: none; background: none; font: inherit; color: #cdd6f4; caret-color: rgb(var(--tm)); }
+input.tfield::placeholder { color: #585b70; }
+input.tfield:hover, input.tfield:focus { box-shadow: 0 1px 0 rgb(205 214 244 / .2); }
+.chip.ask:hover { color: #a6adc8; border-color: #585b70; }
+.tnone { height: 30px; display: flex; align-items: center; justify-content: center; color: #585b70; }
+.tsep { height: 1px; margin: 4px 6px 3px; background: rgb(205 214 244 / .08); }
+.tnew { display: inline-flex; align-items: center; gap: 8px; height: 24px; padding: 0 5px; color: #7f849c; }
+.tnew .nt-g { width: 20px; display: inline-flex; justify-content: center; color: rgb(var(--go)); }
+.tnew svg { width: 8px; height: 8px; display: block; fill: currentColor; }
+.tnew:hover { color: #cdd6f4; }
+
+/* feed */
+.sug2:hover { border-color: rgb(205 214 244 / .3); }
+.lnk-deny:hover { color: #f38ba8; }
+.btn-log:hover { background: rgb(var(--sg) / .2); }
+.rt-b.inert { opacity: .45; cursor: default; }
+.rt-b.rest[data-act]:hover { color: rgb(var(--go)); box-shadow: inset 0 0 0 1px rgb(var(--go) / .7); }
+.cl-chip:hover { background: rgb(205 214 244 / .1); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .22); }
+.cl-chip:hover b { color: #cdd6f4; }
+
+/* widget: the app's own hover grammar */
+.w { background: rgb(17 17 27 / .65); box-shadow: inset 0 0 0 1px rgb(205 214 244 / .09); transition: background-color .35s ease, box-shadow .35s ease; }
+.w:hover { background: #181825; box-shadow: inset 0 0 0 1px #313244, 0 10px 24px -10px rgb(0 0 0 / .85); }
+.w-b { position: relative; color: inherit; }
+.w-b > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: opacity .35s ease; }
+.w-b .at-hov { opacity: 0; }
+.w-row:hover .at-rest { opacity: 0; }
+.w-row:hover .at-hov { opacity: 1; }
+.g-pz { width: .76em; height: .76em; display: block; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.g-go { width: .76em; height: .76em; display: block; fill: currentColor; transform: translateX(.06em); }
+.w-row.run .at-rest { color: rgb(var(--tm)); }
+.w-row.pause .at-rest { color: #7f849c; }
+.w-row.sg .at-rest .k-spark { width: 1em; height: 1em; }
+.w-row.run .at-hov { color: rgb(var(--tm)); box-shadow: inset 0 0 0 .14em rgb(var(--tm)); }
+.w-row.pause .at-hov, .w-row.sg .at-hov { color: rgb(var(--go)); background: rgb(var(--go) / .2); }
+.w-t { color: #9399b2; }
+.w-row.run .w-t { color: rgb(var(--tm)); }
+.w-row.sg .w-t { color: #585b70; }
+.w-row.pause .w-k, .w-row.sg .w-k { color: #a6adc8; }
+.w-row.pause .w-d, .w-row.sg .w-d { color: #7f849c; }
+.w-row > .w-acts { opacity: 0; transition: opacity .35s ease; }
+.w:hover .w-row > .w-acts { opacity: .45; }
+.w .w-row:hover > .w-acts { opacity: 1; }
+.w-x:hover { color: #cdd6f4; background: rgb(205 214 244 / .09); }
+/* v50 — the timer is one more action of a live suggestion; the row never
+   shows a timer zero next to the plan */
+/* the rough card gets the app's 5px time-column inset, so both time columns share one right edge */
+.wl .c-dur, .blk-h .bt { padding-right: 4px; }
+.s-act { position: relative; }
+.btn-log .cv { width: 7px; height: 7px; margin-left: 5px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
+.btn-log.open { background: rgb(var(--sg) / .2); }
+.lm { position: absolute; right: 0; top: 23px; z-index: 6; min-width: 140px; padding: 4px; border-radius: 9px; background: rgb(40 40 60 / .98); box-shadow: 0 0 0 1px rgb(205 214 244 / .13), 0 12px 26px rgb(0 0 0 / .5); }
+.lm-i { display: flex; align-items: center; gap: 7px; height: 23px; padding: 0 8px; border-radius: 6px; color: #cdd6f4; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.lm-i:hover { background: rgb(205 214 244 / .08); }
+.lm-i .g { width: 8px; height: 8px; fill: rgb(var(--go)); flex-shrink: 0; }
+.lm-i .sp { width: 8px; flex-shrink: 0; }
+.lm-i .h { margin-left: auto; padding-left: 14px; color: #6c7086; font-weight: 400; }
+.pv-h { width: 100%; color: #6c7086; font-size: 10px; margin-top: 4px; }
+</style>
+</head>
+<body class="lab">
+<h1>Suggested timer — живой макет v50</h1>
+<p class="sub">Против v49: <b>нуля таймера в строке подсказки больше нет</b> — рядом с планом (30m) он противоречил. Таймер стал ещё одним действием живой подсказки, во второй строке рядом с <b>Deny</b> и <b>Log…</b>. Три способа на пробу, переключатель «кнопки» в настройках макета: <b>А</b> — две кнопки одного стиля, Timer и Log…; <b>Б</b> — серый кружок ▶ вторым, в тон Deny; <b>В</b> — Log становится меню. Остров, настройки и виджет — как раньше.</p>
+
+<div class="sand">
+  <div class="cell">
+    <div class="side-h">окно приложения · чип в шапке открывает остров</div>
+    <div id="app"></div>
+  </div>
+  <div class="side">
+    <div>
+      <div class="side-h">рабочий стол · виджет у верхнего края</div>
+      <div class="scene" id="desk"></div>
+    </div>
+    <div>
+      <div class="side-h">мир · <span class="clock" id="clock"></span></div>
+      <div class="panel" id="world"></div>
+    </div>
+    <div>
+      <div class="side-h">настройки</div>
+      <div class="panel" id="prefs"></div>
+    </div>
+    <div>
+      <div class="side-h">журнал</div>
+      <div class="evlog" id="evlog"></div>
+    </div>
+  </div>
+</div>
+
+<h2>Что попробовать</h2>
+<ul class="todo">
+  <li><b>А · Timer и Log…:</b> «Митинг начался · с тикетом» → во второй строке Deny, затем две кнопки одного стиля. Timer принимает подсказку таймером, Log… — как сегодня.</li>
+  <li><b>Б · кружок ▶:</b> переключите «кнопки» → между Deny и Log… стоит серый кружок ▶, под курсором зелёный. Тот же знак, что у записи с таймером в карточке.</li>
+  <li><b>В · меню у Log:</b> у живой подсказки кнопка Log получает стрелку; клик открывает два пункта — Log… и Start timer.</li>
+  <li><b>Митинг кончился:</b> действие таймера уходит, остаются Deny и Log…, как сегодня. Log… при этом стоит на месте во всех трёх способах.</li>
+  <li><b>Без тикета:</b> «Митинг начался · без тикета» → в А и Б действие таймера есть и у строки с task?; в В его нет — у такой строки нет кнопки Log, меню не к чему привязать.</li>
+  <li><b>Ревью:</b> включите Code reviews и сделайте checkout — те же кнопки у подсказки review.</li>
+</ul>
+
+<h2>Нарисовано допущением — поправьте, если не так</h2>
+<ul class="todo">
+  <li><b>А:</b> обе кнопки янтарные, один в один; слово Timer без многоточия — действие сразу, без формы.</li>
+  <li><b>Порядок:</b> Deny, затем таймер, Log… последней — она не двигается, когда митинг начинается и кончается; сдвигается только Deny.</li>
+  <li><b>Подсказка без тикета:</b> после запуска таймера строка уходит из ленты, таймер живёт в чипе шапки — как любой таймер без тикета.</li>
+  <li><b>Не нарисовано:</b> форма Log… (здесь кнопка сразу пишет минуты из подсказки), выбор тикета на виджете, группа suggested в блоке выбора (отложена).</li>
+</ul>
+
+<script>
+const GO = '<svg viewBox="0 0 10 10"><path d="M2.5 1.4v7.2L8.6 5z"/></svg>';
+const PZ = '<svg viewBox="0 0 10 10"><path d="M3.2 1.8v6.4M6.8 1.8v6.4"/></svg>';
+const GGO = '<svg class="g-go" viewBox="0 0 10 10"><path d="M2.5 1.4v7.2L8.6 5z"/></svg>';
+const GPZ = '<svg class="g-pz" viewBox="0 0 10 10"><path d="M3.2 1.8v6.4M6.8 1.8v6.4"/></svg>';
+const TIC = '<svg class="t-ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.2V8"/></svg>';
+const GIC = '<svg class="g-ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.2V8"/></svg>';
+const STAR = (dim) => `<svg class="k-spark${dim ? ' dim' : ''}" viewBox="0 0 10 10"><path d="M5 0.3 Q5.9 4.1 9.7 5 Q5.9 5.9 5 9.7 Q4.1 5.9 0.3 5 Q4.1 4.1 5 0.3 Z" fill="currentColor"/></svg>`;
+const SPARK = (dim) => `<span class="k-ind">${STAR(dim)}</span>`;
+const EYE = '<svg viewBox="0 0 16 16"><path d="M1.6 8c1.6-2.8 3.8-4.2 6.4-4.2S12.800 5.2 14.4 8c-1.6 2.8-3.8 4.2-6.4 4.2S3.2 10.8 1.6 8z"/><circle cx="8" cy="8" r="1.9"/></svg>';
+const FIND = '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 13.5 13.5"/></svg>';
+const TABS = '<span class="vs"><svg class="on" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6"/><circle cx="8" cy="8" r="2"/></svg></span>';
+const WC = '<span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>';
+
+const NAMES = { 'ATL-7104': 'Team ceremonies', 'ATL-9349': 'Fix rounding in invoice totals', 'ATL-8110': 'Invoice export: totals by currency', 'ATL-7733': 'Payment retry: backoff policy', 'ATL-100': 'Meetings' };
+const PICK = ['ATL-7104', 'ATL-100', 'ATL-8110', 'ATL-7733'];
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pad = (n) => String(n).padStart(2, '0');
+const fmtT = (sec) => { const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return h ? `${h}h ${pad(m)}m` : `${m}m ${pad(sec % 60)}s`; };
+const fmtM = (sec) => { const m = Math.floor(sec / 60), h = Math.floor(m / 60); return h ? `${h}h ${pad(m % 60)}m` : `${m}m`; };
+const hm = (sec) => `${pad(Math.floor(sec / 3600) % 24)}:${pad(Math.floor(sec % 3600 / 60))}`;
+
+let S;
+function init() {
+  const speed = new URLSearchParams(location.search).get('speed') === '60' ? 60 : 1;
+  const b = new URLSearchParams(location.search).get('btn');
+  const btnVar = (S && S.btnVar) || (b === 'ring' || b === 'menu' ? b : 'pills');
+  S = { clock: 15 * 3600, speed, setCal: true, setRev: false, btnVar, menu: null, islOpen: false, seq: 0, sugs: [], timers: [], picker: null, touched: null, logs: [],
+    entries: [{ id: 'e0', task: 'ATL-8110', type: 'Development', desc: '', sec: 6000, timerId: null }] };
+  log('макет готов — начните митинг или сделайте checkout кнопками «мир»');
+}
+function log(t) { S.logs.unshift(`${hm(S.clock)} · ${t}`); S.logs.length = Math.min(S.logs.length, 10); }
+
+const timer = (id) => S.timers.find((t) => t.id === id);
+const sugOf = (id) => S.sugs.find((s) => s.id === id);
+const tsec = (t) => t.acc + (t.runSince != null ? S.clock - t.runSince : 0);
+const running = () => S.timers.find((t) => t.runSince != null);
+const entrySec = (e) => e.sec + (e.timerId ? tsec(timer(e.timerId)) : 0);
+const sgOn = (s) => s.src === 'meeting' ? S.setCal : S.setRev;
+const live = (s) => s.state === 'open' && s.ongoing && sgOn(s);
+const ghosts = () => S.sugs.filter(live);
+const sugType = (s) => s.src === 'meeting' ? 'Meeting' : 'Code Review';
+const sugDesc = (s) => s.src === 'meeting' ? s.title : 'code review';
+
+function pause(t) { if (t.runSince == null) return; t.acc = tsec(t); t.runSince = null; }
+function start(t) { for (const x of S.timers) pause(x); t.runSince = S.clock; S.touched = t.id; }
+
+// ── the world ──
+const WORLD = {
+  meetT: { label: 'Митинг начался · с тикетом', can: () => !sugOf('m1'), run() {
+    S.sugs.unshift({ id: 'm1', src: 'meeting', task: 'ATL-7104', title: 'Sprint planning', planned: 3600, at: S.clock, ongoing: true, state: 'open', hid: false });
+    log(S.setCal ? 'митинг Sprint planning начался — подсказка в ленте несёт таймер на нуле, на столе строка-звезда' : 'митинг Sprint planning начался — обычная подсказка (Calendar events выключена)'); } },
+  meetN: { label: 'Митинг начался · без тикета', can: () => !sugOf('m2'), run() {
+    S.sugs.unshift({ id: 'm2', src: 'meeting', task: null, title: 'Sync with platform team', planned: 1800, at: S.clock, ongoing: true, state: 'open', hid: false });
+    log(S.setCal ? 'митинг Sync with platform team начался — тикет неизвестен (task?), таймер на нуле есть' : 'митинг Sync with platform team начался — обычная подсказка (Calendar events выключена)'); } },
+  meetEnd: { label: 'Митинг кончился', can: () => S.sugs.some((s) => s.src === 'meeting' && s.ongoing), run() {
+    for (const s of S.sugs) if (s.src === 'meeting' && s.ongoing) {
+      s.ongoing = false;
+      const t = S.timers.find((x) => x.sugId === s.id);
+      if (s.state === 'open') log(`митинг ${s.title} кончился — таймер на нуле ушёл, подсказка в ленте снова с планом${s.task ? ' и Log…' : ''}`);
+      else if (t && t.runSince != null) log(`митинг ${s.title} кончился по календарю — его таймер идёт дальше, пауза за вами`);
+      else log(`митинг ${s.title} кончился`);
+    } } },
+  checkout: { label: 'Checkout чужой ветки', can: () => !sugOf('r1'), run() {
+    S.sugs.unshift({ id: 'r1', src: 'review', task: 'ATL-9349', title: NAMES['ATL-9349'], planned: 1800, at: S.clock, ongoing: true, state: 'open', hid: false });
+    log(S.setRev ? 'checkout ветки ATL-9349 — подсказка review несёт таймер на нуле, на столе строка-звезда' : 'checkout ветки ATL-9349 — обычная подсказка review (Code reviews выключена — так по умолчанию)'); } },
+  leave: { label: 'Ушёл с ветки ревью', can: () => !!sugOf('r1') && sugOf('r1').ongoing, run() {
+    const s = sugOf('r1'); s.ongoing = false;
+    log(s.state === 'open' ? 'ушёл с ветки ревью — подсказка в ленте осталась, таймера на нуле у неё больше нет' : 'ушёл с ветки ревью'); } },
+  edit: { label: 'Правка в своей ветке', can: () => true, run() {
+    const t = running();
+    if (t) { pause(t); log('правка в своей ветке — сессия выигрывает, таймер встал сам'); } else log('правка в своей ветке — считает git-сессия'); } },
+};
+
+// ── actions ──
+const ACT = {
+  chip() { S.islOpen = !S.islOpen; },
+  'ghost-go'(id) {
+    const s = sugOf(id);
+    const t = { id: 't' + (++S.seq), task: s.task, type: sugType(s), desc: sugDesc(s), acc: 0, runSince: null, sugId: s.id, hidden: false };
+    S.timers.push(t);
+    if (t.task) S.entries.unshift({ id: 'e' + S.seq, task: t.task, type: t.type, desc: t.desc, sec: 0, timerId: t.id });
+    s.state = 'taken';
+    start(t);
+    log(t.task ? `▶ — подсказка принята таймером: запись ${t.type} в ${t.task}, время идёт с нуля` : '▶ у подсказки без тикета — таймер без тикета с названием митинга живёт в чипе шапки, подсказка ушла из ленты');
+  },
+  'ghost-eye'(id) { sugOf(id).hid = true; log('глаз на строке-звезде — убрана со стола; подсказка в ленте остаётся как была'); },
+  toggle(id) { const t = timer(id); if (t.runSince != null) { pause(t); S.touched = t.id; log('пауза'); } else { start(t); log('▶ — таймер идёт дальше'); } },
+  eye(id) { timer(id).hidden = true; log('глаз — таймер убран со стола, в острове остался'); },
+  remove(id) {
+    const t = timer(id); pause(t);
+    const e = S.entries.find((x) => x.timerId === id);
+    if (e) { e.sec += t.acc; e.timerId = null; if (!e.sec) S.entries = S.entries.filter((x) => x !== e); }
+    S.timers = S.timers.filter((x) => x !== t);
+    if (S.touched === id) S.touched = null;
+    log(t.sugId ? 'Remove — таймер убран; подсказка, из которой он вырос, не возвращается' : 'Remove — таймер убран');
+  },
+  deny(id) { sugOf(id).state = 'denied'; log('Deny — подсказка ушла из ленты, строка-звезда со стола тоже'); },
+  log(id) {
+    const s = sugOf(id); s.state = 'logged';
+    S.entries.unshift({ id: 'e' + (++S.seq), task: s.task, type: sugType(s), desc: sugDesc(s), sec: s.planned, timerId: null });
+    log(`Log… — записано ${fmtM(s.planned)} из подсказки (в приложении здесь форма); строка-звезда со стола ушла`);
+  },
+  menu(id) { S.menu = S.menu === id ? null : id; },
+  'ask-sug'(id) { S.picker = { kind: 'sug', id }; },
+  'ask-timer'(id) { S.picker = { kind: 'timer', id }; },
+  pick(task) {
+    const p = S.picker; S.picker = null;
+    if (p.kind === 'sug') { sugOf(p.id).task = task; log(`тикет подсказки — ${task}; у строки-звезды на столе теперь ключ`); return; }
+    const t = timer(p.id); t.task = task;
+    S.entries.unshift({ id: 'e' + (++S.seq), task, type: t.sugId ? t.type : 'Development', desc: t.desc, sec: 0, timerId: t.id });
+    log(`таймер привязан к ${task} — запись ${t.sugId ? t.type : 'Development'} с его временем`);
+  },
+  'new'() {
+    const t = { id: 't' + (++S.seq), task: null, type: 'Development', desc: '', acc: 0, runSince: null, sugId: null, hidden: false };
+    S.timers.push(t); start(t); log('New timer — таймер без тикета');
+  },
+  world(k) { WORLD[k].run(); },
+  pref(k) {
+    if (k === 'cal') { S.setCal = !S.setCal; log(S.setCal ? 'Calendar events включена — идущий митинг несёт таймер на нуле' : 'Calendar events выключена — митинги дают обычные подсказки, как сегодня'); }
+    if (k === 'rev') { S.setRev = !S.setRev; log(S.setRev ? 'Code reviews включена — ревью несёт таймер на нуле, пока стоит его ветка' : 'Code reviews выключена — ревью даёт обычную подсказку 30m'); }
+    if (k === 'btn-pills' || k === 'btn-ring' || k === 'btn-menu') { S.btnVar = k.slice(4); log({ pills: 'кнопки: А — Timer и Log… в одном стиле', ring: 'кнопки: Б — серый кружок ▶ между Deny и Log…', menu: 'кнопки: В — Log открывает меню из двух пунктов' }[S.btnVar]); }
+    if (k === 'speed') S.speed = S.speed === 1 ? 60 : 1;
+    if (k === 'reset') init();
+  },
+};
+
+// ── render ──
+function chipHtml() {
+  const t = running() || timer(S.touched);
+  if (!t) return `<span class="tchip ghost" data-act="chip">${TIC}Timer</span>`;
+  return `<span class="tchip${t.runSince != null ? '' : ' pause'}" data-act="chip">${TIC}<span class="tchip-time" data-t="${t.id}">${fmtT(tsec(t))}</span></span>`;
+}
+function islandHtml() {
+  if (!S.islOpen) return '';
+  const rows = S.timers.map((t) => {
+    const run = t.runSince != null;
+    const key = t.task ? `<span class="tkey">${t.task}</span>` : `<span class="chip ask" data-act="ask-timer" data-id="${t.id}">task?</span>`;
+    const field = t.task ? `<span class="tfield" data-d="${t.id}">${esc(t.desc) || 'no description'}</span>` : `<input class="tfield" data-desc="${t.id}" value="${esc(t.desc)}" placeholder="description" spellcheck="false" autocomplete="off">`;
+    return `<div class="trow ${run ? 'run' : 'pause'}${t.task ? ' tk' : ''}"><span class="tbtn ${run ? 'pz' : 'go'}" data-act="toggle" data-id="${t.id}">${run ? PZ : GO}</span>${key}${field}<span class="ttime" data-t="${t.id}">${fmtT(tsec(t))}</span><span class="tdel" data-act="remove" data-id="${t.id}">Remove</span></div>`;
+  });
+  return `<div class="isl">${rows.join('') || '<div class="tnone">No timers</div>'}<div class="tsep"></div><span class="tnew" data-act="new"><span class="nt-g">${GO}</span>New timer</span></div>`;
+}
+function pickerHtml() {
+  if (!S.picker) return '';
+  const what = S.picker.kind === 'timer' ? `ticket for «${esc(timer(S.picker.id).desc) || 'timer'}»` : `ticket for «${esc(sugOf(S.picker.id).title)}»`;
+  return `<div class="cloud" data-picker="1"><div class="cl-find">${FIND}${what}</div><div class="cl-g">favorites</div><div class="cl-row">${PICK.map((k) => `<span class="cl-chip" data-act="pick" data-id="${k}"><b>${k}</b><span>${NAMES[k]}</span></span>`).join('')}</div></div>`;
+}
+const CARET = '<svg class="cv" viewBox="0 0 8 8"><path d="M1.5 3 4 5.5 6.5 3"/></svg>';
+function sugHtml(s) {
+  const lv = live(s), v = S.btnVar;
+  const key = s.task ? `<span class="chip key">${SPARK()}${s.task}</span>` : `<span class="chip ask" data-act="ask-sug" data-id="${s.id}">${SPARK(true)}task?</span>`;
+  const when = s.src === 'review' ? hm(s.at) : s.ongoing ? `${hm(s.at)}<span class="ar">→</span><span class="lv">live</span>` : `${hm(s.at)}–${hm(s.at + s.planned)}`;
+  const logBtn = s.task ? `<span class="btn-log" data-act="log" data-id="${s.id}">Log…</span>` : '';
+  let acts = logBtn;
+  if (lv && v === 'pills') acts = `<span class="btn-log" data-act="ghost-go" data-id="${s.id}">Timer</span>${logBtn}`;
+  if (lv && v === 'ring') acts = `<span class="rt-b rest" data-act="ghost-go" data-id="${s.id}">${GO}</span>${logBtn}`;
+  if (lv && v === 'menu' && s.task) {
+    const open = S.menu === s.id;
+    acts = `<span class="btn-log${open ? ' open' : ''}" data-act="menu" data-id="${s.id}">Log${CARET}</span>` + (open
+      ? `<span class="lm"><span class="lm-i" data-act="log" data-id="${s.id}"><span class="sp"></span>Log…<span class="h">${fmtM(s.planned)}</span></span><span class="lm-i" data-act="ghost-go" data-id="${s.id}"><svg class="g" viewBox="0 0 10 10"><path d="M2.5 1.4v7.2L8.6 5z"/></svg>Start timer</span></span>`
+      : '');
+  }
+  return `<div class="sug2"><div class="r-l1">${key}<span class="s-title">${esc(s.title)}</span><span class="s-dur">${fmtM(s.planned)}</span></div>
+    <div class="r-l2"><div class="rv"><span class="s-when">${when}</span><span class="s-src">${s.src}</span><span class="s-act"><span class="lnk-deny" data-act="deny" data-id="${s.id}">Deny</span>${acts}</span></div></div></div>`;
+}
+function cardsHtml() {
+  const tasks = [...new Set(S.entries.map((e) => e.task))];
+  return tasks.map((task) => {
+    const es = S.entries.filter((e) => e.task === task);
+    const total = es.reduce((a, e) => a + entrySec(e), 0);
+    return `<div class="cardp"><div class="blk-h"><span class="bk">${task}</span><span class="bs">${NAMES[task] || ''}</span><span class="bt" data-ct="${task}">${fmtM(total)}</span></div>${es.map((e) => {
+      const t = e.timerId ? timer(e.timerId) : null, live = t && t.runSince != null;
+      const btn = t ? `<span class="rt-b ${live ? 'run' : 'rest'}" data-act="toggle" data-id="${t.id}">${live ? PZ : GO}</span>` : '';
+      return `<div class="wl${live ? ' tm-live' : ''}"><span class="c-type">${e.type}</span><span class="c-ds${e.desc ? '' : ' none'}">${esc(e.desc) || 'no description'}</span><span class="c-dur">${btn}<span data-e="${e.id}">${live ? fmtT(entrySec(e)) : fmtM(entrySec(e))}</span></span></div>`;
+    }).join('')}</div>`;
+  }).join('');
+}
+function deskHtml() {
+  const rows = S.timers.filter((t) => !t.hidden).map((t) => {
+    const run = t.runSince != null;
+    return `<div class="w-row ${run ? 'run' : 'pause'}"><span class="w-b" data-act="toggle" data-id="${t.id}"><span class="at-rest">${GIC}</span><span class="at-hov">${run ? GPZ : GGO}</span></span><span class="w-t" data-t="${t.id}">${fmtT(tsec(t))}</span><span class="w-tx">${t.task ? `<span class="w-k">${t.task}</span>` : ''}<span class="w-d" data-d="${t.id}">${esc(t.desc)}</span></span><span class="w-acts"><span class="w-x" data-act="eye" data-id="${t.id}">${EYE}</span></span></div>`;
+  });
+  for (const s of ghosts()) if (!s.hid) rows.push(`<div class="w-row sg"><span class="w-b" data-act="ghost-go" data-id="${s.id}"><span class="at-rest">${STAR()}</span><span class="at-hov">${GGO}</span></span><span class="w-t">0m 00s</span><span class="w-tx">${s.task ? `<span class="w-k">${s.task}</span>` : ''}<span class="w-d">${esc(sugDesc(s))}</span></span><span class="w-acts"><span class="w-x" data-act="ghost-eye" data-id="${s.id}">${EYE}</span></span></div>`);
+  return rows.length ? `<div class="w">${rows.join('')}</div>` : '<span class="nowg">виджета на столе нет</span>';
+}
+function renderAll() {
+  const open = S.sugs.filter((s) => s.state === 'open');
+  $('app').innerHTML = `<div class="app"><div class="hdr">${TABS}<span class="tmz">${chipHtml()}</span>${WC}</div>${islandHtml()}<div class="feed">${pickerHtml()}${open.map(sugHtml).join('')}${cardsHtml()}</div></div>`;
+  $('desk').innerHTML = deskHtml();
+  $('world').innerHTML = Object.entries(WORLD).map(([k, w]) => `<button class="tbb${w.can() ? '' : ' off'}" data-act="world" data-id="${k}">${w.label}</button>`).join('');
+  $('prefs').innerHTML =
+    `<button class="tbb${S.setCal ? ' on' : ''}" data-act="pref" data-id="cal">Suggested timers · Calendar events: ${S.setCal ? 'on' : 'off'}</button>` +
+    `<button class="tbb${S.setRev ? ' on' : ''}" data-act="pref" data-id="rev">Suggested timers · Code reviews: ${S.setRev ? 'on' : 'off'}</button>` +
+    `<span class="pv-h">кнопки живой подсказки</span>` +
+    `<button class="tbb${S.btnVar === 'pills' ? ' on' : ''}" data-act="pref" data-id="btn-pills">А · Timer и Log…</button>` +
+    `<button class="tbb${S.btnVar === 'ring' ? ' on' : ''}" data-act="pref" data-id="btn-ring">Б · кружок ▶</button>` +
+    `<button class="tbb${S.btnVar === 'menu' ? ' on' : ''}" data-act="pref" data-id="btn-menu">В · меню у Log</button>` +
+    `<span class="pv-h"></span>` +
+    `<button class="tbb${S.speed === 60 ? ' on' : ''}" data-act="pref" data-id="speed">время ×60</button>` +
+    `<button class="tbb" data-act="pref" data-id="reset">сброс</button>`;
+  $('evlog').innerHTML = S.logs.map((l) => `<div>${esc(l)}</div>`).join('');
+  $('clock').textContent = hm(S.clock) + ':' + pad(S.clock % 60);
+}
+function tick() {
+  S.clock += S.speed;
+  $('clock').textContent = hm(S.clock) + ':' + pad(S.clock % 60);
+  const t = running();
+  if (!t) return;
+  for (const n of document.querySelectorAll(`[data-t="${t.id}"]`)) n.textContent = fmtT(tsec(t));
+  const e = S.entries.find((x) => x.timerId === t.id);
+  if (!e) return;
+  for (const n of document.querySelectorAll(`[data-e="${e.id}"]`)) n.textContent = fmtT(entrySec(e));
+  const total = S.entries.filter((x) => x.task === e.task).reduce((a, x) => a + entrySec(x), 0);
+  for (const n of document.querySelectorAll(`[data-ct="${e.task}"]`)) n.textContent = fmtM(total);
+}
+
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-act]');
+  if (!el) { if ((S.picker && !ev.target.closest('[data-picker]')) || S.menu) { S.picker = null; S.menu = null; renderAll(); } return; }
+  const act = el.dataset.act;
+  if (act !== 'pick' && act !== 'ask-sug' && act !== 'ask-timer') S.picker = null;
+  if (act !== 'menu') S.menu = null;
+  ACT[act](el.dataset.id);
+  renderAll();
+});
+document.addEventListener('input', (ev) => {
+  const id = ev.target.dataset && ev.target.dataset.desc;
+  if (!id) return;
+  timer(id).desc = ev.target.value;
+  for (const n of document.querySelectorAll(`[data-d="${id}"]`)) n.textContent = ev.target.value;
+});
+
+init();
+renderAll();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
