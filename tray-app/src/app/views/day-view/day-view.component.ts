@@ -115,6 +115,8 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Output() suggestionAcceptSubmitted = new EventEmitter<SuggestionAcceptRequest>();
   @Output() suggestionDismissSubmitted = new EventEmitter<{ uid: string; date: string }>();
   @Output() suggestionMuteSubmitted = new EventEmitter<{ uid: string; date: string; days: number | null }>();
+  // Start timer in a suggestion's menu.
+  @Output() suggestionTimerSubmitted = new EventEmitter<{ uid: string; date: string }>();
   @Output() suggestionsModeSelected = new EventEmitter<SuggestionsMode>();
 
   @ViewChild('dayHead')
@@ -396,6 +398,10 @@ export class DayViewComponent implements OnChanges, OnDestroy {
 
   onSuggestionMute(s: Suggestion, days: number | null): void {
     this.suggestionMuteSubmitted.emit({ uid: s.uid, date: s.date, days });
+  }
+
+  onSuggestionTimer(s: Suggestion): void {
+    this.suggestionTimerSubmitted.emit({ uid: s.uid, date: s.date });
   }
 
   trackBySuggestion(_i: number, s: Suggestion): string {

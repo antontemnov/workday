@@ -221,8 +221,13 @@ export interface Suggestion {
   readonly start: string;          // ISO UTC
   readonly end: string;            // ISO UTC
   readonly plannedMinutes: number;
+  // Meeting: started, not ended yet. Review: its repo still sits on the
+  // reviewed branch.
   readonly ongoing: boolean;
   readonly upcoming?: boolean;     // not started yet — all-day reads only
+  // Ongoing today and its source's suggested timer is on: the row can be
+  // taken by a timer. Absent on daemons without suggested timers.
+  readonly suggestedTimer?: boolean;
   readonly isPrivate: boolean;
   readonly source: 'meeting' | 'review';
   readonly resolved?: SuggestionResolved;
@@ -256,6 +261,13 @@ export interface SuggestionAcceptRequest {
 
 export interface SuggestionAcceptResponse {
   readonly entry: ManualEntryResponse;
+  readonly day: SuggestionsResponse;
+}
+
+// The suggestion was taken by a timer: the day's timers after it (`entry` —
+// the record the timer feeds, absent when the suggestion had no ticket) and
+// the day's suggestions without the row.
+export interface SuggestionTimerResponse extends TimerActionResponse {
   readonly day: SuggestionsResponse;
 }
 
@@ -828,9 +840,20 @@ export interface SettingsConfigSubset {
   // daemons < 0.42.0 — the Settings row hides itself.
   readonly browser?: string | null;
   // Manual timer settings. Absent on daemons < 0.56.0.
-  readonly timer?: {
-    readonly desktopWidget: boolean;
-  };
+  readonly timer?: TimerSettings;
+}
+
+export interface TimerSettings {
+  readonly desktopWidget: boolean;
+  // Absent on daemons without suggested timers — the Settings rows hide.
+  readonly suggested?: SuggestedTimerSettings;
+}
+
+// Suggested timer, per suggestion source: a live suggestion stands among the
+// widget's timers and can be taken by a timer. Both off by default.
+export interface SuggestedTimerSettings {
+  readonly meeting: boolean;
+  readonly review: boolean;
 }
 
 // GET /api/settings returns config + metadata about which secrets are set

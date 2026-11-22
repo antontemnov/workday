@@ -2,11 +2,11 @@ import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit, ViewChil
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { TimerState } from '../models/workday.models';
+import { Suggestion, TimerState } from '../models/workday.models';
 import { WorkdayApiService } from '../services/workday-api.service';
 import { TimerWidgetComponent } from '../timer/timer-widget.component';
 import {
-  ticketGroups, widgetBindInput, WidgetGrab, WidgetLayout, WidgetPayload, widgetPayload, WidgetTickets,
+  ticketGroups, widgetBindInput, WidgetGrab, WidgetLayout, WidgetPayload, widgetPayload, widgetSuggestions, WidgetTickets,
 } from '../timer/timer-widget.util';
 
 const IS_TAURI: boolean = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -35,6 +35,7 @@ const PREVIEW_POLL_MS = 1000;
   template: `
     <app-timer-widget *ngIf="payload as p"
                       [timers]="p.timers"
+                      [suggested]="p.suggested ?? []"
                       [asOf]="p.asOf"
                       [birthId]="p.birthId ?? null"
                       (toggled)="onToggle($event)"
@@ -46,6 +47,8 @@ const PREVIEW_POLL_MS = 1000;
                       (ticketsRequested)="onTickets()"
                       (searchRequested)="onSearch($event)"
                       (bound)="onBind($event)"
+                      (suggestedStarted)="onSuggestedStart($event)"
+                      (suggestedHidden)="onSuggestedHide($event)"
                       (opened)="onOpen()"
                       (layoutChanged)="onLayout($event)"
                       (grabbed)="onGrab($event)"
@@ -60,6 +63,8 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
   private unlistenRefused: UnlistenFn | null = null;
   private unlistenTickets: UnlistenFn | null = null;
   private previewTimer: ReturnType<typeof setInterval> | null = null;
+  private previewSuggestions: readonly Suggestion[] = [];
+  private readonly previewHidden: Set<string> = new Set<string>();
   private shown: boolean = false;
 
   public constructor(private api: WorkdayApiService, private cdr: ChangeDetectorRef) {}
@@ -180,6 +185,20 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     else void this.previewBind(e.id, e.task);
   }
 
+  onSuggestedStart(uid: string): void {
+    if (IS_TAURI) this.send('widget_action', { action: { kind: 'suggested-start', uid } });
+    else void this.previewSuggestedStart(uid);
+  }
+
+  onSuggestedHide(uid: string): void {
+    if (IS_TAURI) {
+      this.send('widget_action', { action: { kind: 'suggested-hide', uid } });
+      return;
+    }
+    this.previewHidden.add(uid);
+    void this.previewPull();
+  }
+
   private onTicketsTold(told: WidgetTickets): void {
     if (told.kind === 'known') this.plate?.setKnown(told.groups);
     else this.plate?.setFound(told.query, told.tickets);
@@ -224,8 +243,16 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
   }
 
   private async previewPull(): Promise<void> {
-    const res = await this.api.getTimers();
-    if (res.ok && res.data) this.show(widgetPayload(res.data));
+    const [timers, suggestions] = await Promise.all([this.api.getTimers(), this.api.getSuggestions()]);
+    if (!timers.ok || !timers.data) return;
+    this.previewSuggestions = suggestions.data?.suggestions ?? [];
+    this.show(widgetPayload(timers.data, null, widgetSuggestions(this.previewSuggestions, this.previewHidden)));
+  }
+
+  private async previewSuggestedStart(uid: string): Promise<void> {
+    const suggestion = this.previewSuggestions.find(s => s.uid === uid);
+    if (suggestion) await this.api.startSuggestionTimer(uid, suggestion.date);
+    await this.previewPull();
   }
 
   // ?grow=down — the plate as it stands at the top of the screen.

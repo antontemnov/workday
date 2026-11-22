@@ -51,6 +51,7 @@ workday timer delete <#|id>            Remove a timer (one with a ticket takes i
 workday timer cancel <#|id>            Undo a New timer made by mistake
 workday timer hide <#|id>              Take a paused timer off the desktop widget
 workday timer widget [on|off]          Desktop widget switch
+workday timer suggested [meeting|review on|off]   Suggested timers switch, per suggestion source
 workday fav-add <task> <min> "<name>"  Add a favorite (reusable log template)
 workday fav-remove <#|id>              Remove a favorite
 workday fav-list                       List favorites
@@ -75,6 +76,7 @@ workday calendar                       Outlook ICS feed status (meeting suggesti
 workday calendar refresh               Re-fetch the calendar feed now
 workday suggestions [--date D] [--all] Pending meeting suggestions for a day (--all adds today's upcoming meetings)
 workday suggestions accept <#N|uid>    Log a suggested meeting (--task optional once learned)
+workday suggestions timer <#N|uid>     Take a live suggestion by a timer (rows marked [timer])
 workday suggestions dismiss <#N|uid>   Dismiss a suggestion (permanent per meeting+day)
 workday suggestions mute <#N|uid>      Mute a meeting series (--days N, default forever)
 workday suggestions muted              Manually muted series
@@ -107,7 +109,7 @@ workday daemon                         Run in foreground (live dashboard)
     "timesheetReminder": { "enabled": true, "notifyHour": 14 }
   },
   "calendar": { "enabled": true, "hidePrivate": false },
-  "timer": { "desktopWidget": true }
+  "timer": { "desktopWidget": true, "suggested": { "meeting": false, "review": false } }
 }
 ```
 
@@ -191,6 +193,20 @@ timer's description. Without one the time lands on the ticket's Development
 record that has no description — an ordinary record, shown as "no
 description": it can be named later in its card, in the timer island or on
 the widget, and a Development description taken away puts the time back.
+
+**Suggested timers** join the two: a suggestion that is live — a meeting
+until it ends, a review while its branch is checked out — can be taken by a
+timer instead of being logged with a planned number. Off by default, one
+switch per source: `timer.suggested.meeting` (Settings → Timer → Calendar
+events) and `timer.suggested.review` (Code reviews). While a switched-on
+suggestion is live it stands on the desktop widget below the timers — an
+amber star and a zero that does not tick; a click on it, `Start timer` in the
+suggestion's menu or `workday suggestions timer` takes it: with a known
+ticket that is a record with the suggestion's activity and description, no
+minutes yet and a running timer on it; without one, a running timer without a
+ticket named after the meeting. The suggestion leaves the day for good —
+removing the timer later does not bring it back. Nothing starts by itself,
+and a meeting that ends does not stop the timer.
 
 Config can also live next to `package.json` for local development — the daemon checks there first before falling back to `~/.workday/`.
 

@@ -55,6 +55,7 @@ import {
   SuggestionsResponse,
   SuggestionAcceptRequest,
   SuggestionAcceptResponse,
+  SuggestionTimerResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
   SetupResponse,
@@ -441,6 +442,10 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async dismissSuggestion(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {
     return this.post<SuggestionsResponse>('/api/suggestions/dismiss', { uid, date, ...(includeFuture ? { includeFuture } : {}) });
+  }
+
+  override async startSuggestionTimer(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionTimerResponse>> {
+    return this.post<SuggestionTimerResponse>('/api/suggestions/timer', { uid, date, ...(includeFuture ? { includeFuture } : {}) });
   }
 
   override async muteSuggestion(uid: string, date: string, days?: number, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>> {

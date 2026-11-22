@@ -1,6 +1,6 @@
 import type { ActivityEvaluator } from './activity-evaluator.js';
 import type { SessionTracker } from './session-tracker.js';
-import { bindTimer, computeDayEnd, resolveManualEntryTarget, type TimerBinding } from './daily-log.js';
+import { addTimerEntry, bindTimer, computeDayEnd, resolveManualEntryTarget, type TimerBinding } from './daily-log.js';
 import {
   cancelNewTimer,
   creditTimers,
@@ -47,6 +47,14 @@ export interface TimerDescription {
   readonly entry: ManualEntry | null;
   // The entry that lost its text and went into the ticket's manual added record.
   readonly absorbed: ManualEntry | null;
+}
+
+/** What a suggestion gives the timer that takes it. */
+export interface SuggestedTimerInput {
+  readonly task: string | null;   // null — the suggestion has no ticket
+  readonly activity: string;
+  readonly description: string;
+  readonly sourceRef: string;
 }
 
 /**
@@ -134,6 +142,29 @@ export class TimerTracker {
     const { timer } = startEntryTimer(this.log, entry.id, nowIso());
     this.takeLead();
     return timer;
+  }
+
+  /**
+   * A suggestion taken by a timer. With a ticket: a record of the suggestion
+   * with no minutes yet, and a timer running on it. Without one: a running
+   * timer without a ticket, named after the suggestion.
+   */
+  public startSuggested(input: SuggestedTimerInput): { timer: Timer; entry: ManualEntry | null } {
+    this.assertTracking();
+    if (input.task === null) {
+      const { timer } = newTimer(this.log, input.description, nowIso());
+      this.takeLead();
+      return { timer, entry: null };
+    }
+    const entry = addTimerEntry(this.log, {
+      task: input.task,
+      activity: input.activity,
+      description: input.description,
+      sourceRef: input.sourceRef,
+    });
+    const { timer } = startEntryTimer(this.log, entry.id, nowIso());
+    this.takeLead();
+    return { timer, entry };
   }
 
   /** Pause by hand — the given timer, or the live one. */

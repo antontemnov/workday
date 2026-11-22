@@ -72,6 +72,7 @@ import type {
   CalendarRefreshResponse,
   SuggestionsResponse,
   SuggestionAcceptResponse,
+  SuggestionTimerResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
   Suggestion,
@@ -1633,7 +1634,8 @@ const TIMER_USAGE = `Usage:
   workday timer delete <#|id>                     Remove a timer (one with a ticket takes its time out of the entry)
   workday timer cancel <#|id>                     Undo a New timer made by mistake
   workday timer hide <#|id>                       Take a paused timer off the desktop widget
-  workday timer widget [on|off]                   Desktop widget switch`;
+  workday timer widget [on|off]                   Desktop widget switch
+  workday timer suggested [meeting|review on|off] Suggested timers switch, per suggestion source`;
 
 function formatTimerTime(ms: number, withSeconds: boolean): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -1775,6 +1777,21 @@ async function handleTimer(args: string[]): Promise<void> {
       console.log(`Desktop widget: ${result.data.config.timer.desktopWidget ? 'on' : 'off'}`);
       return;
     }
+
+    case 'suggested': {
+      const [source, value] = rest;
+      let result: ApiResponse<SettingsResponse>;
+      if (source === undefined) {
+        result = await apiGet<SettingsResponse>('/api/settings');
+      } else {
+        if ((source !== 'meeting' && source !== 'review') || (value !== 'on' && value !== 'off')) break;
+        result = await apiPost<SettingsResponse>('/api/settings', { config: { timer: { suggested: { [source]: value === 'on' } } } });
+      }
+      if (!result.ok || !result.data) { console.log(result.error); return; }
+      const suggested = result.data.config.timer.suggested;
+      console.log(`Suggested timers: calendar events ${suggested.meeting ? 'on' : 'off'} · code reviews ${suggested.review ? 'on' : 'off'}`);
+      return;
+    }
   }
 
   console.log(TIMER_USAGE);
@@ -1834,7 +1851,10 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   }
   console.log(`Suggestions for ${day.date}:`);
   day.suggestions.forEach((s, i) => {
-    const flags = [s.ongoing ? 'ongoing' : null, s.upcoming ? 'upcoming' : null, s.isPrivate ? 'private' : null].filter(Boolean).join(' · ');
+    const flags = [
+      s.ongoing ? 'ongoing' : null, s.upcoming ? 'upcoming' : null, s.isPrivate ? 'private' : null,
+      s.suggestedTimer ? 'timer' : null,
+    ].filter(Boolean).join(' · ');
     const title = s.title || '(no title)';
     // Review rows: title = the checked-out branch, time = the checkout moment.
     const time = s.source === 'review'
@@ -1846,6 +1866,9 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   console.log('Accept:  workday suggestions accept <#N> [--task <KEY>] [--minutes N] [--desc "..."] [--activity X]  (resolved rows accept without --task)');
   console.log('Dismiss: workday suggestions dismiss <#N>');
   console.log('Mute:    workday suggestions mute <#N> [--days N]  (no --days = forever)');
+  if (day.suggestions.some(s => s.suggestedTimer)) {
+    console.log('Timer:   workday suggestions timer <#N>  (rows marked [timer]: the suggestion is taken by a running timer)');
+  }
 }
 
 function suggestionsPath(date: string | null, includeFuture: boolean): string {
@@ -1901,6 +1924,27 @@ async function handleSuggestions(args: string[]): Promise<void> {
     if (!result.ok || !result.data) { console.log(result.error); return; }
     const e = result.data.entry;
     console.log(`Logged ${e.task} on ${e.date}: ${e.minutes}m ${e.activity} — "${e.description}"`);
+    console.log(`Pending suggestions left: ${result.data.day.suggestions.length}`);
+    return;
+  }
+
+  if (sub === 'timer') {
+    const rest = args.slice(1);
+    const target = rest[0];
+    if (!target) {
+      console.log('Usage: workday suggestions timer <#N|uid>   (today, a row marked [timer])');
+      return;
+    }
+    const includeFuture = rest.includes('--all');
+    const resolved = await resolveSuggestionTarget(target, null, includeFuture);
+    if (!resolved) return;
+    const result = await apiPost<SuggestionTimerResponse>('/api/suggestions/timer', { ...resolved, includeFuture });
+    if (!result.ok || !result.data) { console.log(result.error); return; }
+    const e = result.data.entry;
+    console.log(e
+      ? `Timer started on ${e.task}: ${e.activity} — "${e.description}"`
+      : 'Timer started without a ticket');
+    printTimers(result.data);
     console.log(`Pending suggestions left: ${result.data.day.suggestions.length}`);
     return;
   }
@@ -1979,7 +2023,7 @@ async function handleSuggestions(args: string[]): Promise<void> {
   }
 
   if (sub !== undefined && sub !== '--date' && sub !== '--all') {
-    console.log('Usage: workday suggestions [--date D] [--all] | accept <#N|uid> [--task <KEY>] ... | dismiss <#N|uid> | mute <#N|uid> [--days N] | muted | unmute <uid|--all>');
+    console.log('Usage: workday suggestions [--date D] [--all] | accept <#N|uid> [--task <KEY>] ... | timer <#N|uid> | dismiss <#N|uid> | mute <#N|uid> [--days N] | muted | unmute <uid|--all>');
     return;
   }
 
@@ -2201,6 +2245,7 @@ Usage:
   workday timer cancel <#|id>                          Undo a New timer made by mistake
   workday timer hide <#|id>                            Take a paused timer off the desktop widget
   workday timer widget [on|off]                        Desktop widget switch
+  workday timer suggested [meeting|review on|off]      Suggested timers switch (a live suggestion can be taken by a timer)
   workday fav-add <task> <min> "<name>" [--activity T] Add a favorite (log template)
   workday fav-remove <#|id>                            Remove a favorite
   workday fav-list                                     List favorites
@@ -2228,6 +2273,7 @@ Usage:
   workday calendar refresh                             Re-fetch the calendar feed now
   workday suggestions [--date D] [--all]               Pending meeting suggestions for a day (→ learned ticket; --all adds today's upcoming meetings)
   workday suggestions accept <#N|uid> [--task <KEY>]   Log a suggested meeting (--minutes/--desc/--activity/--date)
+  workday suggestions timer <#N|uid>                   Take a live suggestion by a timer (rows marked [timer])
   workday suggestions dismiss <#N|uid> [--date D]      Dismiss a suggestion (per uid+date, permanent)
   workday suggestions mute <#N|uid> [--days N]         Mute a meeting series (no --days = forever)
   workday suggestions muted                            Manually muted series

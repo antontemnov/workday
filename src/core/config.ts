@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, renameSync, mkdirSync } from '
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { ActivityScopeConfig, AppConfig, CalendarConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimerConfig, TimesheetReminderConfig, TrackingConfig } from './types.js';
+import type { ActivityScopeConfig, AppConfig, CalendarConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, SuggestedTimerConfig, TimerConfig, TimesheetReminderConfig, TrackingConfig } from './types.js';
 import { SensitivityLevel } from './types.js';
 import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_NOTIFY_HOUR, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
@@ -92,6 +92,11 @@ export function validateConfig(config: AppConfig): void {
 
   if (!config.timer || typeof config.timer !== 'object' || typeof config.timer.desktopWidget !== 'boolean') {
     throw new Error('config.json: timer.desktopWidget must be a boolean');
+  }
+  const suggested = config.timer.suggested;
+  if (!suggested || typeof suggested !== 'object'
+    || typeof suggested.meeting !== 'boolean' || typeof suggested.review !== 'boolean') {
+    throw new Error('config.json: timer.suggested.meeting and timer.suggested.review must be booleans');
   }
 
   if (config.browser !== undefined && config.browser !== null && typeof config.browser !== 'string') {
@@ -315,8 +320,7 @@ export function loadConfig(): AppConfig {
     },
   };
 
-  const rawTimer = (raw.timer ?? {}) as Partial<TimerConfig>;
-  const timer: TimerConfig = { desktopWidget: rawTimer.desktopWidget ?? true };
+  const timer = mergeTimerConfig(undefined, raw.timer as TimerConfigPatch | undefined);
 
   const config = {
     ...raw,
@@ -457,12 +461,28 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
       enabled: patch.calendar?.enabled ?? current.calendar.enabled,
       hidePrivate: patch.calendar?.hidePrivate ?? current.calendar.hidePrivate,
     },
-    timer: {
-      desktopWidget: patch.timer?.desktopWidget ?? current.timer?.desktopWidget ?? true,
-    },
+    timer: mergeTimerConfig(current.timer, patch.timer),
   };
   validateConfig(merged);
   return merged;
+}
+
+// A patch names only what it changes; a config written before a setting
+// existed has no value for it either.
+export interface TimerConfigPatch {
+  readonly desktopWidget?: boolean;
+  readonly suggested?: Partial<SuggestedTimerConfig>;
+}
+
+/** Timer settings with a patch laid over them; what neither has takes its default. */
+export function mergeTimerConfig(current: TimerConfigPatch | undefined, patch: TimerConfigPatch | undefined): TimerConfig {
+  return {
+    desktopWidget: patch?.desktopWidget ?? current?.desktopWidget ?? true,
+    suggested: {
+      meeting: patch?.suggested?.meeting ?? current?.suggested?.meeting ?? false,
+      review: patch?.suggested?.review ?? current?.suggested?.review ?? false,
+    },
+  };
 }
 
 /**

@@ -49,6 +49,7 @@ import {
   SuggestionsResponse,
   SuggestionAcceptRequest,
   SuggestionAcceptResponse,
+  SuggestionTimerResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
   SetupResponse,
@@ -202,6 +203,10 @@ export abstract class WorkdayApiService {
   abstract getSuggestions(date?: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>>;
   abstract acceptSuggestion(request: SuggestionAcceptRequest): Promise<ApiResponse<SuggestionAcceptResponse>>;
   abstract dismissSuggestion(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>>;
+  // A live suggestion taken by a timer (Suggestion.suggestedTimer): with a
+  // ticket — a record with no minutes and a timer running on it; without —
+  // a running timer without one. The row leaves the day for good.
+  abstract startSuggestionTimer(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionTimerResponse>>;
   // Manual series mute (suggestion context menu) — days absent → forever.
   // Muted series feed the Settings→Calendar panel; unmute releases them.
   abstract muteSuggestion(uid: string, date: string, days?: number, includeFuture?: boolean): Promise<ApiResponse<SuggestionsResponse>>;

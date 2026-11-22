@@ -950,6 +950,42 @@ export function bindTimer(
   return { entry, timer: resident ?? timer };
 }
 
+/**
+ * A record made for a timer to feed: it has no minutes until the timer
+ * brings them. The sourceRef keeps it an entry of its own — bare Development
+ * included, it never lands on the ticket's manual added record. Throws on
+ * validation failure.
+ */
+export function addTimerEntry(
+  log: DailyLog,
+  input: { task: string; description: string; activity: string; sourceRef: string },
+): ManualEntry {
+  const task = input.task.trim();
+  if (!task) throw new Error('Task is required');
+  assertValidTask(task);
+
+  const activity = input.activity.trim();
+  if (!activity) throw new Error('Activity is required');
+  const description = input.description.trim();
+  if (!description && activity !== DEFAULT_ACTIVITY) {
+    throw new Error('Description is required (only Development may omit it)');
+  }
+
+  unsealForEdit(log);
+  if (!log.manualEntries) log.manualEntries = [];
+  const entry: ManualEntry = {
+    id: generateSessionId(),
+    task,
+    minutes: 0,
+    description,
+    activity,
+    createdAt: new Date().toISOString(),
+    sourceRef: input.sourceRef,
+  };
+  log.manualEntries.push(entry);
+  return entry;
+}
+
 /** Parse a date string + hour into a timestamp in the given timezone */
 function parseDateWithHour(date: string, hour: number, timezone: string): number {
   // Build a date at noon UTC, then adjust by finding the offset

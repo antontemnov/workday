@@ -428,6 +428,19 @@ export class GitTracker {
     return result;
   }
 
+  /**
+   * The branch every configured repo sits on as of its last poll (repo name
+   * → branch) — a review is ongoing while its repo is on the reviewed branch.
+   */
+  public getRepoBranches(): ReadonlyMap<string, string> {
+    const branches = new Map<string, string>();
+    for (const repoPath of this.config.repos) {
+      const branch = this.repoStates.get(repoPath)?.currentBranch;
+      if (branch) branches.set(basename(repoPath), branch);
+    }
+    return branches;
+  }
+
   /** Filter reflog entries to only those newer than last seen timestamp */
   private filterNewReflogEntries(entries: ReflogEntry[], state: RepoTracker): ReflogEntry[] {
     if (state.lastReflogTs === 0) {

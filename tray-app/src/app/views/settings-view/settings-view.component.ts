@@ -5,7 +5,7 @@ import { WorkdayApiService } from '../../services/workday-api.service';
 import { RepoPickerService } from '../../services/repo-picker.service';
 import {
   ActivityType, BrowserInfo, CalendarFeedStatus, MutedSuggestionSeries, ProjectRef, SensitivityLevel,
-  SettingsConfigSubset, SettingsResponse, TrackingConfig,
+  SettingsConfigSubset, SettingsResponse, SuggestedTimerSettings, TimerSettings, TrackingConfig,
 } from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
@@ -28,7 +28,8 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   // start = spawn + watchdog resume); settings just asks for it.
   @Output() stopDaemonRequested = new EventEmitter<void>();
   @Output() startDaemonRequested = new EventEmitter<void>();
-  // The desktop widget was switched: the shell shows or hides it at once.
+  // A timer setting was switched: the shell follows at once — the desktop
+  // widget shows or hides, the suggestions are read again.
   @Output() timerSettingsChanged = new EventEmitter<void>();
 
   // Supervisor state from the shell's watchdog — drives the Start/Stop toggle.
@@ -575,9 +576,28 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   toggleDesktopWidget(): void {
     const timer = this.settings?.config.timer;
     if (!timer) return;
-    const next = { desktopWidget: !timer.desktopWidget };
-    this.applyLocal(c => ({ ...c, timer: next }));
-    this.queue({ timer: next }, 'immediate');
+    this.saveTimer({ ...timer, desktopWidget: !timer.desktopWidget });
+  }
+
+  // Hidden on daemons without suggested timers.
+  get suggestedTimersVisible(): boolean {
+    return this.settings?.config.timer?.suggested !== undefined;
+  }
+
+  suggestedTimerOn(source: keyof SuggestedTimerSettings): boolean {
+    return this.settings?.config.timer?.suggested?.[source] === true;
+  }
+
+  toggleSuggestedTimer(source: keyof SuggestedTimerSettings): void {
+    const timer = this.settings?.config.timer;
+    if (!timer?.suggested) return;
+    this.saveTimer({ ...timer, suggested: { ...timer.suggested, [source]: !timer.suggested[source] } });
+  }
+
+  // The whole block goes out: a patch queued behind one in flight replaces it.
+  private saveTimer(timer: TimerSettings): void {
+    this.applyLocal(c => ({ ...c, timer }));
+    this.queue({ timer }, 'immediate');
   }
 
   // ─── Browser for links ("Open in browser" menu items) ───────────────────

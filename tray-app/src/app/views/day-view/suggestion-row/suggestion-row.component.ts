@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityType, DEVELOPMENT_ACTIVITY, ManualEntryInput, Suggestion } from '../../../models/workday.models';
 import { activityOptions } from '../activity.util';
-import { openCtxMenu } from '../ctx-menu.util';
+import { CTX_ICON } from '../ctx-icons.util';
+import { CtxMenuEntry, openCtxMenu } from '../ctx-menu.util';
 import { GLOBE_ICON, JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 
@@ -49,6 +50,10 @@ export interface SuggestionAcceptEvent {
  * (permanent per uid+date). Review rows (title = the colleague's branch)
  * are always resolved and carry no Mute — there is no series. Suggested
  * time never joins any totals.
+ *
+ * A row the daemon offers a timer for (suggestedTimer: ongoing, its source
+ * switched on) looks the same — only its menu has one more item, Start
+ * timer: the suggestion is taken by a running timer and leaves the feed.
  */
 @Component({
   selector: 'app-suggestion-row',
@@ -77,6 +82,8 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
   @Output() dismissed = new EventEmitter<void>();
   // Context-menu mute: days to mute the whole series for, null = forever.
   @Output() muteSubmitted = new EventEmitter<number | null>();
+  // Start timer in the menu — the suggestion is taken by a timer.
+  @Output() timerStarted = new EventEmitter<void>();
 
   editing = false;
   editTask = '';
@@ -179,13 +186,20 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
   }
 
   private openMainMenu(x: number, y: number): void {
-    openCtxMenu(x, y, [
+    openCtxMenu(x, y, this.mainMenuItems(x, y));
+  }
+
+  mainMenuItems(x: number, y: number): readonly CtxMenuEntry[] {
+    return [
       // The ladder speaks honestly here too: only a resolved row can promise
       // the form (Log…, = dblclick); an unresolved one offers step 1 —
       // picking the ticket.
       ...(this.suggestion.resolved
         ? [{ icon: '✓', label: 'Log…', action: (): void => this.accept() }]
         : [{ icon: '⌕', label: 'Pick ticket…', action: (): void => this.accept() }]),
+      ...(this.suggestion.suggestedTimer
+        ? [{ icon: CTX_ICON.play, label: 'Start timer', action: (): void => this.timerStarted.emit() }]
+        : []),
       { icon: '✕', label: 'Deny', action: () => this.dismiss() },
       // Review rows have no series to mute — dismiss closes the day.
       ...(this.suggestion.source === 'review'
@@ -196,7 +210,7 @@ export class SuggestionRowComponent implements OnChanges, OnDestroy {
         ? [{ icon: GLOBE_ICON, label: 'Open in browser',
              action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, this.suggestion.resolved!.task) }]
         : []),
-    ]);
+    ];
   }
 
   private openMuteMenu(x: number, y: number): void {

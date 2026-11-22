@@ -3,9 +3,11 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TimerState, TimerView } from '../models/workday.models';
+import { formatTicking } from './timer-clock.util';
 import { TimerTimeComponent } from './timer-time.component';
 import {
-  matchTickets, mergeFound, pickListEm, showsHours, WidgetGrab, WidgetLayout, widgetLayout, WidgetTicket, WidgetTicketGroup,
+  matchTickets, mergeFound, pickListEm, showsHours, WidgetGrab, WidgetLayout, widgetLayout, WidgetSuggestion, WidgetTicket,
+  WidgetTicketGroup,
 } from './timer-widget.util';
 
 // A press becomes a drag only past this — a click or a double click stays one.
@@ -60,6 +62,12 @@ interface Found {
  * a time: the block ends an edit as Enter does, another row's pencil shuts
  * the block, and the slot next to the glyph of the open block is dead — a
  * missed click neither hides nor edits the row.
+ *
+ * Below the timers stand the live suggestions that offer a timer — star
+ * rows: the feed's amber star, a zero that does not tick, the ticket when it
+ * is known and the description. Under the cursor the star becomes ▶, and the
+ * click takes the suggestion by a timer. The slot hides the row from the
+ * desktop only — the suggestion stays in the feed.
  */
 @Component({
   selector: 'app-timer-widget',
@@ -70,6 +78,8 @@ interface Found {
 })
 export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDestroy {
   @Input() timers: readonly TimerView[] = [];
+  // Live suggestions that offer a timer — star rows below the timers.
+  @Input() suggested: readonly WidgetSuggestion[] = [];
   @Input() asOf: string = '';
   // The timer New timer of the tray menu has just made — its row is born in the edit.
   @Input() birthId: string | null = null;
@@ -89,12 +99,17 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
   // A text for Jira, after a pause in the typing.
   @Output() searchRequested: EventEmitter<string> = new EventEmitter<string>();
   @Output() bound: EventEmitter<{ id: string; task: string }> = new EventEmitter<{ id: string; task: string }>();
+  // ▶ of a star row (the suggestion's uid), and its row taken off the desktop.
+  @Output() suggestedStarted: EventEmitter<string> = new EventEmitter<string>();
+  @Output() suggestedHidden: EventEmitter<string> = new EventEmitter<string>();
   // The plate's size for its rows changed — the window follows.
   @Output() layoutChanged: EventEmitter<WidgetLayout> = new EventEmitter<WidgetLayout>();
   @Output() grabbed: EventEmitter<WidgetGrab> = new EventEmitter<WidgetGrab>();
   @Output() dragged: EventEmitter<void> = new EventEmitter<void>();
   @Output() released: EventEmitter<void> = new EventEmitter<void>();
 
+  // What a star row shows in the time column: nothing is counted yet.
+  readonly zeroTime: string = formatTicking(0);
   // Some time is past the hour: the time column is three characters wider.
   hours: boolean = false;
   dragging: boolean = false;
@@ -160,7 +175,11 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
 
   // With the ticket block the plate is a list, whatever the number of rows.
   get list(): boolean {
-    return this.timers.length > 1 || this.pickId !== null;
+    return this.rowCount > 1 || this.pickId !== null;
+  }
+
+  private get rowCount(): number {
+    return this.timers.length + this.suggested.length;
   }
 
   get timeColumn(): string {
@@ -174,6 +193,10 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
 
   trackById(_index: number, timer: TimerView): string {
     return timer.id;
+  }
+
+  trackByUid(_index: number, suggestion: WidgetSuggestion): string {
+    return suggestion.uid;
   }
 
   isRunning(timer: TimerView): boolean { return timer.state === TimerState.Running; }
@@ -197,7 +220,7 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
 
   private measure(): void {
     this.hours = showsHours(this.timers, Date.parse(this.asOf), Date.now());
-    const next = widgetLayout(this.timers.length, this.hours, this.editingId !== null, {
+    const next = widgetLayout(this.rowCount, this.hours, this.editingId !== null, {
       pickListEm: this.pickId !== null ? this.listEm : null,
       tagged: this.timers.some(timer => this.isPickable(timer)),
     });

@@ -20,6 +20,7 @@ import {
   Suggestion,
   SuggestionsResponse,
   SuggestionAcceptRequest,
+  SuggestionTimerResponse,
   TimerActionResponse,
   TimerBindInput,
   TimerState,
@@ -459,6 +460,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (raiseFloor) this.suggestionsFloor = this.suggestionsTicket;
     this.suggestionsDay = day;
     if (this.allDaySuggestions) this.allDayShown = true;
+    this.syncWidget();
   }
 
   // Every switch outdates the reads sent before it. Hidden drops the rows and
@@ -474,6 +476,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.suggestionsFloor = this.suggestionsTicket;
     if (mode === 'hidden') {
       this.suggestionsDay = null;
+      this.syncWidget();
       return;
     }
     if (mode === 'started' && previous === 'all' && this.suggestionsDay) {
@@ -663,20 +666,31 @@ export class AppComponent implements OnInit, OnDestroy {
   // The day's timers, wherever they came from — the desktop widget follows.
   private showTimers(timers: TimersResponse | null): void {
     this.timers = timers;
-    this.timerWidget.sync(timers);
+    this.syncWidget();
     this.syncTrayStatus();
+  }
+
+  // The widget shows the timers and, below them, the suggestions that offer one.
+  private syncWidget(): void {
+    this.timerWidget.sync(this.timers, this.daySuggestions);
   }
 
   // The desktop widget: ⏸ / ▶ of a row, the row off the desktop, a
   // description typed on the plate, Esc on a timer born there by mistake,
-  // and its ticket block — the tickets the app knows, a ticket picked there.
+  // its ticket block — the tickets the app knows, a ticket picked there —
+  // and ▶ of a star row: its suggestion is taken by a timer.
   private onWidgetAction(action: WidgetAction): void {
     if (action.kind === 'tickets') {
       this.timerWidget.tellKnown(this.data, this.favorites);
       return;
     }
-    // Jira is asked by the widget's service itself.
-    if (action.kind === 'search') return;
+    // Jira is asked, and a star row is hidden, by the widget's service itself.
+    if (action.kind === 'search' || action.kind === 'suggested-hide') return;
+    if (action.kind === 'suggested-start') {
+      const offered = this.daySuggestions.find(s => s.uid === action.uid && s.suggestedTimer === true);
+      if (offered) this.submitSuggestionTimer({ uid: offered.uid, date: offered.date });
+      return;
+    }
     if (action.kind === 'bind') {
       const loose = this.timers?.timers.find(t => t.id === action.id && t.entryId === null);
       if (loose) void this.runTimerAction(() => this.api.bindTimer(loose.id, widgetBindInput(action.task, loose)));
@@ -724,7 +738,7 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.runTimerAction(() => this.api.newTimer(), data => {
       if (data.timerId === null) return;
       this.timerWidget.announceBirth(data.timerId);
-      this.timerWidget.sync(data);
+      this.syncWidget();
     });
   }
 
@@ -878,6 +892,18 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.runAction(async () => {
       const res = await this.api.dismissSuggestion(e.uid, e.date, this.allDaySuggestions);
       if (res.ok && res.data) this.applySuggestionsDay(res.data);
+      return res;
+    });
+  }
+
+  // Start timer in a suggestion's menu, ▶ of its star row on the widget: the
+  // suggestion is taken by a running timer and leaves the feed for good. The
+  // answer carries the day's suggestions and its timers — both are shown at
+  // once, so the widget never has the star row next to the new timer.
+  submitSuggestionTimer(e: { uid: string; date: string }): void {
+    void this.runTimerAction(async (): Promise<ApiResponse<SuggestionTimerResponse>> => {
+      const res = await this.api.startSuggestionTimer(e.uid, e.date, this.allDaySuggestions);
+      if (res.ok && res.data) this.applySuggestionsDay(res.data.day);
       return res;
     });
   }

@@ -68,6 +68,8 @@ import {
   DEFAULT_REVIEW_MINUTES,
   REVIEW_ACTIVITY,
   REVIEW_DESCRIPTION,
+  SUGGESTION_SOURCE_MEETING,
+  SUGGESTION_SOURCE_REVIEW,
   JIRA_SEARCH_MIN_QUERY_LENGTH,
   TEST_NOTIFICATION_DEFAULT_MINUTES,
   TEST_NOTIFICATION_MAX_MINUTES,
@@ -136,6 +138,7 @@ import type {
   CalendarRefreshResponse,
   SuggestionsResponse,
   SuggestionAcceptResponse,
+  SuggestionTimerResponse,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
   BrowsersResponse,
@@ -194,6 +197,8 @@ export interface HttpServerDeps {
   readonly applyUpdate: () => Promise<UpdateApplyResponse>;
   /** Repos on a task branch as of the last poll — watching-card synthesis. */
   readonly getWatchingRepos: () => readonly WatchingRepo[];
+  /** Branch of every tracked repo as of the last poll (repo name → branch). */
+  readonly getRepoBranches: () => ReadonlyMap<string, string>;
   /** Desktop-notification rules + delivery state (lazy-evaluated on GET). */
   readonly notificationCenter: NotificationCenter;
   /** Outlook ICS feed collector (meeting suggestions groundwork). */
@@ -485,6 +490,10 @@ export class HttpServer {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleSuggestionAccept(body));
       }
+      if (method === 'POST' && path === '/api/suggestions/timer') {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleSuggestionTimer(body));
+      }
       if (method === 'POST' && path === '/api/suggestions/dismiss') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, this.handleSuggestionDismiss(body));
@@ -573,6 +582,9 @@ export class HttpServer {
   }
 
   private computeSuggestions(date: string, includeFuture: boolean = false): SuggestionsResponse {
+    // Only today's rows are ongoing; a closed month starts no timer.
+    const live = date === this.deps.getCurrentDate();
+    const timersOffered = live && !this.deps.sessionTracker.isMonthLocked();
     const day = deriveSuggestions({
       date,
       instances: this.deps.calendarCollector.getInstances(),
@@ -582,6 +594,8 @@ export class HttpServer {
       nowMs: Date.now(),
       associations: loadMeetingAssociations(),
       includeFuture,
+      ...(live ? { repoBranches: this.deps.getRepoBranches() } : {}),
+      ...(timersOffered ? { suggestedTimers: this.deps.config.timer.suggested } : {}),
     });
     const keys = day.suggestions.flatMap(s => [
       ...(s.resolved ? [s.resolved.task] : []),
@@ -685,6 +699,65 @@ export class HttpServer {
       return {
         ok: true,
         data: { entry: this.toEntryData(entry, log), day: this.computeSuggestions(date, body.includeFuture === true) },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * An ongoing suggestion taken by a timer — the widget's star row, Start
+   * timer in the row's menu. With a ticket: a record with the suggestion's
+   * activity and description and no minutes, fed by a new running timer.
+   * Without one: a running timer without a ticket, named after the meeting.
+   * Either way the row is dismissed as well: whatever happens to the timer
+   * later (Remove included), the suggestion does not come back.
+   */
+  private async handleSuggestionTimer(body: Record<string, unknown>): Promise<ApiResponse<SuggestionTimerResponse>> {
+    const uid = typeof body.uid === 'string' ? body.uid : '';
+    if (!uid) return { ok: false, error: 'Missing uid' };
+    const today = this.deps.getCurrentDate();
+    const date = typeof body.date === 'string' ? body.date : today;
+    if (date !== today) return { ok: false, error: 'A suggested timer starts on the current day only' };
+
+    const suggestion = this.computeSuggestions(today).suggestions.find(s => s.uid === uid);
+    if (!suggestion) return { ok: false, error: 'Suggestion not found for this uid and date' };
+    if (!suggestion.suggestedTimer) {
+      return { ok: false, error: 'No suggested timer: the suggestion is not ongoing, or its suggested timer is switched off' };
+    }
+
+    const resolved = suggestion.resolved;
+    // Same defaults as the accept form; a private title never prefills.
+    const description = resolved?.description ?? (suggestion.isPrivate ? '' : suggestion.title);
+    if (resolved) {
+      const refusal = await this.editRefusal(null, true);
+      if (refusal) return { ok: false, error: refusal };
+      const jiraError = await this.validateTaskInJira(resolved.task);
+      if (jiraError) return jiraError;
+    }
+
+    try {
+      const { timer, entry } = this.deps.timerTracker.startSuggested({
+        task: resolved?.task ?? null,
+        activity: resolved?.activity ?? DEFAULT_MANUAL_ACTIVITY,
+        description,
+        sourceRef: suggestion.source === SUGGESTION_SOURCE_REVIEW ? reviewSourceRef(uid, today) : meetingSourceRef(uid, today),
+      });
+      dismissSuggestionKey(uid, today);
+      if (resolved && suggestion.source === SUGGESTION_SOURCE_MEETING) {
+        learnFromAccept({
+          uid, title: suggestion.title, isPrivate: suggestion.isPrivate,
+          task: resolved.task, activity: resolved.activity, description,
+        });
+      }
+      return {
+        ok: true,
+        data: {
+          ...this.deps.timerTracker.getTimers(),
+          timerId: timer.id,
+          ...(entry ? { entry: this.toEntryData(entry, this.deps.sessionTracker.getDailyLog()) } : {}),
+          day: this.computeSuggestions(today, body.includeFuture === true),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -1628,7 +1701,7 @@ export class HttpServer {
           activities: { values: [...c.activities.values] },
           calendar: { enabled: c.calendar.enabled, hidePrivate: c.calendar.hidePrivate },
           browser: c.browser ?? null,
-          timer: { desktopWidget: c.timer.desktopWidget },
+          timer: { desktopWidget: c.timer.desktopWidget, suggested: { ...c.timer.suggested } },
         },
         secretsMeta: { jiraConfigured, tempoConfigured, calendarConfigured },
         daemonVersion: this.deps.getVersion(),

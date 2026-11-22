@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from '
 import { spawn } from 'node:child_process';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig, ensureConfigFiles } from './core/config.js';
+import { loadConfig, loadSecrets, getDataDir, computeWorkingDate, writeConfig, ensureConfigFiles, mergeTimerConfig } from './core/config.js';
 import { readDailyLog, writeDailyLog, collapseAddedEntries } from './core/daily-log.js';
 import { cutDayAt, isEmptyCut, monthDates, type DayCut } from './core/month-lock.js';
 import { runStartupJanitor } from './core/janitor.js';
@@ -150,6 +150,7 @@ export class Daemon {
       checkUpdate: () => this.updateManager.checkForUpdate(),
       applyUpdate: () => this.applyUpdateNow(),
       getWatchingRepos: () => this.gitTracker.getWatchingRepos(),
+      getRepoBranches: () => this.gitTracker.getRepoBranches(),
       notificationCenter: this.notificationCenter,
       calendarCollector: this.calendarCollector,
       onSecretsUpdated: () => { this.secrets = loadSecrets(); },
@@ -284,11 +285,10 @@ export class Daemon {
       (this.config as { browser?: string | null }).browser = patch.browser;
     }
 
-    // timer — the tray reads the widget switch with the timers.
+    // timer — read live: the widget switch with the timers, the suggested
+    // timers with the suggestions.
     if (patch.timer) {
-      (this.config as { timer: TimerConfig }).timer = {
-        desktopWidget: patch.timer.desktopWidget ?? this.config.timer.desktopWidget,
-      };
+      (this.config as { timer: TimerConfig }).timer = mergeTimerConfig(this.config.timer, patch.timer);
     }
   }
 

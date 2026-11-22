@@ -1,7 +1,9 @@
 /**
  * Unit tests for suggestions: the derived pipeline (entry filters, covered
  * via sourceRef, dismissed, pushed-day silencing), review rows from
- * colleague-branch checkout facts, the dismissed-only state store with its
+ * colleague-branch checkout facts, ongoing rows and the suggested timer they
+ * offer (a meeting until its end, a review while its branch is checked out,
+ * per-source switch), the dismissed-only state store with its
  * prune rules, and the sourceRef plumbing through manual-entry creation
  * (including the accept→delete→revive invariant).
  *
@@ -29,7 +31,7 @@ import {
 import { addEntryOnDate, deleteEntryOnDate } from '../../src/core/day-edit.js';
 import { SessionTracker } from '../../src/core/session-tracker.js';
 import { isDayMaterialized } from '../../src/core/day-lifecycle.js';
-import { SensitivityLevel, SuggestionsDayState, type AppConfig, type CalendarInstance, type DailyLog, type ForeignCheckout, type PollResult } from '../../src/core/types.js';
+import { SensitivityLevel, SuggestionsDayState, type AppConfig, type CalendarInstance, type DailyLog, type ForeignCheckout, type PollResult, type SuggestedTimerConfig } from '../../src/core/types.js';
 
 let passed = 0;
 let failed = 0;
@@ -82,7 +84,11 @@ function makeInstance(over: Partial<CalendarInstance> = {}): CalendarInstance {
 
 function derive(
   instances: CalendarInstance[],
-  over: Partial<{ log: DailyLog | null; dismissedKeys: Set<string>; hidePrivate: boolean; nowMs: number; date: string; associations: MeetingAssociations; includeFuture: boolean }> = {},
+  over: Partial<{
+    log: DailyLog | null; dismissedKeys: Set<string>; hidePrivate: boolean; nowMs: number; date: string;
+    associations: MeetingAssociations; includeFuture: boolean;
+    repoBranches: ReadonlyMap<string, string>; suggestedTimers: SuggestedTimerConfig;
+  }> = {},
 ): ReturnType<typeof deriveSuggestions> {
   return deriveSuggestions({
     date: over.date ?? DATE,
@@ -93,6 +99,8 @@ function derive(
     nowMs: over.nowMs ?? NOW,
     associations: over.associations,
     includeFuture: over.includeFuture,
+    repoBranches: over.repoBranches,
+    suggestedTimers: over.suggestedTimers,
   });
 }
 
@@ -370,6 +378,66 @@ test('review accept → covered; delete the entry → the row revives', () => {
   deleteEntryOnDate(acceptDate, entry.id);
   const revived = derive([], { date: acceptDate, log: readDailyLog(acceptDate) });
   assert.deepEqual(revived.suggestions.map(s => s.uid), ['ATL-77']);
+});
+
+console.log('');
+console.log('Ongoing rows and the suggested timer');
+
+const DURING = Date.parse('2026-07-16T10:15:00.000Z'); // inside the fixture meeting
+const BOTH_ON: SuggestedTimerConfig = { meeting: true, review: true };
+const onBranch = (branch: string, repo: string = 'web-frontend'): ReadonlyMap<string, string> => new Map([[repo, branch]]);
+
+test('a review is ongoing while its repo sits on the reviewed branch', () => {
+  const log = logWithReviewCheckout();
+  assert.equal(derive([], { log, repoBranches: onBranch('ATL-123-ivanov-feature') }).suggestions[0].ongoing, true);
+  assert.equal(derive([], { log, repoBranches: onBranch('ATL-1-own-work') }).suggestions[0].ongoing, false, 'the repo left the branch');
+  assert.equal(derive([], { log, repoBranches: onBranch('ATL-123-ivanov-feature', 'api-backend') }).suggestions[0].ongoing, false, 'another repo on a branch of that name');
+  assert.equal(derive([], { log, repoBranches: new Map() }).suggestions[0].ongoing, false, 'the repo was not polled yet');
+  assert.equal(derive([], { log }).suggestions[0].ongoing, false, 'a past day knows no branches');
+});
+
+test('an ongoing meeting offers a timer only when calendar events are switched on', () => {
+  const instances = [makeInstance()];
+  assert.equal(derive(instances, { nowMs: DURING, suggestedTimers: BOTH_ON }).suggestions[0].suggestedTimer, true);
+  assert.equal(derive(instances, { nowMs: DURING, suggestedTimers: { meeting: true, review: false } }).suggestions[0].suggestedTimer, true);
+  const off = derive(instances, { nowMs: DURING, suggestedTimers: { meeting: false, review: true } }).suggestions[0];
+  assert.equal(off.ongoing, true);
+  assert.equal('suggestedTimer' in off, false, 'switched off: the row is as it was');
+  assert.equal('suggestedTimer' in derive(instances, { nowMs: DURING }).suggestions[0], false, 'no settings given');
+});
+
+test('a meeting that ended, or has not started, offers no timer', () => {
+  const ended = derive([makeInstance()], { suggestedTimers: BOTH_ON }).suggestions[0];
+  assert.equal(ended.ongoing, false);
+  assert.equal('suggestedTimer' in ended, false);
+  const early = Date.parse('2026-07-16T09:00:00.000Z');
+  const upcoming = derive([makeInstance()], { nowMs: early, includeFuture: true, suggestedTimers: BOTH_ON }).suggestions[0];
+  assert.equal(upcoming.upcoming, true);
+  assert.equal('suggestedTimer' in upcoming, false);
+});
+
+test('an ongoing review offers a timer only when code reviews are switched on', () => {
+  const log = logWithReviewCheckout();
+  const standing = onBranch('ATL-123-ivanov-feature');
+  assert.equal(derive([], { log, repoBranches: standing, suggestedTimers: BOTH_ON }).suggestions[0].suggestedTimer, true);
+  const off = derive([], { log, repoBranches: standing, suggestedTimers: { meeting: true, review: false } }).suggestions[0];
+  assert.equal(off.ongoing, true);
+  assert.equal('suggestedTimer' in off, false);
+  const left = derive([], { log, repoBranches: onBranch('ATL-1-own-work'), suggestedTimers: BOTH_ON }).suggestions[0];
+  assert.equal('suggestedTimer' in left, false, 'the branch is gone — so is the timer');
+});
+
+test('each source follows its own switch', () => {
+  const day = derive([makeInstance()], {
+    nowMs: DURING,
+    log: logWithReviewCheckout({ ts: Date.parse('2026-07-16T10:05:00.000Z') }),
+    repoBranches: onBranch('ATL-123-ivanov-feature'),
+    suggestedTimers: { meeting: false, review: true },
+  });
+  assert.deepEqual(day.suggestions.map(s => [s.source, s.ongoing, s.suggestedTimer === true]), [
+    ['meeting', true, false],
+    ['review', true, true],
+  ]);
 });
 
 console.log('');

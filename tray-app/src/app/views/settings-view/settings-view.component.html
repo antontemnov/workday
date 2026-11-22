@@ -397,9 +397,10 @@
       </div>
     </div>
 
-    <!-- Timer: the desktop widget is on by default. Hidden on daemons < 0.56.0. -->
+    <!-- Timer: the desktop widget is on by default, the suggested timers are
+         off. Hidden on daemons < 0.56.0. -->
     <div class="settings-section" *ngIf="timerBlockVisible">
-      <h3>Timer <span class="sub">desktop widget</span></h3>
+      <h3>Timer <span class="sub">{{ suggestedTimersVisible ? 'desktop widget · suggested timers' : 'desktop widget' }}</span></h3>
       <div class="opt-row">
         <div class="left">
           <span class="name">Desktop widget</span>
@@ -409,6 +410,26 @@
           <div class="toggle" [class.on]="desktopWidgetOn" (click)="toggleDesktopWidget()"></div>
         </div>
       </div>
+      <ng-container *ngIf="suggestedTimersVisible">
+        <div class="opt-row">
+          <div class="left">
+            <span class="name">Calendar events</span>
+            <span class="hint">Offer a timer for a meeting while it is on.</span>
+          </div>
+          <div class="right">
+            <div class="toggle" [class.on]="suggestedTimerOn('meeting')" (click)="toggleSuggestedTimer('meeting')"></div>
+          </div>
+        </div>
+        <div class="opt-row">
+          <div class="left">
+            <span class="name">Code reviews</span>
+            <span class="hint">Offer a timer for a review while its branch is checked out.</span>
+          </div>
+          <div class="right">
+            <div class="toggle" [class.on]="suggestedTimerOn('review')" (click)="toggleSuggestedTimer('review')"></div>
+          </div>
+        </div>
+      </ng-container>
     </div>
   </ng-container>
 

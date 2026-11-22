@@ -68,6 +68,8 @@ import {
   SuggestionsDayState,
   SuggestionAcceptRequest,
   SuggestionAcceptResponse,
+  SuggestionTimerResponse,
+  SuggestedTimerSettings,
   SuggestionsMutedResponse,
   SuggestionUnmuteResponse,
   MutedSuggestionSeries,
@@ -121,6 +123,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
   private mockCalendar = { enabled: true, hidePrivate: false };
   private mockBrowser: string | null = null;
   private mockDesktopWidget: boolean = true;
+  // Off like the daemon's default; ?suggested=1 starts with both switched on.
+  private mockSuggestedTimers: SuggestedTimerSettings = typeof location !== 'undefined' && location.search.includes('suggested=1')
+    ? { meeting: true, review: true }
+    : { meeting: false, review: false };
   private mockCalendarConfigured = true;
   private mockCalendarFetchedAt = new Date(Date.now() - 25 * 60_000).toISOString();
 
@@ -218,10 +224,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
       start: this.iso(11, 0), end: this.iso(11, 30), plannedMinutes: 30,
       ongoing: false, isPrivate: true, source: 'meeting' },
     // Review suggestion: a colleague-branch checkout — always resolved,
-    // static 30m default, title = the branch.
+    // static 30m default, title = the branch; its branch is still checked out.
     { uid: 'ATL-4512', date: this.today, title: 'ATL-4512-ivanov-payment-retry',
       start: this.iso(11, 40), end: this.iso(11, 40), plannedMinutes: 30,
-      ongoing: false, isPrivate: false, source: 'review',
+      ongoing: true, isPrivate: false, source: 'review',
       resolved: { task: 'ATL-4512', activity: 'CodeReview', description: 'code review', level: 'source' } },
     { uid: 'ev-postmortem', date: this.today, title: 'Incident postmortem',
       start: this.iso(10, 0), end: this.iso(10, 45), plannedMinutes: 45,
@@ -1228,6 +1234,44 @@ export class MockWorkdayApiService extends WorkdayApiService {
     return { ok: true, data: this.suggestionsDay(date, includeFuture) };
   }
 
+  // A suggestion taken by a timer, as the daemon does it: a record with no
+  // minutes and a running timer on it, or a running timer without a ticket;
+  // the row is dismissed either way.
+  async startSuggestionTimer(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionTimerResponse>> {
+    await delay(150);
+    const suggestion = this.suggestionsDay(date, includeFuture).suggestions.find(s => s.uid === uid);
+    if (!suggestion) return { ok: false, error: 'Suggestion not found for this uid and date' };
+    if (!suggestion.suggestedTimer) {
+      return { ok: false, error: 'No suggested timer: the suggestion is not ongoing, or its suggested timer is switched off' };
+    }
+    const description = suggestion.resolved?.description ?? (suggestion.isPrivate ? '' : suggestion.title);
+    let entry: ManualEntry | null = null;
+    if (suggestion.resolved) {
+      entry = {
+        id: `m${this.mockEntrySeq++}`,
+        task: suggestion.resolved.task,
+        minutes: 0,
+        description,
+        activity: suggestion.resolved.activity,
+        createdAt: this.nextCreatedAt(),
+        sourceRef: suggestionSourceRef(suggestion),
+      };
+      this.mockManualEntries.push(entry);
+    }
+    const timer = this.newMockTimer(entry ? entry.id : null, entry ? '' : description);
+    this.runMockTimer(timer);
+    this.mockDismissed.add(`${uid}:${date}`);
+    return {
+      ok: true,
+      data: {
+        ...this.mockTimersData(),
+        timerId: timer.id,
+        ...(entry ? { entry: this.toEntryResponse(entry) } : {}),
+        day: this.suggestionsDay(date, includeFuture),
+      },
+    };
+  }
+
   private suggestionsDay(date: string, includeFuture?: boolean): SuggestionsResponse {
     const suggestions = this.mockMeetings.filter(s =>
       s.date === date
@@ -1236,6 +1280,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       && !this.mockDismissed.has(`${s.uid}:${s.date}`)
       && !this.mockMuted.some(m => m.uid === s.uid)
       && !this.mockManualEntries.some(e => e.sourceRef === suggestionSourceRef(s)))
+      .map(s => (s.ongoing && this.mockSuggestedTimers[s.source] ? { ...s, suggestedTimer: true } : s))
       // The daemon's order — the feed places rows exactly as they arrive.
       .sort((a, b) => a.start.localeCompare(b.start) || a.uid.localeCompare(b.uid));
     return {
@@ -1296,7 +1341,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           activities: { values: [...this.mockActivityValues] },
           calendar: { ...this.mockCalendar },
           browser: this.mockBrowser,
-          timer: { desktopWidget: this.mockDesktopWidget },
+          timer: { desktopWidget: this.mockDesktopWidget, suggested: { ...this.mockSuggestedTimers } },
         },
         secretsMeta: {
           jiraConfigured: this.mockJiraConfigured,
@@ -1329,7 +1374,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
         };
       }
       if (patch.config.browser !== undefined) this.mockBrowser = patch.config.browser ?? null;
-      if (patch.config.timer) this.mockDesktopWidget = patch.config.timer.desktopWidget;
+      if (patch.config.timer) {
+        this.mockDesktopWidget = patch.config.timer.desktopWidget;
+        this.mockSuggestedTimers = { ...this.mockSuggestedTimers, ...patch.config.timer.suggested };
+      }
     }
     if (patch.secrets) {
       if (patch.secrets.jiraEmail !== undefined) this.mockJiraEmail = patch.secrets.jiraEmail;

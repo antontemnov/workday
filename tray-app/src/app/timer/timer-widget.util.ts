@@ -1,5 +1,5 @@
 import {
-  DEVELOPMENT_ACTIVITY, Favorite, JiraSearchHit, TimerBindInput, TimerView, TimersResponse, TodayResponse,
+  DEVELOPMENT_ACTIVITY, Favorite, JiraSearchHit, Suggestion, TimerBindInput, TimerView, TimersResponse, TodayResponse,
 } from '../models/workday.models';
 import { formatTimerTime } from './timer-clock.util';
 
@@ -35,10 +35,22 @@ export const TICKETS_FAVORITES = 'favorites';
 
 export const WIDGET_GEOMETRY_PREF = 'workday.timerWidget.geometry';
 
+/**
+ * A live suggestion on the widget — a star row below the timers: not a timer
+ * yet, a click on it takes the suggestion by one.
+ */
+export interface WidgetSuggestion {
+  readonly uid: string;
+  readonly task: string | null;
+  readonly description: string;
+}
+
 /** What the main window hands the widget: the rows on the desktop and the moment of their numbers. */
 export interface WidgetPayload {
   readonly asOf: string;
   readonly timers: readonly TimerView[];
+  // Live suggestions that offer a timer; absent when there is none.
+  readonly suggested?: readonly WidgetSuggestion[];
   // The timer New timer of the tray menu has just made: its row is born in the edit.
   readonly birthId?: string;
 }
@@ -80,9 +92,13 @@ export type WidgetTickets =
 // text typed on the plate; cancel — Esc on a born timer's empty description;
 // born — the born row is in the edit (the main window stops telling of it);
 // tickets — the ticket block opens and asks what the app knows; search — a
-// text for Jira; bind — a ticket picked for a timer without one.
+// text for Jira; bind — a ticket picked for a timer without one;
+// suggested-start — ▶ of a star row: its suggestion is taken by a timer;
+// suggested-hide — the star row off the desktop.
 export type WidgetAction =
   | { readonly kind: 'toggle' | 'hide' | 'cancel' | 'born'; readonly id: string }
+  | { readonly kind: 'suggested-start'; readonly uid: string }
+  | { readonly kind: 'suggested-hide'; readonly uid: string }
   | { readonly kind: 'describe'; readonly id: string; readonly description: string }
   | { readonly kind: 'tickets' }
   | { readonly kind: 'search'; readonly query: string }
@@ -105,13 +121,32 @@ export function widgetRows(timers: readonly TimerView[]): readonly TimerView[] {
   return timers.filter(t => !t.hidden);
 }
 
-/** The widget exists while the setting is on and there is a row to show. */
-export function widgetPayload(response: TimersResponse | null, birthId: string | null = null): WidgetPayload | null {
+/**
+ * The suggestions that stand on the widget as star rows, in the feed's order
+ * (by start): the ones the daemon offers a timer for, minus those taken off
+ * the desktop. A row reads as the record would: the ticket when it is known,
+ * and the description the record gets — the meeting's title by default.
+ */
+export function widgetSuggestions(
+  suggestions: readonly Suggestion[],
+  hidden: ReadonlySet<string> = new Set<string>(),
+): readonly WidgetSuggestion[] {
+  return suggestions
+    .filter(s => s.suggestedTimer === true && !hidden.has(s.uid))
+    .map(s => ({ uid: s.uid, task: s.resolved?.task ?? null, description: s.resolved?.description ?? s.title }));
+}
+
+/** The widget exists while the setting is on and there is a row to show — a timer's or a suggestion's. */
+export function widgetPayload(
+  response: TimersResponse | null,
+  birthId: string | null = null,
+  suggested: readonly WidgetSuggestion[] = [],
+): WidgetPayload | null {
   if (!response || !response.desktopWidget) return null;
   const rows = widgetRows(response.timers);
-  if (rows.length === 0) return null;
+  if (rows.length === 0 && suggested.length === 0) return null;
   const born = birthId !== null && rows.some(t => t.id === birthId);
-  return { asOf: response.asOf, timers: rows, ...(born ? { birthId } : {}) };
+  return { asOf: response.asOf, timers: rows, ...(suggested.length > 0 ? { suggested } : {}), ...(born ? { birthId } : {}) };
 }
 
 /** A time past the hour is three characters longer: the column and the least width follow. */

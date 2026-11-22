@@ -13,6 +13,10 @@
 // ticket comes from the branch name) with static defaults — no duration
 // tracking, no learning, no mute (there are no series).
 //
+// A row is ongoing while its event lasts: a meeting until DTEND, a review
+// while its repo sits on the reviewed branch. An ongoing row whose source
+// has the suggested timer switched on can be taken by a timer.
+//
 // A day pushed to Tempo at least once (log.pushedAt) is silenced for good:
 // its dismissed keys are pruned at that point, so resurrecting on
 // pushed→outdated drift would revive explicit rejections. Every calendar
@@ -31,6 +35,7 @@ import {
   SuggestionsDayState,
   type CalendarInstance,
   type DailyLog,
+  type SuggestedTimerConfig,
   type Suggestion,
   type SuggestionsResponse,
 } from './types.js';
@@ -66,6 +71,12 @@ export interface DeriveSuggestionsInput {
   readonly associations?: MeetingAssociations;
   // All-day mode: meetings that have not started yet get rows too.
   readonly includeFuture?: boolean;
+  // Today only — the branch every tracked repo sits on (repo name → branch),
+  // as of its last poll. Absent → no review is ongoing.
+  readonly repoBranches?: ReadonlyMap<string, string>;
+  // Today only — the sources whose suggested timer is on. Absent → no row
+  // offers a timer.
+  readonly suggestedTimers?: SuggestedTimerConfig;
 }
 
 export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsResponse {
@@ -97,6 +108,7 @@ export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsRes
     const resolution = input.associations
       ? resolveSuggestion(instance.uid, instance.title, instance.isPrivate === true, input.associations)
       : {};
+    const ongoing = !upcoming && nowMs < endMs;
     suggestions.push({
       uid: instance.uid,
       date: instance.date,
@@ -104,8 +116,9 @@ export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsRes
       start: instance.start,
       end: instance.end,
       plannedMinutes: Math.max(1, Math.round((endMs - startMs) / MS_PER_MINUTE)),
-      ongoing: !upcoming && nowMs < endMs,
+      ongoing,
       ...(upcoming ? { upcoming: true } : {}),
+      ...(ongoing && input.suggestedTimers?.meeting ? { suggestedTimer: true } : {}),
       isPrivate: instance.isPrivate === true,
       source: SUGGESTION_SOURCE_MEETING,
       ...resolution,
@@ -117,6 +130,7 @@ export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsRes
     if (covered.has(reviewSourceRef(rc.task, date))) continue;
     if (input.dismissedKeys.has(suggestionKey(rc.task, date))) continue;
     const startIso = new Date(rc.ts).toISOString();
+    const ongoing = input.repoBranches?.get(rc.repo) === rc.branch;
     suggestions.push({
       uid: rc.task,
       date,
@@ -124,7 +138,8 @@ export function deriveSuggestions(input: DeriveSuggestionsInput): SuggestionsRes
       start: startIso,
       end: startIso,
       plannedMinutes: DEFAULT_REVIEW_MINUTES,
-      ongoing: false,
+      ongoing,
+      ...(ongoing && input.suggestedTimers?.review ? { suggestedTimer: true } : {}),
       isPrivate: false,
       source: SUGGESTION_SOURCE_REVIEW,
       resolved: { task: rc.task, activity: REVIEW_ACTIVITY, description: REVIEW_DESCRIPTION, level: 'source' },

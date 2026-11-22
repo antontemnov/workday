@@ -3,7 +3,9 @@
  * SessionTracker and the real ActivityEvaluator. One counts at a time — a
  * session or a timer; a start or a pause by hand settles the lead at once,
  * without a tick; the tick moves the timer between running and waiting.
- * Plus the daemon's life: downtime, day boundary, closed month, the janitor.
+ * A suggestion taken by a timer: a record with no minutes and a running
+ * timer on it, or a timer without a ticket. Plus the daemon's life:
+ * downtime, day boundary, closed month, the janitor.
  *
  * Run: npx tsx tests/unit/timer-lifecycle.test.ts
  * Exit code: 0 = all pass, 1 = any fail
@@ -51,7 +53,7 @@ const config: AppConfig = {
   activities: { values: [] },
   notifications: { timesheetReminder: { enabled: true, notifyHour: 17 } },
   calendar: { enabled: false, hidePrivate: false },
-  timer: { desktopWidget: true },
+  timer: { desktopWidget: true, suggested: { meeting: false, review: false } },
 } as unknown as AppConfig;
 
 const MINUTE = 60_000;
@@ -385,6 +387,114 @@ test('the last timer deleted takes the day\'s file with it', () => {
   assert.equal(existsSync(getDailyLogPath('2026-06-20')), false);
 });
 
+console.log('A suggestion taken by a timer');
+
+const MEETING_REF = 'meeting:ev-planning:2026-11-22';
+
+test('with a ticket: a record with no minutes yet, and a timer running on it', () => {
+  const r = codingRig();
+  const { timer, entry } = r.timers.startSuggested({
+    task: 'ATL-7', activity: 'Meeting', description: 'Sprint planning', sourceRef: MEETING_REF,
+  });
+  assert.ok(entry);
+  assert.equal(entry.minutes, 0);
+  assert.equal(entry.task, 'ATL-7');
+  assert.equal(entry.activity, 'Meeting');
+  assert.equal(entry.description, 'Sprint planning');
+  assert.equal(entry.sourceRef, MEETING_REF);
+  assert.equal(timer.entryId, entry.id);
+  assert.equal(timer.state, TimerState.Running);
+  assert.equal(pauseOf(r), PauseSource.Superseded, 'the session yields at once');
+  const view = r.timers.getTimers();
+  assert.equal(view.counting, 'timer');
+  assert.equal(view.timers[0].task, 'ATL-7');
+  assert.equal(view.timers[0].handMinutes, 0);
+  const onDisk = readDailyLog(TODAY)!;
+  assert.equal(onDisk.manualEntries[0].sourceRef, MEETING_REF);
+  assert.equal(onDisk.timers?.[0].entryId, entry.id);
+});
+
+test('the record grows from the timer alone', () => {
+  const r = rig();
+  const { timer, entry } = r.timers.startSuggested({
+    task: 'ATL-7', activity: 'Meeting', description: 'Sprint planning', sourceRef: MEETING_REF,
+  });
+  timer.spans[0] = { from: ago(25), to: null };
+  const view = r.timers.getTimers().timers[0];
+  assert.equal(entry?.minutes, 25);
+  assert.equal(view.handMinutes, 0);
+  assert.equal(Math.floor(view.shareMs / MINUTE), 25);
+});
+
+test('without a ticket: a running timer without one, named after the meeting', () => {
+  const r = rig();
+  const { timer, entry } = r.timers.startSuggested({
+    task: null, activity: 'Other', description: ' Sync with the platform team ', sourceRef: MEETING_REF,
+  });
+  assert.equal(entry, null);
+  assert.equal(timer.entryId, null);
+  assert.equal(timer.description, 'Sync with the platform team');
+  assert.equal(timer.state, TimerState.Running);
+  assert.equal(r.log.manualEntries.length, 0);
+});
+
+test('one timer runs: the live one goes on pause', () => {
+  const r = rig();
+  const first = r.timers.create('deploy');
+  const { timer } = r.timers.startSuggested({
+    task: 'ATL-7', activity: 'Meeting', description: 'Sprint planning', sourceRef: MEETING_REF,
+  });
+  assert.equal(first.state, TimerState.Paused);
+  assert.equal(timer.state, TimerState.Running);
+});
+
+test('a record that cannot be made leaves the day as it was', () => {
+  const r = rig();
+  assert.throws(() => r.timers.startSuggested({
+    task: 'ATL-7', activity: 'Meeting', description: '  ', sourceRef: MEETING_REF,
+  }), /Description is required/);
+  assert.throws(() => r.timers.startSuggested({
+    task: 'not a key', activity: 'Meeting', description: 'x', sourceRef: MEETING_REF,
+  }));
+  assert.equal(r.log.manualEntries.length, 0);
+  assert.equal(r.timers.getTimers().timers.length, 0);
+});
+
+test('Development without a description stays a record of its own, off manual added', () => {
+  const r = rig();
+  addManualEntry(r.log, { task: 'ATL-7', minutes: 20, description: '', activity: 'Development' }, config);
+  const { entry } = r.timers.startSuggested({
+    task: 'ATL-7', activity: 'Development', description: '', sourceRef: MEETING_REF,
+  });
+  assert.equal(entry?.added, undefined);
+  assert.equal(r.log.manualEntries.length, 2);
+  assert.equal(r.timers.getTimers().timers[0].added, false);
+});
+
+test('Remove takes the record that grew from the suggestion\'s timer along', () => {
+  const r = rig([], '2026-06-22');
+  const { timer, entry } = r.timers.startSuggested({
+    task: 'ATL-7', activity: 'Meeting', description: 'Sprint planning', sourceRef: MEETING_REF,
+  });
+  timer.spans[0] = { from: ago(12), to: null };
+  const removal = r.timers.delete(timer.id);
+  assert.equal(removal.deletedEntry?.id, entry?.id);
+  assert.equal(r.log.manualEntries.length, 0);
+  assert.equal(r.timers.getTimers().timers.length, 0);
+});
+
+test('a closed month: a suggestion starts no timer', () => {
+  const r = rig();
+  r.sessions.setMonthLock(true);
+  assert.throws(() => r.timers.startSuggested({
+    task: 'ATL-7', activity: 'Meeting', description: 'Sprint planning', sourceRef: MEETING_REF,
+  }), /month is closed/);
+  assert.throws(() => r.timers.startSuggested({
+    task: null, activity: 'Other', description: 'Sync', sourceRef: MEETING_REF,
+  }), /month is closed/);
+  assert.equal(r.log.manualEntries.length, 0);
+});
+
 console.log('The daemon\'s life');
 
 test('downtime is cut where the timer was last seen; it goes on by itself', () => {
@@ -466,6 +576,22 @@ test('the desktop widget switch defaults to on and survives other patches', () =
   const legacy = { ...config } as unknown as { timer?: unknown };
   delete legacy.timer;
   assert.equal(buildPatchedConfig(legacy as unknown as AppConfig, { boundaryHour: 5 }).timer.desktopWidget, true);
+});
+
+test('suggested timers default to off, switch one by one and survive other patches', () => {
+  const legacy = { ...config, timer: { desktopWidget: false } } as unknown as AppConfig;
+  const loaded = buildPatchedConfig(legacy, {});
+  assert.deepEqual(loaded.timer, { desktopWidget: false, suggested: { meeting: false, review: false } });
+
+  const patchOf = (timer: unknown): Partial<AppConfig> => ({ timer } as unknown as Partial<AppConfig>);
+  const meetings = buildPatchedConfig(loaded, patchOf({ suggested: { meeting: true } }));
+  assert.deepEqual(meetings.timer, { desktopWidget: false, suggested: { meeting: true, review: false } });
+  const both = buildPatchedConfig(meetings, patchOf({ suggested: { review: true } }));
+  assert.deepEqual(both.timer.suggested, { meeting: true, review: true });
+  const widget = buildPatchedConfig(both, patchOf({ desktopWidget: true }));
+  assert.deepEqual(widget.timer, { desktopWidget: true, suggested: { meeting: true, review: true } });
+  assert.deepEqual(buildPatchedConfig(widget, { boundaryHour: 5 }).timer, widget.timer);
+  assert.throws(() => buildPatchedConfig(widget, patchOf({ suggested: { meeting: 'yes' } })), /timer\.suggested/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

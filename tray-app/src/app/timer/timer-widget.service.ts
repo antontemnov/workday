@@ -1,12 +1,13 @@
 import { Injectable, NgZone } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { ApiErrorCode, Favorite, JiraSearchHit, TimersResponse, TodayResponse } from '../models/workday.models';
+import { ApiErrorCode, Favorite, JiraSearchHit, Suggestion, TimersResponse, TodayResponse } from '../models/workday.models';
 import { loadStoredInProgress, sameHits, storeInProgress } from '../services/jira-in-progress.store';
 import { readPref, writePref } from '../services/tray-prefs.store';
 import { WorkdayApiService } from '../services/workday-api.service';
 import {
-  parseWidgetGeometry, ticketGroups, WIDGET_GEOMETRY_PREF, WidgetAction, WidgetGeometry, widgetPayload, WidgetTickets,
+  parseWidgetGeometry, ticketGroups, WIDGET_GEOMETRY_PREF, WidgetAction, WidgetGeometry, widgetPayload, widgetSuggestions,
+  WidgetTickets,
 } from './timer-widget.util';
 
 const IS_TAURI: boolean = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -22,6 +23,11 @@ const BIRTH_TTL_MS = 15_000;
  * window writes that file. A timer made by New timer of the tray menu is
  * told to the widget until it takes the row into the edit.
  *
+ * A live suggestion that offers a timer stands on the widget as a star row
+ * below the timers, and is a row to show by itself. The eye on it takes the
+ * row off the desktop for as long as the suggestion offers its timer — that
+ * is kept here, in memory, and the suggestion stays in the feed.
+ *
  * The widget's ticket block has no data of its own either: the tickets the
  * app knows are told from here (what is at hand goes at once, Jira's
  * in-progress list is read again and told when it changed), and a text typed
@@ -32,6 +38,11 @@ export class TimerWidgetService {
   private sent: string | null = null;
   private unlisteners: UnlistenFn[] = [];
   private birth: { readonly id: string; readonly untilMs: number } | null = null;
+  // The day as it was last synced — a star row hidden by the eye syncs again from it.
+  private timers: TimersResponse | null = null;
+  private suggestions: readonly Suggestion[] = [];
+  // Star rows the eye took off the desktop (suggestion uids).
+  private readonly hiddenSuggested: Set<string> = new Set<string>();
   // Jira in progress: the last list, kept across runs — as the Log cloud keeps it.
   private inProgress: readonly JiraSearchHit[] = loadStoredInProgress();
   private inProgressSeq: number = 0;
@@ -50,6 +61,11 @@ export class TimerWidgetService {
           }
           if (e.payload.kind === 'search') {
             void this.search(e.payload.query);
+            return;
+          }
+          if (e.payload.kind === 'suggested-hide') {
+            this.hiddenSuggested.add(e.payload.uid);
+            this.sync(this.timers, this.suggestions);
             return;
           }
           this.zone.run(() => onAction(e.payload));
@@ -109,11 +125,17 @@ export class TimerWidgetService {
     void invoke('widget_tickets', { message }).catch(() => { /* the widget is gone */ });
   }
 
-  /** The day's timers as the main window knows them now — the widget follows. */
-  sync(timers: TimersResponse | null): void {
+  /** The day's timers and suggestions as the main window knows them now — the widget follows. */
+  sync(timers: TimersResponse | null, suggestions: readonly Suggestion[] = []): void {
     if (!IS_TAURI) return;
+    this.timers = timers;
+    this.suggestions = suggestions;
     if (this.birth && Date.now() > this.birth.untilMs) this.birth = null;
-    const payload = widgetPayload(timers, this.birth?.id ?? null);
+    // A row is hidden while its suggestion offers a timer; once it does not, the eye is forgotten.
+    for (const uid of [...this.hiddenSuggested]) {
+      if (!suggestions.some(s => s.uid === uid && s.suggestedTimer === true)) this.hiddenSuggested.delete(uid);
+    }
+    const payload = widgetPayload(timers, this.birth?.id ?? null, widgetSuggestions(suggestions, this.hiddenSuggested));
     const key = JSON.stringify(payload);
     if (key === this.sent) return;
     this.sent = key;
