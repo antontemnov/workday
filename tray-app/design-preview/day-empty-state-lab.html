@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Пустой день — варианты</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px 32px 48px;
+    background: #11111b;
+    color: #cdd6f4;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
+  .sub { color: #a6adc8; max-width: 1060px; line-height: 1.5; margin: 0 0 26px; }
+  .sub b { color: #cdd6f4; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(500px, 500px));
+    gap: 34px 36px;
+  }
+  .cell figcaption { margin-top: 10px; line-height: 1.45; color: #a6adc8; max-width: 500px; }
+  .cell figcaption b { color: #cdd6f4; }
+  .cell figcaption .tag {
+    display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 4px;
+    background: #313244; color: #cdd6f4; font-weight: 600;
+  }
+  .cell.pick figcaption .tag { background: #cba6f7; color: #1e1e2e; }
+  .cell.was figcaption .tag { background: #45475a; color: #a6adc8; }
+  figure { margin: 0; }
+
+  /* ─── window, 1:1 with the tray (500 wide, cropped in height) ─── */
+  .win {
+    width: 500px;
+    height: 330px;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    color: #d4d4d4;
+    background: #1e1e2e;
+    box-shadow: 0 0 0 1px #313244, 0 18px 40px -12px rgba(0, 0, 0, 0.6);
+    user-select: none;
+  }
+  .tb {
+    display: flex; align-items: center; height: 29px; padding-left: 12px; flex-shrink: 0;
+    background: #181825; border-bottom: 1px solid #26263a;
+  }
+  .tb .views { display: inline-flex; gap: 10px; }
+  .tb .views svg { width: 15px; height: 15px; stroke: #585b70; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .tb .views svg.on { stroke: #cdd6f4; }
+  .tb .timer {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 5px; height: 19px; padding: 0 10px;
+    border-radius: 999px; border: 1px solid rgba(205, 214, 244, 0.16); background: rgba(205, 214, 244, 0.04);
+    color: #bac2de; font: 700 10.5px 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  }
+  .tb .timer svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; }
+  .tb .wc { display: inline-flex; align-self: stretch; margin-left: 8px; }
+  .tb .wc span { width: 40px; display: grid; place-items: center; }
+  .tb .wc svg { width: 10px; height: 10px; stroke: #7f849c; stroke-width: 1.2; fill: none; stroke-linecap: round; }
+
+  .view {
+    position: relative; flex: 1; min-height: 0; padding: 0 12px 12px;
+    background:
+      radial-gradient(420px 300px at 88% -60px, rgba(203, 166, 247, 0.07), transparent 65%),
+      radial-gradient(560px 400px at -80px 38%, rgba(148, 226, 213, 0.05), transparent 65%),
+      radial-gradient(480px 360px at 112% 82%, rgba(166, 227, 161, 0.055), transparent 65%);
+  }
+  .day-head {
+    position: relative; display: flex; align-items: baseline; gap: 8px; margin: 0 -12px;
+    padding: 17px 14px 9px;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,0.05), rgba(255,255,255,0.012) 30%, transparent 46%, rgba(255,255,255,0.03) 68%, transparent 84%),
+      radial-gradient(60% 160% at 86% -30%, rgba(203,166,247,0.07), transparent 65%),
+      radial-gradient(55% 110% at 6% 30%, rgba(148,226,213,0.05), transparent 58%),
+      rgba(30, 30, 46, 0.62);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 6px), transparent);
+            mask-image: linear-gradient(180deg, #000 calc(100% - 6px), transparent);
+  }
+  .day-week {
+    position: absolute; left: 14px; top: 9.8px; line-height: 1; font-size: 8.5px; font-weight: 500;
+    letter-spacing: 2.4px; text-transform: uppercase; color: #a6adc8;
+  }
+  .day-date { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.2px; line-height: 1.2; color: #cdd6f4; }
+  .day-total { line-height: 22.2px; font-size: 17px; width: 0; margin-left: -8px; }
+  .day-total::after { content: '\200B'; }
+  .g-btn {
+    margin-left: auto; align-self: center; position: relative; top: -6px;
+    display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 12px; border-radius: 999px;
+    font: 700 11px 'SF Mono', 'Cascadia Code', Consolas, monospace;
+    color: rgba(203, 166, 247, 0.85);
+    text-shadow: 0 0 3px rgba(203, 166, 247, 0.42), 0 1px 1px rgba(0,0,0,0.25);
+    background: linear-gradient(180deg, rgba(203,166,247,0.16), rgba(203,166,247,0.06) 55%, rgba(203,166,247,0.1));
+    box-shadow:
+      inset 0 1px 1px rgba(255,255,255,0.2), inset 0 -4px 6px -4px rgba(4,6,16,0.42),
+      inset 7px 0 9px -7px rgba(4,6,16,0.55), inset -7px 0 9px -7px rgba(4,6,16,0.55),
+      inset 0 0 6px -1px rgba(203,166,247,0.22), inset 0 0 0 1px rgba(203,166,247,0.28),
+      0 2px 5px -1px rgba(0,0,0,0.45), 0 3px 9px -3px rgba(203,166,247,0.22);
+  }
+  .g-btn svg { width: 10px; height: 10px; }
+  .g-btn svg path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+  /* ─── as-is: radar ─── */
+  .waiting { display: flex; flex-direction: column; align-items: center; padding: 42px 0 34px; }
+  .radar { position: relative; width: 48px; height: 48px; margin-bottom: 14px; }
+  .radar .ring { position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(148, 226, 213, 0.28); }
+  .radar svg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  .waiting-title { font-size: 13px; font-weight: 600; color: #bac2de; margin-bottom: 4px; }
+  .waiting-sub { font-size: 11px; color: #6c7086; }
+
+  /* ─── B / D: one quiet line, centred ─── */
+  .quiet {
+    position: absolute; left: 0; right: 0; top: 46%;
+    text-align: center; font-size: 11.5px; color: #6c7086; letter-spacing: 0.2px;
+  }
+  .quiet.soft { color: #7f849c; }
+  .quiet small { display: block; margin-top: 5px; font-size: 10.5px; color: #585b70; }
+
+  /* ─── C: line where the feed starts, left edge = the date ─── */
+  .feed-line { padding: 14px 2px 0; font-size: 11px; color: #6c7086; letter-spacing: 0.2px; }
+
+  /* ─── E: the daemon, asleep ─── */
+  .mascot { position: absolute; left: 0; right: 0; top: 30%; display: flex; flex-direction: column; align-items: center; }
+  .mascot svg {
+    width: 46px; height: 38px; opacity: 0.2;
+    -webkit-mask-image: linear-gradient(180deg, #000 62%, transparent);
+            mask-image: linear-gradient(180deg, #000 62%, transparent);
+  }
+  .mascot .txt { margin-top: 10px; font-size: 11px; color: #6c7086; letter-spacing: 0.2px; }
+
+  /* ─── F: empty plate where the first record lands ─── */
+  .ghost {
+    margin-top: 10px; height: 46px; border-radius: 10px;
+    background: rgba(205, 214, 244, 0.022);
+    box-shadow: inset 0 0 0 1px rgba(205, 214, 244, 0.045);
+    display: flex; align-items: center; padding: 0 14px;
+    font-size: 11px; color: #6c7086; letter-spacing: 0.2px;
+  }
+  .ghost + .ghost { margin-top: 6px; opacity: 0.55; }
+  .ghost + .ghost + .ghost { opacity: 0.25; }
+</style>
+</head>
+<body>
+
+<h1>Пустой день — чем заменить «Tracking is on»</h1>
+<p class="sub">Окно 1 в 1 с треем (500 px, обрезано по высоте), день пустой. Сейчас там радар в бирюзе и два утверждения — что трекинг включён и что его запустит активность в репо; первое не всегда правда, второе не про приложение целиком (есть Log, таймер, подсказки). Все варианты ниже <b>ничего не утверждают о системе</b>, без анимации и без бирюзы (бирюза = suggested). Когда в дне появляется хоть что-то — блок исчезает, как сейчас.</p>
+
+<div class="grid">
+
+  <!-- 0. as-is -->
+  <figure class="cell was">
+    <div class="win">
+      <div class="tb">
+        <span class="views">
+          <svg viewBox="0 0 16 16" class="on"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+          <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+        </span>
+        <span class="timer"><svg viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="4.4"/><path d="M6 4.3v2.4M4.6 1.2h2.8"/></svg>Timer</span>
+        <span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>
+      </div>
+      <div class="view">
+        <div class="day-head"><span class="day-week">Sunday</span><h1 class="day-date">22 November 2026</h1><span class="g-btn"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</span><span class="day-total"></span></div>
+        <div class="waiting">
+          <div class="radar"><span class="ring"></span>
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="3.2" fill="#94e2d5"/><path d="M11 3.5 a7.5 7.5 0 0 1 7.5 7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/><path d="M11 18.5 a7.5 7.5 0 0 1 -7.5 -7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/></svg>
+          </div>
+          <div class="waiting-title">Tracking is on</div>
+          <div class="waiting-sub">any activity in your repos starts tracking</div>
+        </div>
+      </div>
+    </div>
+    <figcaption><span class="tag">сейчас</span>Радар + «Tracking is on» + подсказка про репо.</figcaption>
+  </figure>
+
+  <!-- A. nothing -->
+  <figure class="cell">
+    <div class="win">
+      <div class="tb">
+        <span class="views">
+          <svg viewBox="0 0 16 16" class="on"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+          <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+        </span>
+        <span class="timer"><svg viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="4.4"/><path d="M6 4.3v2.4M4.6 1.2h2.8"/></svg>Timer</span>
+        <span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>
+      </div>
+      <div class="view">
+        <div class="day-head"><span class="day-week">Sunday</span><h1 class="day-date">22 November 2026</h1><span class="g-btn"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</span><span class="day-total"></span></div>
+      </div>
+    </div>
+    <figcaption><span class="tag">A · ничего</span>Блок убран целиком. Пустая лента и есть пустой день — шапка с датой и + Log уже говорят, где начать.</figcaption>
+  </figure>
+
+  <!-- B. one quiet line -->
+  <figure class="cell">
+    <div class="win">
+      <div class="tb">
+        <span class="views">
+          <svg viewBox="0 0 16 16" class="on"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+          <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+        </span>
+        <span class="timer"><svg viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="4.4"/><path d="M6 4.3v2.4M4.6 1.2h2.8"/></svg>Timer</span>
+        <span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>
+      </div>
+      <div class="view">
+        <div class="day-head"><span class="day-week">Sunday</span><h1 class="day-date">22 November 2026</h1><span class="g-btn"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</span><span class="day-total"></span></div>
+        <div class="quiet">Nothing yet today</div>
+      </div>
+    </div>
+    <figcaption><span class="tag">B · одна строка</span>«Nothing yet today» — одна тусклая строка по центру, без иконки. Правда в любой ситуации: про день, а не про демона.</figcaption>
+  </figure>
+
+  <!-- C. feed-native line -->
+  <figure class="cell">
+    <div class="win">
+      <div class="tb">
+        <span class="views">
+          <svg viewBox="0 0 16 16" class="on"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+          <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+        </span>
+        <span class="timer"><svg viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="4.4"/><path d="M6 4.3v2.4M4.6 1.2h2.8"/></svg>Timer</span>
+        <span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>
+      </div>
+      <div class="view">
+        <div class="day-head"><span class="day-week">Sunday</span><h1 class="day-date">22 November 2026</h1><span class="g-btn"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</span><span class="day-total"></span></div>
+        <div class="feed-line">Nothing yet today</div>
+      </div>
+    </div>
+    <figcaption><span class="tag">C · строка в ленте</span>Та же строка, но там, где начнётся лента: под шапкой, левый край = край даты. Читается как пустая лента, а не как экран-заглушка.</figcaption>
+  </figure>
+
+  <!-- D. weekday-aware -->
+  <figure class="cell pick">
+    <div class="win">
+      <div class="tb">
+        <span class="views">
+          <svg viewBox="0 0 16 16" class="on"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+          <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+        </span>
+        <span class="timer"><svg viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="4.4"/><path d="M6 4.3v2.4M4.6 1.2h2.8"/></svg>Timer</span>
+        <span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>
+      </div>
+      <div class="view">
+        <div class="day-head"><span class="day-week">Sunday</span><h1 class="day-date">22 November 2026</h1><span class="g-btn"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</span><span class="day-total"></span></div>
+        <div class="quiet soft">Quiet Sunday<small>nothing tracked or logged</small></div>
+      </div>
+    </div>
+    <figcaption><span class="tag">D · по дню ★</span>Выходной: «Quiet Sunday» / «Quiet Saturday». Будний день: «Nothing yet today». Вторая строчка мельче и тише — что именно пусто. Одно слово меняется от даты — живо, но без движения.</figcaption>
+  </figure>
+
+  <!-- E. the daemon asleep -->
+  <figure class="cell">
+    <div class="win">
+      <div class="tb">
+        <span class="views">
+          <svg viewBox="0 0 16 16" class="on"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+          <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+        </span>
+        <span class="timer"><svg viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="4.4"/><path d="M6 4.3v2.4M4.6 1.2h2.8"/></svg>Timer</span>
+        <span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>
+      </div>
+      <div class="view">
+        <div class="day-head"><span class="day-week">Sunday</span><h1 class="day-date">22 November 2026</h1><span class="g-btn"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</span><span class="day-total"></span></div>
+        <div class="mascot">
+          <svg viewBox="26 70 204 168" aria-hidden="true">
+            <path d="M 62 148 Q 50 104 66 74 Q 86 96 96 124 Z" fill="#b7bdda"/>
+            <path d="M 194 148 Q 206 104 190 74 Q 170 96 160 124 Z" fill="#b7bdda"/>
+            <path d="M 30 254 C 32 206 38 180 48 162 C 58 122 90 112 128 112 C 166 112 198 122 208 162 C 218 180 224 206 226 254 Z" fill="#b7bdda"/>
+            <ellipse cx="95" cy="182" rx="20" ry="28" fill="#1e1e2e" transform="rotate(-6 95 182)"/>
+            <ellipse cx="161" cy="182" rx="20" ry="28" fill="#1e1e2e" transform="rotate(6 161 182)"/>
+            <path d="M 123.5 219 Q 128 217 132.5 219 Q 131.75 224.5 128 227.25 Q 124.25 224.5 123.5 219 Z" fill="#1e1e2e"/>
+          </svg>
+          <div class="txt">Nothing yet today</div>
+        </div>
+      </div>
+    </div>
+    <figcaption><span class="tag">E · демон</span>Маскот из иконки приложения, тусклый, пустые глазницы — тот же персонаж, что в трее. Под ним «Nothing yet today». Красиво, но это снова картинка-заглушка по центру.</figcaption>
+  </figure>
+
+  <!-- F. empty plates -->
+  <figure class="cell">
+    <div class="win">
+      <div class="tb">
+        <span class="views">
+          <svg viewBox="0 0 16 16" class="on"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>
+          <svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M6 3v10"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14.18 6.34 L14.18 9.66 L11.64 10.1 L12.53 12.53 L9.66 14.18 L8 12.2 L6.34 14.18 L3.47 12.53 L4.36 10.1 L1.82 9.66 L1.82 6.34 L4.36 5.9 L3.47 3.47 L6.34 1.82 L8 3.8 L9.66 1.82 L12.53 3.47 L11.64 5.9 Z"/><circle cx="8" cy="8" r="2"/></svg>
+        </span>
+        <span class="timer"><svg viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="4.4"/><path d="M6 4.3v2.4M4.6 1.2h2.8"/></svg>Timer</span>
+        <span class="wc"><span><svg viewBox="0 0 10 10"><path d="M1 5.5h8"/></svg></span><span><svg viewBox="0 0 10 10"><path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4"/></svg></span></span>
+      </div>
+      <div class="view">
+        <div class="day-head"><span class="day-week">Sunday</span><h1 class="day-date">22 November 2026</h1><span class="g-btn"><svg viewBox="0 0 12 12"><path d="M6 2.6V9.4M2.6 6H9.4"/></svg>Log</span><span class="day-total"></span></div>
+        <div class="ghost">Nothing yet today</div>
+        <div class="ghost"></div>
+        <div class="ghost"></div>
+      </div>
+    </div>
+    <figcaption><span class="tag">F · пустые плиты</span>Три пустые плиты ленты, тающие вниз; в первой — «Nothing yet today». Показывает, где появятся записи. Шумнее остальных.</figcaption>
+  </figure>
+
+</div>
+</body>
+</html>

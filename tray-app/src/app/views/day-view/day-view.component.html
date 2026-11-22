@@ -72,18 +72,18 @@
           [class.flash]="dayFlash">{{ dayTotalLabel }}</span>
   </div>
 
-  <!-- Radar only when the whole day is empty — otherwise the history speaks -->
-  <div class="waiting" *ngIf="dayEmpty && !monthClosed">
-    <div class="radar">
-      <span class="ring"></span>
-      <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
-        <circle cx="11" cy="11" r="3.2" fill="#94e2d5"/>
-        <path d="M11 3.5 a7.5 7.5 0 0 1 7.5 7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
-        <path d="M11 18.5 a7.5 7.5 0 0 1 -7.5 -7.5" stroke="#94e2d5" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
-      </svg>
-    </div>
-    <div class="waiting-title">Tracking is on</div>
-    <div class="waiting-sub">any activity in your repos starts tracking</div>
+  <!-- The daemon (app icon character) only when the whole day is empty —
+       otherwise the history speaks -->
+  <div class="day-empty" *ngIf="dayEmpty && !monthClosed">
+    <svg class="day-empty-daemon" viewBox="26 70 204 168" aria-hidden="true">
+      <path d="M 62 148 Q 50 104 66 74 Q 86 96 96 124 Z" fill="#b7bdda"/>
+      <path d="M 194 148 Q 206 104 190 74 Q 170 96 160 124 Z" fill="#b7bdda"/>
+      <path d="M 30 254 C 32 206 38 180 48 162 C 58 122 90 112 128 112 C 166 112 198 122 208 162 C 218 180 224 206 226 254 Z" fill="#b7bdda"/>
+      <ellipse cx="95" cy="182" rx="20" ry="28" fill="#1e1e2e" transform="rotate(-6 95 182)"/>
+      <ellipse cx="161" cy="182" rx="20" ry="28" fill="#1e1e2e" transform="rotate(6 161 182)"/>
+      <path d="M 123.5 219 Q 128 217 132.5 219 Q 131.75 224.5 128 227.25 Q 124.25 224.5 123.5 219 Z" fill="#1e1e2e"/>
+    </svg>
+    <div class="day-empty-text">Nothing yet today</div>
   </div>
 
   <!-- The day's ticket blocks — live sessions, closed sessions and entries -->
