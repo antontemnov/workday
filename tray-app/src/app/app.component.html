@@ -32,6 +32,15 @@
         </svg>
       </button>
     </div>
+    <!-- The timer — one element left of the window buttons, on every tab.
+         A click only opens and closes the island. -->
+    <span class="tmz" *ngIf="timers">
+      <app-timer-chip
+        [timer]="chipTimer"
+        [asOf]="timers.asOf"
+        [open]="islandOpen"
+        (toggled)="toggleIsland()" />
+    </span>
     <div class="win-controls" *ngIf="isTauri">
       <button class="wc-btn"
               (click)="winMinimize()"
@@ -49,6 +58,22 @@
       </button>
     </div>
   </header>
+
+  <!-- The island: every timer of the day, flowing down from the header. -->
+  <app-timer-island
+    *ngIf="islandOpen && timers"
+    [timers]="timers.timers"
+    [asOf]="timers.asOf"
+    [anchorId]="timerPick?.id ?? null"
+    [birthId]="timerBirthId"
+    [locked]="data?.monthClosed === true"
+    (toggled)="onTimerToggle($event)"
+    (created)="onTimerNew()"
+    (taskRequested)="onTimerTask($event)"
+    (deleted)="onTimerDelete($event)"
+    (described)="onTimerDescribe($event)"
+    (cancelled)="onTimerCancel($event)"
+    (birthSettled)="timerBirthId = null" />
 
   <!-- App self-update banner: a background check found a new tray version.
        Install runs only on click; the app restarts, the daemon keeps running. -->
@@ -100,6 +125,15 @@
       [allDayBusy]="allDayBusy"
       [allDayFetching]="allDayFetching"
       (suggestionsModeSelected)="setSuggestionsMode($event)"
+      [timers]="timers?.timers ?? []"
+      [timersAsOf]="timers?.asOf ?? ''"
+      (timerToggleSubmitted)="onTimerToggle($event)"
+      (timerPauseSubmitted)="onTimerPause($event)"
+      (entryTimerStartSubmitted)="onEntryTimerStart($event)"
+      (entryTimerRemoveSubmitted)="onEntryTimerRemove($event)"
+      (timerStartTextSubmitted)="onTimerStartText($event)"
+      (timerBindSubmitted)="onTimerBind($event)"
+      (timerPickClosed)="timerPick = null"
       (settingsRequested)="setView('set')"
       (retryInstall)="retryDaemonInstall()" />
 
@@ -122,7 +156,8 @@
       [daemonStarting]="daemonStarting"
       [appUpdateVersion]="appUpdateVersion"
       (stopDaemonRequested)="endDayModalOpen = true"
-      (startDaemonRequested)="startDaemon()" />
+      (startDaemonRequested)="startDaemon()"
+      (timerSettingsChanged)="refresh()" />
   </ng-container>
 
   <!-- Toast -->

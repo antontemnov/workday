@@ -1,10 +1,12 @@
 use tauri::image::Image;
 
-/// Status drives the daemon's eyes. `Live` (tracking) lights them green;
-/// every other state leaves the sockets empty.
-#[derive(Debug, Clone, Copy)]
+/// Status drives the daemon's eyes: they burn with the colour of whoever
+/// counts — green for a session (`Live`), orange for a manual timer
+/// (`Timer`). Every other state leaves the sockets empty.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TrayStatus {
-    Live,    // tracking — green eyes
+    Live,    // a session counts — green eyes
+    Timer,   // a manual timer counts — orange eyes
     Pending, // empty sockets
     Idle,    // empty sockets
     Paused,  // empty sockets
@@ -15,6 +17,7 @@ impl TrayStatus {
     pub fn parse(kind: &str) -> Self {
         match kind {
             "live" => TrayStatus::Live,
+            "timer" => TrayStatus::Timer,
             "pending" => TrayStatus::Pending,
             "idle" => TrayStatus::Idle,
             "paused" => TrayStatus::Paused,
@@ -35,6 +38,14 @@ impl TrayStatus {
                     <ellipse cx="40.4" cy="42.8" rx="6.4" ry="8.9" fill="#2aa757"/>
                     <ellipse cx="23.6" cy="42.8" rx="3" ry="4.6" fill="#d9ffe0"/>
                     <ellipse cx="40.4" cy="42.8" rx="3" ry="4.6" fill="#d9ffe0"/>"##
+            }
+            // The iris is darker than the app's timer orange: at that
+            // brightness it would melt into the lavender face.
+            TrayStatus::Timer => {
+                r##"<ellipse cx="23.6" cy="42.8" rx="6.4" ry="8.9" fill="#e8690a"/>
+                    <ellipse cx="40.4" cy="42.8" rx="6.4" ry="8.9" fill="#e8690a"/>
+                    <ellipse cx="23.6" cy="42.8" rx="3" ry="4.6" fill="#ffe2bf"/>
+                    <ellipse cx="40.4" cy="42.8" rx="3" ry="4.6" fill="#ffe2bf"/>"##
             }
             _ => "",
         }
@@ -109,4 +120,49 @@ fn unpremultiply(premul: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The left eye's centre on a 64px canvas, after the glyph transform.
+    const EYE: (u32, u32) = (22, 39);
+    // A point of the iris ring, outside the pale core.
+    const IRIS: (u32, u32) = (17, 39);
+
+    fn pixel(status: TrayStatus, at: (u32, u32)) -> [u8; 4] {
+        let icon = build(status, 64).unwrap();
+        let i = ((at.1 * icon.width() + at.0) * 4) as usize;
+        let rgba = icon.rgba();
+        [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+    }
+
+    #[test]
+    fn a_session_lights_green_eyes() {
+        assert_eq!(pixel(TrayStatus::Live, EYE), [0xd9, 0xff, 0xe0, 255]);
+        assert_eq!(pixel(TrayStatus::Live, IRIS), [0x2a, 0xa7, 0x57, 255]);
+    }
+
+    #[test]
+    fn a_timer_lights_orange_eyes() {
+        assert_eq!(pixel(TrayStatus::Timer, EYE), [0xff, 0xe2, 0xbf, 255]);
+        assert_eq!(pixel(TrayStatus::Timer, IRIS), [0xe8, 0x69, 0x0a, 255]);
+    }
+
+    #[test]
+    fn nobody_counts_the_sockets_are_empty() {
+        for status in [TrayStatus::Pending, TrayStatus::Idle, TrayStatus::Paused, TrayStatus::None] {
+            assert_eq!(pixel(status, EYE)[3], 0, "{status:?}");
+            assert_eq!(pixel(status, IRIS)[3], 0, "{status:?}");
+        }
+    }
+
+    #[test]
+    fn the_kind_word_picks_the_eyes() {
+        assert_eq!(TrayStatus::parse("live"), TrayStatus::Live);
+        assert_eq!(TrayStatus::parse("timer"), TrayStatus::Timer);
+        assert_eq!(TrayStatus::parse("paused"), TrayStatus::Paused);
+        assert_eq!(TrayStatus::parse("anything else"), TrayStatus::None);
+    }
 }

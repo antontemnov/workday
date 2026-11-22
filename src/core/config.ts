@@ -2,7 +2,7 @@ import { readFileSync, existsSync, writeFileSync, renameSync, mkdirSync } from '
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import type { ActivityScopeConfig, AppConfig, CalendarConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimesheetReminderConfig, TrackingConfig } from './types.js';
+import type { ActivityScopeConfig, AppConfig, CalendarConfig, NotificationsConfig, Secrets, SensitivityConfig, SearchConfig, ProjectRef, TimerConfig, TimesheetReminderConfig, TrackingConfig } from './types.js';
 import { SensitivityLevel } from './types.js';
 import { CONFIG_FILE_NAME, SECRETS_FILE_NAME, DATA_DIR_NAME, DEFAULT_API_PORT, DEFAULT_IDLE_CLOSE_HOURS, DEFAULT_NOTIFY_HOUR, DEFAULT_SENSITIVITY, SENSITIVITY_TIMEOUTS, TMP_EXTENSION } from './constants.js';
 
@@ -89,6 +89,10 @@ export function validateConfig(config: AppConfig): void {
   validateActivityScopeConfig(config.activities);
   validateNotificationsConfig(config.notifications);
   validateCalendarConfig(config.calendar);
+
+  if (!config.timer || typeof config.timer !== 'object' || typeof config.timer.desktopWidget !== 'boolean') {
+    throw new Error('config.json: timer.desktopWidget must be a boolean');
+  }
 
   if (config.browser !== undefined && config.browser !== null && typeof config.browser !== 'string') {
     throw new Error('config.json: browser must be a string path or null');
@@ -311,6 +315,9 @@ export function loadConfig(): AppConfig {
     },
   };
 
+  const rawTimer = (raw.timer ?? {}) as Partial<TimerConfig>;
+  const timer: TimerConfig = { desktopWidget: rawTimer.desktopWidget ?? true };
+
   const config = {
     ...raw,
     boundaryHour: raw.boundaryHour ?? 4,
@@ -322,6 +329,7 @@ export function loadConfig(): AppConfig {
     activities,
     notifications,
     calendar,
+    timer,
     session: {
       ...rawSession,
       idleCloseHours: rawSession.idleCloseHours ?? DEFAULT_IDLE_CLOSE_HOURS,
@@ -448,6 +456,9 @@ export function buildPatchedConfig(current: AppConfig, patch: Partial<AppConfig>
     calendar: {
       enabled: patch.calendar?.enabled ?? current.calendar.enabled,
       hidePrivate: patch.calendar?.hidePrivate ?? current.calendar.hidePrivate,
+    },
+    timer: {
+      desktopWidget: patch.timer?.desktopWidget ?? current.timer?.desktopWidget ?? true,
     },
   };
   validateConfig(merged);

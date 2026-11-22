@@ -31,6 +31,15 @@ export interface AppConfig {
   // null/absent → system default browser. Windows-only feature (the
   // enumeration is registry-based); harmless elsewhere.
   readonly browser?: string | null;
+  readonly timer: TimerConfig;
+}
+
+// ─── Manual timer config ─────────────────────────────────────────────────
+
+export interface TimerConfig {
+  // The tray shows the day's timers in a small window on the desktop, on
+  // top of other windows. Default true.
+  readonly desktopWidget: boolean;
 }
 
 // ─── Git tracking scope ──────────────────────────────────────────────────
@@ -212,6 +221,85 @@ export interface Favorite {
   readonly createdAt: string;     // ISO timestamp
 }
 
+// ─── Manual timer ────────────────────────────────────────────────────────
+//
+// A timer is a source of time for a ManualEntry, not a record of its own:
+// it adds whole minutes to the entry it feeds and keeps its own share apart.
+// One counts at a time — a session or a timer.
+
+export enum TimerState {
+  Running = 'running',   // counts now
+  Waiting = 'waiting',   // switched on, a session holds the count
+  Paused = 'paused',     // stopped by hand
+}
+
+// One stretch of counting; an open one is counting now.
+export interface TimerSpan {
+  readonly from: string;
+  to: string | null;
+  // A number smaller than the timer's time was typed into the entry: this
+  // stretch was cut off and is no longer part of the timer's time.
+  off?: true;
+}
+
+export interface Timer {
+  readonly id: string;
+  entryId: string | null;      // the ManualEntry it feeds; null = no ticket
+  description: string;         // no-ticket timer only — a fed entry has its own
+  state: TimerState;
+  spans: TimerSpan[];
+  // Whole minutes of the share already inside the entry's minutes. Typed by
+  // hand = entry.minutes − creditedMinutes.
+  creditedMinutes: number;
+  lastSeenAt: string;          // last tick it was alive — where sleep and crash cut it
+  touchedAt: string;           // last start / pause by hand
+  hidden?: true;               // taken off the desktop widget (paused only)
+  readonly createdAt: string;
+}
+
+// A timer as the API shows it: one row of the island / the widget.
+export interface TimerView {
+  readonly id: string;
+  readonly state: TimerState;
+  readonly entryId: string | null;
+  readonly task: string | null;
+  readonly activity: string | null;
+  readonly added: boolean;         // feeds the ticket's manual added record
+  readonly description: string;    // the entry's, or the no-ticket timer's own
+  // The fed entry's whole time at `asOf` (typed + the timer's), or everything
+  // a no-ticket timer counted.
+  readonly totalMs: number;
+  // The timer's own time at `asOf` — what its row shows and what Remove takes
+  // out. A running one ticks on from there.
+  readonly shareMs: number;
+  readonly handMinutes: number;    // typed by hand; 0 for a no-ticket timer
+  readonly hidden: boolean;
+  readonly touchedAt: string;
+}
+
+export type TimerCounting = 'session' | 'timer' | 'none';
+
+// GET /api/timers, and the `timers` field of the Day data. Array order =
+// the order of the island's rows.
+export interface TimersResponse {
+  readonly date: string;
+  readonly asOf: string;           // the moment totalMs / shareMs were taken at
+  readonly counting: TimerCounting;
+  readonly desktopWidget: boolean; // config.timer.desktopWidget
+  readonly timers: readonly TimerView[];
+}
+
+// Answer of every timer action: the day's timers after it.
+export interface TimerActionResponse extends TimersResponse {
+  // The timer the action left behind; null when it is gone (delete, cancel, remove).
+  readonly timerId: string | null;
+  // bind / remove, describe and delete of a timer with a ticket: the record
+  // after the action. Absent after a delete that took the record along.
+  readonly entry?: ManualEntryResponse;
+  // remove / delete: minutes the timer took with it.
+  readonly removedMinutes?: number;
+}
+
 // ─── Calendar instances (meeting suggestions) ────────────────────────────
 //
 // Flat materialization of the Outlook ICS feed inside the expansion window:
@@ -386,6 +474,9 @@ export interface DailyLog {
   signals: Signal[];
   manualEntries: ManualEntry[];
   reviewCheckouts?: ReviewCheckout[];
+  // Array order = the order the timers joined the day. On a finished day a
+  // timer without an entry is unlinked time.
+  timers?: Timer[];
   pushedAt: string | null;
 }
 
@@ -849,6 +940,8 @@ export interface TodayResponse {
   readonly issueSummaries?: Readonly<Record<string, string>>;
   // The day's month is closed in Tempo: nothing is tracked or edited.
   readonly monthClosed?: boolean;
+  // Manual timers — today only; absent on a past day.
+  readonly timers?: TimersResponse;
 }
 
 export interface SessionDetail extends SessionSummary {
@@ -1240,6 +1333,7 @@ export interface SettingsConfigSubset {
   readonly activities: ActivityScopeConfig;
   readonly calendar: CalendarConfig;
   readonly browser: string | null;
+  readonly timer: TimerConfig;
 }
 
 export interface SettingsResponse {
@@ -1531,9 +1625,16 @@ export interface TickInput {
   readonly maxTicks: number;
 }
 
+export interface EvaluatorOptions {
+  // A manual timer is running: it sits in the leader's seat.
+  readonly timerRunning?: boolean;
+}
+
 export interface EvaluatorResult {
   readonly scores: Map<string, SessionScore>;
   readonly leaderId: string | null;
+  // The running timer kept the lead (leaderId is then null).
+  readonly timerLeads?: boolean;
 }
 
 export interface SessionScore {

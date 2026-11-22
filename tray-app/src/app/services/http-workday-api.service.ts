@@ -30,6 +30,9 @@ import {
   ManualEntryDeleteResponse,
   ManualEntryInput,
   ManualEntryPatch,
+  TimersResponse,
+  TimerActionResponse,
+  TimerBindInput,
   FavoritesResponse,
   FavoriteAddResponse,
   FavoriteRemoveResponse,
@@ -301,6 +304,52 @@ export class HttpWorkdayApiService extends WorkdayApiService {
 
   override async deleteManualEntry(target: string, date?: string): Promise<ApiResponse<ManualEntryDeleteResponse>> {
     return this.post<ManualEntryDeleteResponse>('/api/manual-entry/delete', { target, ...(date ? { date } : {}) });
+  }
+
+  // ─── Manual timers ───────────────────────────────────────────────────
+
+  override async getTimers(): Promise<ApiResponse<TimersResponse>> {
+    return this.get<TimersResponse>('/api/timers');
+  }
+
+  override async newTimer(description?: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/new', { description: description ?? '' });
+  }
+
+  override async startTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/start', { id: timerId });
+  }
+
+  override async startEntryTimer(entryId: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/start', { entry: entryId });
+  }
+
+  override async pauseTimer(timerId?: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/pause', timerId ? { id: timerId } : {});
+  }
+
+  override async describeTimer(timerId: string, description: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/describe', { id: timerId, description });
+  }
+
+  override async bindTimer(timerId: string, input: TimerBindInput): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/bind', { id: timerId, ...input });
+  }
+
+  override async removeEntryTimer(entryId: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/remove', { entry: entryId });
+  }
+
+  override async deleteTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/delete', { id: timerId });
+  }
+
+  override async cancelTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/cancel', { id: timerId });
+  }
+
+  override async hideTimer(timerId: string): Promise<ApiResponse<TimerActionResponse>> {
+    return this.post<TimerActionResponse>('/api/timer/hide', { id: timerId });
   }
 
   // ─── Favorites ───────────────────────────────────────────────────────

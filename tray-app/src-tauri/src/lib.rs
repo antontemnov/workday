@@ -7,7 +7,7 @@ use std::time::Instant;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
     AppHandle,
     Emitter,
@@ -19,6 +19,7 @@ use tauri_plugin_updater::UpdaterExt;
 
 mod toast;
 mod tray_icon;
+mod widget;
 use tray_icon::TrayStatus;
 
 /// Version found by the last background update check. The webview may not be
@@ -32,6 +33,9 @@ static PENDING_APP_UPDATE: Mutex<Option<String>> = Mutex::new(None);
 /// "was in front" lets the toggle hide a foreground window instead of only
 /// re-focusing it.
 static LAST_MAIN_BLUR: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// "New timer" of the tray menu, kept to switch it on and off.
+struct NewTimerItem(MenuItem<tauri::Wry>);
 
 /// How often the running tray re-checks for its own updates. The old
 /// launch-only check meant a tray that lives for weeks never updated.
@@ -289,8 +293,8 @@ fn tray_icon_size(app: &AppHandle) -> u32 {
     ((16.0 * scale).round() as u32).clamp(16, 64)
 }
 
-/// Update the tray icon's status dot and tooltip.
-/// `kind` is one of: "live" | "pending" | "idle" | "paused" | "none".
+/// Update the tray icon's eyes and tooltip.
+/// `kind` is one of: "live" | "timer" | "pending" | "idle" | "paused" | "none".
 /// `tooltip` defaults to "Workday" when empty.
 #[tauri::command]
 fn set_tray_status(app: AppHandle, kind: String, tooltip: Option<String>) -> Result<(), String> {
@@ -301,6 +305,13 @@ fn set_tray_status(app: AppHandle, kind: String, tooltip: Option<String>) -> Res
     let tooltip_text = tooltip.unwrap_or_else(|| "Workday".to_string());
     tray.set_tooltip(Some(&tooltip_text)).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// "New timer" in the tray menu is live only while a click can work: the
+/// daemon answers and the month is open. The main window knows; it tells.
+#[tauri::command]
+fn set_tray_new_timer(item: tauri::State<NewTimerItem>, enabled: bool) -> Result<(), String> {
+    item.0.set_enabled(enabled).map_err(|e| e.to_string())
 }
 
 /// Resolve workday home — WORKDAY_HOME env wins, else ~/.workday/.
@@ -386,7 +397,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart-launch"]),
         ))
-        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, daemon_installed, node_version, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, load_prefs, save_prefs, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view])
+        .invoke_handler(tauri::generate_handler![upgrade_daemon, start_daemon, daemon_installed, node_version, check_app_update, get_app_version, get_pending_app_update, install_app_update, list_local_days, read_local_day, set_tray_status, set_tray_new_timer, daemon_stop_marker_present, get_autostart_enabled, set_autostart_enabled, load_prefs, save_prefs, toast::get_idle_ms, toast::show_toast, toast::get_pending_toast, toast::toast_ready, toast::hide_toast, toast::open_main_at_view, widget::sync_widget, widget::get_pending_widget, widget::fit_widget, widget::widget_grab, widget::widget_drag, widget::widget_release, widget::widget_typing, widget::widget_away, widget::widget_refused, widget::widget_grows_up, widget::widget_tickets, widget::widget_action, widget::open_main])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -457,16 +468,24 @@ pub fn run() {
                 let _ = tray.set_icon(Some(icon));
             }
 
+            // "New timer" starts a timer without opening the window: the click
+            // goes to the main window, which acts through its own gate. Greyed
+            // until the main window says a click can work (set_tray_new_timer).
+            let new_timer_item = MenuItem::with_id(app, "new-timer", "New timer", false, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
             let show_item = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&new_timer_item, &separator, &show_item, &quit_item])?;
+            app.manage(NewTimerItem(new_timer_item));
             tray.set_menu(Some(menu))?;
             tray.set_show_menu_on_left_click(false)?;
 
             let app_handle = app.handle().clone();
             let menu_window = window.clone();
             tray.on_menu_event(move |_tray, event| {
-                if event.id() == "quit" {
+                if event.id() == "new-timer" {
+                    let _ = app_handle.emit_to("main", "tray-new-timer", ());
+                } else if event.id() == "quit" {
                     // Quit closes only the tray — the daemon is 24/7 and
                     // never dies with its window.
                     app_handle.exit(0);

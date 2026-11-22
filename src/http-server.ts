@@ -2,6 +2,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { SessionTracker } from './core/session-tracker.js';
+import type { TimerTracker } from './core/timer-tracker.js';
 import {
   computeEffectiveDuration,
   computeTotalPauseDuration,
@@ -102,6 +103,8 @@ import type {
   ManualEntryResponse,
   ManualAddedResponse,
   ManualEntryDeleteResponse,
+  TimersResponse,
+  TimerActionResponse,
   FavoritesResponse,
   FavoriteAddResponse,
   FavoriteRemoveResponse,
@@ -165,6 +168,8 @@ function describeProbeError(err: unknown, service: string): string {
 
 export interface HttpServerDeps {
   readonly sessionTracker: SessionTracker;
+  /** Manual timers of the live day — actions and the island's data. */
+  readonly timerTracker: TimerTracker;
   readonly config: AppConfig;
   readonly stopCallback: () => Promise<void>;
   readonly getStartedAt: () => number;
@@ -299,6 +304,9 @@ export class HttpServer {
     }
 
     try {
+      // Whatever is read or changed next sees the timers' minutes as of now.
+      this.deps.timerTracker.credit();
+
       if (method === 'GET' && path === '/api/status') {
         return this.sendJson(res, 200, this.handleStatus());
       }
@@ -344,6 +352,13 @@ export class HttpServer {
       if (method === 'POST' && path === '/api/manual-entry/delete') {
         const body = await this.readBody(req);
         return this.sendJson(res, 200, await this.handleDeleteManualEntry(body));
+      }
+      if (method === 'GET' && path === '/api/timers') {
+        return this.sendJson(res, 200, this.handleTimers());
+      }
+      if (method === 'POST' && path.startsWith('/api/timer/')) {
+        const body = await this.readBody(req);
+        return this.sendJson(res, 200, await this.handleTimerAction(path.slice('/api/timer/'.length), body));
       }
       if (method === 'GET' && path === '/api/favorites') {
         return this.sendJson(res, 200, this.handleGetFavorites());
@@ -766,6 +781,7 @@ export class HttpServer {
         downtimeMs: computeDaySummary(log.sessions).downtimeMs,
         issueSummaries: this.buildIssueSummaries(log),
         monthClosed: tracker.isMonthLocked(),
+        timers: this.deps.timerTracker.getTimers(),
       },
     };
   }
@@ -985,6 +1001,7 @@ export class HttpServer {
     if (!result.ok || !result.sessions || !result.entries) {
       return { ok: false, error: result.error };
     }
+    this.deps.timerTracker.settle();
     // Re-run evaluator so the remaining sessions settle leadership now.
     if (includeOpen) await this.deps.forceTick();
     return {
@@ -1161,6 +1178,7 @@ export class HttpServer {
     const result = tracker.setAddedMinutes(task, minutes);
     if (!result.ok) return { ok: false, error: result.error };
     tracker.flush();
+    this.deps.timerTracker.settle();
     return { ok: true, data: toData(result.entry ?? null, tracker.getDailyLog()) };
   }
 
@@ -1216,6 +1234,7 @@ export class HttpServer {
     const result = tracker.deleteManualEntry(found.id);
     if (!result.ok || !result.deleted) return { ok: false, error: result.error };
     tracker.flush();
+    this.deps.timerTracker.settle();
     recordEntryDeletion(tracker.getDailyLog().date, result.deleted.task, result.deleted.id);
 
     return {
@@ -1228,6 +1247,107 @@ export class HttpServer {
         totalManualMinutes: Math.round(computeTotalManualEntryMs(tracker.getDailyLog()) / MS_PER_MINUTE),
       },
     };
+  }
+
+  // ─── Manual timers ────────────────────────────────────────────────
+
+  private handleTimers(): ApiResponse<TimersResponse> {
+    return { ok: true, data: this.deps.timerTracker.getTimers() };
+  }
+
+  /**
+   * POST /api/timer/<action> — mirrors the CLI `workday timer <action>`.
+   * Every action answers with the day's timers after it. A timer is named
+   * by id (or #N, its place in the day's order), an entry by id or #N.
+   */
+  private async handleTimerAction(action: string, body: Record<string, unknown>): Promise<ApiResponse<TimerActionResponse>> {
+    const timers = this.deps.timerTracker;
+    const text = (key: string): string => (typeof body[key] === 'string' ? (body[key] as string).trim() : '');
+    const answer = (timerId: string | null, extra: Partial<TimerActionResponse> = {}): ApiResponse<TimerActionResponse> =>
+      ({ ok: true, data: { ...timers.getTimers(), timerId, ...extra } });
+    const log = (): DailyLog => this.deps.sessionTracker.getDailyLog();
+
+    try {
+      switch (action) {
+        case 'new':
+          return answer(timers.create(text('description')).id);
+
+        case 'start': {
+          const entry = text('entry');
+          if (entry) return answer(timers.startOnEntry(entry).id);
+          if (!text('id')) return { ok: false, error: 'Missing id (timer) or entry (manual entry)' };
+          return answer(timers.start(text('id')).id);
+        }
+
+        case 'pause':
+          return answer(timers.pause(text('id') || undefined).id);
+
+        case 'describe': {
+          if (!text('id')) return { ok: false, error: 'Missing id' };
+          // A timer with a ticket has no text of its own: this edits its entry.
+          if (timers.entryIdOf(text('id')) !== null) {
+            const refusal = await this.editRefusal(null);
+            if (refusal) return { ok: false, error: refusal };
+          }
+          const { timer, entry, absorbed } = timers.describe(text('id'), text('description'));
+          if (!entry) return answer(timer.id);
+          if (absorbed) recordEntryDeletion(log().date, absorbed.task, absorbed.id);
+          this.relearnFromEditedEntry(entry);
+          return answer(timer.id, { entry: this.toEntryData(entry, log()) });
+        }
+
+        case 'bind': {
+          if (!text('id')) return { ok: false, error: 'Missing id' };
+          const task = text('task');
+          if (!task) return { ok: false, error: 'Missing task' };
+          const activity = text('activity') || DEFAULT_MANUAL_ACTIVITY;
+          const description = text('description');
+          const refusal = await this.editRefusal(null, !isBareDevelopment(activity, description));
+          if (refusal) return { ok: false, error: refusal };
+          const jiraError = await this.validateTaskInJira(task);
+          if (jiraError) return jiraError;
+          const { entry, timer } = timers.bind(text('id'), {
+            task, activity, description,
+            ...(typeof body.minutes === 'number' ? { minutes: body.minutes } : {}),
+          });
+          return answer(timer.id, { entry: this.toEntryData(entry, log()) });
+        }
+
+        case 'remove': {
+          if (!text('entry')) return { ok: false, error: 'Missing entry (manual entry #index or id)' };
+          const refusal = await this.editRefusal(null);
+          if (refusal) return { ok: false, error: refusal };
+          const { entry, removedMinutes } = timers.remove(text('entry'));
+          return answer(null, { entry: this.toEntryData(entry, log()), removedMinutes });
+        }
+
+        case 'delete': {
+          if (!text('id')) return { ok: false, error: 'Missing id' };
+          // A timer with a ticket takes its time out of the entry — an edit of the day.
+          if (timers.entryIdOf(text('id')) !== null) {
+            const refusal = await this.editRefusal(null);
+            if (refusal) return { ok: false, error: refusal };
+          }
+          const { entry, removedMinutes, deletedEntry } = timers.delete(text('id'));
+          if (deletedEntry) recordEntryDeletion(log().date, deletedEntry.task, deletedEntry.id);
+          return answer(null, entry ? { entry: this.toEntryData(entry, log()), removedMinutes } : {});
+        }
+
+        case 'cancel':
+          if (!text('id')) return { ok: false, error: 'Missing id' };
+          timers.cancel(text('id'));
+          return answer(null);
+
+        case 'hide':
+          if (!text('id')) return { ok: false, error: 'Missing id' };
+          return answer(timers.hide(text('id')).id);
+
+        default:
+          return { ok: false, error: `Unknown timer action: ${action}` };
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   // ─── Favorites (manual-entry templates) ───────────────────────────
@@ -1508,6 +1628,7 @@ export class HttpServer {
           activities: { values: [...c.activities.values] },
           calendar: { enabled: c.calendar.enabled, hidePrivate: c.calendar.hidePrivate },
           browser: c.browser ?? null,
+          timer: { desktopWidget: c.timer.desktopWidget },
         },
         secretsMeta: { jiraConfigured, tempoConfigured, calendarConfigured },
         daemonVersion: this.deps.getVersion(),
@@ -1723,7 +1844,8 @@ export class HttpServer {
     const tracker = this.deps.sessionTracker;
     const holdsToday = today.startsWith(monthPrefix);
     if (holdsToday) tracker.flush();
-    const tracking = holdsToday && tracker.getOpenSessions().length > 0;
+    // A live timer keeps today's minutes moving, like an open session.
+    const tracking = holdsToday && (tracker.getOpenSessions().length > 0 || this.deps.timerTracker.hasLiveTimer());
     const built = buildMonthResponse(year, month, this.deps.config, { trackingDate: tracking ? today : null });
     // Today's card is a live snapshot: sessions with the tracker's fields.
     const data = holdsToday
@@ -1797,6 +1919,7 @@ export class HttpServer {
         ...(stopTracking ? {
           stopTracking: async (): Promise<void> => {
             tracker.closeAllSessions(ClosedBy.ManualStop);
+            this.deps.timerTracker.pauseAll();
             tracker.flush();
             await this.deps.forceTick();
           },

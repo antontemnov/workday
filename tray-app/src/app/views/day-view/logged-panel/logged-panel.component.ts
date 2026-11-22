@@ -5,8 +5,10 @@ import { JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import {
   ActivityType, ConflictField, ConflictKind, DEVELOPMENT_ACTIVITY, EntryConflict, Favorite, FavoriteInput,
   ManualEntry, ManualEntryInput, ManualEntryPatch, MonthDayTask, PushFailure, ResolveSide,
-  SensitivityLevel, SensitivityPill, SessionDetail, normalizeFavName,
+  SensitivityLevel, SensitivityPill, SessionDetail, TimerState, TimerView, normalizeFavName,
 } from '../../../models/workday.models';
+import { TimerTimeComponent } from '../../../timer/timer-time.component';
+import { formatMinutes, liveMinutes, liveShareMs } from '../../../timer/timer-clock.util';
 import { activityLabel, activityOptions } from '../activity.util';
 import { DurationInputDirective } from '../duration-field/duration-input.directive';
 import { CtxMenuEntry, closeCtxMenuWithin, openAnchoredMenu, toggleAnchoredMenu } from '../ctx-menu.util';
@@ -148,7 +150,7 @@ export interface ArriveFrom {
 @Component({
   selector: 'app-logged-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, DurationInputDirective, SessionRowComponent],
+  imports: [CommonModule, FormsModule, DurationInputDirective, SessionRowComponent, TimerTimeComponent],
   templateUrl: './logged-panel.component.html',
   styleUrl: './logged-panel.component.scss',
 })
@@ -174,6 +176,19 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   @Input() feedSort: FeedSortMode = FEED_SORT_DEFAULT;
   // Jira site root — null (older daemon / no secrets) hides Open in browser.
   @Input() jiraBaseUrl: string | null = null;
+  // The day's manual timers (Day tab only): a record a timer feeds wears
+  // ⏸ / ▶ next to its time, and a running one ticks. timersAsOf — the
+  // daemon's moment the timers' numbers were taken at.
+  @Input() timers: readonly TimerView[] = [];
+  @Input() timersAsOf: string = '';
+
+  // ▶ / ⏸ next to a record's time.
+  @Output() timerToggled = new EventEmitter<TimerView>();
+  // A record on its way out has a live timer (timer id) — it stops first.
+  @Output() timerPauseRequested = new EventEmitter<string>();
+  // Start timer / Remove timer in a record's menu (entry id).
+  @Output() timerStartRequested = new EventEmitter<string>();
+  @Output() timerRemoveRequested = new EventEmitter<string>();
 
   // ─── Sheet — the Timesheets card of one day ────────────────────────────
   // Tickets are lines of the day's glass: the lid opens the body, Σ is what
@@ -276,6 +291,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // before the daemon's summaries carry it.
   private heldSummaries = new Map<string, string>();
   editMinutes = 30;
+  // The time a timer-fed record showed when its form opened; null otherwise.
+  private editBaseMinutes: number | null = null;
   editActivity = '';
   editDescription = '';
   // The entry's activity at morph-open — kept in the options even when the
@@ -384,6 +401,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     }
     if (changes['entries'] || changes['closedSessions']) {
       this.reconcileTrackedDeletes();
+      this.recomputeLive();
+    } else if (changes['timers']) {
       this.recomputeLive();
     }
     // The action is over and nothing landed — the add failed; let it go.
@@ -749,11 +768,69 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Transient states (draft wheel, edit input, undo) always own the slot —
   // the ≥2-rows rule only mutes the static print.
   showEntryDur(b: TicketBlock, e: ManualEntry): boolean {
-    return b.rowCount >= 2 || this.isFresh(e) || this.editingId === e.id;
+    return b.rowCount >= 2 || this.isFresh(e) || this.editingId === e.id || this.timerOf(e) !== null;
   }
 
   showFoldedDur(b: TicketBlock): boolean {
-    return b.rowCount >= 2 || this.foldedHasFresh(b);
+    return b.rowCount >= 2 || this.foldedHasFresh(b) || b.folded.some(e => this.timerOf(e) !== null);
+  }
+
+  // ─── Manual timers on records ────────────────────────────────────────────
+
+  timerOf(e: ManualEntry): TimerView | null {
+    return this.timers.find(t => t.entryId === e.id) ?? null;
+  }
+
+  // A row with a timer keeps its own time slot — the ▶ / ⏸ lives there — so
+  // its card never folds the time into the lid.
+  blockHasTimer(b: TicketBlock): boolean {
+    return b.folded.some(e => this.timerOf(e) !== null) || b.named.some(e => this.timerOf(e) !== null);
+  }
+
+  timerRunning(e: ManualEntry): boolean { return this.timerOf(e)?.state === TimerState.Running; }
+  timerWaiting(e: ManualEntry): boolean { return this.timerOf(e)?.state === TimerState.Waiting; }
+  // Switched on — running, or waiting while a session counts.
+  timerLive(t: TimerView): boolean { return t.state !== TimerState.Paused; }
+  timerDim(t: TimerView): boolean { return t.state === TimerState.Waiting; }
+
+  onTimerToggle(t: TimerView, ev: MouseEvent): void {
+    ev.stopPropagation();
+    if (this.actionPending || this.readOnly) return;
+    this.timerToggled.emit(t);
+  }
+
+  // A running timer crossed a whole minute: the row's sum and the Day total
+  // move in the same instant.
+  onTimerMinute(): void {
+    this.recomputeLive();
+  }
+
+  // A record on its way out takes its timer along — a live one stops first,
+  // so nothing ticks under the undo window.
+  private pauseTimerOf(e: ManualEntry): void {
+    const timer = this.timerOf(e);
+    if (timer && this.timerLive(timer)) this.timerPauseRequested.emit(timer.id);
+  }
+
+  // Start timer — only where the row has no ▶ / ⏸ of its own.
+  private startTimerItems(e: ManualEntry): readonly CtxMenuEntry[] {
+    if (this.sheet || this.timerOf(e) !== null) return [];
+    return [{ icon: CTX_ICON.play, label: 'Start timer', action: (): void => this.timerStartRequested.emit(e.id) }];
+  }
+
+  // Remove timer — the whole timer leaves the row: its time, the ▶ at the
+  // time, the row in the island; the hint says how much goes (no undo). A
+  // record with nothing typed by hand has no such item: there it is Delete.
+  private removeTimerItems(e: ManualEntry): readonly CtxMenuEntry[] {
+    const timer = this.timerOf(e);
+    if (!timer || timer.handMinutes < 1) return [];
+    const share = liveShareMs(timer, Date.parse(this.timersAsOf), Date.now());
+    return [{
+      icon: CTX_ICON.timerOff,
+      label: 'Remove timer',
+      ...(share >= 60_000 ? { hint: `−${formatMinutes(share)}` } : {}),
+      action: (): void => this.timerRemoveRequested.emit(e.id),
+    }];
   }
 
   private get rawSumMinutes(): number {
@@ -999,7 +1076,13 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
 
   displayMinutes(e: ManualEntry): number {
     if (this.isFresh(e)) return this.freshMinutes ?? e.minutes;
-    return this.pending.get(e.id)?.minutes ?? e.minutes;
+    const pendingMinutes = this.pending.get(e.id)?.minutes;
+    if (pendingMinutes !== undefined) return pendingMinutes;
+    // The timer's number is the fresher one: its answer lands ahead of the
+    // day's refresh, and a running timer has counted on since.
+    const timer = this.timerOf(e);
+    if (!timer) return e.minutes;
+    return Math.max(e.minutes, liveMinutes(timer, Date.parse(this.timersAsOf), Date.now()));
   }
 
   displayActivity(e: ManualEntry): string {
@@ -1014,7 +1097,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return e.id === this.freshId && this.freshMinutes !== null;
   }
 
-  // The manual added record edits too — its form locks everything but time.
+  // The record without a description edits like any other.
   canEdit(e: ManualEntry): boolean {
     return !this.isFresh(e);
   }
@@ -1065,7 +1148,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   onEntryMenu(e: ManualEntry, ev: MouseEvent): void {
     if (!this.entryMenuReady(e)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
+      ...this.startTimerItems(e),
       { icon: CTX_ICON.edit, label: 'Edit', action: () => this.onRowDblClick(e) },
+      ...this.removeTimerItems(e),
       // Hidden only when structurally impossible (no description to name the
       // template); an exact duplicate shows as a disabled fact instead. The
       // Timesheets card has no favorites.
@@ -1079,11 +1164,14 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     ]);
   }
 
-  // The manual added row: its time is all there is to edit.
+  // The row of the record without a description: the same menu, less the
+  // favorite — there is no text to name a template by.
   onAddedMenu(b: TicketBlock, m: ManualEntry, ev: MouseEvent): void {
     if (!this.addedMenuReady(b)) return;
     toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
-      { icon: CTX_ICON.edit, label: 'Edit time', action: () => this.onRowDblClick(m) },
+      ...this.startTimerItems(m),
+      { icon: CTX_ICON.edit, label: 'Edit', action: () => this.onRowDblClick(m) },
+      ...this.removeTimerItems(m),
       { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteFolded(b) },
     ]);
   }
@@ -1130,6 +1218,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       this.deleteTaskCard(e.task);
       return;
     }
+    this.pauseTimerOf(e);
     this.deleteTimers.set(e.id, setTimeout(() => this.startRemove(e.id), UNDO_WINDOW_MS));
     this.recomputeLive();
   }
@@ -1390,13 +1479,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     if (this.sheet) this.openTasks.add(e.task);
     this.editingId = e.id;
     this.editMinutes = this.displayMinutes(e);
+    // Under a timer the record's time moves on while the form is open: the
+    // number is "changed" only against what the form showed when it opened.
+    this.editBaseMinutes = this.timerOf(e) !== null ? this.editMinutes : null;
     this.editActivity = this.displayActivity(e);
     this.editPinnedActivity = this.editActivity;
     this.editDescription = this.displayDescription(e);
     // Focus once the form morph renders. The description — no select() on
-    // the frameless time (the highlight box reads as a glitch there); the
-    // locked manual added form has only its time to offer.
-    this.focusForm(e.added ? '.c-dur.edit' : '.le-desc');
+    // the frameless time (the highlight box reads as a glitch there).
+    this.focusForm('.le-desc');
   }
 
   // Add time: a new row born as its own form at the foot of the card.
@@ -1533,7 +1624,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       return;
     }
     const patch: ManualEntryPatch = {};
-    if (this.editMinutes !== this.displayMinutes(e)) (patch as { minutes?: number }).minutes = this.editMinutes;
+    if (this.editMinutes !== (this.editBaseMinutes ?? this.displayMinutes(e))) (patch as { minutes?: number }).minutes = this.editMinutes;
     if (this.editActivity !== this.displayActivity(e)) (patch as { activity?: string }).activity = this.editActivity;
     if (description !== this.displayDescription(e)) (patch as { description?: string }).description = description;
     this.editingId = null;
@@ -1688,6 +1779,9 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   private deleteTaskCard(task: string, stopLive = false): void {
     if (this.taskDeleted(task)) return;
     if (stopLive) this.stopDeleteTasks.add(task);
+    for (const e of this.entries) {
+      if (e.task === task) this.pauseTimerOf(e);
+    }
     this.taskDeleteTimers.set(task, setTimeout(() => this.startTaskRemove(task), UNDO_WINDOW_MS));
     this.recomputeLive();
   }

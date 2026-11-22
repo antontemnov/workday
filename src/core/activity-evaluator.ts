@@ -1,7 +1,8 @@
-import type { TickInput, EvaluatorResult, SessionScore } from './types.js';
+import type { TickInput, EvaluatorOptions, EvaluatorResult, SessionScore } from './types.js';
 import {
   EMA_WINDOW_MINUTES,
   ATTENTION_WINDOW_MINUTES,
+  TIMER_DEFENSE_ATTENTION,
   STAMINA_FLOOR_RATIO,
   FREQUENCY_GAIN_MAX,
   STAMINA_LINES_PER_MINUTE,
@@ -31,6 +32,8 @@ export class ActivityEvaluator {
   private readonly linesPerGainTick: number;
   private readonly state: Map<string, SessionState> = new Map();
   private lastLeaderId: string | null = null;
+  // Scores of the last processed tick — what reselect() picks a leader from.
+  private lastScores: Map<string, SessionScore> = new Map();
 
   public constructor(diffPollSeconds: number) {
     const emaWindowTicks = EMA_WINDOW_MINUTES * 60 / diffPollSeconds;
@@ -74,13 +77,19 @@ export class ActivityEvaluator {
    * of collapsing back to the floor; a relentless every-tick stream saturates in
    * ~40 min; ~15 lines per tick saturates in ~15 min; reaching 100% is
    * intentionally hard.
+   *
+   * options.timerRunning: a manual timer holds the lead and gives it away
+   * only to a session edited on this very tick whose attention is above
+   * TIMER_DEFENSE_ATTENTION — see pickTimerChallenger.
    */
-  public processAllTicks(ticks: readonly TickInput[]): EvaluatorResult {
+  public processAllTicks(ticks: readonly TickInput[], options?: EvaluatorOptions): EvaluatorResult {
     const scores = new Map<string, SessionScore>();
+    const activeIds = new Set<string>();
 
     for (const tick of ticks) {
       const st = this.getOrCreateState(tick.sessionId);
       const hasActivity = tick.signals.hasDynamics || tick.signals.hasCommit;
+      if (hasActivity) activeIds.add(tick.sessionId);
 
       // 1. EMA updates (binary input): slow EMA = activity frequency for the
       //    stamina formula, fast attention EMA = leadership signal.
@@ -130,9 +139,61 @@ export class ActivityEvaluator {
       });
     }
 
-    const leaderId = this.pickLeader(scores);
-    this.lastLeaderId = leaderId;
-    return { scores, leaderId };
+    this.lastScores = scores;
+    return this.decide(scores, options?.timerRunning === true, activeIds);
+  }
+
+  /**
+   * Pick the leader again from the last tick's scores — no time passes, no
+   * score or EMA moves. For a timer started or paused by hand between ticks:
+   * a started timer simply holds the lead (a takeover needs an edit, and
+   * that only shows on a tick); with the timer out, the sessions settle the
+   * lead among themselves.
+   */
+  public reselect(options?: EvaluatorOptions): EvaluatorResult {
+    return this.decide(this.lastScores, options?.timerRunning === true, new Set<string>());
+  }
+
+  /**
+   * Start of a timer by hand: the attention moves to the timer. Without it
+   * a session that was coding a moment ago would take the count straight
+   * back on its next edit.
+   */
+  public resetAttention(): void {
+    for (const st of this.state.values()) st.attention = 0;
+    this.lastLeaderId = null;
+  }
+
+  private decide(scores: Map<string, SessionScore>, timerRunning: boolean, activeIds: ReadonlySet<string>): EvaluatorResult {
+    if (!timerRunning) {
+      const leaderId = this.pickLeader(scores);
+      this.lastLeaderId = leaderId;
+      return { scores, leaderId };
+    }
+    const challengerId = this.pickTimerChallenger(scores, activeIds);
+    this.lastLeaderId = challengerId;
+    return { scores, leaderId: challengerId, timerLeads: challengerId === null };
+  }
+
+  /**
+   * A running manual timer sits in the leader's seat. A session (or a
+   * candidate) takes the count from it only on a tick it was edited on and
+   * only with attention above TIMER_DEFENSE_ATTENTION: a single touch after
+   * silence stays below it by construction, edits tick after tick cross it
+   * in about a minute. The most attended challenger wins.
+   */
+  private pickTimerChallenger(scores: ReadonlyMap<string, SessionScore>, activeIds: ReadonlySet<string>): string | null {
+    let challengerId: string | null = null;
+    let challengerAttention = TIMER_DEFENSE_ATTENTION;
+    for (const [sessionId, sessionScore] of scores) {
+      if (sessionScore.score <= 0 || !activeIds.has(sessionId)) continue;
+      const attention = this.state.get(sessionId)?.attention ?? 0;
+      if (attention > challengerAttention) {
+        challengerId = sessionId;
+        challengerAttention = attention;
+      }
+    }
+    return challengerId;
   }
 
   /**
@@ -192,6 +253,7 @@ export class ActivityEvaluator {
   /** Remove session state on close */
   public removeSession(sessionId: string): void {
     this.state.delete(sessionId);
+    this.lastScores.delete(sessionId);
     if (this.lastLeaderId === sessionId) {
       this.lastLeaderId = null;
     }
@@ -200,6 +262,7 @@ export class ActivityEvaluator {
   /** Clear all state (day boundary, daemon stop) */
   public clear(): void {
     this.state.clear();
+    this.lastScores = new Map();
     this.lastLeaderId = null;
   }
 

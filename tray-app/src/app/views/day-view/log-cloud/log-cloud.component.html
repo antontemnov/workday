@@ -7,10 +7,10 @@
          [ngModel]="filter"
          (ngModelChange)="onFilterInput($event)"
          (keydown.enter)="onFilterEnter()"
-         [placeholder]="isAcceptMode ? 'pick a ticket — favorites and Jira' : 'search favorites and Jira'"
+         [placeholder]="filterPlaceholder"
          autocomplete="off" />
   <button type="button"
-          *ngIf="!isAcceptMode"
+          *ngIf="!isPickerMode"
           class="f-batch"
           (click)="toggleBatch()"
           title="collect several · Ctrl+click a chip">⧉ multi</button>
@@ -67,7 +67,7 @@
       <span class="f-task">{{ f.task }}</span>
       <span class="f-name">{{ f.name }}</span>
       <!-- Template minutes are meaningless while only the ticket is picked -->
-      <span class="f-min" *ngIf="!isAcceptMode">{{ formatMinutes(f.minutes) }}</span>
+      <span class="f-min" *ngIf="!isPickerMode">{{ formatMinutes(f.minutes) }}</span>
     </span>
 
     <!-- Jira zone — stage 2/3 of the search, hidden only when a chip above
@@ -104,6 +104,15 @@
       </button>
     </ng-container>
   </div>
+</div>
+
+<!-- Start timer «text» — the typed text names a timer without a ticket:
+     it runs at once, the header chip lights up. Only with a text to name it. -->
+<div class="cloud-timer" *ngIf="canStartTimer">
+  <button type="button" class="fav tm-act" [disabled]="actionPending" (click)="startTimerFromFilter()">
+    <span class="f-task"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg></span>
+    <span class="f-name">Start timer «{{ queryLabel }}»</span>
+  </button>
 </div>
 
 <!-- Batch footer: collected count, favorites removal, review entry point -->

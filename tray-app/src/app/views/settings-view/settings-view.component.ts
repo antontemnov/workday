@@ -28,6 +28,8 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   // start = spawn + watchdog resume); settings just asks for it.
   @Output() stopDaemonRequested = new EventEmitter<void>();
   @Output() startDaemonRequested = new EventEmitter<void>();
+  // The desktop widget was switched: the shell shows or hides it at once.
+  @Output() timerSettingsChanged = new EventEmitter<void>();
 
   // Supervisor state from the shell's watchdog — drives the Start/Stop toggle.
   @Input() daemonReachable = true;
@@ -559,6 +561,25 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     return this.settings?.config.calendar?.hidePrivate === true;
   }
 
+  // ─── Timer ──────────────────────────────────────────────────────────────
+
+  // Hidden on daemons < 0.56.0.
+  get timerBlockVisible(): boolean {
+    return this.settings?.config.timer !== undefined;
+  }
+
+  get desktopWidgetOn(): boolean {
+    return this.settings?.config.timer?.desktopWidget === true;
+  }
+
+  toggleDesktopWidget(): void {
+    const timer = this.settings?.config.timer;
+    if (!timer) return;
+    const next = { desktopWidget: !timer.desktopWidget };
+    this.applyLocal(c => ({ ...c, timer: next }));
+    this.queue({ timer: next }, 'immediate');
+  }
+
   // ─── Browser for links ("Open in browser" menu items) ───────────────────
 
   // Row needs both sides: a daemon that knows the field AND something to pick.
@@ -700,6 +721,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
       await this.refresh();
       this.setIndicator('saved', 'Saved');
       this.scheduleSavedFlash();
+      if (patch.config?.timer) this.timerSettingsChanged.emit();
     } else {
       await this.refresh();
       this.setIndicator('error', res.error ?? 'Save failed');

@@ -1,0 +1,339 @@
+@use './timer-ink' as ink;
+
+// The plate IS the window: the OS window catches the mouse with its whole
+// rectangle, so nothing may stick out of the plate and nothing is left empty.
+:host {
+  position: fixed;
+  inset: 0;
+  display: block;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+// At rest the plate is 65 % and the contents are full strength; under the
+// cursor, and while a description is typed, it is an opaque card of the
+// island's material.
+.w {
+  --plate: 0.65;
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  container-type: inline-size;
+  font-size: 10.5px;
+  line-height: 1;
+  color: #cdd6f4;
+  white-space: nowrap;
+  border-radius: 1.25em;
+  cursor: grab;
+  user-select: none;
+  background: rgb(17 17 27 / var(--plate));
+  box-shadow: inset 0 0 0 1px rgb(205 214 244 / calc(var(--plate) * 0.14));
+  transition: background-color 0.35s ease, box-shadow 0.35s ease;
+
+  &:hover, &.drag, &.ed {
+    background: #181825;
+    box-shadow: inset 0 0 0 1px #313244;
+  }
+
+  &.drag { cursor: grabbing; }
+}
+
+.w-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  height: 2.48em;
+  padding: 0 0.45em 0 0.6em;
+}
+
+// Several timers: the time is a column, so the keys stand on one line.
+.w.list {
+  border-radius: 0.95em;
+  padding: 0.2em 0;
+
+  .w-row { height: 2.28em; }
+  .w-t { width: var(--tw, 7ch); flex-shrink: 0; }
+}
+
+// ─── The state glyph — the row's button ─────────────────────────────────
+.w-b {
+  position: relative;
+  width: 1.72em;
+  height: 1.72em;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+
+  > span {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: opacity 0.35s ease;
+  }
+
+  .at-hov { opacity: 0; }
+}
+
+.w-row:hover .at-rest { opacity: 0; }
+.w-row:hover .at-hov { opacity: 1; }
+
+.g-ic { width: 1.15em; height: 1.15em; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.g-pz { width: 0.76em; height: 0.76em; display: block; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.g-go { width: 0.76em; height: 0.76em; display: block; fill: currentColor; transform: translateX(0.06em); }
+
+.w-row.run .at-rest { color: ink.$run; }
+.w-row.wait .at-rest { color: ink.$wait; }
+.w-row.pause .at-rest { color: #7f849c; }
+.w-row.run .at-hov { color: ink.$run; box-shadow: inset 0 0 0 0.14em ink.$run; }
+.w-row.wait .at-hov { color: ink.$wait; box-shadow: inset 0 0 0 0.14em ink.$wait; }
+.w-row.pause .at-hov { color: ink.$go; background: ink.$go-wash; }
+
+// ─── Time · key · description ───────────────────────────────────────────
+.w-t {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.w-row.run .w-t { color: ink.$run; }
+.w-row.wait .w-t { color: ink.$wait; }
+.w-row.pause .w-t { color: #9399b2; }
+
+.w-tx {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
+  min-width: 0;
+  flex: 1;
+}
+
+.w-k { font-weight: 700; color: #cdd6f4; }
+.w-d { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #a6adc8; }
+.w-row.pause .w-k { color: #a6adc8; }
+.w-row.pause .w-d { color: #7f849c; }
+
+// The description is typed right on the plate; the button in the slot keeps it.
+.w-in {
+  flex: 1;
+  min-width: 0;
+  height: 1.75em;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: #cdd6f4;
+  font: inherit;
+  line-height: 1;
+  caret-color: ink.$run;
+  box-shadow: 0 1px 0 rgb(205 214 244 / 0.2);
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+
+  &::placeholder { color: #585b70; }
+}
+
+// ─── The slot: not seen at rest, there when the cursor is over the widget ───
+.w-acts {
+  margin-left: auto;
+  width: 1.6em;
+  height: 1.6em;
+  flex-shrink: 0;
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.w:hover .w-acts { opacity: 0.45; }
+.w .w-row:hover .w-acts, .w .w-acts.on { opacity: 1; }
+
+// A timer without a ticket has one more slot — the ticket glyph.
+.w-acts.two {
+  width: 3.3em;
+  gap: 0.1em;
+}
+
+.w-x {
+  width: 1.6em;
+  height: 1.6em;
+  padding: 0;
+  border: none;
+  border-radius: 0.5em;
+  background: none;
+  color: #a6adc8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  cursor: pointer;
+
+  svg { width: 1.14em; height: 1.14em; display: block; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  &:hover:not(:disabled) { color: #cdd6f4; background: rgb(205 214 244 / 0.09); }
+
+  // Dead while the ticket block of its row is open.
+  &:disabled { opacity: 0.3; cursor: default; }
+
+  &.ok {
+    color: #cdd6f4;
+
+    svg { stroke-width: 1.7; }
+  }
+
+  // The ticket block is open: its glyph stays lit — it shuts the block.
+  &.tag.armed { color: #cdd6f4; background: rgb(205 214 244 / 0.09); }
+}
+
+// ─── The ticket block: a part of the plate next to its row ──────────────
+// The numbers are the ones timer-widget.util.ts counts the window with: the
+// search line 2.28em, a row 2.1em, a label 1.9em, the list's padding 0.4em.
+$hair: rgb(205 214 244 / 0.08);
+
+.w-pick {
+  display: flex;
+  flex-direction: column;
+  background: rgb(17 17 27 / 0.5);
+  box-shadow: inset 0 1px 0 $hair, inset 0 -1px 0 $hair;
+  cursor: default;
+
+  // The window grows upward: the list is above the search line.
+  &.up { flex-direction: column-reverse; }
+}
+
+.w-find {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  height: 2.28em;
+  flex-shrink: 0;
+  padding: 0 0.9em;
+  box-shadow: inset 0 -1px 0 $hair;
+  cursor: text;
+
+  svg { width: 1.05em; height: 1.05em; flex-shrink: 0; display: block; fill: none; stroke: #6c7086; stroke-width: 1.3; stroke-linecap: round; }
+  &.on svg { stroke: #a6adc8; }
+}
+
+.w-pick.up .w-find { box-shadow: inset 0 1px 0 $hair; }
+
+.w-fi {
+  flex: 1;
+  min-width: 0;
+  height: 1.75em;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: #cdd6f4;
+  font: inherit;
+  line-height: 1;
+  caret-color: ink.$run;
+  user-select: text;
+  -webkit-user-select: text;
+
+  &::placeholder { color: #585b70; }
+}
+
+.w-fs { flex-shrink: 0; color: #585b70; }
+
+// One height while the block is open; the rest of the list scrolls inside.
+// No scrollbar: the list fades at the edge that hides more of it.
+.w-scroll {
+  height: var(--list);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 0.2em 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar { display: none; }
+
+  &.more-down {
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 2em), transparent);
+    mask-image: linear-gradient(#000 calc(100% - 2em), transparent);
+  }
+
+  &.more-up {
+    -webkit-mask-image: linear-gradient(transparent, #000 2em);
+    mask-image: linear-gradient(transparent, #000 2em);
+  }
+
+  &.more-up.more-down {
+    -webkit-mask-image: linear-gradient(transparent, #000 2em, #000 calc(100% - 2em), transparent);
+    mask-image: linear-gradient(transparent, #000 2em, #000 calc(100% - 2em), transparent);
+  }
+}
+
+.w-lg {
+  display: flex;
+  align-items: flex-end;
+  height: 1.9em;
+  box-sizing: border-box;
+  padding: 0 0.9em 0.3em;
+  color: #585b70;
+
+  i { font-style: normal; font-size: 0.8em; letter-spacing: 0.04em; }
+}
+
+.w-li {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  width: 100%;
+  height: 2.1em;
+  box-sizing: border-box;
+  padding: 0 0.9em;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover, &.h { background: rgb(205 214 244 / 0.07); }
+}
+
+.w-lk { flex-shrink: 0; font-weight: 700; color: #bac2de; }
+.w-ln { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #7f849c; }
+.w-li:hover .w-lk, .w-li.h .w-lk { color: #cdd6f4; }
+.w-li:hover .w-ln, .w-li.h .w-ln { color: #a6adc8; }
+
+.w-note { padding: 0.65em 0.9em; color: #585b70; }
+
+// ─── The width changes what a row shows ─────────────────────────────────
+// One narrow row: the time only.
+@container (max-width: 149.9px) {
+  .w:not(.list) .w-tx { display: none; }
+}
+
+// A narrow list keeps the key; a timer without a ticket keeps the start of
+// its description.
+@container (max-width: 199.9px) {
+  .w.list .w-k + .w-d { display: none; }
+}
+
+// ─── The left and the right edge drag the width ─────────────────────────
+.rz {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 5px;
+  height: 100%;
+  cursor: ew-resize;
+
+  &.l { left: 0; }
+  &.r { right: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .w, .w-b > span, .w-acts { transition: none; }
+}

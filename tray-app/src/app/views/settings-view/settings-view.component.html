@@ -396,6 +396,20 @@
         </div>
       </div>
     </div>
+
+    <!-- Timer: the desktop widget is on by default. Hidden on daemons < 0.56.0. -->
+    <div class="settings-section" *ngIf="timerBlockVisible">
+      <h3>Timer <span class="sub">desktop widget</span></h3>
+      <div class="opt-row">
+        <div class="left">
+          <span class="name">Desktop widget</span>
+          <span class="hint">Show timers on the desktop, on top of other windows.</span>
+        </div>
+        <div class="right">
+          <div class="toggle" [class.on]="desktopWidgetOn" (click)="toggleDesktopWidget()"></div>
+        </div>
+      </div>
+    </div>
   </ng-container>
 
   <!-- Versions & updates — last section. Rendered without settings so the App

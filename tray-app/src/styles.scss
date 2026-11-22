@@ -11,8 +11,10 @@ html, body {
 }
 
 // Toast window: the OS window is transparent (rounded card + CSS shadow) —
-// the opaque page background must not paint over it.
-html:has(body.toast-window), body.toast-window {
+// the opaque page background must not paint over it. The desktop widget's
+// window is transparent too: its plate is see-through at rest.
+html:has(body.toast-window), body.toast-window,
+html:has(body.widget-window), body.widget-window {
   background: transparent;
 }
 

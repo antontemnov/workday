@@ -19,11 +19,13 @@
 
 ## Структура
 
-- `src/core/` — types, constants, config, daily-log (atomic writes), activity-evaluator (stamina), session-tracker, commit-ledger, update-manager, notification-center (desktop-тосты: правила + state machine; tray доставляет при presence)
+- `src/core/` — types, constants, config, daily-log (atomic writes), activity-evaluator (stamina), session-tracker, timers (чистые функции ручного таймера) + timer-tracker (живой день, связка с оценщиком), commit-ledger, update-manager, notification-center (desktop-тосты: правила + state machine; tray доставляет при presence)
 - `src/collectors/` — git-client, git-tracker, reflog-parser, snapshot-parser, churn-scanner, ledger-collector
 - `src/push/` — tempo-client, jira-client, tempo-pusher, report-builder, activity-types
 - `src/daemon.ts` / `src/cli.ts` / `src/http-server.ts` — HTTP API только на `127.0.0.1:9213`
 - `tray-app/src/app/views/` — day-view (+ session-card, duration-field), settings-view, timesheets-view
+- `tray-app/src/app/timer/` — ручной таймер в трее: чип и остров шапки, тикающее время, плашка виджета (с блоком выбора тикета: список известных тикетов и поиск Jira) и его сервис на стороне главного окна; `tray-app/src/app/widget/` — корень окна виджета
+- `tray-app/src-tauri/src/` — Rust: `lib.rs` (команды, трей, автозапуск), `toast.rs` и `widget.rs` (отдельные окна: создаются по требованию, фокус не берут; виджет берёт клавиатуру только пока на нём набирают описание таймера или текст поиска тикета и возвращает её прежнему окну), `tray_icon.rs`. Три окна — один бандл: корень выбирается по метке окна в `main.ts`. Главное окно — единственный «мозг»: демона опрашивает только оно, окна тоста и виджета получают данные от него
 - `legacy/` — прототип на .mjs: read-only справка, НЕ подключать и НЕ править
 - `ROADMAP-timesheet.md` — исторический, НЕ отражает текущее состояние (канон = код + README + docs/)
 

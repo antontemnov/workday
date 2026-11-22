@@ -60,7 +60,10 @@ export class DurationInputDirective implements OnChanges {
   private commit(): void {
     const parsed = parseDurationToMinutes(this.el.nativeElement.value);
     if (parsed !== null) {
-      this.setMinutes(Math.max(TYPED_MIN, Math.min(TYPED_MAX, parsed)));
+      // The number the field was given stays as it is: a timer may have
+      // counted fewer minutes than a typed entry can have, and an untouched
+      // field must not read as an edit.
+      this.setMinutes(parsed === this.minutes ? parsed : Math.max(TYPED_MIN, Math.min(TYPED_MAX, parsed)));
     } else {
       this.el.nativeElement.value = formatDurationLabel(this.minutes);
     }

@@ -19,6 +19,7 @@ import {
   resolveSessionTarget,
 } from './daily-log.js';
 import { isEmptyDayLog } from './janitor.js';
+import { dropEntryTimer } from './timers.js';
 import { DayStatus } from './types.js';
 import type { AppConfig, DailyLog, ManualEntry, Session } from './types.js';
 
@@ -177,6 +178,7 @@ export function deleteTaskOnDate(
   if (log.manualEntries) {
     log.manualEntries = log.manualEntries.filter(e => !(isAddedEntry(e) && e.task === task));
   }
+  for (const entry of entries) dropEntryTimer(log, entry.id);
   const dayFileDeleted = finishDayDeletion(date, log);
   return { sessions, entries, log, dayFileDeleted, dayWasPushed };
 }

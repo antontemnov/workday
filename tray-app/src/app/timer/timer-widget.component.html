@@ -1,0 +1,157 @@
+<div class="w"
+     [class.list]="list"
+     [class.drag]="dragging"
+     [class.ed]="editingId !== null || pickId !== null"
+     [style.--tw]="timeColumn"
+     (mousedown)="onMouseDown($event)"
+     (pointerdown)="onPress($event, 'move')"
+     (pointermove)="onPointerMove($event)"
+     (pointerup)="onPointerEnd($event)"
+     (pointercancel)="onPointerEnd($event)"
+     (dblclick)="onDoubleClick($event)">
+
+  <ng-container *ngFor="let t of timers; trackBy: trackById">
+    <!-- The ticket block stands next to its row, on the side the window grows to. -->
+    <ng-container *ngIf="pickId === t.id && pickUp" [ngTemplateOutlet]="pick"></ng-container>
+
+    <div class="w-row"
+         [attr.data-id]="t.id"
+         [class.run]="isRunning(t)"
+         [class.wait]="isWaiting(t)"
+         [class.pause]="isPaused(t)">
+
+      <!-- The state glyph is the button: the timer's icon at rest, ⏸ or ▶ under the cursor. -->
+      <button type="button"
+              class="w-b"
+              [attr.aria-label]="isPaused(t) ? 'Start timer' : 'Pause timer'"
+              (click)="toggled.emit(t.id)">
+        <span class="at-rest">
+          <svg class="g-ic" viewBox="0 0 14 14" aria-hidden="true">
+            <circle cx="7" cy="7" r="5.4"/>
+            <path *ngIf="!isPaused(t)" d="M7 7V3.8"/>
+            <path *ngIf="isPaused(t)" d="M5.7 5.1v3.8M8.3 5.1v3.8"/>
+          </svg>
+        </span>
+        <span class="at-hov">
+          <svg *ngIf="!isPaused(t)" class="g-pz" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>
+          <svg *ngIf="isPaused(t)" class="g-go" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>
+        </span>
+      </button>
+
+      <app-timer-time class="w-t" [timer]="t" [asOf]="asOf" (minuteChanged)="onMinute()" />
+
+      <!-- Under the edit the key stays and the description is a field. -->
+      <ng-container *ngIf="editingId === t.id; else shownText">
+        <span class="w-k" *ngIf="t.task">{{ t.task }}</span>
+        <input class="w-in"
+               placeholder="description"
+               spellcheck="false"
+               autocomplete="off"
+               [value]="draft"
+               (input)="onEditInput($any($event.target).value)"
+               (keydown)="onEditKeydown(t, $event)" />
+      </ng-container>
+      <ng-template #shownText>
+        <span class="w-tx" *ngIf="t.task || textOf(t)">
+          <span class="w-k" *ngIf="t.task">{{ t.task }}</span>
+          <span class="w-d" *ngIf="textOf(t)">{{ textOf(t) }}</span>
+        </span>
+      </ng-template>
+
+      <!-- The slots stay in every row, so nothing shifts when a timer stops: a
+           timer at rest can leave the desktop, one that is switched on can be
+           described, and under the edit the slot keeps what was typed. A timer
+           without a ticket has one more — the ticket glyph; while its block
+           is open the slot next to it is dead. -->
+      <span class="w-acts" [class.two]="isPickable(t)" [class.on]="editingId === t.id || pickId === t.id">
+        <button *ngIf="isPickable(t)"
+                type="button"
+                class="w-x tag"
+                [class.armed]="pickId === t.id"
+                aria-label="Choose the ticket"
+                (click)="onTag(t)">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M1.8 6.4V2.5a.7.7 0 0 1 .7-.7h3.9l4 4a.7.7 0 0 1 0 1L7 10.2a.7.7 0 0 1-1 0z"/>
+            <circle cx="4.1" cy="4.1" r=".75"/>
+          </svg>
+        </button>
+        <button *ngIf="editingId === t.id; else atRest"
+                type="button"
+                class="w-x ok"
+                aria-label="Keep the description"
+                (click)="keep(t)">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.6 6.4l2.4 2.4 4.5-5.2"/></svg>
+        </button>
+        <ng-template #atRest>
+          <button *ngIf="isPaused(t)"
+                  type="button"
+                  class="w-x"
+                  aria-label="Hide from the desktop"
+                  [disabled]="isBlocked(t)"
+                  (click)="onHide(t)">
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M1.3 6c1.2-2 2.8-3 4.7-3s3.5 1 4.7 3c-1.2 2-2.8 3-4.7 3S2.5 8 1.3 6z"/>
+              <circle cx="6" cy="6" r="1.3"/>
+              <path d="M2.5 10.2l7-8.4"/>
+            </svg>
+          </button>
+          <button *ngIf="isDescribable(t)"
+                  type="button"
+                  class="w-x"
+                  aria-label="Edit the description"
+                  [disabled]="isBlocked(t)"
+                  (click)="onPencil(t)">
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2.3 9.7l.5-2.3 5.3-5.3a1 1 0 0 1 1.4 0l.4.4a1 1 0 0 1 0 1.4L4.6 9.2z"/>
+              <path d="M7.3 2.9l1.8 1.8"/>
+            </svg>
+          </button>
+        </ng-template>
+      </span>
+    </div>
+
+    <ng-container *ngIf="pickId === t.id && !pickUp" [ngTemplateOutlet]="pick"></ng-container>
+  </ng-container>
+
+  <!-- The search line is next to the timer's row; the list is beyond it. -->
+  <ng-template #pick>
+    <div class="w-pick" [class.up]="pickUp" [style.--list]="listEm + 'em'">
+      <div class="w-find" [class.on]="findOn" (click)="onFind()">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="5.2" cy="5.2" r="3.4"/><path d="M7.8 7.8l2.7 2.7"/></svg>
+        <input class="w-fi"
+               placeholder="Search Jira"
+               aria-label="Search Jira"
+               spellcheck="false"
+               autocomplete="off"
+               [value]="query"
+               (input)="onFindInput($any($event.target).value)"
+               (keydown)="onFindKeydown($event)" />
+        <span class="w-fs" *ngIf="searching">searching</span>
+      </div>
+
+      <div class="w-scroll" (scroll)="onListScroll()">
+        <ng-container *ngIf="rows === null; else foundRows">
+          <ng-container *ngFor="let g of known">
+            <span class="w-lg"><i>{{ g.label }}</i></span>
+            <button type="button" class="w-li" *ngFor="let k of g.tickets" (click)="onTicket(k.key)">
+              <span class="w-lk">{{ k.key }}</span><span class="w-ln">{{ k.name }}</span>
+            </button>
+          </ng-container>
+        </ng-container>
+        <ng-template #foundRows>
+          <button type="button"
+                  class="w-li"
+                  *ngFor="let k of rows; let i = index"
+                  [class.h]="i === highlight"
+                  (click)="onTicket(k.key)">
+            <span class="w-lk">{{ k.key }}</span><span class="w-ln">{{ k.name }}</span>
+          </button>
+          <div class="w-note" *ngIf="note">{{ note }}</div>
+        </ng-template>
+      </div>
+    </div>
+  </ng-template>
+
+  <i class="rz l" (pointerdown)="onPress($event, 'left')"></i>
+  <i class="rz r" (pointerdown)="onPress($event, 'right')"></i>
+</div>

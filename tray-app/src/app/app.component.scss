@@ -15,6 +15,8 @@
   box-sizing: border-box;
   -webkit-user-select: none;
   user-select: none;
+  // The timer island hangs from the header's bottom edge.
+  position: relative;
 }
 
 // ─── Sticky header / titlebar ───────────────────────────────────────────
@@ -66,6 +68,20 @@
 
   &.active { color: #cdd6f4; }   // active view = bright icon
 }
+
+// The timer zone — pushed to the right edge, a breath away from the drag
+// space on its left and the window buttons on its right.
+.tmz {
+  margin-left: auto;
+  min-width: 0;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  padding-left: 24px;
+  margin-right: 10px;
+}
+
+.tmz ~ .win-controls { margin-left: 0; }
 
 // Window controls — minimize + close, both hide to tray. Full-height hit
 // boxes flush to the window corner.

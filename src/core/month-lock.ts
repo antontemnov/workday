@@ -5,6 +5,7 @@
 
 import { SUBMIT_WINDOW_WORKING_DAYS } from './constants.js';
 import { isWorkingDay, trimTrailingPauses } from './daily-log.js';
+import { dropEntryTimer, trimTimersAt } from './timers.js';
 import { ClosedBy } from './types.js';
 import type { AppConfig, DailyLog, ManualEntry } from './types.js';
 
@@ -35,16 +36,20 @@ export interface DayCut {
   readonly removedSessionIds: readonly string[];
   readonly closedSessionIds: readonly string[];
   readonly removedEntries: readonly ManualEntry[];
+  // Manual timers cut at the moment: stopped there, or removed with nothing before it.
+  readonly trimmedTimers: number;
 }
 
 export function isEmptyCut(cut: DayCut): boolean {
-  return cut.removedSessionIds.length === 0 && cut.closedSessionIds.length === 0 && cut.removedEntries.length === 0;
+  return cut.removedSessionIds.length === 0 && cut.closedSessionIds.length === 0
+    && cut.removedEntries.length === 0 && cut.trimmedTimers === 0;
 }
 
 /**
  * Cut a day at the moment its month closed: sessions activated after it go,
  * sessions running across it end there, entries created after it go unless
  * they own a Tempo worklog (taken from Tempo, so they are Tempo already).
+ * Manual timers stop there too: what they counted after it leaves their entries.
  */
 export function cutDayAt(log: DailyLog, cutAt: string, ownsWorklog: (entry: ManualEntry) => boolean): DayCut {
   const cut = Date.parse(cutAt);
@@ -74,6 +79,8 @@ export function cutDayAt(log: DailyLog, cutAt: string, ownsWorklog: (entry: Manu
   const removedEntries = log.manualEntries.filter(e => Date.parse(e.createdAt) >= cut && !ownsWorklog(e));
   if (removedEntries.length > 0) {
     log.manualEntries = log.manualEntries.filter(e => !removedEntries.includes(e));
+    for (const entry of removedEntries) dropEntryTimer(log, entry.id);
   }
-  return { removedSessionIds, closedSessionIds, removedEntries };
+  const trimmedTimers = trimTimersAt(log, cutIso);
+  return { removedSessionIds, closedSessionIds, removedEntries, trimmedTimers };
 }

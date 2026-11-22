@@ -258,6 +258,49 @@
   }
 }
 
+// ─── Start timer «text» ───────────────────────────────────────────────────
+// Not a ticket chip: a dashed outline, the timer's green start glyph.
+.cloud-timer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(205, 214, 244, 0.07);
+}
+
+.fav.tm-act {
+  font-family: inherit;
+  border: 1px dashed rgba(205, 214, 244, 0.26);
+  background: transparent;
+  max-width: 100%;
+
+  .f-task {
+    display: inline-flex;
+    align-items: center;
+
+    svg { width: 8px; height: 8px; display: block; fill: rgb(48 209 88); }
+  }
+
+  .f-name {
+    color: #9399b2;
+    font-weight: 400;
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &:hover:not(:disabled) {
+    background: transparent;
+    border-color: rgba(205, 214, 244, 0.42);
+
+    .f-name { color: #cdd6f4; }
+  }
+
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
 // ─── Batch footer ─────────────────────────────────────────────────────────
 .cloud-foot {
   display: flex;

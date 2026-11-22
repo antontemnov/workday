@@ -14,6 +14,7 @@ import { writeStopMarker, clearStopMarker } from './core/stop-marker.js';
 import { GitTracker } from './collectors/git-tracker.js';
 import { CalendarCollector } from './collectors/calendar-collector.js';
 import { SessionTracker } from './core/session-tracker.js';
+import { TimerTracker } from './core/timer-tracker.js';
 import { ActivityEvaluator } from './core/activity-evaluator.js';
 import { checkGap } from './core/gap-detector.js';
 import { UpdateManager } from './core/update-manager.js';
@@ -21,7 +22,7 @@ import { NotificationCenter } from './core/notification-center.js';
 import { HttpServer } from './http-server.js';
 import type { HttpServerDeps } from './http-server.js';
 import { StatusRenderer } from './core/status-renderer.js';
-import type { ActivityScopeConfig, AppConfig, CalendarConfig, ManualEntry, PollResult, Secrets, SearchConfig, TrackingConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
+import type { ActivityScopeConfig, AppConfig, CalendarConfig, ManualEntry, PollResult, Secrets, SearchConfig, TimerConfig, TrackingConfig, UpdateCheckResponse, UpdateApplyResponse } from './core/types.js';
 import { ClosedBy } from './core/types.js';
 import {
   PID_FILE_NAME,
@@ -34,6 +35,7 @@ export class Daemon {
   private secrets!: Secrets;
   private gitTracker!: GitTracker;
   private sessionTracker!: SessionTracker;
+  private timerTracker!: TimerTracker;
   private activityEvaluator!: ActivityEvaluator;
   private httpServer: HttpServer | null = null;
   private statusRenderer: StatusRenderer | null = null;
@@ -78,8 +80,8 @@ export class Daemon {
     const pushLog = loadPushLog();
     const ownsWorklog: EntryOwnershipCheck = (date, entry) => pushLogKey(date, entry.task, entry.id) in pushLog;
     const janitor = runStartupJanitor(this.currentDate, ownsWorklog);
-    if (janitor.recoveredSessions > 0 || janitor.prunedSessions > 0 || janitor.deletedFiles.length > 0 || janitor.migratedAdjustments > 0 || janitor.collapsedEntries > 0) {
-      console.log(`  Janitor: closed ${janitor.recoveredSessions} orphan(s), pruned ${janitor.prunedSessions} never-activated, deleted ${janitor.deletedFiles.length} empty file(s), migrated ${janitor.migratedAdjustments} adjustment(s), collapsed ${janitor.collapsedEntries} manual added entr${janitor.collapsedEntries === 1 ? 'y' : 'ies'}`);
+    if (janitor.recoveredSessions > 0 || janitor.prunedSessions > 0 || janitor.deletedFiles.length > 0 || janitor.migratedAdjustments > 0 || janitor.collapsedEntries > 0 || janitor.settledTimers > 0) {
+      console.log(`  Janitor: closed ${janitor.recoveredSessions} orphan(s), pruned ${janitor.prunedSessions} never-activated, deleted ${janitor.deletedFiles.length} empty file(s), migrated ${janitor.migratedAdjustments} adjustment(s), collapsed ${janitor.collapsedEntries} manual added entr${janitor.collapsedEntries === 1 ? 'y' : 'ies'}, stopped ${janitor.settledTimers} timer(s)`);
     }
 
     // Load today's log and close any orphaned sessions
@@ -99,6 +101,15 @@ export class Daemon {
     // Activity evaluator
     this.activityEvaluator = new ActivityEvaluator(this.config.session.diffPollSeconds);
     this.sessionTracker.onSessionClosed = (sessionId) => this.activityEvaluator.removeSession(sessionId);
+
+    // Manual timers: the time the daemon was down is nobody's, a live timer
+    // goes on by itself (a stop by hand had put them on pause).
+    this.timerTracker = new TimerTracker(this.sessionTracker, this.activityEvaluator, this.config);
+    const resumedTimers = this.timerTracker.skipDowntime();
+    if (resumedTimers > 0) {
+      this.sessionTracker.flush();
+      console.log(`  Timers: ${resumedTimers} live timer(s) picked up — downtime not counted`);
+    }
 
     this.approvalWatch = new ApprovalWatch({
       getSecrets: () => this.secrets,
@@ -126,6 +137,7 @@ export class Daemon {
     });
     const deps: HttpServerDeps = {
       sessionTracker: this.sessionTracker,
+      timerTracker: this.timerTracker,
       config: this.config,
       stopCallback: () => this.stopAndExit(),
       getStartedAt: () => this.startedAt,
@@ -271,6 +283,13 @@ export class Daemon {
     if (patch.browser !== undefined) {
       (this.config as { browser?: string | null }).browser = patch.browser;
     }
+
+    // timer — the tray reads the widget switch with the timers.
+    if (patch.timer) {
+      (this.config as { timer: TimerConfig }).timer = {
+        desktopWidget: patch.timer.desktopWidget ?? this.config.timer.desktopWidget,
+      };
+    }
   }
 
   public async addRepo(repoPath: string): Promise<{ ok: boolean; error?: string }> {
@@ -306,6 +325,9 @@ export class Daemon {
 
     this.running = false;
     if (this.httpServer) await this.httpServer.stop();
+    // A stop by hand stops tracking: timers go on pause and stay there. A
+    // self-update restart leaves them live — they go on when the daemon is back.
+    if (manual) this.timerTracker.pauseAll();
     this.sessionTracker.closeAllSessions(ClosedBy.DaemonStop);
     this.sessionTracker.flush();
     this.activityEvaluator.clear();
@@ -359,12 +381,15 @@ export class Daemon {
       // 2. Build tick inputs for evaluator
       const tickInputs = this.sessionTracker.buildTickInputs(results);
 
-      // 3. Evaluate activity scores and leadership
-      const evaluatorResult = this.activityEvaluator.processAllTicks(tickInputs);
+      // 3. Evaluate activity scores and leadership — a running manual timer
+      //    sits in the leader's seat
+      const evaluatorResult = this.activityEvaluator.processAllTicks(tickInputs, this.timerTracker.evaluatorOptions());
 
       // 4. Apply evaluator decisions (auto-pause/resume, candidate
-      //    promotion / drained-candidate evaporation)
+      //    promotion / drained-candidate evaporation; the timer yields the
+      //    count to a session or takes it back)
       this.sessionTracker.applyEvaluatorResult(evaluatorResult);
+      this.timerTracker.applyEvaluatorResult(evaluatorResult);
 
       this.sessionTracker.flush();
 
@@ -390,7 +415,9 @@ export class Daemon {
       this.applyMonthCut(cut);
       this.approvalWatch.markCut(cut);
     }
-    this.sessionTracker.setMonthLock(this.approvalWatch.isClosed(this.currentDate.slice(0, 7)));
+    const locked = this.approvalWatch.isClosed(this.currentDate.slice(0, 7));
+    if (locked && !this.sessionTracker.isMonthLocked()) this.timerTracker.pauseAll();
+    this.sessionTracker.setMonthLock(locked);
   }
 
   // Past days on disk, today through the tracker. Entries owning a Tempo
@@ -446,10 +473,11 @@ export class Daemon {
     this.sessionTracker.dropAllCandidates();
     this.activityEvaluator.clear();
     this.sessionTracker.closeIdleSessions(now);
+    const timersCut = this.timerTracker.skipDowntime();
     this.sessionTracker.flush();
 
     if (!this.statusRenderer) {
-      console.log(`[gap] ${Math.round(check.gapMs / 60_000)}min observation gap — ${paused} session(s) retro-paused`);
+      console.log(`[gap] ${Math.round(check.gapMs / 60_000)}min observation gap — ${paused} session(s) retro-paused, ${timersCut} timer(s) cut`);
     }
   }
 
@@ -575,6 +603,9 @@ export class Daemon {
     const newDate = computeWorkingDate(Date.now(), this.config.boundaryHour, this.config.timezone);
     if (newDate === this.currentDate) return;
 
+    // Timers stop at the boundary and stay in the day they counted in.
+    this.timerTracker.handleDayBoundary();
+
     // Lazy rollover: an empty day writes nothing and says nothing.
     const { oldLog, materialized } = this.sessionTracker.handleDayBoundary();
     if (materialized) writeDailyLog(oldLog);
@@ -692,7 +723,7 @@ function hasGitActivity(result: PollResult): boolean {
 }
 
 function describeCut(date: string, cut: DayCut): string {
-  return `${date}: ${cut.removedSessionIds.length} session(s) removed, ${cut.closedSessionIds.length} ended, ${cut.removedEntries.length} entr${cut.removedEntries.length === 1 ? 'y' : 'ies'} removed`;
+  return `${date}: ${cut.removedSessionIds.length} session(s) removed, ${cut.closedSessionIds.length} ended, ${cut.removedEntries.length} entr${cut.removedEntries.length === 1 ? 'y' : 'ies'} removed, ${cut.trimmedTimers} timer(s) cut`;
 }
 
 // ─── Entry point (direct execution / background mode) ────────────────────

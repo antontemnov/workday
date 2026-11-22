@@ -21,7 +21,7 @@
        [style.--heat]="b.heat || null"
        [class.hot]="b.hot"
        [class.quiet]="b.quiet"
-       [class.one]="b.rowCount <= 1 && draftTask !== b.task"
+       [class.one]="b.rowCount <= 1 && draftTask !== b.task && !blockHasTimer(b)"
        [class.deleted]="taskDeleted(b.task)"
        [class.removing]="removingTasks.has(b.task)"
        [class.folding]="foldingTasks.has(b.task)"
@@ -65,23 +65,25 @@
         (menuRequested)="onSessionMenu(s, $event)"
         (undoRequested)="undoSessionDelete(s)" />
 
-      <!-- Manual added — the ticket's bare Development time, one record.
-           A tag, not a description; only its time is editable. -->
+      <!-- The ticket's Development time without a description, one record.
+           It is a record like the others: "no description" stands in the
+           place of the empty text, and the form gives it one. -->
       <div class="wl manline"
            *ngIf="b.folded[0] as m"
            [class.editing]="editingId === m.id"
+           [class.tm-live]="timerRunning(m)"
+           [class.tm-wait]="timerWaiting(m)"
            [class.deleted]="foldedDeleted(b)"
            [class.removing]="foldedRemoving(b)"
            (dblclick)="onRowDblClick(m)">
         <ng-container *ngIf="editingId === m.id; else manView">
-          <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: m, locked: true }" />
+          <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: m }" />
         </ng-container>
         <ng-template #manView>
-          <span class="c-type" [class.anc]="addedMenuReady(b)" (click)="onAddedMenu(b, m, $event)">{{ activityLabel(developmentActivity) }}</span>
-          <span class="c-ds man">
-            <span>manual added</span>
-            <svg class="mg" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true"><circle cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width="0.9"/><line x1="4.5" y1="2.5" x2="4.5" y2="6.5" stroke="currentColor" stroke-width="1.1"/><line x1="2.5" y1="4.5" x2="6.5" y2="4.5" stroke="currentColor" stroke-width="1.1"/></svg>
-          </span>
+          <span class="c-type" [class.anc]="addedMenuReady(b)" (click)="onAddedMenu(b, m, $event)">{{ activityLabel(displayActivity(m)) }}</span>
+          <!-- A text just given shows at once, before the daemon's answer. -->
+          <span class="c-ds" *ngIf="displayDescription(m) as text; else noText">{{ text }}</span>
+          <ng-template #noText><span class="c-ds none">no description</span></ng-template>
         </ng-template>
         <ng-container *ngIf="foldedDeleted(b); else foldedDur">
           <button type="button" class="l-undo" (click)="undoFolded(b, $event)">↩ undo</button>
@@ -94,9 +96,14 @@
                  (keydown.escape)="cancelForm(); $event.stopPropagation()"
                  title="1h 15m · 90 · 45m — wheel: ±15m" />
           <ng-template #foldedViewDur>
-            <span class="c-dur"
-                  [class.wheel]="foldedHasFresh(b)"
-                  (wheel)="onFoldedWheel(b, $event)">{{ showFoldedDur(b) ? formatDurationHm(displayMinutes(m) * 60000) : '' }}</span>
+            <span class="c-dur rt" *ngIf="timerOf(m) as t; else foldedPlainDur">
+              <ng-container *ngTemplateOutlet="timerSlot; context: { $implicit: t, entry: m }" />
+            </span>
+            <ng-template #foldedPlainDur>
+              <span class="c-dur"
+                    [class.wheel]="foldedHasFresh(b)"
+                    (wheel)="onFoldedWheel(b, $event)">{{ showFoldedDur(b) ? formatDurationHm(displayMinutes(m) * 60000) : '' }}</span>
+            </ng-template>
           </ng-template>
         </ng-template>
       </div>
@@ -140,13 +147,15 @@
                [class.pop]="poppingIds.has(e.id)"
                [style.animation-delay.ms]="popDelayMs.get(e.id)"
                [class.editing]="editingId === e.id"
+               [class.tm-live]="timerRunning(e)"
+               [class.tm-wait]="timerWaiting(e)"
                [class.deleted]="isDeleted(e)"
                [class.removing]="removingIds.has(e.id)"
                [class.fav-done]="favDoneId === e.id"
                (dblclick)="onRowDblClick(e)">
 
             <ng-container *ngIf="editingId === e.id; else viewBand">
-              <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: e, locked: false }" />
+              <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: e }" />
             </ng-container>
             <ng-template #viewBand>
               <span class="c-type" [class.anc]="entryMenuReady(e)" (click)="onEntryMenu(e, $event)">{{ activityLabel(displayActivity(e)) }}</span>
@@ -167,9 +176,14 @@
                      (keydown.escape)="cancelForm(); $event.stopPropagation()"
                      title="1h 15m · 90 · 45m — wheel: ±15m" />
               <ng-template #viewDur>
-                <span class="c-dur"
-                      [class.wheel]="isFresh(e)"
-                      (wheel)="onFreshWheel(e, $event)">{{ showEntryDur(b, e) ? formatDurationHm(displayMinutes(e) * 60000) : '' }}</span>
+                <span class="c-dur rt" *ngIf="timerOf(e) as t; else plainDur">
+                  <ng-container *ngTemplateOutlet="timerSlot; context: { $implicit: t, entry: e }" />
+                </span>
+                <ng-template #plainDur>
+                  <span class="c-dur"
+                        [class.wheel]="isFresh(e)"
+                        (wheel)="onFreshWheel(e, $event)">{{ showEntryDur(b, e) ? formatDurationHm(displayMinutes(e) * 60000) : '' }}</span>
+                </ng-template>
               </ng-template>
             </ng-template>
           </div>
@@ -184,10 +198,10 @@
       </div>
 
       <!-- Add time — a new row born as its own form. Saved bare (Development,
-           no description) it lands on manual added; described, it becomes
-           an entry. -->
+           no description) it lands on the ticket's record without one;
+           described, it becomes an entry. -->
       <div class="wl ent editing draft" *ngIf="draftTask === b.task">
-        <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: null, locked: false }" />
+        <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: null }" />
         <input class="c-dur edit"
                [(wdDuration)]="editMinutes"
                (durEnter)="saveForm(null)"
@@ -198,17 +212,14 @@
       <!-- A saved row on its way: the Add time draft holds its place, a Log
            cloud entry enters as the landed row would — until the entry lands
            (or the action fails). It reads as what lands: a bare Development
-           row is manual added time; landing on an existing manual added
-           record, it folds away instead. -->
+           row has no description; landing on the ticket's record without
+           one, it folds away instead. -->
       <div class="wl ent pending"
            *ngIf="draftPending && draftPending.task === b.task"
            [class.pop]="pendingEnters"
            [class.removing]="draftMerging">
         <span class="c-type">{{ activityLabel(draftPending.activity) }}</span>
-        <span class="c-ds man" *ngIf="pendingBare; else pendingDesc">
-          <span>manual added</span>
-          <svg class="mg" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true"><circle cx="4.5" cy="4.5" r="3.9" fill="none" stroke="currentColor" stroke-width="0.9"/><line x1="4.5" y1="2.5" x2="4.5" y2="6.5" stroke="currentColor" stroke-width="1.1"/><line x1="2.5" y1="4.5" x2="6.5" y2="4.5" stroke="currentColor" stroke-width="1.1"/></svg>
-        </span>
+        <span class="c-ds none" *ngIf="pendingBare; else pendingDesc">no description</span>
         <ng-template #pendingDesc><span class="c-ds">{{ draftPending.description }}</span></ng-template>
         <span class="c-dur">{{ formatDurationHm(draftPending.minutes * 60000) }}</span>
       </div>
@@ -216,6 +227,30 @@
     </div>
   </div>
 </div>
+
+<!-- The time slot of a record a timer feeds: ⏸ while the timer is switched
+     on (dimmed when a session counts instead) and the time ticks with its
+     seconds; a quiet ▶ and whole minutes at rest. -->
+<ng-template #timerSlot let-t let-e="entry">
+  <button type="button"
+          class="rt-b"
+          [class.run]="timerLive(t)"
+          [class.dim]="timerDim(t)"
+          [class.rest]="!timerLive(t)"
+          [disabled]="actionPending || readOnly"
+          [attr.aria-label]="timerLive(t) ? 'Pause timer' : 'Start timer'"
+          (click)="onTimerToggle(t, $event)"
+          (dblclick)="$event.stopPropagation()">
+    <svg *ngIf="timerLive(t)" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>
+    <svg *ngIf="!timerLive(t)" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>
+  </button>
+  <app-timer-time *ngIf="timerLive(t); else restTime"
+                  [timer]="t"
+                  [asOf]="timersAsOf"
+                  [whole]="true"
+                  (minuteChanged)="onTimerMinute()" />
+  <ng-template #restTime>{{ formatDurationHm(displayMinutes(e) * 60000) }}</ng-template>
+</ng-template>
 
 <!-- One side of a conflict: ticket and day only where the sides part, the
      fields that differ lit. -->
@@ -228,18 +263,17 @@
   </ng-template>
 </ng-template>
 
-<!-- The row form — one at a time: an entry's edit, the manual added row's
-     time-only edit (locked), or the Add time draft (no entry yet). -->
-<ng-template #rowForm let-e let-locked="locked">
+<!-- The row form — one at a time: an entry's edit (the record without a
+     description included) or the Add time draft (no entry yet). -->
+<ng-template #rowForm let-e>
   <div class="rf" (keydown.escape)="cancelForm(); $event.stopPropagation()">
     <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelForm()">←</button>
-    <select class="le-act" [(ngModel)]="editActivity" [disabled]="locked" (keydown.enter)="saveForm(e)">
+    <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveForm(e)">
       <option *ngFor="let a of activityOptions" [value]="a.value">{{ a.name }}</option>
     </select>
     <input class="le-desc"
            [class.need]="editDescNeeded"
            [(ngModel)]="editDescription"
-           [disabled]="locked"
            (keydown.enter)="saveForm(e)"
            placeholder="description" />
     <button type="button" class="le-save" [disabled]="actionPending" (click)="saveForm(e)">Save</button>

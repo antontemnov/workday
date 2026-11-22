@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LoggedPanelComponent, type ArriveFrom } from './logged-panel/logged-panel.component';
-import { ChipPick, FormPick, LogCloudComponent } from './log-cloud/log-cloud.component';
+import { ChipPick, FormPick, LogCloudComponent, type TimerPickTarget } from './log-cloud/log-cloud.component';
 import { SuggestionRowComponent, type SuggestionAcceptEvent, type SuggestionPick } from './suggestion-row/suggestion-row.component';
 import { formatDurationLabel } from './duration-field/duration.util';
 import { closeCtxMenu, currentCtxMenu, openCtxMenu, type CtxMenuItem } from './ctx-menu.util';
@@ -23,7 +23,10 @@ import {
   Suggestion,
   SuggestionAcceptRequest,
   suggestionSourceRef,
+  TimerBindInput,
+  TimerView,
 } from '../../models/workday.models';
+import { liveMinutes } from '../../timer/timer-clock.util';
 
 // Ordering bars for the Sort method row — longest to shortest.
 const SORT_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="2" y1="3" x2="10" y2="3"/><line x1="2" y1="6" x2="7.4" y2="6"/><line x1="2" y1="9" x2="4.8" y2="9"/></svg>';
@@ -77,6 +80,24 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Input() suggestionsMode: SuggestionsMode = 'started';
   @Input() allDayBusy = false;
   @Input() allDayFetching = false;
+  // The day's manual timers and the daemon's moment their numbers were taken
+  // at — the feed shows which records they feed.
+  @Input() timers: readonly TimerView[] = [];
+  @Input() timersAsOf: string = '';
+
+  // ▶ / ⏸ next to a record's time.
+  @Output() timerToggleSubmitted = new EventEmitter<TimerView>();
+  // A record about to be deleted has a live timer — it stops first.
+  @Output() timerPauseSubmitted = new EventEmitter<string>();
+  // Start timer / Remove timer in a record's menu (entry id).
+  @Output() entryTimerStartSubmitted = new EventEmitter<string>();
+  @Output() entryTimerRemoveSubmitted = new EventEmitter<string>();
+  // Start timer «text» in the Log cloud.
+  @Output() timerStartTextSubmitted = new EventEmitter<string>();
+  // task? → Log: the timer gets its ticket.
+  @Output() timerBindSubmitted = new EventEmitter<{ timerId: string; input: TimerBindInput }>();
+  // The ticket cloud of a timer closed — the island takes its full height back.
+  @Output() timerPickClosed = new EventEmitter<void>();
 
   @Output() pillSelected = new EventEmitter<{ session: SessionDetail; pill: SensitivityPill; keepPause?: boolean }>();
   @Output() logSubmitted = new EventEmitter<ManualEntryInput>();
@@ -400,8 +421,42 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // down from the offer's old spot when it lands.
   suggestionArrive: ArriveFrom | null = null;
 
+  // Non-null → the cloud picks a ticket for a timer (task? in the island):
+  // a pick opens the one-button form with the timer's minutes and
+  // description, Log binds the timer to the ticket.
+  timerTarget: TimerPickTarget | null = null;
+
+  // The cloud hangs from the island's anchor row, which lives in the app
+  // header — `anchor` is that island's box.
+  public openCloudForTimer(timer: TimerView, asOf: string, anchor: DOMRect): void {
+    this.acceptTarget = null;
+    this.acceptAnchor = null;
+    this.cloudResize?.disconnect();
+    this.timerTarget = {
+      id: timer.id,
+      description: timer.description,
+      minutes: liveMinutes(timer, Date.parse(asOf), Date.now()),
+    };
+    const host = this.hostEl.nativeElement.getBoundingClientRect();
+    this.overlayTop = anchor.bottom - host.top + 4;
+    this.cloudOrigin = 'calc(100% - 60px) 0';
+    this.cloudOpen = true;
+  }
+
+  onTimerBound(input: TimerBindInput): void {
+    const target = this.timerTarget;
+    this.closeCloud();
+    if (target) this.timerBindSubmitted.emit({ timerId: target.id, input });
+  }
+
+  onTimerStartText(text: string): void {
+    this.closeCloud();
+    this.timerStartTextSubmitted.emit(text);
+  }
+
   openCloud(): void {
     if (this.actionPending) return;
+    this.dropTimerTarget();
     this.acceptTarget = null;
     this.cloudOrigin = null;
     this.overlayTop = this.headHeight() + 6;
@@ -414,6 +469,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // ResizeObserver re-runs it on every panel growth while the picker is open.
   openCloudForAccept(s: Suggestion, from?: DOMRect): void {
     if (this.actionPending) return;
+    this.dropTimerTarget();
     this.acceptTarget = s;
     if (from) {
       this.acceptAnchor = from;
@@ -486,6 +542,13 @@ export class DayViewComponent implements OnChanges, OnDestroy {
     this.acceptAnchor = null;
     this.cloudResize?.disconnect();
     this.cloudResize = undefined;
+    this.dropTimerTarget();
+  }
+
+  private dropTimerTarget(): void {
+    if (this.timerTarget === null) return;
+    this.timerTarget = null;
+    this.timerPickClosed.emit();
   }
 
   pickFor(s: Suggestion): SuggestionPick | null {

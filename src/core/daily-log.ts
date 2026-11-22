@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, mkdi
 import { join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getDataDir, computeWorkingDate } from './config.js';
-import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualEntry, type ActiveInterval, type ReviewCheckout } from './types.js';
+import { DayStatus, DayType, SignalType, type DailyLog, type Session, type Signal, type Evidence, type AppConfig, type Pause, type ManualEntry, type ActiveInterval, type ReviewCheckout, type Timer } from './types.js';
+import { absorbTimer, creditTimers, dropEntryTimer, findEntryTimer, findTimer, fitTimerToEntry, handMinutes, relinkTimers, shareMs, trimShare } from './timers.js';
 import { TMP_EXTENSION, BACKUP_EXTENSION, LOCK_EXTENSION, LOCK_STALE_MS, MAX_ENTRY_MINUTES, MS_PER_MINUTE, DEFAULT_ACTIVITY, JIRA_KEY_PATTERN } from './constants.js';
 
 /** Generate short unique session id */
@@ -567,6 +568,7 @@ export function collapseAddedEntries(log: DailyLog, isOwned?: (entry: ManualEntr
       createdAt: first.createdAt,
       added: true,
     });
+    relinkTimers(log, group.map(e => e.id), first.id);
     merged += group.length;
   }
 
@@ -620,6 +622,7 @@ export function setAddedMinutes(log: DailyLog, taskInput: string, minutes: numbe
   }
 
   collapseAddedEntries(log);
+  creditTimers(log, Date.now());
   const existing = findAddedEntry(log, task);
   if (minutes === 0) {
     if (!existing) return null;
@@ -629,6 +632,7 @@ export function setAddedMinutes(log: DailyLog, taskInput: string, minutes: numbe
 
   assertWithinDayWindow(log, (minutes - (existing?.minutes ?? 0)) * MS_PER_MINUTE, config);
   unsealForEdit(log);
+  if (existing) fitTimerToEntry(log, existing.id, minutes, new Date().toISOString());
   return putAddedMinutes(log, task, minutes);
 }
 
@@ -666,13 +670,14 @@ export function addManualEntry(
 
   if (isBareDevelopment(activity, description, input.sourceRef)) {
     collapseAddedEntries(log);
-    const total = (findAddedEntry(log, task)?.minutes ?? 0) + input.minutes;
-    if (total > MAX_ENTRY_MINUTES) {
+    const record = findAddedEntry(log, task);
+    // The cap guards what is typed by hand; a timer's minutes are not typed.
+    if ((record ? handMinutes(log, record) : 0) + input.minutes > MAX_ENTRY_MINUTES) {
       throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h) of manual added time per ticket`);
     }
     assertWithinDayWindow(log, input.minutes * MS_PER_MINUTE, config);
     unsealForEdit(log);
-    return putAddedMinutes(log, task, total);
+    return putAddedMinutes(log, task, (record?.minutes ?? 0) + input.minutes);
   }
 
   assertWithinDayWindow(log, input.minutes * MS_PER_MINUTE, config);
@@ -743,6 +748,8 @@ export function overwriteEntryFromTempo(
 ): ManualEntry {
   const entry = findManualEntry(log, id);
   if (!entry) throw new Error(`Manual entry not found: ${id}`);
+  creditTimers(log, Date.now());
+  fitTimerToEntry(log, entry.id, values.minutes, new Date().toISOString());
   entry.minutes = values.minutes;
   entry.description = values.description;
   entry.activity = values.activity;
@@ -758,8 +765,13 @@ export interface ManualEntryEdit {
 
 /**
  * Edit a manual entry (absolute set of provided fields). The manual added
- * record takes minutes only; a standalone entry edited down to bare
- * Development is absorbed by it. Budget re-checked when minutes increase.
+ * record is the ticket's Development time without a description, nothing
+ * more: given a description (or another type) it becomes an entry of its
+ * own, the same record under the same id, its timer still on it. The other
+ * way, a standalone entry edited down to bare Development is absorbed by
+ * the ticket's manual added record. Budget re-checked when minutes increase.
+ * The entry's timer keeps what it counted; a number smaller than that cuts
+ * the timer down to it.
  * Validates everything before the first write. Throws on validation failure.
  */
 export function editManualEntry(
@@ -769,10 +781,12 @@ export function editManualEntry(
   config: AppConfig,
 ): ManualEntryEdit {
   collapseAddedEntries(log);
+  creditTimers(log, Date.now());
   const entry = findManualEntry(log, id);
   if (!entry) throw new Error(`Manual entry not found: ${id}`);
 
   const minutes = patch.minutes ?? entry.minutes;
+  const nowIso = new Date().toISOString();
   if (patch.minutes !== undefined) {
     if (!Number.isFinite(minutes) || minutes <= 0) {
       throw new Error('Minutes must be positive');
@@ -792,27 +806,41 @@ export function editManualEntry(
   }
 
   if (isAddedEntry(entry)) {
-    if (activity !== DEFAULT_ACTIVITY || description) {
-      throw new Error('Manual added time takes minutes only — log a described entry instead');
-    }
     assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
+    fitTimerToEntry(log, entry.id, minutes, nowIso);
     entry.minutes = minutes;
+    if (activity !== DEFAULT_ACTIVITY || description) {
+      // Named, it leaves the ticket's common worklog for one of its own. It
+      // never owned a worklog, so the id is free to stay.
+      const named = entry as { added?: true; sourceSessionId?: string };
+      delete named.added;
+      delete named.sourceSessionId;
+      entry.activity = activity;
+      entry.description = description;
+    }
     unsealForEdit(log);
     return { entry, absorbed: null };
   }
 
   // Edited down to bare Development: the entry retires into manual added.
   if (isBareDevelopment(activity, description, entry.sourceRef)) {
-    const total = (findAddedEntry(log, entry.task)?.minutes ?? 0) + minutes;
-    if (total > MAX_ENTRY_MINUTES) {
+    const record = findAddedEntry(log, entry.task);
+    const counted = findEntryTimer(log, entry.id)?.creditedMinutes ?? 0;
+    const typed = (record ? handMinutes(log, record) : 0) + Math.max(0, minutes - counted);
+    if (typed > MAX_ENTRY_MINUTES) {
       throw new Error(`Max is ${MAX_ENTRY_MINUTES} minutes (8h) of manual added time per ticket`);
     }
     assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
-    const absorbed = deleteManualEntry(log, entry.id);
-    return { entry: putAddedMinutes(log, absorbed.task, total), absorbed };
+    fitTimerToEntry(log, entry.id, minutes, nowIso);
+    const absorbed = takeEntryOut(log, entry.id);
+    const target = putAddedMinutes(log, absorbed.task, (record?.minutes ?? 0) + minutes);
+    // The entry's timer goes on feeding the record that took its time.
+    relinkTimers(log, [absorbed.id], target.id);
+    return { entry: target, absorbed };
   }
 
   assertWithinDayWindow(log, (minutes - entry.minutes) * MS_PER_MINUTE, config);
+  fitTimerToEntry(log, entry.id, minutes, nowIso);
   entry.minutes = minutes;
   entry.activity = activity;
   entry.description = description;
@@ -820,17 +848,106 @@ export function editManualEntry(
   return { entry, absorbed: null };
 }
 
-/**
- * Delete a manual entry (the manual added record included — removing it
- * just un-claims the extra time). Throws when the id is unknown.
- */
-export function deleteManualEntry(log: DailyLog, id: string): ManualEntry {
+function takeEntryOut(log: DailyLog, id: string): ManualEntry {
   const entries = log.manualEntries;
   const index = entries?.findIndex(e => e.id === id) ?? -1;
   if (!entries || index === -1) throw new Error(`Manual entry not found: ${id}`);
   const [removed] = entries.splice(index, 1);
   unsealForEdit(log);
   return removed;
+}
+
+/**
+ * Delete a manual entry (the manual added record included — removing it
+ * just un-claims the extra time). Its timer goes with it. Throws when the
+ * id is unknown.
+ */
+export function deleteManualEntry(log: DailyLog, id: string): ManualEntry {
+  const removed = takeEntryOut(log, id);
+  dropEntryTimer(log, removed.id);
+  return removed;
+}
+
+// ─── Timer → ticket ───────────────────────────────────────────────────────
+
+export interface TimerBinding {
+  readonly entry: ManualEntry;   // the record the timer feeds from now on
+  readonly timer: Timer;
+}
+
+/**
+ * Give a no-ticket timer its ticket (task? → Log): its time becomes a record
+ * of the ticket and the timer goes on feeding it, in the state it was in.
+ * With a description (or another activity) that is a new entry; bare
+ * Development lands on the ticket's manual added record — whose own timer,
+ * if it has one, takes this one in. `minutes` is passed only when the form's
+ * number was changed: the record gets that number, the timer keeps what it
+ * counted and is cut down only when the number is smaller. Throws on
+ * validation failure.
+ */
+export function bindTimer(
+  log: DailyLog,
+  timerId: string,
+  input: { task: string; description: string; activity: string; minutes?: number },
+  config: AppConfig,
+): TimerBinding {
+  const timer = findTimer(log, timerId);
+  if (!timer) throw new Error(`Timer not found: ${timerId}`);
+  if (timer.entryId !== null) throw new Error('The timer already has a ticket');
+
+  const task = input.task.trim();
+  if (!task) throw new Error('Task is required');
+  assertValidTask(task);
+
+  const activity = input.activity.trim();
+  if (!activity) throw new Error('Activity is required');
+  const description = input.description.trim();
+  if (!description && activity !== DEFAULT_ACTIVITY) {
+    throw new Error('Description is required (only Development may omit it)');
+  }
+
+  const typed = input.minutes;
+  if (typed !== undefined && (!Number.isFinite(typed) || typed < 0)) {
+    throw new Error('Minutes must be zero or positive');
+  }
+
+  const bare = isBareDevelopment(activity, description);
+  if (bare) collapseAddedEntries(log);
+  creditTimers(log, Date.now());
+  const record = bare ? findAddedEntry(log, task) : undefined;
+  if (typed !== undefined) {
+    if ((record ? handMinutes(log, record) : 0) + typed > MAX_ENTRY_MINUTES) {
+      throw new Error(bare
+        ? `Max is ${MAX_ENTRY_MINUTES} minutes (8h) of manual added time per ticket`
+        : `Max is ${MAX_ENTRY_MINUTES} minutes (8h)`);
+    }
+    assertWithinDayWindow(log, typed * MS_PER_MINUTE, config);
+  }
+
+  const nowIso = new Date().toISOString();
+  unsealForEdit(log);
+  let entry: ManualEntry;
+  if (bare) {
+    entry = putAddedMinutes(log, task, record?.minutes ?? 0);
+  } else {
+    entry = { id: generateSessionId(), task, minutes: 0, description, activity, createdAt: nowIso };
+    if (!log.manualEntries) log.manualEntries = [];
+    log.manualEntries.push(entry);
+  }
+
+  if (typed !== undefined) {
+    // The credit below brings the timer's minutes; the rest is typed by hand.
+    const counted = Math.floor(shareMs(timer, Date.parse(nowIso)) / MS_PER_MINUTE);
+    if (typed < counted) trimShare(timer, typed * MS_PER_MINUTE, nowIso);
+    entry.minutes += Math.max(0, typed - counted);
+  }
+
+  const resident = findEntryTimer(log, entry.id);
+  timer.entryId = entry.id;
+  timer.description = '';
+  if (resident) absorbTimer(log, resident, timer);
+  creditTimers(log, Date.parse(nowIso));
+  return { entry, timer: resident ?? timer };
 }
 
 /** Parse a date string + hour into a timestamp in the given timezone */

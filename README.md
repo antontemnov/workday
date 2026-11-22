@@ -40,6 +40,17 @@ workday resume [repo]                  Resume paused sessions
 workday autopause on|off [repo]        Toggle idle auto-pause
 workday log <task> <min> "<desc>"      Log manual time on a task
 workday log-added <task> <min>         Set a ticket's manual added total (bare Development time; 0 removes)
+workday timer                          Today's manual timers
+workday timer new ["<desc>"]           Start a timer without a ticket
+workday timer start <#|id>             Start a timer (--entry <#|id> puts one on a manual entry)
+workday timer pause [#|id]             Pause a timer (default: the live one)
+workday timer describe <#|id> "<text>" Describe a timer (one with a ticket: its entry's description)
+workday timer bind <#|id> <task> ["<desc>"]   Give a timer its ticket (--activity T, --minutes N)
+workday timer remove <entry #|id>      Remove the timer from an entry (its time goes)
+workday timer delete <#|id>            Remove a timer (one with a ticket takes its time out of the entry)
+workday timer cancel <#|id>            Undo a New timer made by mistake
+workday timer hide <#|id>              Take a paused timer off the desktop widget
+workday timer widget [on|off]          Desktop widget switch
 workday fav-add <task> <min> "<name>"  Add a favorite (reusable log template)
 workday fav-remove <#|id>              Remove a favorite
 workday fav-list                       List favorites
@@ -95,7 +106,8 @@ workday daemon                         Run in foreground (live dashboard)
   "notifications": {
     "timesheetReminder": { "enabled": true, "notifyHour": 14 }
   },
-  "calendar": { "enabled": true, "hidePrivate": false }
+  "calendar": { "enabled": true, "hidePrivate": false },
+  "timer": { "desktopWidget": true }
 }
 ```
 
@@ -152,6 +164,33 @@ tickets the suggestion carries the conflicting candidates instead of guessing.
 A noisy series can be muted for a week, a month, or forever — right-click the
 suggestion in the tray (or `workday suggestions mute`); muted series are
 listed under Settings → Calendar and in `workday suggestions muted`.
+
+**Manual timers** cover work that leaves no trace in git. A timer is a source
+of time for a manual entry, not a record of its own: it adds whole minutes to
+the entry it feeds and remembers its own share, so `Remove timer` takes out
+exactly what it counted and leaves what was typed by hand. A number typed
+into the entry does not touch what the timer counted; only a number smaller
+than that cuts the timer down to it. A timer with a ticket has no text of its
+own — its description is the entry's. A timer started without a ticket
+(`workday timer new`) is outside the day total until it gets one
+(`workday timer bind`); bare Development time lands on the ticket's manual
+added record, as any bare add does.
+
+One counts at a time — a session or a timer. Starting a timer supersedes the
+session that was counting; a single stray edit does not take the count back,
+edits tick after tick (about a minute) do, and then the timer waits and
+counts again once every session has faded. Sleep, a crash, a reboot or a
+self-update are simply time nobody tracked: a live timer is cut where it was
+last seen and goes on by itself. `workday stop` pauses timers. At the day
+boundary every timer stops; a timer still without a ticket stays in its day's
+file as unlinked time. `timer.desktopWidget` is the tray's switch for the
+small always-on-top list of timers. A timer without a ticket gets one right
+there: the widget lists the tickets the tray knows already (the day's, Jira
+in progress, favorites) and searches Jira; the record is Development with the
+timer's description. Without one the time lands on the ticket's Development
+record that has no description — an ordinary record, shown as "no
+description": it can be named later in its card, in the timer island or on
+the widget, and a Development description taken away puts the time back.
 
 Config can also live next to `package.json` for local development — the daemon checks there first before falling back to `~/.workday/`.
 
