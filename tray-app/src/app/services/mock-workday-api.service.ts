@@ -68,6 +68,7 @@ import {
   SuggestionsDayState,
   SuggestionAcceptRequest,
   SuggestionAcceptResponse,
+  SuggestionTicket,
   SuggestionTimerResponse,
   SuggestedTimerSettings,
   SuggestionsMutedResponse,
@@ -92,6 +93,7 @@ interface MockTimer {
   credited: number;          // whole minutes of the share already in the entry
   touchedAt: string;
   hidden: boolean;
+  sourceRef?: string;        // a no-ticket timer grown from a suggestion
 }
 
 function minutesAgo(minutes: number): string {
@@ -783,6 +785,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
           handMinutes: typed,
           hidden: timer.hidden,
           touchedAt: timer.touchedAt,
+          ...(timer.entryId === null && timer.sourceRef ? { sourceRef: timer.sourceRef } : {}),
         };
       }),
     };
@@ -887,8 +890,11 @@ export class MockWorkdayApiService extends WorkdayApiService {
     if (!timer) return { ok: false, error: `Timer not found: ${timerId}` };
     if (timer.entryId !== null) return { ok: false, error: 'The timer already has a ticket' };
     const description = input.description.trim();
-    const bare = !description && input.activity === DEVELOPMENT_ACTIVITY;
-    if (!description && !bare) return { ok: false, error: 'Description is required (only Development may omit it)' };
+    const sourceRef = timer.sourceRef;
+    const bare = !description && input.activity === DEVELOPMENT_ACTIVITY && !sourceRef;
+    if (!description && input.activity !== DEVELOPMENT_ACTIVITY) {
+      return { ok: false, error: 'Description is required (only Development may omit it)' };
+    }
 
     let entry: ManualEntry;
     if (bare) {
@@ -896,9 +902,10 @@ export class MockWorkdayApiService extends WorkdayApiService {
       entry = this.putMockAdded(input.task, record?.minutes ?? 0);
     } else {
       entry = { id: `m${this.mockEntrySeq++}`, task: input.task, minutes: 0, description,
-                activity: input.activity, createdAt: this.nextCreatedAt() };
+                activity: input.activity, createdAt: this.nextCreatedAt(), ...(sourceRef ? { sourceRef } : {}) };
       this.mockManualEntries = [...this.mockManualEntries, entry];
     }
+    delete timer.sourceRef;
     const nowMs = Date.now();
     if (input.minutes !== undefined) {
       // The record gets the typed number; the timer keeps what it counted and
@@ -1236,29 +1243,33 @@ export class MockWorkdayApiService extends WorkdayApiService {
 
   // A suggestion taken by a timer, as the daemon does it: a record with no
   // minutes and a running timer on it, or a running timer without a ticket;
-  // the row is dismissed either way.
-  async startSuggestionTimer(uid: string, date: string, includeFuture?: boolean): Promise<ApiResponse<SuggestionTimerResponse>> {
+  // the row is dismissed either way. The ticket is the learned one or the
+  // one given in the feed.
+  async startSuggestionTimer(uid: string, date: string, includeFuture?: boolean, ticket?: SuggestionTicket): Promise<ApiResponse<SuggestionTimerResponse>> {
     await delay(150);
     const suggestion = this.suggestionsDay(date, includeFuture).suggestions.find(s => s.uid === uid);
     if (!suggestion) return { ok: false, error: 'Suggestion not found for this uid and date' };
     if (!suggestion.suggestedTimer) {
       return { ok: false, error: 'No suggested timer: the suggestion is not ongoing, or its suggested timer is switched off' };
     }
-    const description = suggestion.resolved?.description ?? (suggestion.isPrivate ? '' : suggestion.title);
+    const description = suggestion.resolved?.description ?? suggestion.title;
+    const task = ticket?.task || suggestion.resolved?.task;
+    const activity = ticket?.activity || suggestion.resolved?.activity || 'Other';
     let entry: ManualEntry | null = null;
-    if (suggestion.resolved) {
+    if (task) {
       entry = {
         id: `m${this.mockEntrySeq++}`,
-        task: suggestion.resolved.task,
+        task,
         minutes: 0,
         description,
-        activity: suggestion.resolved.activity,
+        activity,
         createdAt: this.nextCreatedAt(),
         sourceRef: suggestionSourceRef(suggestion),
       };
       this.mockManualEntries.push(entry);
     }
     const timer = this.newMockTimer(entry ? entry.id : null, entry ? '' : description);
+    if (!entry) timer.sourceRef = suggestionSourceRef(suggestion);
     this.runMockTimer(timer);
     this.mockDismissed.add(`${uid}:${date}`);
     return {
@@ -1375,7 +1386,7 @@ export class MockWorkdayApiService extends WorkdayApiService {
       }
       if (patch.config.browser !== undefined) this.mockBrowser = patch.config.browser ?? null;
       if (patch.config.timer) {
-        this.mockDesktopWidget = patch.config.timer.desktopWidget;
+        this.mockDesktopWidget = patch.config.timer.desktopWidget ?? this.mockDesktopWidget;
         this.mockSuggestedTimers = { ...this.mockSuggestedTimers, ...patch.config.timer.suggested };
       }
     }

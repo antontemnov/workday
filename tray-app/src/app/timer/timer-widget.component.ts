@@ -6,8 +6,8 @@ import { TimerState, TimerView } from '../models/workday.models';
 import { formatTicking } from './timer-clock.util';
 import { TimerTimeComponent } from './timer-time.component';
 import {
-  matchTickets, mergeFound, pickListEm, showsHours, WidgetGrab, WidgetLayout, widgetLayout, WidgetSuggestion, WidgetTicket,
-  WidgetTicketGroup,
+  matchTickets, mergeFound, pickListEm, showsHours, WidgetBound, WidgetGrab, WidgetLayout, widgetLayout, WidgetSuggestion,
+  WidgetTicket, WidgetTicketGroup,
 } from './timer-widget.util';
 
 // A press becomes a drag only past this — a click or a double click stays one.
@@ -54,7 +54,8 @@ interface Found {
  * A timer without a ticket has a second slot, the ticket glyph. It opens the
  * ticket block next to the row, on the side the window grows to: a search
  * line and the tickets the app knows already, scrolling inside a list of one
- * height. A click on a ticket binds the timer; the glyph again shuts the
+ * height; the favorites stand there as in the Log cloud, every one a row. A
+ * click on a row binds the timer — a favorite as it says; the glyph again shuts the
  * block. The block takes the keyboard as it opens, the caret in the search
  * line: what is typed filters the known tickets at once and, after a pause,
  * goes to Jira. Enter takes the row under the highlight, the arrows move it;
@@ -98,7 +99,8 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
   @Output() ticketsRequested: EventEmitter<void> = new EventEmitter<void>();
   // A text for Jira, after a pause in the typing.
   @Output() searchRequested: EventEmitter<string> = new EventEmitter<string>();
-  @Output() bound: EventEmitter<{ id: string; task: string }> = new EventEmitter<{ id: string; task: string }>();
+  // A row of the ticket block picked for a timer; favoriteId — the row was a favorite.
+  @Output() bound: EventEmitter<WidgetBound> = new EventEmitter<WidgetBound>();
   // ▶ of a star row (the suggestion's uid), and its row taken off the desktop.
   @Output() suggestedStarted: EventEmitter<string> = new EventEmitter<string>();
   @Output() suggestedHidden: EventEmitter<string> = new EventEmitter<string>();
@@ -397,15 +399,15 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
     }
     if (ev.key !== 'Enter') return;
     ev.preventDefault();
-    this.onTicket(rows[this.highlight].key);
+    this.onTicket(rows[this.highlight]);
   }
 
-  /** A ticket of the list: the timer is bound to it, the block shuts. */
-  onTicket(key: string): void {
+  /** A row of the list: the timer is bound to its ticket — as the favorite says, if it is one; the block shuts. */
+  onTicket(ticket: WidgetTicket): void {
     const id = this.pickId;
     if (id === null) return;
     this.closePick();
-    this.bound.emit({ id, task: key });
+    this.bound.emit({ id, task: ticket.key, ...(ticket.favoriteId !== undefined ? { favoriteId: ticket.favoriteId } : {}) });
   }
 
   onListScroll(): void {

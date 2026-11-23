@@ -76,7 +76,7 @@ workday calendar                       Outlook ICS feed status (meeting suggesti
 workday calendar refresh               Re-fetch the calendar feed now
 workday suggestions [--date D] [--all] Pending meeting suggestions for a day (--all adds today's upcoming meetings)
 workday suggestions accept <#N|uid>    Log a suggested meeting (--task optional once learned)
-workday suggestions timer <#N|uid>     Take a live suggestion by a timer (rows marked [timer])
+workday suggestions timer <#N|uid>     Take a live suggestion by a timer (rows marked [timer]; --task gives it a ticket)
 workday suggestions dismiss <#N|uid>   Dismiss a suggestion (permanent per meeting+day)
 workday suggestions mute <#N|uid>      Mute a meeting series (--days N, default forever)
 workday suggestions muted              Manually muted series
@@ -187,9 +187,11 @@ last seen and goes on by itself. `workday stop` pauses timers. At the day
 boundary every timer stops; a timer still without a ticket stays in its day's
 file as unlinked time. `timer.desktopWidget` is the tray's switch for the
 small always-on-top list of timers. A timer without a ticket gets one right
-there: the widget lists the tickets the tray knows already (the day's, Jira
-in progress, favorites) and searches Jira; the record is Development with the
-timer's description. Without one the time lands on the ticket's Development
+there: the widget lists what the tray knows already (the day's tickets, Jira
+in progress, and every favorite as the Log cloud shows it) and searches Jira.
+A ticket makes a Development record with the timer's description; a favorite
+binds as it says — its activity, and its name when the timer has no
+description. Without a description the time lands on the ticket's Development
 record that has no description — an ordinary record, shown as "no
 description": it can be named later in its card, in the timer island or on
 the widget, and a Development description taken away puts the time back.
@@ -197,14 +199,23 @@ the widget, and a Development description taken away puts the time back.
 **Suggested timers** join the two: a suggestion that is live — a meeting
 until it ends, a review while its branch is checked out — can be taken by a
 timer instead of being logged with a planned number. Off by default, one
-switch per source: `timer.suggested.meeting` (Settings → Timer → Calendar
-events) and `timer.suggested.review` (Code reviews). While a switched-on
+switch per source: `timer.suggested.meeting` (Settings → Timer → Suggest
+timers for meetings) and `timer.suggested.review` (Suggest timers for
+reviews). While a switched-on
 suggestion is live it stands on the desktop widget below the timers — an
 amber star and a zero that does not tick; a click on it, `Start timer` in the
 suggestion's menu or `workday suggestions timer` takes it: with a known
 ticket that is a record with the suggestion's activity and description, no
 minutes yet and a running timer on it; without one, a running timer without a
-ticket named after the meeting. The suggestion leaves the day for good —
+ticket named after the meeting. A ticket picked for a suggestion that has
+none (`task?` in the feed, `--task` in the CLI) is its ticket from then on:
+the star row shows the key and the timer takes it. A timer that took a
+meeting without a ticket remembers the meeting: the ticket it gets later —
+on the widget, in the island or with `workday timer bind` — makes the
+meeting's record (`Other` unless another activity is chosen, never
+Development by default) and the series learns it, so the next meeting of the
+series comes with the ticket and the activity. A suggestion without history
+is `Other` on every path. The suggestion leaves the day for good —
 removing the timer later does not bring it back. Nothing starts by itself,
 and a meeting that ends does not stop the timer.
 

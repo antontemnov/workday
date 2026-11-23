@@ -54,7 +54,7 @@ const settle = async (): Promise<void> => {
 await import(new URL('../../tray-app/node_modules/@angular/compiler/fesm2022/compiler.mjs', import.meta.url).href);
 const { TimerState } = await import('../../tray-app/src/app/models/workday.models');
 const { AppComponent } = await import('../../tray-app/src/app/app.component');
-import type { ApiResponse, TimerView, TimersResponse, TodayResponse } from '../../tray-app/src/app/models/workday.models';
+import type { ApiResponse, Favorite, TimerView, TimersResponse, TodayResponse } from '../../tray-app/src/app/models/workday.models';
 
 let passed = 0;
 let failed = 0;
@@ -225,6 +225,59 @@ await test('a ticket for a timer that is not there is not sent', async () => {
   hidden.onWidgetAction({ kind: 'search', query: 'dep' });
   await settle();
   assert.deepEqual(apiCalls.filter(c => c.name === 'bindTimer' || c.name === 'searchJira'), []);
+});
+
+// ─── A favorite, and a timer grown from a meeting ─────────────────────────
+
+const fav = (id: string, name: string, task: string, activity: string): Favorite =>
+  ({ id, name, task, minutes: 30, activity, createdAt: AS_OF });
+const lastBind = (): readonly unknown[] | undefined => apiCalls.filter(c => c.name === 'bindTimer').at(-1)?.args;
+const pick = async (action: Record<string, unknown>): Promise<void> => {
+  apiCalls.length = 0;
+  hidden.onWidgetAction({ kind: 'bind', ...action });
+  await settle();
+};
+
+await test('a favorite picked on the widget binds as the favorite says: its activity, its name', async () => {
+  shell.favorites = [
+    fav('f1', 'PR review', 'ATL-205', 'CodeReview'),
+    fav('f2', 'sprint planning', 'ATL-14', 'Meeting'),
+    fav('f3', 'Iteration Planning', 'ATL-14', 'Other'),
+  ];
+  await pick({ id: 'fresh', task: 'ATL-205', favoriteId: 'f1' });
+  assert.deepEqual(lastBind(), ['fresh', { task: 'ATL-205', activity: 'CodeReview', description: 'PR review' }]);
+});
+
+await test('two favorites of one ticket are told apart', async () => {
+  await pick({ id: 'fresh', task: 'ATL-14', favoriteId: 'f2' });
+  assert.deepEqual(lastBind(), ['fresh', { task: 'ATL-14', activity: 'Meeting', description: 'sprint planning' }]);
+  await pick({ id: 'fresh', task: 'ATL-14', favoriteId: 'f3' });
+  assert.deepEqual(lastBind(), ['fresh', { task: 'ATL-14', activity: 'Other', description: 'Iteration Planning' }]);
+});
+
+await test('the ticket of a favorite picked as a ticket is Development, as before', async () => {
+  await pick({ id: 'fresh', task: 'ATL-14' });
+  assert.deepEqual(lastBind(), ['fresh', { task: 'ATL-14', activity: 'Development', description: '' }]);
+});
+
+await test('a favorite that is gone since the block was told binds as its ticket', async () => {
+  await pick({ id: 'fresh', task: 'ATL-14', favoriteId: 'removed' });
+  assert.deepEqual(lastBind(), ['fresh', { task: 'ATL-14', activity: 'Development', description: '' }]);
+});
+
+await test('a timer grown from a meeting: a ticket picked on the widget is Other, not Development', async () => {
+  const meeting: TimerView = { ...FRESH, id: 'meeting', description: 'Sync with the platform team', sourceRef: 'meeting:ev-sync:2026-11-16' };
+  today = day({ timers: timers(FRESH, meeting) });
+  await shell.refresh();
+  await pick({ id: 'meeting', task: 'ATL-6790' });
+  assert.deepEqual(lastBind(), ['meeting', { task: 'ATL-6790', activity: 'Other', description: 'Sync with the platform team' }]);
+  await pick({ id: 'fresh', task: 'ATL-6790' });
+  assert.deepEqual(lastBind(), ['fresh', { task: 'ATL-6790', activity: 'Development', description: '' }], 'a New timer is as it was');
+});
+
+await test('a favorite picked for the meeting\'s timer keeps the favorite\'s activity and the meeting\'s name', async () => {
+  await pick({ id: 'meeting', task: 'ATL-14', favoriteId: 'f2' });
+  assert.deepEqual(lastBind(), ['meeting', { task: 'ATL-14', activity: 'Meeting', description: 'Sync with the platform team' }]);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

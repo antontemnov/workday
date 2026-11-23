@@ -134,6 +134,10 @@ export interface TimerView {
   readonly handMinutes: number;    // typed by hand; 0 for a no-ticket timer
   readonly hidden: boolean;
   readonly touchedAt: string;
+  // A no-ticket timer grown from a suggestion: the suggestion's origin marker.
+  // The record it gets with its ticket is the suggestion's record. Absent on
+  // any other timer and on daemons that do not tell.
+  readonly sourceRef?: string;
 }
 
 export type TimerCounting = 'session' | 'timer' | 'none';
@@ -201,7 +205,8 @@ export interface SuggestionResolved {
   readonly task: string;
   readonly activity: string;
   readonly description?: string;
-  readonly level: 'series' | 'title' | 'source';
+  // 'picked' — the ticket was given in the feed (the tray's own; the daemon never sends it).
+  readonly level: 'series' | 'title' | 'source' | 'picked';
 }
 
 // One side of a titleKey conflict — never a generic top-N.
@@ -262,6 +267,14 @@ export interface SuggestionAcceptRequest {
 export interface SuggestionAcceptResponse {
   readonly entry: ManualEntryResponse;
   readonly day: SuggestionsResponse;
+}
+
+// A ticket given to a suggestion that came without one (task? in the feed).
+// A timer that takes the suggestion sends it along. `activity` — what the
+// pick itself says (a candidate's, a favorite's); absent → Other.
+export interface SuggestionTicket {
+  readonly task: string;
+  readonly activity?: string;
 }
 
 // The suggestion was taken by a timer: the day's timers after it (`entry` —
@@ -344,6 +357,9 @@ export interface ActivityTypesResponse {
 // Mirrors the daemon's DEFAULT_ACTIVITY — the only activity that may carry
 // an empty description (session-born entries and quiet dev logs).
 export const DEVELOPMENT_ACTIVITY = 'Development';
+// Mirrors the daemon's DEFAULT_MANUAL_ACTIVITY: what a suggestion is logged
+// as while its series has no history.
+export const DEFAULT_MANUAL_ACTIVITY = 'Other';
 
 // Returned by POST /api/manual-entry and /api/manual-entry/update.
 export interface ManualEntryResponse {
@@ -881,8 +897,18 @@ export interface UpdateApplyResponse {
   readonly message: string;
 }
 
+// A patch names only what it changes — the daemon lays it over what it has.
+// The timer block is patched field by field: a switch never sends the state
+// of its neighbours.
+export type SettingsConfigPatch = Omit<Partial<SettingsConfigSubset>, 'timer'> & { readonly timer?: TimerSettingsPatch };
+
+export interface TimerSettingsPatch {
+  readonly desktopWidget?: boolean;
+  readonly suggested?: Partial<SuggestedTimerSettings>;
+}
+
 export interface SettingsPatch {
-  readonly config?: Partial<SettingsConfigSubset>;
+  readonly config?: SettingsConfigPatch;
   readonly secrets?: {
     // Identity fields — accepted by daemons >= 0.43.0 (setup wizard).
     readonly jiraEmail?: string;

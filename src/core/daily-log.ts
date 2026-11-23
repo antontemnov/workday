@@ -882,8 +882,9 @@ export interface TimerBinding {
  * Development lands on the ticket's manual added record — whose own timer,
  * if it has one, takes this one in. `minutes` is passed only when the form's
  * number was changed: the record gets that number, the timer keeps what it
- * counted and is cut down only when the number is smaller. Throws on
- * validation failure.
+ * counted and is cut down only when the number is smaller. A timer grown
+ * from a suggestion hands its sourceRef to the record — always an entry of
+ * its own, as an accepted suggestion's. Throws on validation failure.
  */
 export function bindTimer(
   log: DailyLog,
@@ -911,7 +912,8 @@ export function bindTimer(
     throw new Error('Minutes must be zero or positive');
   }
 
-  const bare = isBareDevelopment(activity, description);
+  const sourceRef = timer.sourceRef;
+  const bare = isBareDevelopment(activity, description, sourceRef);
   if (bare) collapseAddedEntries(log);
   creditTimers(log, Date.now());
   const record = bare ? findAddedEntry(log, task) : undefined;
@@ -930,10 +932,14 @@ export function bindTimer(
   if (bare) {
     entry = putAddedMinutes(log, task, record?.minutes ?? 0);
   } else {
-    entry = { id: generateSessionId(), task, minutes: 0, description, activity, createdAt: nowIso };
+    entry = {
+      id: generateSessionId(), task, minutes: 0, description, activity, createdAt: nowIso,
+      ...(sourceRef ? { sourceRef } : {}),
+    };
     if (!log.manualEntries) log.manualEntries = [];
     log.manualEntries.push(entry);
   }
+  delete timer.sourceRef;
 
   if (typed !== undefined) {
     // The credit below brings the timer's minutes; the rest is typed by hand.

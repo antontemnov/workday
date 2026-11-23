@@ -483,6 +483,53 @@ test('Remove takes the record that grew from the suggestion\'s timer along', () 
   assert.equal(r.timers.getTimers().timers.length, 0);
 });
 
+test('without a ticket the timer remembers the suggestion it grew from', () => {
+  const r = rig();
+  const { timer } = r.timers.startSuggested({
+    task: null, activity: 'Other', description: 'Sync with the platform team', sourceRef: MEETING_REF,
+  });
+  assert.equal(timer.sourceRef, MEETING_REF);
+  assert.equal(r.timers.getTimers().timers[0].sourceRef, MEETING_REF, 'the tray is told');
+  assert.equal(readDailyLog(TODAY)!.timers?.[0].sourceRef, MEETING_REF, 'kept in the day\'s log');
+  r.timers.create('deploy');
+  assert.equal('sourceRef' in r.timers.getTimers().timers[1], false, 'a New timer has no origin');
+});
+
+test('its ticket brings a record of the suggestion: the origin moves to the record', () => {
+  const r = rig();
+  const { timer } = r.timers.startSuggested({
+    task: null, activity: 'Other', description: 'Sync with the platform team', sourceRef: MEETING_REF,
+  });
+  timer.spans[0] = { from: ago(18), to: null };
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Other', description: 'Sync with the platform team' });
+  assert.equal(entry.sourceRef, MEETING_REF);
+  assert.equal(entry.activity, 'Other');
+  assert.equal(entry.minutes, 18);
+  assert.equal(timer.entryId, entry.id);
+  assert.equal(timer.sourceRef, undefined, 'the record carries it from now on');
+  const view = r.timers.getTimers().timers[0];
+  assert.equal('sourceRef' in view, false);
+  assert.equal(view.task, 'ATL-7');
+});
+
+test('bare Development on such a timer is still a record of its own, off manual added', () => {
+  const r = rig();
+  addManualEntry(r.log, { task: 'ATL-7', minutes: 20, description: '', activity: 'Development' }, config);
+  const { timer } = r.timers.startSuggested({ task: null, activity: 'Other', description: '', sourceRef: MEETING_REF });
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Development', description: '' });
+  assert.equal(entry.added, undefined);
+  assert.equal(entry.sourceRef, MEETING_REF);
+  assert.equal(r.log.manualEntries.length, 2);
+  assert.equal(r.log.manualEntries[0].minutes, 20, 'manual added is not touched');
+});
+
+test('a New timer binds as before: no origin on its record', () => {
+  const r = rig();
+  const timer = r.timers.create('incident call');
+  const { entry } = r.timers.bind(timer.id, { task: 'ATL-7', activity: 'Meeting', description: 'incident call' });
+  assert.equal('sourceRef' in entry, false);
+});
+
 test('a closed month: a suggestion starts no timer', () => {
   const r = rig();
   r.sessions.setMonthLock(true);

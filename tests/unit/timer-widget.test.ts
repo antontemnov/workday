@@ -566,8 +566,10 @@ const close = (a: number, b: number): void => assert.ok(Math.abs(a - b) < 1e-9, 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 const ticket = (key: string, name: string): WidgetTicket => ({ key, name });
 const keysOf = (tickets: readonly WidgetTicket[] | null): string[] => (tickets ?? []).map(t => t.key);
-const favorite = (task: string, name: string): Favorite =>
-  ({ id: `${task}-${name}`, name, task, minutes: 30, activity: 'Other', createdAt: iso() });
+const favorite = (task: string, name: string, activity = 'Other'): Favorite =>
+  ({ id: `${task}-${name}`, name, task, minutes: 30, activity, createdAt: iso() });
+// A favorite as a row of the block: its ticket's key, its own name, its id.
+const favoriteRow = (task: string, name: string): WidgetTicket => ({ key: task, name, favoriteId: `${task}-${name}` });
 
 const KNOWN: WidgetTicketGroup[] = [
   { label: 'today', tickets: [ticket('ATL-6781', 'Public API review'), ticket('ATL-6712', 'Release notes for 4.2')] },
@@ -589,7 +591,7 @@ const TODAY = {
   issueSummaries: { 'ATL-6781': 'Public API review' },
 } as unknown as TodayResponse;
 
-await test('tickets: the day\'s, Jira in progress, favorites — no ticket twice', () => {
+await test('tickets: the day\'s and Jira in progress — no ticket twice; every favorite is a row of its own', () => {
   const inProgress = [{ key: 'ATL-6790', summary: 'Deploy checklist' }, { key: 'ATL-6781', summary: 'Public API review' }];
   const favorites = [favorite('ATL-6795', 'Daily'), favorite('ATL-6795', 'Retro'), favorite('ATL-6790', 'Deploy day'), favorite('ATL-6712', 'notes')];
   const groups = ticketGroups(TODAY, inProgress, favorites);
@@ -597,17 +599,19 @@ await test('tickets: the day\'s, Jira in progress, favorites — no ticket twice
   assert.deepEqual(groups[0].tickets, [ticket('ATL-6781', 'Public API review'), ticket('ATL-6712', '')],
     'the one touched last comes first; a session that never came alive is not a ticket of the day');
   assert.deepEqual(groups[1].tickets, [ticket('ATL-6790', 'Deploy checklist')], 'a ticket of the day is not repeated');
-  assert.deepEqual(groups[2].tickets, [ticket('ATL-6795', 'Daily')], 'one row per ticket, named by its first favorite');
+  assert.deepEqual(groups[2].tickets, [
+    favoriteRow('ATL-6795', 'Daily'), favoriteRow('ATL-6795', 'Retro'), favoriteRow('ATL-6790', 'Deploy day'), favoriteRow('ATL-6712', 'notes'),
+  ], 'what the Log cloud shows: as many rows, under the favorites\' own names — a ticket listed above keeps its favorites');
 });
 
-await test('tickets: a group with nothing left is not there; a known summary names a favorite\'s ticket', () => {
+await test('tickets: a group with nothing in it is not there; a favorite is named by itself, not by its ticket', () => {
   assert.deepEqual(ticketGroups(null, [], []), []);
+  assert.deepEqual(ticketGroups(TODAY, [], []).map(g => g.label), ['today']);
   const only = ticketGroups(null, [{ key: 'ATL-6790', summary: 'Deploy checklist' }], [favorite('ATL-6790', 'Deploy day')]);
-  assert.deepEqual(only.map(g => g.label), ['jira · in progress']);
+  assert.deepEqual(only.map(g => g.label), ['jira · in progress', 'favorites'], 'a ticket in progress does not take its favorite away');
   const named = ticketGroups(TODAY, [], [favorite('ATL-6781', 'API')]);
-  assert.deepEqual(named.map(g => g.label), ['today']);
-  const fav = ticketGroups({ ...TODAY, manualEntries: [], sessions: [] } as unknown as TodayResponse, [], [favorite('ATL-6781', 'API')]);
-  assert.deepEqual(fav[0].tickets, [ticket('ATL-6781', 'Public API review')]);
+  assert.deepEqual(named.map(g => g.label), ['today', 'favorites']);
+  assert.deepEqual(named[1].tickets, [favoriteRow('ATL-6781', 'API')], 'the chip\'s label, not the Jira summary');
 });
 
 await test('search: a text is looked for in the key and in the name', () => {
@@ -622,6 +626,15 @@ await test('search: the ticket the text names, then the app\'s own, then Jira\'s
   const numbered = [ticket('ATL-16790', 'older'), ticket('ATL-6790', 'Deploy checklist')];
   assert.deepEqual(keysOf(mergeFound([ticket('ATL-67901', 'own')], numbered, '6790')), ['ATL-6790', 'ATL-67901', 'ATL-16790']);
   assert.equal(mergeFound([], numbered, ' atl-6790 ')[0].key, 'ATL-6790');
+});
+
+await test('search: a favorite found stays a favorite — next to its ticket and to another favorite of it', () => {
+  const planning = favoriteRow('ATL-6795', 'sprint planning');
+  const iteration = favoriteRow('ATL-6795', 'Iteration Planning');
+  const own = [...ALL, planning, iteration];
+  assert.deepEqual(matchTickets(own, 'planning'), [planning, iteration], 'looked for by the favorite\'s own name');
+  const rows = mergeFound(matchTickets(own, '6795'), [ticket('ATL-6795', 'Team ceremonies')], '6795');
+  assert.deepEqual(rows, [ticket('ATL-6795', 'Team ceremonies'), planning, iteration], 'the ticket once, each favorite by itself');
 });
 
 await test('layout: the ticket block makes the plate a list — taller, and never narrow', () => {
@@ -640,9 +653,26 @@ await test('layout: the block\'s list is as tall as its tickets, between the lea
   close(pickListEm(many), 15.75);
 });
 
+const MEETING_TIMER = timer('m', TimerState.Running, { description: 'Sync with the platform team', sourceRef: 'meeting:ev-sync:2026-11-16' });
+
 await test('bind: the record is Development with the timer\'s own description', () => {
   assert.deepEqual(widgetBindInput('ATL-6790', timer('t', TimerState.Running, { description: 'standup notes' })),
     { task: 'ATL-6790', activity: 'Development', description: 'standup notes' });
+});
+
+await test('bind: a timer grown from a meeting is the meeting\'s record — Other, never Development', () => {
+  assert.deepEqual(widgetBindInput('ATL-6790', MEETING_TIMER),
+    { task: 'ATL-6790', activity: 'Other', description: 'Sync with the platform team' });
+});
+
+await test('bind: a favorite brings its activity, and its name to a timer without a description', () => {
+  const review = favorite('ATL-6712', 'PR review', 'CodeReview');
+  assert.deepEqual(widgetBindInput('ATL-6712', timer('t', TimerState.Running, { description: 'standup notes' }), review),
+    { task: 'ATL-6712', activity: 'CodeReview', description: 'standup notes' }, 'a description the timer has stays');
+  assert.deepEqual(widgetBindInput('ATL-6712', timer('t', TimerState.Running), review),
+    { task: 'ATL-6712', activity: 'CodeReview', description: 'PR review' });
+  assert.deepEqual(widgetBindInput('ATL-6712', MEETING_TIMER, review),
+    { task: 'ATL-6712', activity: 'CodeReview', description: 'Sync with the platform team' }, 'the favorite\'s activity stands over Other');
 });
 
 // ─── The ticket block: the plate ──────────────────────────────────────────
@@ -706,10 +736,29 @@ await test('ticket: no word about the tickets — the block opens with what it h
 
 await test('ticket: a click on a ticket binds the timer and shuts the block', () => {
   const h = openBlock([DEPLOY, LOOSE], LOOSE);
-  h.comp.onTicket('ATL-6790');
+  h.comp.onTicket(ticket('ATL-6790', 'Deploy checklist'));
   assert.deepEqual(h.bound, [{ id: 'loose', task: 'ATL-6790' }]);
   assert.equal(h.comp.pickId, null);
   assert.deepEqual(h.typing, [true, false], 'the keyboard goes back to the window that had it');
+});
+
+await test('ticket: a favorite picked says which favorite it is', () => {
+  const h = openBlock([DEPLOY, LOOSE], LOOSE);
+  h.comp.onTicket(favoriteRow('ATL-6795', 'Daily'));
+  assert.deepEqual(h.bound, [{ id: 'loose', task: 'ATL-6795', favoriteId: 'ATL-6795-Daily' }]);
+  assert.equal(h.comp.pickId, null);
+});
+
+await test('ticket: two favorites of one ticket are two rows; Enter takes the one under the highlight', () => {
+  const h = makePlate([LOOSE]);
+  h.comp.onTag(LOOSE);
+  h.comp.setKnown(ticketGroups(TODAY, [], [favorite('ATL-14', 'sprint planning', 'Meeting'), favorite('ATL-14', 'Iteration Planning', 'Other')]));
+  assert.deepEqual(h.comp.known[1].tickets.map(t => t.name), ['sprint planning', 'Iteration Planning']);
+  h.comp.onFindInput('atl-14');
+  assert.deepEqual((h.comp.rows ?? []).map(t => t.name), ['sprint planning', 'Iteration Planning']);
+  h.comp.onFindKeydown(keyOf('ArrowDown') as never);
+  h.comp.onFindKeydown(keyOf('Enter') as never);
+  assert.deepEqual(h.bound, [{ id: 'loose', task: 'ATL-14', favoriteId: 'ATL-14-Iteration Planning' }]);
 });
 
 await test('ticket: the block moves to another row without giving the keyboard away', () => {
@@ -980,6 +1029,8 @@ await test('service: the ticket block\'s question reaches the shell; its search 
   fire('widget-action', { kind: 'tickets' });
   fire('widget-action', { kind: 'bind', id: 'call', task: 'ATL-6790' });
   assert.deepEqual(actions, [{ kind: 'tickets' }, { kind: 'bind', id: 'call', task: 'ATL-6790' }]);
+  fire('widget-action', { kind: 'bind', id: 'call', task: 'ATL-6795', favoriteId: 'ATL-6795-Daily' });
+  assert.deepEqual(actions.pop(), { kind: 'bind', id: 'call', task: 'ATL-6795', favoriteId: 'ATL-6795-Daily' }, 'a favorite is told as one');
   searchAnswer = { ok: true, data: { hits: [{ key: 'ATL-7110', summary: 'Deploy to staging times out' }] } };
   fire('widget-action', { kind: 'search', query: 'dep' });
   await settle();
@@ -1001,6 +1052,8 @@ await test('service: the known tickets go at once, and again when Jira\'s list c
   assert.deepEqual(labels(), [['today', 'favorites']], 'what is at hand goes without waiting for Jira');
   await settle();
   assert.deepEqual(labels(), [['today', 'favorites'], ['today', 'jira · in progress', 'favorites']]);
+  const first = told()[0];
+  assert.deepEqual(first.kind === 'known' ? first.groups[1].tickets : [], [favoriteRow('ATL-6795', 'Daily')], 'a favorite goes as a favorite');
 
   calls.length = 0;
   service.tellKnown(TODAY, []);

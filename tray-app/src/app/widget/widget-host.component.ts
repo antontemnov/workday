@@ -2,11 +2,12 @@ import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit, ViewChil
 import { CommonModule } from '@angular/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { Suggestion, TimerState } from '../models/workday.models';
+import { Favorite, Suggestion, TimerState } from '../models/workday.models';
 import { WorkdayApiService } from '../services/workday-api.service';
 import { TimerWidgetComponent } from '../timer/timer-widget.component';
 import {
-  ticketGroups, widgetBindInput, WidgetGrab, WidgetLayout, WidgetPayload, widgetPayload, widgetSuggestions, WidgetTickets,
+  ticketGroups, widgetBindInput, WidgetBound, WidgetGrab, WidgetLayout, WidgetPayload, widgetPayload, widgetSuggestions,
+  WidgetTickets,
 } from '../timer/timer-widget.util';
 
 const IS_TAURI: boolean = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -64,6 +65,7 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
   private unlistenTickets: UnlistenFn | null = null;
   private previewTimer: ReturnType<typeof setInterval> | null = null;
   private previewSuggestions: readonly Suggestion[] = [];
+  private previewFavorites: readonly Favorite[] = [];
   private readonly previewHidden: Set<string> = new Set<string>();
   private shown: boolean = false;
 
@@ -180,9 +182,9 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     else void this.previewSearch(query);
   }
 
-  onBind(e: { id: string; task: string }): void {
-    if (IS_TAURI) this.send('widget_action', { action: { kind: 'bind', id: e.id, task: e.task } });
-    else void this.previewBind(e.id, e.task);
+  onBind(e: WidgetBound): void {
+    if (IS_TAURI) this.send('widget_action', { action: { kind: 'bind', ...e } });
+    else void this.previewBind(e);
   }
 
   onSuggestedStart(uid: string): void {
@@ -261,9 +263,10 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     const [today, inProgress, favorites] = await Promise.all([
       this.api.getToday(), this.api.getJiraInProgress(), this.api.getFavorites(),
     ]);
+    this.previewFavorites = favorites.data?.favorites ?? [];
     this.onTicketsTold({
       kind: 'known',
-      groups: ticketGroups(today.data ?? null, inProgress.data?.hits ?? [], favorites.data?.favorites ?? []),
+      groups: ticketGroups(today.data ?? null, inProgress.data?.hits ?? [], this.previewFavorites),
     });
   }
 
@@ -273,9 +276,10 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     this.onTicketsTold({ kind: 'found', query, tickets });
   }
 
-  private async previewBind(id: string, task: string): Promise<void> {
-    const timer = this.payload?.timers.find(t => t.id === id);
-    if (timer) await this.api.bindTimer(id, widgetBindInput(task, timer));
+  private async previewBind(e: WidgetBound): Promise<void> {
+    const timer = this.payload?.timers.find(t => t.id === e.id);
+    const favorite = this.previewFavorites.find(f => f.id === e.favoriteId) ?? null;
+    if (timer) await this.api.bindTimer(e.id, widgetBindInput(e.task, timer, favorite));
     await this.previewPull();
   }
 

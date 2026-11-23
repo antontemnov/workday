@@ -164,7 +164,7 @@
         <ng-container *ngIf="rows === null; else foundRows">
           <ng-container *ngFor="let g of known">
             <span class="w-lg"><i>{{ g.label }}</i></span>
-            <button type="button" class="w-li" *ngFor="let k of g.tickets" (click)="onTicket(k.key)">
+            <button type="button" class="w-li" *ngFor="let k of g.tickets" (click)="onTicket(k)">
               <span class="w-lk">{{ k.key }}</span><span class="w-ln">{{ k.name }}</span>
             </button>
           </ng-container>
@@ -174,7 +174,7 @@
                   class="w-li"
                   *ngFor="let k of rows; let i = index"
                   [class.h]="i === highlight"
-                  (click)="onTicket(k.key)">
+                  (click)="onTicket(k)">
             <span class="w-lk">{{ k.key }}</span><span class="w-ln">{{ k.name }}</span>
           </button>
           <div class="w-note" *ngIf="note">{{ note }}</div>

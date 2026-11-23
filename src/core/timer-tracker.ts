@@ -147,12 +147,13 @@ export class TimerTracker {
   /**
    * A suggestion taken by a timer. With a ticket: a record of the suggestion
    * with no minutes yet, and a timer running on it. Without one: a running
-   * timer without a ticket, named after the suggestion.
+   * timer without a ticket, named after the suggestion — it keeps the
+   * suggestion's sourceRef for the record its ticket will bring.
    */
   public startSuggested(input: SuggestedTimerInput): { timer: Timer; entry: ManualEntry | null } {
     this.assertTracking();
     if (input.task === null) {
-      const { timer } = newTimer(this.log, input.description, nowIso());
+      const { timer } = newTimer(this.log, input.description, nowIso(), input.sourceRef);
       this.takeLead();
       return { timer, entry: null };
     }

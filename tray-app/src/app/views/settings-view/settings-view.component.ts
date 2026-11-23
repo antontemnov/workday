@@ -5,14 +5,14 @@ import { WorkdayApiService } from '../../services/workday-api.service';
 import { RepoPickerService } from '../../services/repo-picker.service';
 import {
   ActivityType, BrowserInfo, CalendarFeedStatus, MutedSuggestionSeries, ProjectRef, SensitivityLevel,
-  SettingsConfigSubset, SettingsResponse, SuggestedTimerSettings, TimerSettings, TrackingConfig,
+  SettingsConfigPatch, SettingsConfigSubset, SettingsResponse, SuggestedTimerSettings, TimerSettingsPatch, TrackingConfig,
 } from '../../models/workday.models';
 
 type IndicatorState = 'idle' | 'saving' | 'saved' | 'error';
 type UpdateState = 'idle' | 'checking' | 'available' | 'applying' | 'restarting' | 'done' | 'error';
 
 interface PendingPatch {
-  config?: Partial<SettingsConfigSubset>;
+  config?: SettingsConfigPatch;
   secrets?: { jiraToken?: string; tempoToken?: string; calendarIcsUrl?: string };
 }
 
@@ -576,7 +576,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   toggleDesktopWidget(): void {
     const timer = this.settings?.config.timer;
     if (!timer) return;
-    this.saveTimer({ ...timer, desktopWidget: !timer.desktopWidget });
+    this.saveTimer({ desktopWidget: !timer.desktopWidget });
   }
 
   // Hidden on daemons without suggested timers.
@@ -589,15 +589,17 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   toggleSuggestedTimer(source: keyof SuggestedTimerSettings): void {
-    const timer = this.settings?.config.timer;
-    if (!timer?.suggested) return;
-    this.saveTimer({ ...timer, suggested: { ...timer.suggested, [source]: !timer.suggested[source] } });
+    const suggested = this.settings?.config.timer?.suggested;
+    if (!suggested) return;
+    this.saveTimer({ suggested: { [source]: !suggested[source] } });
   }
 
-  // The whole block goes out: a patch queued behind one in flight replaces it.
-  private saveTimer(timer: TimerSettings): void {
-    this.applyLocal(c => ({ ...c, timer }));
-    this.queue({ timer }, 'immediate');
+  // Only the switch that moved goes out. The settings shown here may lag
+  // behind a save still in flight, so a switch must not carry the state of
+  // its neighbours — it would put them back.
+  private saveTimer(patch: TimerSettingsPatch): void {
+    this.applyLocal(c => (c.timer ? { ...c, timer: mergeTimerPatch(c.timer, patch) } : c));
+    this.queue({ timer: patch }, 'immediate');
   }
 
   // ─── Browser for links ("Open in browser" menu items) ───────────────────
@@ -718,7 +720,7 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
 
   // ─── Queue / flush ─────────────────────────────────────────────────────
 
-  private queue(patchConfig: Partial<SettingsConfigSubset>, mode: 'immediate' | 'debounced', debounceMs = 600): void {
+  private queue(patchConfig: SettingsConfigPatch, mode: 'immediate' | 'debounced', debounceMs = 600): void {
     this.pending.config = mergeConfigPatch(this.pending.config, patchConfig);
     if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
     if (mode === 'immediate') {
@@ -738,10 +740,18 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
     const res = await this.api.updateSettings(patch);
     this.inFlight = false;
     if (res.ok) {
+      if (patch.config?.timer) this.timerSettingsChanged.emit();
+      // Edits made while this save was on its way are on screen already:
+      // read back now, the settings would undo them there until their own
+      // save lands — and the next click would land on the wrong state. The
+      // last save of the run reads the settings back.
+      if (this.pending.config || this.pending.secrets) {
+        void this.flush();
+        return;
+      }
       await this.refresh();
       this.setIndicator('saved', 'Saved');
       this.scheduleSavedFlash();
-      if (patch.config?.timer) this.timerSettingsChanged.emit();
     } else {
       await this.refresh();
       this.setIndicator('error', res.error ?? 'Save failed');
@@ -788,9 +798,9 @@ export class SettingsViewComponent implements OnInit, OnChanges, OnDestroy {
 }
 
 function mergeConfigPatch(
-  a: Partial<SettingsConfigSubset> | undefined,
-  b: Partial<SettingsConfigSubset>,
-): Partial<SettingsConfigSubset> {
+  a: SettingsConfigPatch | undefined,
+  b: SettingsConfigPatch,
+): SettingsConfigPatch {
   return {
     ...(a ?? {}),
     ...b,
@@ -798,5 +808,12 @@ function mergeConfigPatch(
     tracking: b.tracking ?? a?.tracking,
     search: b.search ?? a?.search,
     activities: b.activities ?? a?.activities,
+    // Two switches of the timer block moved before a save went out: both go.
+    ...(a?.timer && b.timer ? { timer: mergeTimerPatch(a.timer, b.timer) } : {}),
   };
+}
+
+function mergeTimerPatch<T extends TimerSettingsPatch>(base: T, patch: TimerSettingsPatch): T {
+  const suggested = base.suggested || patch.suggested ? { ...base.suggested, ...patch.suggested } : undefined;
+  return { ...base, ...patch, ...(suggested ? { suggested } : {}) };
 }

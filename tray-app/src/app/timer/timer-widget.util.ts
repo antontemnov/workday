@@ -1,5 +1,6 @@
 import {
-  DEVELOPMENT_ACTIVITY, Favorite, JiraSearchHit, Suggestion, TimerBindInput, TimerView, TimersResponse, TodayResponse,
+  DEFAULT_MANUAL_ACTIVITY, DEVELOPMENT_ACTIVITY, Favorite, JiraSearchHit, Suggestion, TimerBindInput, TimerView,
+  TimersResponse, TodayResponse,
 } from '../models/workday.models';
 import { formatTimerTime } from './timer-clock.util';
 
@@ -69,10 +70,22 @@ export interface WidgetGeometry {
 
 export type WidgetGrab = 'move' | 'left' | 'right';
 
-/** A ticket the block offers: the key and a name to know it by. */
+/**
+ * A row the block offers: a ticket — the key and a name to know it by — or a
+ * favorite: its ticket's key, its own name and its id. A favorite is a row of
+ * its own, as its chip in the Log cloud is.
+ */
 export interface WidgetTicket {
   readonly key: string;
   readonly name: string;
+  readonly favoriteId?: string;
+}
+
+/** A row of the block picked for a timer; favoriteId — the row was a favorite. */
+export interface WidgetBound {
+  readonly id: string;
+  readonly task: string;
+  readonly favoriteId?: string;
 }
 
 export interface WidgetTicketGroup {
@@ -92,7 +105,8 @@ export type WidgetTickets =
 // text typed on the plate; cancel — Esc on a born timer's empty description;
 // born — the born row is in the edit (the main window stops telling of it);
 // tickets — the ticket block opens and asks what the app knows; search — a
-// text for Jira; bind — a ticket picked for a timer without one;
+// text for Jira; bind — a ticket picked for a timer without one (favoriteId
+// — the row was a favorite);
 // suggested-start — ▶ of a star row: its suggestion is taken by a timer;
 // suggested-hide — the star row off the desktop.
 export type WidgetAction =
@@ -102,7 +116,7 @@ export type WidgetAction =
   | { readonly kind: 'describe'; readonly id: string; readonly description: string }
   | { readonly kind: 'tickets' }
   | { readonly kind: 'search'; readonly query: string }
-  | { readonly kind: 'bind'; readonly id: string; readonly task: string };
+  | { readonly kind: 'bind'; readonly id: string; readonly task: string; readonly favoriteId?: string };
 
 export interface WidgetLayout {
   readonly minWidth: number;
@@ -198,10 +212,12 @@ function dayTickets(today: TodayResponse | null): readonly string[] {
 }
 
 /**
- * The tickets the app knows already, in the order the block shows them: the
- * day's, Jira in progress, favorites. No ticket twice; a group with nothing
- * left is not there. A ticket is named by its Jira summary when the app has
- * it; a favorite's ticket otherwise by the favorite.
+ * What the app knows already, in the order the block shows it: the day's
+ * tickets, Jira in progress, favorites. A ticket stands once in the first
+ * two, named by its Jira summary when the app has it. The favorites are what
+ * the Log cloud shows: every favorite is a row, under its own name — two of
+ * one ticket are two rows, and a ticket listed above does not take its
+ * favorites away. A group with nothing in it is not there.
  */
 export function ticketGroups(
   today: TodayResponse | null,
@@ -219,7 +235,7 @@ export function ticketGroups(
   const groups: WidgetTicketGroup[] = [
     { label: TICKETS_TODAY, tickets: fresh(dayTickets(today).map(key => ({ key, name: names.get(key) ?? '' }))) },
     { label: TICKETS_IN_PROGRESS, tickets: fresh(inProgress.map(hit => ({ key: hit.key, name: hit.summary }))) },
-    { label: TICKETS_FAVORITES, tickets: fresh(favorites.map(fav => ({ key: fav.task, name: names.get(fav.task) ?? fav.name }))) },
+    { label: TICKETS_FAVORITES, tickets: favorites.map(fav => ({ key: fav.task, name: fav.name, favoriteId: fav.id })) },
   ];
   return groups.filter(group => group.tickets.length > 0);
 }
@@ -237,9 +253,15 @@ function namesTicket(key: string, query: string): boolean {
   return lower === query || lower.slice(lower.lastIndexOf('-') + 1) === query;
 }
 
+// A favorite is a row of its own: it merges neither with its ticket nor with
+// another favorite of the same ticket.
+function rowIdentity(ticket: WidgetTicket): string {
+  return ticket.favoriteId === undefined ? ticket.key : `favorite:${ticket.favoriteId}`;
+}
+
 /**
- * What a search shows: the ticket the text names, then the app's own
- * matches, then what Jira found — no ticket twice.
+ * What a search shows: the rows of the ticket the text names, then the app's
+ * own matches, then what Jira found — no ticket twice, every favorite kept.
  */
 export function mergeFound(
   local: readonly WidgetTicket[],
@@ -251,8 +273,9 @@ export function mergeFound(
   const seen = new Set<string>();
   const rows: WidgetTicket[] = [];
   for (const ticket of [...all.filter(t => namesTicket(t.key, query)), ...all]) {
-    if (seen.has(ticket.key)) continue;
-    seen.add(ticket.key);
+    const identity = rowIdentity(ticket);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
     rows.push(ticket);
   }
   return rows;
@@ -265,9 +288,20 @@ export function pickListEm(groups: readonly WidgetTicketGroup[]): number {
   return Math.min(PICK_LIST_MAX_EM, Math.max(PICK_LIST_MIN_EM, content));
 }
 
-/** A ticket picked on the widget: the record is Development with the timer's own description. */
-export function widgetBindInput(task: string, timer: TimerView): TimerBindInput {
-  return { task, activity: DEVELOPMENT_ACTIVITY, description: timer.description };
+/** A timer grown from a suggestion: its ticket brings the suggestion's record, not a Development one. */
+export function ticketActivity(timer: TimerView): string {
+  return timer.sourceRef === undefined ? DEVELOPMENT_ACTIVITY : DEFAULT_MANUAL_ACTIVITY;
+}
+
+/**
+ * A row picked on the widget — there is no form there. A ticket: the record
+ * is Development (a suggestion's timer — Other) with the timer's own
+ * description. A favorite binds as the island's form fills it: its activity,
+ * and its name for a timer that has no description.
+ */
+export function widgetBindInput(task: string, timer: TimerView, favorite: Favorite | null = null): TimerBindInput {
+  if (favorite) return { task: favorite.task, activity: favorite.activity, description: timer.description || favorite.name };
+  return { task, activity: ticketActivity(timer), description: timer.description };
 }
 
 export function parseWidgetGeometry(text: string | null): WidgetGeometry | null {

@@ -262,6 +262,10 @@ export interface Timer {
   lastSeenAt: string;          // last tick it was alive — where sleep and crash cut it
   touchedAt: string;           // last start / pause by hand
   hidden?: true;               // taken off the desktop widget (paused only)
+  // A no-ticket timer grown from a suggestion: the suggestion's origin marker
+  // (ManualEntry.sourceRef). It moves to the record the timer gets with its
+  // ticket.
+  sourceRef?: string;
   readonly createdAt: string;
 }
 
@@ -283,6 +287,8 @@ export interface TimerView {
   readonly handMinutes: number;    // typed by hand; 0 for a no-ticket timer
   readonly hidden: boolean;
   readonly touchedAt: string;
+  // A no-ticket timer grown from a suggestion (Timer.sourceRef); absent otherwise.
+  readonly sourceRef?: string;
 }
 
 export type TimerCounting = 'session' | 'timer' | 'none';

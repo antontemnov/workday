@@ -20,6 +20,7 @@ import {
   Suggestion,
   SuggestionsResponse,
   SuggestionAcceptRequest,
+  SuggestionTicket,
   SuggestionTimerResponse,
   TimerActionResponse,
   TimerBindInput,
@@ -30,6 +31,7 @@ import {
 import { TimerChipComponent } from './timer/timer-chip.component';
 import { TimerIslandComponent } from './timer/timer-island.component';
 import { currentTimer } from './timer/timer-clock.util';
+import { suggestionKey, withTickets } from './timer/suggestion-ticket.util';
 import { TimerWidgetService } from './timer/timer-widget.service';
 import { WidgetAction, widgetBindInput } from './timer/timer-widget.util';
 import { trayStatus } from './tray-status.util';
@@ -146,6 +148,12 @@ export class AppComponent implements OnInit, OnDestroy {
   // on failure — an old daemon without the endpoint simply never fills it,
   // a transient miss self-heals on the next poll.
   private suggestionsDay: SuggestionsResponse | null = null;
+  // Tickets given in the feed to suggestions that came without one (task?),
+  // by uid:date — kept here, in memory, while the suggestion is in the feed.
+  private suggestionTickets: ReadonlyMap<string, SuggestionTicket> = new Map<string, SuggestionTicket>();
+  // The day's suggestions as the app shows them — the feed and the widget
+  // alike: one that got its ticket in the feed is a suggestion with a ticket.
+  daySuggestions: readonly Suggestion[] = [];
   // What the feed offers (tray-side preference): 'hidden' requests nothing,
   // 'all' makes reads and mutations carry includeFuture. Reads are ticketed at send time; a mutation answer or a
   // mode flip raises the floor, and a read sent below it is dropped — a slow
@@ -407,10 +415,6 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  get daySuggestions(): readonly Suggestion[] {
-    return this.suggestionsDay?.suggestions ?? [];
-  }
-
   private get allDaySuggestions(): boolean {
     return this.suggestionsMode === 'all';
   }
@@ -458,8 +462,26 @@ export class AppComponent implements OnInit, OnDestroy {
   // raiseFloor: a mutation answer outdates every read sent before it.
   private applySuggestionsDay(day: SuggestionsResponse, raiseFloor: boolean = true): void {
     if (raiseFloor) this.suggestionsFloor = this.suggestionsTicket;
-    this.suggestionsDay = day;
+    this.showSuggestions(day);
     if (this.allDaySuggestions) this.allDayShown = true;
+    this.syncWidget();
+  }
+
+  // A ticket given in the feed stays with its suggestion while it is there.
+  private showSuggestions(day: SuggestionsResponse | null): void {
+    const suggestions = day?.suggestions ?? [];
+    const keys = new Set(suggestions.map(suggestionKey));
+    this.suggestionsDay = day;
+    this.suggestionTickets = new Map([...this.suggestionTickets].filter(([key]) => keys.has(key)));
+    this.daySuggestions = withTickets(suggestions, this.suggestionTickets);
+  }
+
+  // task? → a ticket picked in the cloud: once, and it is the suggestion's
+  // ticket — in the feed and on the widget. The daemon hears of it when the
+  // suggestion is logged or taken by a timer.
+  onSuggestionTicket(e: { uid: string; date: string; ticket: SuggestionTicket }): void {
+    this.suggestionTickets = new Map(this.suggestionTickets).set(suggestionKey(e), e.ticket);
+    this.showSuggestions(this.suggestionsDay);
     this.syncWidget();
   }
 
@@ -475,15 +497,15 @@ export class AppComponent implements OnInit, OnDestroy {
     persistSuggestionsMode(mode);
     this.suggestionsFloor = this.suggestionsTicket;
     if (mode === 'hidden') {
-      this.suggestionsDay = null;
+      this.showSuggestions(null);
       this.syncWidget();
       return;
     }
     if (mode === 'started' && previous === 'all' && this.suggestionsDay) {
-      this.suggestionsDay = {
+      this.showSuggestions({
         ...this.suggestionsDay,
         suggestions: this.suggestionsDay.suggestions.filter(s => !s.upcoming),
-      };
+      });
       return;
     }
     void this.refreshSuggestions();
@@ -677,7 +699,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // The desktop widget: ⏸ / ▶ of a row, the row off the desktop, a
   // description typed on the plate, Esc on a timer born there by mistake,
-  // its ticket block — the tickets the app knows, a ticket picked there —
+  // its ticket block — the tickets the app knows, a ticket or a favorite picked there —
   // and ▶ of a star row: its suggestion is taken by a timer.
   private onWidgetAction(action: WidgetAction): void {
     if (action.kind === 'tickets') {
@@ -693,7 +715,9 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     if (action.kind === 'bind') {
       const loose = this.timers?.timers.find(t => t.id === action.id && t.entryId === null);
-      if (loose) void this.runTimerAction(() => this.api.bindTimer(loose.id, widgetBindInput(action.task, loose)));
+      // A favorite that is gone since the block was told binds as its ticket.
+      const favorite = this.favorites.find(f => f.id === action.favoriteId) ?? null;
+      if (loose) void this.runTimerAction(() => this.api.bindTimer(loose.id, widgetBindInput(action.task, loose, favorite)));
       return;
     }
     if (action.kind === 'hide') {
@@ -897,12 +921,15 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   // Start timer in a suggestion's menu, ▶ of its star row on the widget: the
-  // suggestion is taken by a running timer and leaves the feed for good. The
-  // answer carries the day's suggestions and its timers — both are shown at
-  // once, so the widget never has the star row next to the new timer.
+  // suggestion is taken by a running timer and leaves the feed for good. A
+  // ticket given to it in the feed goes along. The answer carries the day's
+  // suggestions and its timers — both are shown at once, so the widget never
+  // has the star row next to the new timer.
   submitSuggestionTimer(e: { uid: string; date: string }): void {
     void this.runTimerAction(async (): Promise<ApiResponse<SuggestionTimerResponse>> => {
-      const res = await this.api.startSuggestionTimer(e.uid, e.date, this.allDaySuggestions);
+      const taken = this.daySuggestions.find(s => s.uid === e.uid && s.date === e.date);
+      const ticket = taken?.resolved?.level === 'picked' ? this.suggestionTickets.get(suggestionKey(e)) : undefined;
+      const res = await this.api.startSuggestionTimer(e.uid, e.date, this.allDaySuggestions, ticket);
       if (res.ok && res.data) this.applySuggestionsDay(res.data.day);
       return res;
     });

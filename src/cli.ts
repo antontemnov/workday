@@ -1789,7 +1789,7 @@ async function handleTimer(args: string[]): Promise<void> {
       }
       if (!result.ok || !result.data) { console.log(result.error); return; }
       const suggested = result.data.config.timer.suggested;
-      console.log(`Suggested timers: calendar events ${suggested.meeting ? 'on' : 'off'} · code reviews ${suggested.review ? 'on' : 'off'}`);
+      console.log(`Suggested timers: meetings ${suggested.meeting ? 'on' : 'off'} · reviews ${suggested.review ? 'on' : 'off'}`);
       return;
     }
   }
@@ -1867,7 +1867,7 @@ function printSuggestionsDay(day: SuggestionsResponse): void {
   console.log('Dismiss: workday suggestions dismiss <#N>');
   console.log('Mute:    workday suggestions mute <#N> [--days N]  (no --days = forever)');
   if (day.suggestions.some(s => s.suggestedTimer)) {
-    console.log('Timer:   workday suggestions timer <#N>  (rows marked [timer]: the suggestion is taken by a running timer)');
+    console.log('Timer:   workday suggestions timer <#N> [--task <KEY>] [--activity X]  (rows marked [timer]: the suggestion is taken by a running timer)');
   }
 }
 
@@ -1932,13 +1932,19 @@ async function handleSuggestions(args: string[]): Promise<void> {
     const rest = args.slice(1);
     const target = rest[0];
     if (!target) {
-      console.log('Usage: workday suggestions timer <#N|uid>   (today, a row marked [timer])');
+      console.log('Usage: workday suggestions timer <#N|uid> [--task <KEY>] [--activity X]   (today, a row marked [timer])');
+      console.log('--task gives the timer a ticket when the row shows no learned one (→ KEY).');
       return;
     }
     const includeFuture = rest.includes('--all');
     const resolved = await resolveSuggestionTarget(target, null, includeFuture);
     if (!resolved) return;
-    const result = await apiPost<SuggestionTimerResponse>('/api/suggestions/timer', { ...resolved, includeFuture });
+    const payload: Record<string, unknown> = { ...resolved, includeFuture };
+    const task = parseArgValue(rest, '--task');
+    if (task) payload.task = task;
+    const activity = parseArgValue(rest, '--activity');
+    if (activity !== null) payload.activity = activity;
+    const result = await apiPost<SuggestionTimerResponse>('/api/suggestions/timer', payload);
     if (!result.ok || !result.data) { console.log(result.error); return; }
     const e = result.data.entry;
     console.log(e
@@ -2273,7 +2279,7 @@ Usage:
   workday calendar refresh                             Re-fetch the calendar feed now
   workday suggestions [--date D] [--all]               Pending meeting suggestions for a day (→ learned ticket; --all adds today's upcoming meetings)
   workday suggestions accept <#N|uid> [--task <KEY>]   Log a suggested meeting (--minutes/--desc/--activity/--date)
-  workday suggestions timer <#N|uid>                   Take a live suggestion by a timer (rows marked [timer])
+  workday suggestions timer <#N|uid> [--task <KEY>]    Take a live suggestion by a timer (rows marked [timer]; --activity)
   workday suggestions dismiss <#N|uid> [--date D]      Dismiss a suggestion (per uid+date, permanent)
   workday suggestions mute <#N|uid> [--days N]         Mute a meeting series (no --days = forever)
   workday suggestions muted                            Manually muted series

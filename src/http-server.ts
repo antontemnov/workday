@@ -710,6 +710,8 @@ export class HttpServer {
    * timer in the row's menu. With a ticket: a record with the suggestion's
    * activity and description and no minutes, fed by a new running timer.
    * Without one: a running timer without a ticket, named after the meeting.
+   * The ticket is the learned one, or the one the request names — a ticket
+   * picked for a row that has none (`task`, with its `activity`).
    * Either way the row is dismissed as well: whatever happens to the timer
    * later (Remove included), the suggestion does not come back.
    */
@@ -727,28 +729,30 @@ export class HttpServer {
     }
 
     const resolved = suggestion.resolved;
-    // Same defaults as the accept form; a private title never prefills.
-    const description = resolved?.description ?? (suggestion.isPrivate ? '' : suggestion.title);
-    if (resolved) {
+    const bodyTask = typeof body.task === 'string' ? body.task.trim() : '';
+    const bodyActivity = typeof body.activity === 'string' ? body.activity.trim() : '';
+    // The ticket and the activity as the accept form picks them; the text is
+    // the row's own — whatever the meeting is shown as.
+    const task = bodyTask || resolved?.task || null;
+    const activity = bodyActivity || resolved?.activity || DEFAULT_MANUAL_ACTIVITY;
+    const description = resolved?.description ?? suggestion.title;
+    if (task) {
       const refusal = await this.editRefusal(null, true);
       if (refusal) return { ok: false, error: refusal };
-      const jiraError = await this.validateTaskInJira(resolved.task);
+      const jiraError = await this.validateTaskInJira(task);
       if (jiraError) return jiraError;
     }
 
     try {
       const { timer, entry } = this.deps.timerTracker.startSuggested({
-        task: resolved?.task ?? null,
-        activity: resolved?.activity ?? DEFAULT_MANUAL_ACTIVITY,
+        task,
+        activity,
         description,
         sourceRef: suggestion.source === SUGGESTION_SOURCE_REVIEW ? reviewSourceRef(uid, today) : meetingSourceRef(uid, today),
       });
       dismissSuggestionKey(uid, today);
-      if (resolved && suggestion.source === SUGGESTION_SOURCE_MEETING) {
-        learnFromAccept({
-          uid, title: suggestion.title, isPrivate: suggestion.isPrivate,
-          task: resolved.task, activity: resolved.activity, description,
-        });
+      if (task && suggestion.source === SUGGESTION_SOURCE_MEETING) {
+        learnFromAccept({ uid, title: suggestion.title, isPrivate: suggestion.isPrivate, task, activity, description });
       }
       return {
         ok: true,
@@ -1272,6 +1276,22 @@ export class HttpServer {
     });
   }
 
+  /** A timer grown from a meeting got its ticket — that is the meeting's Log:
+   *  the series learns the ticket, the activity and the description. */
+  private learnFromBoundMeeting(entry: ManualEntry): void {
+    const ref = entry.sourceRef ? parseMeetingSourceRef(entry.sourceRef) : null;
+    if (!ref) return;
+    const instance = this.deps.calendarCollector.getInstances().find(i => i.uid === ref.uid && i.date === ref.date);
+    if (!instance) {
+      this.relearnFromEditedEntry(entry);
+      return;
+    }
+    learnFromAccept({
+      uid: ref.uid, title: instance.title, isPrivate: instance.isPrivate === true,
+      task: entry.task, activity: entry.activity, description: entry.description,
+    });
+  }
+
   private async handleDeleteManualEntry(body: Record<string, unknown>): Promise<ApiResponse<ManualEntryDeleteResponse>> {
     const target = typeof body.target === 'string' ? body.target
       : (typeof body.id === 'string' ? body.id : '');
@@ -1383,6 +1403,7 @@ export class HttpServer {
             task, activity, description,
             ...(typeof body.minutes === 'number' ? { minutes: body.minutes } : {}),
           });
+          this.learnFromBoundMeeting(entry);
           return answer(timer.id, { entry: this.toEntryData(entry, log()) });
         }
 

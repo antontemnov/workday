@@ -27,6 +27,7 @@ import {
   TimerView,
 } from '../../models/workday.models';
 import { liveMinutes } from '../../timer/timer-clock.util';
+import { ticketActivity } from '../../timer/timer-widget.util';
 
 // Ordering bars for the Sort method row — longest to shortest.
 const SORT_ICON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="2" y1="3" x2="10" y2="3"/><line x1="2" y1="6" x2="7.4" y2="6"/><line x1="2" y1="9" x2="4.8" y2="9"/></svg>';
@@ -117,6 +118,8 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   @Output() suggestionMuteSubmitted = new EventEmitter<{ uid: string; date: string; days: number | null }>();
   // Start timer in a suggestion's menu.
   @Output() suggestionTimerSubmitted = new EventEmitter<{ uid: string; date: string }>();
+  // A ticket picked for a suggestion that had none: from then on it is the suggestion's ticket.
+  @Output() suggestionTicketPicked = new EventEmitter<{ uid: string; date: string; ticket: SuggestionPick }>();
   @Output() suggestionsModeSelected = new EventEmitter<SuggestionsMode>();
 
   @ViewChild('dayHead')
@@ -442,6 +445,7 @@ export class DayViewComponent implements OnChanges, OnDestroy {
       id: timer.id,
       description: timer.description,
       minutes: liveMinutes(timer, Date.parse(asOf), Date.now()),
+      ticketActivity: ticketActivity(timer),
     };
     const host = this.hostEl.nativeElement.getBoundingClientRect();
     this.overlayTop = anchor.bottom - host.top + 4;
@@ -574,7 +578,9 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   onAcceptPicked(pick: SuggestionPick): void {
     const target = this.acceptTarget;
     this.closeCloud();
-    if (target) this.suggestionPick = { key: `${target.uid}:${target.date}`, pick };
+    if (!target) return;
+    this.suggestionPick = { key: `${target.uid}:${target.date}`, pick };
+    this.suggestionTicketPicked.emit({ uid: target.uid, date: target.date, ticket: pick });
   }
 
   onSuggestionAccept(s: Suggestion, ev: SuggestionAcceptEvent): void {

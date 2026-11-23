@@ -104,6 +104,7 @@ export function toTimerView(log: DailyLog, timer: Timer, nowMs: number): TimerVi
     handMinutes: typed,
     hidden: timer.hidden === true,
     touchedAt: timer.touchedAt,
+    ...(timer.entryId === null && timer.sourceRef ? { sourceRef: timer.sourceRef } : {}),
   };
 }
 
@@ -180,9 +181,10 @@ export function startTimer(log: DailyLog, timer: Timer, nowIso: string): Displac
   return displaced;
 }
 
-/** A timer without a ticket, running at once. */
-export function newTimer(log: DailyLog, description: string, nowIso: string): TimerStart {
+/** A timer without a ticket, running at once. `sourceRef` — the suggestion it grew from. */
+export function newTimer(log: DailyLog, description: string, nowIso: string, sourceRef?: string): TimerStart {
   const timer = addTimer(log, null, description.trim(), nowIso);
+  if (sourceRef) timer.sourceRef = sourceRef;
   return { timer, displaced: startTimer(log, timer, nowIso) };
 }
 

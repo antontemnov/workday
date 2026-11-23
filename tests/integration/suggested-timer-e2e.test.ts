@@ -7,7 +7,7 @@
  *
  *   1. Switched off (the default): ongoing rows offer no timer, the action
  *      is refused, nothing else changes.
- *   2. Calendar events switched on from the CLI: ongoing meetings offer a
+ *   2. Meetings switched on from the CLI: ongoing meetings offer a
  *      timer, a finished one does not.
  *   3. A meeting with a ticket: a record with no minutes and a timer running
  *      on it; the row leaves the suggestions.
@@ -16,8 +16,15 @@
  *   5. Remove on both timers: the suggestions do not come back.
  *   6. A review: ongoing while its branch is checked out, its own switch,
  *      taken by a timer from the CLI.
+ *   7. A ticket given with the request (picked for a row that has none): the
+ *      record is made on it and the series learns it; --task of the CLI; a
+ *      private meeting is a meeting like any other.
+ *   8. A timer that grew from a meeting without a ticket remembers the
+ *      meeting: its ticket, bound later, brings the meeting's record — Other,
+ *      the meeting's sourceRef — and teaches the series. A New timer binds
+ *      as before. No history and no --activity is Other on every path.
  *
- * Run: npx tsx tests/integration/suggested-timer-e2e.test.ts  (~30 s: CLI spawns)
+ * Run: npx tsx tests/integration/suggested-timer-e2e.test.ts  (~50 s: CLI spawns)
  */
 import '../helpers/test-home.js'; // MUST be first — pins WORKDAY_HOME before config.ts loads
 import { TEST_HOME } from '../helpers/test-home.js';
@@ -82,9 +89,9 @@ writeFileSync(join(TEST_HOME, 'secrets.json'), JSON.stringify({
 }));
 writeFileSync(join(TEST_HOME, 'data', 'issue-cache.json'), JSON.stringify({ __accountId__: 'acc-e2e' }));
 
-const meeting = (uid: string, title: string, startMin: number, endMin: number): Record<string, unknown> => ({
+const meeting = (uid: string, title: string, startMin: number, endMin: number, isPrivate = false): Record<string, unknown> => ({
   uid, date: DAY, start: at(startMin), end: at(endMin), title,
-  busyStatus: 'BUSY', allDay: false, cancelled: false, recurring: false,
+  busyStatus: 'BUSY', allDay: false, cancelled: false, recurring: false, ...(isPrivate ? { isPrivate } : {}),
 });
 writeFileSync(join(TEST_HOME, 'data', CALENDAR_CACHE_FILE), JSON.stringify({
   fetchedAt: at(-5),
@@ -92,6 +99,11 @@ writeFileSync(join(TEST_HOME, 'data', CALENDAR_CACHE_FILE), JSON.stringify({
     meeting('ev-past', 'Daily standup', -120, -105),
     meeting('ev-known', 'Sprint planning', -10, 50),
     meeting('ev-unknown', 'Sync with the platform team', -5, 25),
+    meeting('ev-picked', 'Architecture sync', -4, 40),
+    meeting('ev-private', 'Private appointment', -3, 40, true),
+    meeting('ev-cli', 'Release review', -2, 40),
+    meeting('ev-bind', 'Roadmap sync', -1.5, 40, true),
+    meeting('ev-bind-cli', 'Vendor call', -1, 40),
   ],
 }));
 // "Sprint planning" was logged before: the series knows its ticket.
@@ -141,8 +153,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit): P
 interface ApiResult<T> { ok: boolean; data?: T; error?: string }
 interface Row { uid: string; source: string; ongoing: boolean; suggestedTimer?: boolean; resolved?: { task: string } }
 interface Day { date: string; suggestions: Row[] }
-interface TimerRow { id: string; state: string; entryId: string | null; task: string | null; description: string; handMinutes: number }
-interface Entry { id: string; task: string; minutes: number; activity: string; description: string }
+interface TimerRow { id: string; state: string; entryId: string | null; task: string | null; description: string; handMinutes: number; sourceRef?: string }
+interface Entry { id: string; task: string; minutes: number; activity: string; description: string; added?: boolean }
 interface Timers { date: string; counting: string; timers: TimerRow[]; timerId?: string | null; entry?: Entry }
 interface Taken extends Timers { day: Day }
 interface Today { manualEntries: Entry[] }
@@ -158,7 +170,13 @@ async function api<T>(path: string, body?: unknown): Promise<ApiResult<T>> {
 
 const suggestions = async (): Promise<Row[]> => (await api<Day>('/api/suggestions')).data!.suggestions;
 const row = async (uid: string): Promise<Row | undefined> => (await suggestions()).find(s => s.uid === uid);
-const take = async (uid: string): Promise<ApiResult<Taken>> => api<Taken>('/api/suggestions/timer', { uid, date: DAY });
+const take = async (uid: string, ticket: { task?: string; activity?: string } = {}): Promise<ApiResult<Taken>> =>
+  api<Taken>('/api/suggestions/timer', { uid, date: DAY, ...ticket });
+// What the series have learned, as the daemon keeps it.
+const learned = (): Record<string, { task: string; activity: string; description?: string }> =>
+  (JSON.parse(readFileSync(join(TEST_HOME, 'data', MEETING_ASSOCIATIONS_FILE), 'utf-8')) as {
+    series: Record<string, { task: string; activity: string; description?: string }>;
+  }).series;
 const timers = async (): Promise<Timers> => (await api<Timers>('/api/timers')).data!;
 const today = async (): Promise<Today> => (await api<Today>('/api/today')).data!;
 
@@ -195,8 +213,8 @@ try {
   });
   await check('ongoing meetings are rows as before — no timer on them', async () => {
     const rows = await suggestions();
-    assert.deepEqual(rows.map(s => s.uid), ['ev-past', 'ev-known', 'ev-unknown']);
-    assert.deepEqual(rows.map(s => s.ongoing), [false, true, true]);
+    assert.deepEqual(rows.map(s => s.uid), ['ev-past', 'ev-known', 'ev-unknown', 'ev-picked', 'ev-private', 'ev-cli', 'ev-bind', 'ev-bind-cli']);
+    assert.deepEqual(rows.map(s => s.ongoing), [false, true, true, true, true, true, true, true]);
     assert.equal(rows.some(s => 'suggestedTimer' in s), false);
     assert.equal(rows[1].resolved?.task, 'ATL-1');
   });
@@ -205,19 +223,19 @@ try {
     assert.equal(refused.ok, false);
     assert.match(refused.error ?? '', /switched off/);
     assert.equal((await timers()).timers.length, 0);
-    assert.equal((await suggestions()).length, 3);
+    assert.equal((await suggestions()).length, 8);
   });
 
   // ─── 2. Calendar events switched on ─────────────────────────────────────
-  console.log('\n2. Calendar events switched on');
+  console.log('\n2. Meetings switched on');
 
   await check('workday timer suggested shows and sets the switches', async () => {
-    assert.match(await cli('timer suggested'), /calendar events off · code reviews off/);
-    assert.match(await cli('timer suggested meeting on'), /calendar events on · code reviews off/);
+    assert.match(await cli('timer suggested'), /meetings off · reviews off/);
+    assert.match(await cli('timer suggested meeting on'), /meetings on · reviews off/);
   });
   await check('an ongoing meeting offers a timer, a finished one does not', async () => {
     const rows = await suggestions();
-    assert.deepEqual(rows.map(s => s.suggestedTimer === true), [false, true, true]);
+    assert.deepEqual(rows.map(s => s.suggestedTimer === true), [false, true, true, true, true, true, true, true]);
   });
   await check('workday suggestions marks the rows a timer can take', async () => {
     const listing = await cli('suggestions');
@@ -246,7 +264,7 @@ try {
     assert.equal(known.data!.counting, 'timer');
   });
   await check('the row left the suggestions; the record names where it came from', async () => {
-    assert.deepEqual(known.data!.day.suggestions.map(s => s.uid), ['ev-past', 'ev-unknown']);
+    assert.deepEqual(known.data!.day.suggestions.map(s => s.uid), ['ev-past', 'ev-unknown', 'ev-picked', 'ev-private', 'ev-cli', 'ev-bind', 'ev-bind-cli']);
     assert.equal(await row('ev-known'), undefined);
     assert.equal(storedDay().manualEntries[0].sourceRef, `meeting:ev-known:${DAY}`);
   });
@@ -273,7 +291,7 @@ try {
   });
   await check('one timer runs: the meeting before it is on pause', () => {
     assert.equal(unknown.data!.timers[0].state, 'paused');
-    assert.deepEqual(unknown.data!.day.suggestions.map(s => s.uid), ['ev-past']);
+    assert.deepEqual(unknown.data!.day.suggestions.map(s => s.uid), ['ev-past', 'ev-picked', 'ev-private', 'ev-cli', 'ev-bind', 'ev-bind-cli']);
   });
 
   // ─── 5. Remove ──────────────────────────────────────────────────────────
@@ -288,7 +306,7 @@ try {
     assert.equal((await today()).manualEntries.length, 0);
   });
   await check('the suggestions do not come back', async () => {
-    assert.deepEqual((await suggestions()).map(s => s.uid), ['ev-past']);
+    assert.deepEqual((await suggestions()).map(s => s.uid), ['ev-past', 'ev-picked', 'ev-private', 'ev-cli', 'ev-bind', 'ev-bind-cli']);
   });
 
   // ─── 6. A review ────────────────────────────────────────────────────────
@@ -333,6 +351,126 @@ try {
     const live = (await timers()).timers[0];
     assert.equal(live.state, 'running');
     assert.equal(live.entryId, entry.id);
+  });
+
+  // ─── 7. A ticket given with the request ─────────────────────────────────
+  console.log('\n7. A ticket picked for a suggestion without one');
+
+  await check('the row has no ticket of its own, and no series knows it', async () => {
+    const picked = await row('ev-picked');
+    assert.equal(picked?.suggestedTimer, true);
+    assert.equal(picked?.resolved, undefined);
+    assert.equal(learned()['ev-picked'], undefined);
+  });
+
+  const picked = await take('ev-picked', { task: 'ATL-3' });
+  await check('the record is made on the given ticket, as the form would fill it', () => {
+    assert.equal(picked.ok, true, picked.error);
+    const entry = picked.data!.entry!;
+    assert.equal(entry.task, 'ATL-3');
+    assert.equal(entry.minutes, 0);
+    assert.equal(entry.activity, 'Other');
+    assert.equal(entry.description, 'Architecture sync');
+    const timer = picked.data!.timers.find(t => t.id === picked.data!.timerId)!;
+    assert.equal(timer.state, 'running');
+    assert.equal(timer.entryId, entry.id);
+    assert.equal(timer.task, 'ATL-3');
+  });
+  await check('one timer runs: the review before it is on pause; the row left for good', async () => {
+    assert.deepEqual(picked.data!.timers.map(t => t.state), ['paused', 'running']);
+    assert.equal(await row('ev-picked'), undefined);
+    assert.equal(storedDay().manualEntries.find(e => e.id === picked.data!.entry!.id)?.sourceRef, `meeting:ev-picked:${DAY}`);
+  });
+  await check('taken by a timer, the series learns the ticket — as a Log teaches it', () => {
+    const series = learned()['ev-picked'];
+    assert.equal(series?.task, 'ATL-3');
+    assert.equal(series?.activity, 'Other');
+  });
+
+  await check('workday suggestions timer --task --activity is the same request', async () => {
+    const out = await cli('suggestions timer ev-cli --task ATL-4 --activity Meeting');
+    assert.match(out, /Timer started on ATL-4: Meeting — "Release review"/);
+    assert.equal(await row('ev-cli'), undefined);
+    const entry = (await today()).manualEntries.find(e => e.task === 'ATL-4')!;
+    assert.equal(entry.activity, 'Meeting');
+    assert.equal(entry.description, 'Release review');
+    assert.equal(learned()['ev-cli']?.activity, 'Meeting');
+    const live = (await timers()).timers.find(t => t.entryId === entry.id)!;
+    assert.equal(live.state, 'running');
+  });
+
+  await check('a private meeting is a meeting: the record takes the ticket and the text the row shows', async () => {
+    const taken = await take('ev-private', { task: 'ATL-5' });
+    assert.equal(taken.ok, true, taken.error);
+    const entry = taken.data!.entry!;
+    assert.equal(entry.task, 'ATL-5');
+    assert.equal(entry.activity, 'Other');
+    assert.equal(entry.description, 'Private appointment');
+    assert.equal(taken.data!.timers.find(t => t.id === taken.data!.timerId)!.entryId, entry.id);
+    assert.deepEqual(taken.data!.day.suggestions.map(s => s.uid), ['ev-past', 'ev-bind', 'ev-bind-cli']);
+  });
+
+  // ─── 8. A ticket for a timer that grew from a meeting ───────────────────
+  console.log('\n8. A ticket for a timer that grew from a meeting');
+
+  const loose = await take('ev-bind');
+  const looseId = loose.data?.timerId ?? '';
+  await check('the timer has no ticket and remembers its meeting — a private one is named as its row is', () => {
+    assert.equal(loose.ok, true, loose.error);
+    const timer = loose.data!.timers.find(t => t.id === looseId)!;
+    assert.equal(timer.task, null);
+    assert.equal(timer.description, 'Roadmap sync');
+    assert.equal(timer.sourceRef, `meeting:ev-bind:${DAY}`);
+    assert.equal(learned()['ev-bind'], undefined, 'nothing is learned until it has a ticket');
+  });
+
+  // The tray sends the timer's own text; no activity is said — the daemon's default.
+  const bound = await api<Timers>('/api/timer/bind', { id: looseId, task: 'ATL-6', description: 'Roadmap sync' });
+  await check('its ticket brings the meeting\'s record: Other, the meeting\'s name, the meeting\'s sourceRef', () => {
+    assert.equal(bound.ok, true, bound.error);
+    const entry = bound.data!.entry!;
+    assert.equal(entry.task, 'ATL-6');
+    assert.equal(entry.activity, 'Other', 'not Development');
+    assert.equal(entry.description, 'Roadmap sync');
+    assert.equal(entry.added, undefined, 'a record of its own');
+    assert.equal(storedDay().manualEntries.find(e => e.id === entry.id)?.sourceRef, `meeting:ev-bind:${DAY}`);
+    const timer = bound.data!.timers.find(t => t.id === looseId)!;
+    assert.equal(timer.entryId, entry.id);
+    assert.equal(timer.state, 'running');
+    assert.equal('sourceRef' in timer, false, 'the record carries it now');
+  });
+  await check('the series learns the ticket and the activity — next time the meeting comes with them', () => {
+    const series = learned()['ev-bind'];
+    assert.equal(series?.task, 'ATL-6');
+    assert.equal(series?.activity, 'Other');
+  });
+
+  await check('workday timer bind without --activity: the same record', async () => {
+    const cliTimer = await take('ev-bind-cli');
+    assert.equal(cliTimer.ok, true, cliTimer.error);
+    const out = await cli(`timer bind ${cliTimer.data!.timerId} ATL-7 Vendor call`);
+    assert.match(out, /Timer bound to ATL-7: \d+m Other — "Vendor call"/);
+    const entry = (await today()).manualEntries.find(e => e.task === 'ATL-7')!;
+    assert.equal(storedDay().manualEntries.find(e => e.id === entry.id)?.sourceRef, `meeting:ev-bind-cli:${DAY}`);
+    assert.equal(learned()['ev-bind-cli']?.task, 'ATL-7');
+    assert.equal(learned()['ev-bind-cli']?.activity, 'Other');
+  });
+
+  await check('a New timer binds as before: Development stays Development, no sourceRef, nothing learned', async () => {
+    const before = Object.keys(learned()).length;
+    const fresh = await api<Timers>('/api/timer/new', { description: 'deploy' });
+    assert.equal('sourceRef' in fresh.data!.timers.find(t => t.id === fresh.data!.timerId)!, false);
+    const plainBind = await api<Timers>('/api/timer/bind', { id: fresh.data!.timerId, task: 'ATL-9', activity: 'Development', description: 'deploy' });
+    assert.equal(plainBind.ok, true, plainBind.error);
+    assert.equal(plainBind.data!.entry!.activity, 'Development');
+    assert.equal(storedDay().manualEntries.find(e => e.id === plainBind.data!.entry!.id)?.sourceRef, undefined);
+    assert.equal(Object.keys(learned()).length, before);
+  });
+
+  await check('workday suggestions accept --task without --activity: no history is Other there too', async () => {
+    const out = await cli('suggestions accept ev-past --task ATL-8');
+    assert.match(out, /Logged ATL-8 on .*: 15m Other — "Daily standup"/);
+    assert.equal(learned()['ev-past']?.activity, 'Other');
   });
 
   await daemon.stop();

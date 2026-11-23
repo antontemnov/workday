@@ -189,6 +189,34 @@ test('a nameless timer: Development may go without a description, another activi
   assert.deepEqual(h.bound, [{ task: 'ATL-10', activity: DEVELOPMENT_ACTIVITY, description: '' }]);
 });
 
+// A timer grown from a meeting suggestion: the Day view hands the form Other.
+const MEETING: TimerPickTarget = { id: 't3', description: 'Sync with the platform team', minutes: 12, ticketActivity: 'Other' };
+
+test('a timer grown from a meeting: a Jira ticket opens the form with Other, not Development', () => {
+  const h = makeCloud(MEETING);
+  h.comp.pickJira(HIT, NO_EVENT);
+  assert.equal(h.comp.formActivity, 'Other');
+  assert.equal(h.comp.formActivityNeeded, false);
+  assert.equal(h.comp.formDescription, 'Sync with the platform team');
+  h.comp.submitForm();
+  assert.deepEqual(h.bound, [{ task: 'ATL-10', activity: 'Other', description: 'Sync with the platform team' }]);
+});
+
+test('the list of activities stays the user\'s: another one picked in the form is what is sent', () => {
+  const h = makeCloud(MEETING);
+  h.comp.pickJira(HIT, NO_EVENT);
+  h.comp.formActivity = 'CodeReview';
+  h.comp.submitForm();
+  assert.equal(h.bound[0].activity, 'CodeReview');
+});
+
+test('a favorite brings its own activity to the meeting\'s timer too', () => {
+  const h = makeCloud(MEETING);
+  h.comp.pickFavorite(REVIEW, NO_EVENT);
+  assert.equal(h.comp.formActivity, 'CodeReview');
+  assert.equal(h.comp.formDescription, 'Sync with the platform team');
+});
+
 test('Log waits while the daemon answers', () => {
   const h = makeCloud(TIMER);
   h.comp.pickFavorite(STANDUP, NO_EVENT);

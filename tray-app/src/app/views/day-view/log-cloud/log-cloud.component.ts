@@ -35,6 +35,9 @@ export interface TimerPickTarget {
   readonly id: string;
   readonly description: string;
   readonly minutes: number;
+  // What a Jira ticket's form opens with: Development, or Other for a timer
+  // grown from a suggestion. A favorite brings its own. Absent → Development.
+  readonly ticketActivity?: string;
 }
 
 // One collected chip in batch mode. label keeps the chip identity for the
@@ -108,8 +111,8 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
   // Start timer «text»: the filter's text names a timer without a ticket.
   @Output() timerStartRequested = new EventEmitter<string>();
   @Output() chipPicked = new EventEmitter<ChipPick>();
-  // Accept mode: the chosen ticket (a candidate also carries its learned
-  // activity) — the parent routes it back into the suggestion row.
+  // Accept mode: the chosen ticket (a candidate carries its learned activity,
+  // a favorite its own) — the parent routes it back into the suggestion row.
   @Output() acceptPicked = new EventEmitter<{ task: string; activity?: string }>();
   @Output() formSubmitted = new EventEmitter<FormPick>();
   @Output() batchSubmitted = new EventEmitter<readonly ManualEntryInput[]>();
@@ -304,7 +307,7 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
       return;
     }
     if (this.isAcceptMode) {
-      this.acceptPicked.emit({ task: f.task });
+      this.acceptPicked.emit({ task: f.task, activity: f.activity });
       return;
     }
     if (this.collectOnPick(ev)) {
@@ -318,7 +321,7 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
 
   pickJira(h: JiraSearchHit, ev: MouseEvent): void {
     if (this.isTimerMode) {
-      this.enterTimerForm(h.key, h.summary, DEVELOPMENT_ACTIVITY, '');
+      this.enterTimerForm(h.key, h.summary, this.timerTicketActivity, '');
       return;
     }
     if (this.isAcceptMode) {
@@ -360,11 +363,11 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
     if (!target) return;
     if (this.isTimerMode) {
       if (target.src === 'fav') this.enterTimerForm(target.fav.task, '', target.fav.activity, target.fav.name);
-      else this.enterTimerForm(target.hit.key, target.hit.summary, DEVELOPMENT_ACTIVITY, '');
+      else this.enterTimerForm(target.hit.key, target.hit.summary, this.timerTicketActivity, '');
       return;
     }
     if (this.isAcceptMode) {
-      this.acceptPicked.emit({ task: target.src === 'fav' ? target.fav.task : target.hit.key });
+      this.acceptPicked.emit(target.src === 'fav' ? { task: target.fav.task, activity: target.fav.activity } : { task: target.hit.key });
       return;
     }
     if (this.batch) {
@@ -612,6 +615,10 @@ export class LogCloudComponent implements OnInit, OnChanges, OnDestroy {
       el?.focus();
       el?.select();
     }, 140);
+  }
+
+  private get timerTicketActivity(): string {
+    return this.timerTarget?.ticketActivity ?? DEVELOPMENT_ACTIVITY;
   }
 
   // A ticket for the timer: the same one-button form, with the timer's
