@@ -106,7 +106,7 @@ interface SeekTarget {
 }
 
 /**
- * Timesheets tab (canon v2, design-preview/timesheets-lab.html). A month of
+ * Timesheets tab (canon v2). A month of
  * days against Tempo: the header names the month (status, gap, total) and
  * syncs it (the Push navigator · Fetch); an open day is one glass
  * whose lid is the day row, its tickets are the Day tab's card in sheet mode.
