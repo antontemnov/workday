@@ -1,7 +1,10 @@
 @use './timer-ink' as ink;
 
-// The plate IS the window: the OS window catches the mouse with its whole
-// rectangle, so nothing may stick out of the plate and nothing is left empty.
+// The plate is all that is seen of the window: the OS window catches the
+// mouse with its whole rectangle, so nothing may stick out of the plate. On
+// Windows the window is taller than the plate and cut down to it — the plate
+// stands at the window's anchored edge and has its own height, so rows and
+// the ticket block come and go without the window being resized.
 :host {
   position: fixed;
   inset: 0;
@@ -15,7 +18,9 @@
 .w {
   --plate: 0.65;
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   box-sizing: border-box;
   overflow: hidden;
   container-type: inline-size;
@@ -36,6 +41,19 @@
   }
 
   &.drag { cursor: grabbing; }
+
+  // The plate grows upward: it hangs off the window's lower edge, and its
+  // rows are counted from that edge — what opens above a row does not move
+  // it by a part of a pixel.
+  &.low {
+    top: auto;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+
+    > .w-row, > .w-pick { flex-shrink: 0; }
+  }
 }
 
 .w-row {

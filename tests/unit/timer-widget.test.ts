@@ -68,7 +68,7 @@ const settle = (): Promise<void> => new Promise(resolve => setImmediate(resolve)
 await import(new URL('../../tray-app/node_modules/@angular/compiler/fesm2022/compiler.mjs', import.meta.url).href);
 const { TimerState } = await import('../../tray-app/src/app/models/workday.models');
 const {
-  matchTickets, mergeFound, parseWidgetGeometry, pickListEm, showsHours, ticketGroups, WIDGET_GEOMETRY_PREF,
+  matchTickets, mergeFound, parseWidgetGeometry, pickListEm, plateHeightPx, showsHours, ticketGroups, WIDGET_GEOMETRY_PREF,
   widgetBindInput, widgetLayout, widgetPayload, widgetRows,
 } = await import('../../tray-app/src/app/timer/timer-widget.util');
 const { TimerWidgetComponent } = await import('../../tray-app/src/app/timer/timer-widget.component');
@@ -152,6 +152,14 @@ await test('layout: the height is the rows, the width is the least one', () => {
   close(widgetLayout(2, false, true).height, 52.08);
   assert.equal(widgetLayout(3, true).minWidth, 187);
   assert.equal(widgetLayout(0, false).height, 0);
+});
+
+await test('layout: the plate is whole device pixels tall — what its window is cut to', () => {
+  assert.equal(plateHeightPx(26.04, 1), 27);
+  assert.equal(plateHeightPx(99.96, 1.25), 100, '124.95 device px take 125');
+  assert.equal(plateHeightPx(100, 1.25), 100, 'a whole number does not creep');
+  assert.equal(plateHeightPx(52.08, 1.5), 79 / 1.5);
+  assert.equal(plateHeightPx(52.08, 0), 53, 'no ratio to go by — one');
 });
 
 await test('past the hour: only a time that prints seconds grows', () => {
@@ -253,6 +261,16 @@ await test('plate: the window is fitted when the rows change, not on every poll'
   h.rows([DEPLOY]);
   assert.equal(h.layouts.length, 3, 'back to one row');
   assert.equal(h.layouts[2].minWidth, 104);
+});
+
+await test('plate: its height is its own — the window may be taller', () => {
+  // Found on the real widget: the window grew for the ticket block, and for
+  // two frames the rows stood at its top. The window is not resized now.
+  const h = makePlate([DEPLOY]);
+  assert.equal(h.comp.plateHeight, 27);
+  h.rows([DEPLOY, CALL]);
+  assert.equal(h.comp.plateHeight, 53);
+  assert.equal(h.comp.growsUp, true, 'at the window\'s lower edge unless told otherwise');
 });
 
 await test('plate: a running timer crossing the hour widens the time column', () => {

@@ -6,8 +6,8 @@ import { TimerState, TimerView } from '../models/workday.models';
 import { formatTicking } from './timer-clock.util';
 import { TimerTimeComponent } from './timer-time.component';
 import {
-  matchTickets, mergeFound, pickListEm, showsHours, WidgetBound, WidgetGrab, WidgetLayout, widgetLayout, WidgetSuggestion,
-  WidgetTicket, WidgetTicketGroup,
+  matchTickets, mergeFound, pickListEm, plateHeightPx, showsHours, WidgetBound, WidgetGrab, WidgetLayout, widgetLayout,
+  WidgetSuggestion, WidgetTicket, WidgetTicketGroup,
 } from './timer-widget.util';
 
 // A press becomes a drag only past this — a click or a double click stays one.
@@ -37,10 +37,11 @@ interface Found {
  * the island's order. A row is the state glyph (under the cursor it becomes
  * ⏸ or ▶), the timer's own time, the key and the description, and one slot:
  * "hide" for a timer at rest — only such a timer can leave the desktop — and
- * a pencil for one that is switched on. The plate fills its window: the
- * height follows the rows, the width is dragged by the left and right edge,
- * and what a row shows follows the width. Dragging by the body moves the
- * window; a double click opens the app; a click on the text does nothing.
+ * a pencil for one that is switched on. The plate is as wide as its window
+ * and stands at the window's anchored edge: the height follows the rows, the
+ * width is dragged by the left and right edge, and what a row shows follows
+ * the width. Dragging by the body moves the window; a double click opens the
+ * app; a click on the text does nothing.
  *
  * The pencil turns the description into a field right on the plate. The
  * button in the slot keeps what was typed, Enter does the same, Esc puts the
@@ -84,6 +85,9 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
   @Input() asOf: string = '';
   // The timer New timer of the tray menu has just made — its row is born in the edit.
   @Input() birthId: string | null = null;
+  // The plate grows upward from its anchor: it stands at the window's lower
+  // edge, and the ticket block stands above its row.
+  @Input() growsUp: boolean = true;
 
   @Output() toggled: EventEmitter<string> = new EventEmitter<string>();
   @Output() rowHidden: EventEmitter<string> = new EventEmitter<string>();
@@ -118,8 +122,6 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
   editingId: string | null = null;
   draft: string = '';
 
-  // The window grows upward from its anchor: the ticket block stands above its row.
-  growsUp: boolean = true;
   // The row whose ticket block is open, and the side the block took when it opened.
   pickId: string | null = null;
   pickUp: boolean = true;
@@ -186,6 +188,12 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
 
   get timeColumn(): string {
     return this.hours ? '10ch' : '7ch';
+  }
+
+  // The window may be taller than the plate: the plate has its own height.
+  get plateHeight(): number {
+    const ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio;
+    return this.layout ? plateHeightPx(this.layout.height, ratio) : 0;
   }
 
   /** Something on the plate is typed in: the window holds the keyboard for it. */

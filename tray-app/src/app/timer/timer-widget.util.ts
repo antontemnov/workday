@@ -193,6 +193,17 @@ export function widgetLayout(
   };
 }
 
+/**
+ * The plate's height on the screen: whole device pixels, never fewer than
+ * the rows need — the number Rust cuts the window to. The plate does not fill
+ * its window: on Windows the window is taller, so that rows and the ticket
+ * block come and go without a resize.
+ */
+export function plateHeightPx(height: number, devicePixelRatio: number): number {
+  const ratio = devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return Math.ceil(height * ratio - 1e-6) / ratio;
+}
+
 // ─── The ticket block ───────────────────────────────────────────────────
 
 // The tickets that have a card in the day, the one touched last first. A

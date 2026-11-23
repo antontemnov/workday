@@ -23,7 +23,9 @@ const PREVIEW_POLL_MS = 1000;
  * window from what the plate reports, and lets it have the keyboard only
  * while something is typed on it — a description, or a search for a ticket.
  * The ticket block asks the main window for the tickets it knows and for
- * what Jira finds; Rust tells which way the window grows.
+ * what Jira finds. Rust tells which way the plate grows — on boot, and when
+ * a drag leaves it at the other edge ('widget-side'): the plate stands at
+ * that edge of its window.
  *
  * In a browser (?widget=1, no Tauri) the same plate runs on the API service
  * directly — a preview of the look, not of the window.
@@ -39,6 +41,7 @@ const PREVIEW_POLL_MS = 1000;
                       [suggested]="p.suggested ?? []"
                       [asOf]="p.asOf"
                       [birthId]="p.birthId ?? null"
+                      [growsUp]="growsUp"
                       (toggled)="onToggle($event)"
                       (rowHidden)="onHide($event)"
                       (described)="onDescribe($event)"
@@ -59,10 +62,13 @@ const PREVIEW_POLL_MS = 1000;
 })
 export class WidgetHostComponent implements OnInit, OnDestroy {
   payload: WidgetPayload | null = null;
+  // The plate grows upward from its anchor — it stands at the window's lower edge.
+  growsUp: boolean = true;
   @ViewChild(TimerWidgetComponent) private plate?: TimerWidgetComponent;
   private unlistenPayload: UnlistenFn | null = null;
   private unlistenRefused: UnlistenFn | null = null;
   private unlistenTickets: UnlistenFn | null = null;
+  private unlistenSide: UnlistenFn | null = null;
   private previewTimer: ReturnType<typeof setInterval> | null = null;
   private previewSuggestions: readonly Suggestion[] = [];
   private previewFavorites: readonly Favorite[] = [];
@@ -105,6 +111,11 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       });
       this.unlistenTickets = await listen<WidgetTickets>('widget-tickets', e => this.onTicketsTold(e.payload));
+      this.unlistenSide = await listen<boolean>('widget-side', e => {
+        this.growsUp = e.payload;
+        this.cdr.detectChanges();
+      });
+      this.growsUp = await invoke<boolean>('widget_grows_up');
       this.show(await invoke<WidgetPayload | null>('get_pending_widget'));
     } catch {
       // The window is on its way out — nothing to render.
@@ -115,6 +126,7 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     if (this.unlistenPayload) this.unlistenPayload();
     if (this.unlistenRefused) this.unlistenRefused();
     if (this.unlistenTickets) this.unlistenTickets();
+    if (this.unlistenSide) this.unlistenSide();
     if (this.previewTimer !== null) clearInterval(this.previewTimer);
   }
 
@@ -169,8 +181,8 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
       return;
     }
     try {
-      const growsUp = await invoke<boolean>('widget_grows_up');
-      if (this.plate) this.plate.growsUp = growsUp;
+      this.growsUp = await invoke<boolean>('widget_grows_up');
+      this.cdr.detectChanges();
     } catch {
       // The side stays as it was.
     }
@@ -239,7 +251,9 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
 
   // ─── Browser preview ────────────────────────────────────────────────────
 
+  // ?grow=down — the plate as it stands at the top of the screen.
   private startPreview(): void {
+    this.growsUp = new URLSearchParams(location.search).get('grow') !== 'down';
     void this.previewPull();
     this.previewTimer = setInterval(() => void this.previewPull(), PREVIEW_POLL_MS);
   }
@@ -257,9 +271,7 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     await this.previewPull();
   }
 
-  // ?grow=down — the plate as it stands at the top of the screen.
   private async previewTickets(): Promise<void> {
-    if (this.plate) this.plate.growsUp = new URLSearchParams(location.search).get('grow') !== 'down';
     const [today, inProgress, favorites] = await Promise.all([
       this.api.getToday(), this.api.getJiraInProgress(), this.api.getFavorites(),
     ]);

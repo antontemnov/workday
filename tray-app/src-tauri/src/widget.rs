@@ -4,13 +4,22 @@
 // typed on it does it take the keyboard, and it gives it back after. Created
 // on demand and destroyed when there is nothing to show, like the toast.
 //
-// The window catches the mouse with its whole rectangle, so it is exactly the
-// plate: the frontend reports the plate's logical size (fit_widget) and Rust
-// sizes the window to it in physical pixels. The height follows the rows; only
-// the width is the user's. The window grows away from the screen edge it is
-// nearest to — that edge (the anchor) stays put. The widget stands in the
-// work area only: the taskbar is a topmost window as well, the shell puts it
-// above the others whenever it likes, and no window of ours can stay on it.
+// The window catches the mouse with its whole rectangle, so what is seen of
+// it is exactly the plate: the frontend reports the plate's logical size
+// (fit_widget) and Rust places it in physical pixels. The height follows the
+// rows; only the width is the user's. The plate grows away from the screen
+// edge it is nearest to — that edge (the anchor) stays put. The widget stands
+// in the work area only: the taskbar is a topmost window as well, the shell
+// puts it above the others whenever it likes, and no window of ours can stay
+// on it.
+//
+// On Windows the window does not follow the plate's height. A webview that
+// is resized shows its old picture at the new window's top for a frame or
+// two, so a plate growing upward used to jump by what it grew. The window is
+// of one height there (ROOM), hangs off the plate's anchored edge, and a
+// region cuts it down to the plate: rows and the ticket block come and go
+// inside it, and nothing is resized. The frontend draws the plate at the
+// window's anchored edge (widget_grows_up, 'widget-side').
 //
 // The main window is the brain: it decides whether the widget exists and hands
 // it the rows (sync_widget); the widget only shows them and sends clicks back
@@ -31,6 +40,9 @@ const DEFAULT_WIDTH: f64 = 262.0;
 const DEFAULT_MARGIN: f64 = 12.0;
 /// Logical px — the hidden window's size until the first fit.
 const INITIAL_HEIGHT: f64 = 26.0;
+/// Logical px — the window's height on Windows: a dozen rows and the ticket
+/// block. A taller plate takes a taller window.
+const ROOM: f64 = 480.0;
 const ROUNDING_NOISE: f64 = 1e-6;
 
 /// Where the widget stands. The anchor is the corner that stays in place while
@@ -61,11 +73,22 @@ struct Rect {
     h: i32,
 }
 
+/// The plate inside its window: how far under the window's top it begins, and
+/// its height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Frame {
+    top: i32,
+    height: i32,
+}
+
+/// A drag in the plate's terms: its rectangle when it was grabbed, and the
+/// height of the window that carries it.
 #[derive(Clone, Copy)]
 struct Drag {
     grab: Grab,
     cursor: (f64, f64),
     rect: Rect,
+    window_h: i32,
 }
 
 struct WidgetState {
@@ -74,6 +97,8 @@ struct WidgetState {
     /// Logical px, as the frontend last reported them.
     min_width: f64,
     height: f64,
+    /// The plate in the window as it was last placed; none — never placed.
+    frame: Option<Frame>,
     drag: Option<Drag>,
 }
 
@@ -82,15 +107,19 @@ static STATE: Mutex<WidgetState> = Mutex::new(WidgetState {
     geometry: None,
     min_width: 0.0,
     height: 0.0,
+    frame: None,
     drag: None,
 });
 
 // ─── Geometry (pure) ────────────────────────────────────────────────────
 
-/// The plate in physical px: never narrower than its rows need. Rounded up,
-/// minus the noise of a width that went through a division by the scale.
+/// The plate in physical px: never narrower than its rows need — but one
+/// that is less than a logical pixel short stays as it is: widening it would
+/// only shift every row by a pixel. Rounded up, minus the noise of a width
+/// that went through a division by the scale.
 fn plate_size(width: f64, min_width: f64, height: f64, scale: f64) -> (i32, i32) {
-    let w = (width.max(min_width) * scale - ROUNDING_NOISE).ceil() as i32;
+    let wide = if min_width - width < 1.0 { width } else { min_width };
+    let w = (wide * scale - ROUNDING_NOISE).ceil() as i32;
     let h = (height * scale - ROUNDING_NOISE).ceil() as i32;
     (w.max(1), h.max(1))
 }
@@ -108,6 +137,45 @@ fn keep_inside(rect: Rect, bounds: Rect) -> Rect {
     let x = rect.x.min(bounds.x + bounds.w - w).max(bounds.x);
     let y = rect.y.min(bounds.y + bounds.h - rect.h).max(bounds.y);
     Rect { x, y, w, h: rect.h }
+}
+
+/// The window's room in physical px; none where the window is the plate.
+fn room(scale: f64) -> i32 {
+    if cfg!(windows) {
+        (ROOM * scale).ceil() as i32
+    } else {
+        0
+    }
+}
+
+/// The window that carries the plate: of the room's height (a taller plate —
+/// of the plate's), with the plate at its anchored edge. The plate changes
+/// its height inside it, and the window stays as it is.
+fn window_for(plate: Rect, from_bottom: bool, room: i32) -> Rect {
+    let h = plate.h.max(room);
+    let y = if from_bottom { plate.y + plate.h - h } else { plate.y };
+    Rect { x: plate.x, y, w: plate.w, h }
+}
+
+fn frame_of(window: Rect, plate: Rect) -> Frame {
+    Frame { top: plate.y - window.y, height: plate.h }
+}
+
+/// The plate of a window on the screen, by the frame it was last given.
+fn plate_of(window: Rect, frame: Option<Frame>) -> Rect {
+    match frame {
+        Some(frame) => Rect { x: window.x, y: window.y + frame.top, w: window.w, h: frame.height },
+        None => window,
+    }
+}
+
+/// The window around a plate that was moved or made wider: its height and
+/// the plate's place in it are the same.
+fn window_around(plate: Rect, window_h: i32, frame: Option<Frame>) -> Rect {
+    match frame {
+        Some(frame) => Rect { x: plate.x, y: plate.y - frame.top, w: plate.w, h: window_h },
+        None => plate,
+    }
 }
 
 /// The rectangle a drag has reached. Only the width is ever dragged.
@@ -203,6 +271,20 @@ fn apply_rect(window: &WebviewWindow, rect: Rect) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Put the plate on the screen: its window where the plate needs it — moved
+/// or resized only when that is another rectangle — and cut down to the plate.
+fn show_plate(window: &WebviewWindow, plate: Rect, from_bottom: bool, scale: f64) -> Result<(), String> {
+    let rect = window_for(plate, from_bottom, room(scale));
+    let frame = frame_of(rect, plate);
+    STATE.lock().unwrap().frame = Some(frame);
+    if window_rect(window)? != rect {
+        apply_rect(window, rect)?;
+    }
+    #[cfg(windows)]
+    cut::to_plate(window, frame);
+    Ok(())
+}
+
 fn widget_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window(WIDGET_LABEL).ok_or_else(|| "widget window not found".to_string())
 }
@@ -224,6 +306,7 @@ pub async fn sync_widget(
             let mut state = STATE.lock().unwrap();
             state.payload = None;
             state.drag = None;
+            state.frame = None;
         }
         if let Some(window) = app.get_webview_window(WIDGET_LABEL) {
             window.close().map_err(|e| e.to_string())?;
@@ -267,8 +350,8 @@ pub fn get_pending_widget() -> Option<serde_json::Value> {
     STATE.lock().unwrap().payload.clone()
 }
 
-/// The widget has laid its rows out: size the window to the plate, put it at
-/// its anchor and show it. Logical px in, physical px out.
+/// The widget has laid its rows out: give the plate its size, put it at its
+/// anchor and show it. Logical px in, physical px out.
 #[tauri::command]
 pub fn fit_widget(app: AppHandle, min_width: f64, height: f64) -> Result<(), String> {
     let window = widget_window(&app)?;
@@ -291,8 +374,8 @@ pub fn fit_widget(app: AppHandle, min_width: f64, height: f64) -> Result<(), Str
     let geometry = stored.unwrap_or_else(|| default_geometry(work, scale));
     STATE.lock().unwrap().geometry = Some(geometry);
 
-    let rect = place(&geometry, plate_size(geometry.width, min_width, height, scale), work);
-    apply_rect(&window, rect)?;
+    let plate = place(&geometry, plate_size(geometry.width, min_width, height, scale), work);
+    show_plate(&window, plate, geometry.from_bottom, scale)?;
     #[cfg(windows)]
     let appears = !window.is_visible().unwrap_or(true);
     // Whoever has the keyboard now is the one to get it back, should the
@@ -321,38 +404,42 @@ pub fn fit_widget(app: AppHandle, min_width: f64, height: f64) -> Result<(), Str
 pub fn widget_grab(app: AppHandle, grab: Grab) -> Result<(), String> {
     let window = widget_window(&app)?;
     let cursor = app.cursor_position().map_err(|e| e.to_string())?;
-    let rect = window_rect(&window)?;
-    STATE.lock().unwrap().drag = Some(Drag { grab, cursor: (cursor.x, cursor.y), rect });
+    let around = window_rect(&window)?;
+    let mut state = STATE.lock().unwrap();
+    let rect = plate_of(around, state.frame);
+    state.drag = Some(Drag { grab, cursor: (cursor.x, cursor.y), rect, window_h: around.h });
     Ok(())
 }
 
-/// The pointer moved under a drag: the window follows the OS cursor.
+/// The pointer moved under a drag: the plate follows the OS cursor, and its
+/// window goes with it as it is.
 #[tauri::command]
 pub fn widget_drag(app: AppHandle) -> Result<(), String> {
-    let (drag, min_width) = {
+    let (drag, min_width, frame) = {
         let state = STATE.lock().unwrap();
-        (state.drag, state.min_width)
+        (state.drag, state.min_width, state.frame)
     };
     let Some(drag) = drag else { return Ok(()) };
     let window = widget_window(&app)?;
     let cursor = app.cursor_position().map_err(|e| e.to_string())?;
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let rect = dragged(&drag, (cursor.x, cursor.y), (min_width * scale).ceil() as i32);
-    apply_rect(&window, rect)
+    let plate = dragged(&drag, (cursor.x, cursor.y), (min_width * scale).ceil() as i32);
+    apply_rect(&window, window_around(plate, drag.window_h, frame))
 }
 
-/// The drag is over: the window settles inside the work area (one dropped on
+/// The drag is over: the plate settles inside the work area (one dropped on
 /// the taskbar comes to stand right above it), its nearest corner becomes the
-/// anchor, and the main window gets the geometry to keep.
+/// anchor, and the main window gets the geometry to keep. A plate that came
+/// to hang off the other edge tells its frontend, which draws it there.
 #[tauri::command]
 pub fn widget_release(app: AppHandle) -> Result<(), String> {
-    let (drag, stored, min_width, height) = {
+    let (drag, stored, min_width, height, frame) = {
         let mut state = STATE.lock().unwrap();
-        (state.drag.take(), state.geometry, state.min_width, state.height)
+        (state.drag.take(), state.geometry, state.min_width, state.height, state.frame)
     };
     let Some(drag) = drag else { return Ok(()) };
     let window = widget_window(&app)?;
-    let rect = window_rect(&window)?;
+    let rect = plate_of(window_rect(&window)?, frame);
     let Some(monitor) = monitor_at(&app, Some((rect.x + rect.w / 2, rect.y + rect.h / 2)))? else {
         return Ok(());
     };
@@ -372,13 +459,14 @@ pub fn widget_release(app: AppHandle) -> Result<(), String> {
     } else {
         settled
     };
-    if fitted != rect {
-        apply_rect(&window, fitted)?;
-    }
+    show_plate(&window, fitted, geometry.from_bottom, scale)?;
     if stored == Some(geometry) {
         return Ok(());
     }
     STATE.lock().unwrap().geometry = Some(geometry);
+    if stored.map(|g| g.from_bottom) != Some(geometry.from_bottom) {
+        app.emit_to(WIDGET_LABEL, "widget-side", geometry.from_bottom).map_err(|e| e.to_string())?;
+    }
     app.emit_to("main", "widget-geometry", geometry).map_err(|e| e.to_string())
 }
 
@@ -425,8 +513,8 @@ pub fn widget_refused(app: AppHandle, id: String) -> Result<(), String> {
     app.emit_to(WIDGET_LABEL, "widget-refused", id).map_err(|e| e.to_string())
 }
 
-/// The ticket block is about to open: up — the window grows upward from its
-/// anchor, and the block stands above its row.
+/// Up — the plate grows upward from its anchor: the frontend draws it at the
+/// window's lower edge, and the ticket block stands above its row.
 #[tauri::command]
 pub fn widget_grows_up() -> bool {
     STATE.lock().unwrap().geometry.map_or(true, |geometry| geometry.from_bottom)
@@ -455,6 +543,33 @@ pub fn open_main(app: AppHandle) -> Result<(), String> {
     window.show().map_err(|e| e.to_string())?;
     let _ = window.unminimize();
     window.set_focus().map_err(|e| e.to_string())
+}
+
+// ─── The cut (Windows) ──────────────────────────────────────────────────
+//
+// A window region: what is outside it is neither drawn nor hit by the mouse,
+// and changing it resizes nothing.
+#[cfg(windows)]
+mod cut {
+    use super::Frame;
+    use tauri::WebviewWindow;
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
+
+    /// Wider than any screen: the window is cut across its height only, so a
+    /// dragged width needs no new cut.
+    const ACROSS: i32 = 32_000;
+
+    pub fn to_plate(window: &WebviewWindow, frame: Frame) {
+        let Ok(hwnd) = window.hwnd() else { return };
+        unsafe {
+            let region = CreateRectRgn(0, frame.top, ACROSS, frame.top + frame.height);
+            // A region the system took is the system's.
+            if SetWindowRgn(hwnd.0 as HWND, region, 1) == 0 {
+                DeleteObject(region);
+            }
+        }
+    }
 }
 
 // ─── The keyboard (Windows) ─────────────────────────────────────────────
@@ -604,6 +719,15 @@ mod tests {
         assert_eq!(plate_size(262.0, 104.0, 26.04, 1.25), (328, 33));
     }
 
+    // Found on the real widget: a width dragged to 327px (261.6) grew to 328
+    // whenever the ticket block opened, and every row moved by a pixel.
+    #[test]
+    fn a_plate_a_hair_short_of_its_least_width_is_left_alone() {
+        assert_eq!(plate_size(261.6, 262.0, 26.04, 1.25).0, 327);
+        assert_eq!(plate_size(261.0, 262.0, 26.04, 1.25).0, 328, "a whole pixel short is widened");
+        assert_eq!(plate_size(120.0, 262.0, 26.04, 1.25).0, 328);
+    }
+
     #[test]
     fn a_dragged_width_does_not_creep() {
         for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
@@ -645,6 +769,61 @@ mod tests {
         assert_eq!(narrow.x + narrow.w, list.x + list.w, "the right edge stays");
     }
 
+    // Found on the real widget: its window grew upward for the ticket block,
+    // and for two frames the rows stood at the new window's top.
+    #[test]
+    fn a_plate_that_grows_leaves_its_window_as_it_is() {
+        let room = 600;
+        let rows = Rect { x: 1514, y: 747, w: 327, h: 125 };
+        let with_block = Rect { x: 1514, y: 510, w: 327, h: 362 };
+        let window = window_for(rows, true, room);
+        assert_eq!(window, Rect { x: 1514, y: 272, w: 327, h: 600 }, "it hangs off the plate's lower edge");
+        assert_eq!(window_for(with_block, true, room), window);
+        assert_eq!(frame_of(window, rows), Frame { top: 475, height: 125 });
+        assert_eq!(frame_of(window, with_block), Frame { top: 238, height: 362 });
+
+        let top = Rect { x: 20, y: 30, w: 327, h: 125 };
+        let window = window_for(top, false, room);
+        assert_eq!(window, Rect { x: 20, y: 30, w: 327, h: 600 }, "from the upper edge the window runs down");
+        assert_eq!(window_for(Rect { h: 362, ..top }, false, room), window);
+        assert_eq!(frame_of(window, top), Frame { top: 0, height: 125 });
+    }
+
+    #[test]
+    fn a_plate_taller_than_the_room_takes_a_taller_window() {
+        let tall = Rect { x: 1514, y: 100, w: 327, h: 772 };
+        assert_eq!(window_for(tall, true, 600), tall);
+        assert_eq!(frame_of(tall, tall), Frame { top: 0, height: 772 });
+    }
+
+    #[test]
+    fn without_room_the_window_is_the_plate() {
+        let plate = Rect { x: 1577, y: 984, w: 328, h: 33 };
+        assert_eq!(window_for(plate, true, 0), plate);
+        assert_eq!(window_for(plate, false, 0), plate);
+        assert_eq!(plate_of(plate, None), plate);
+        assert_eq!(window_around(plate, 33, None), plate);
+    }
+
+    #[test]
+    fn a_dragged_plate_carries_its_window() {
+        let plate = Rect { x: 1514, y: 747, w: 327, h: 125 };
+        let window = window_for(plate, true, 600);
+        let frame = Some(frame_of(window, plate));
+        assert_eq!(plate_of(window, frame), plate);
+
+        let drag = Drag { grab: Grab::Move, cursor: (1600.0, 800.0), rect: plate, window_h: window.h };
+        let moved = dragged(&drag, (1500.0, 750.0), 130);
+        let carried = window_around(moved, drag.window_h, frame);
+        assert_eq!(carried, Rect { x: 1414, y: 222, w: 327, h: 600 });
+        assert_eq!(plate_of(carried, frame), moved, "the plate is where the cursor took it");
+        assert_eq!(window_for(moved, true, 600), carried, "dropped on the same side, the window stays as the drag left it");
+
+        let edge = Drag { grab: Grab::Left, cursor: (1514.0, 800.0), rect: plate, window_h: window.h };
+        let wider = dragged(&edge, (1414.0, 800.0), 130);
+        assert_eq!(window_around(wider, edge.window_h, frame), Rect { x: 1414, y: 272, w: 427, h: 600 });
+    }
+
     #[test]
     fn a_stored_place_off_the_screen_is_brought_back() {
         let lost = geometry(4000, 3000, true, true, 262.0);
@@ -682,7 +861,7 @@ mod tests {
 
     #[test]
     fn dragging_the_body_moves_and_keeps_the_size() {
-        let drag = Drag { grab: Grab::Move, cursor: (1700.0, 1000.0), rect: Rect { x: 1577, y: 984, w: 328, h: 33 } };
+        let drag = Drag { grab: Grab::Move, cursor: (1700.0, 1000.0), rect: Rect { x: 1577, y: 984, w: 328, h: 33 }, window_h: 33 };
         let rect = dragged(&drag, (1500.4, 700.6), 130);
         assert_eq!(rect, Rect { x: 1377, y: 685, w: 328, h: 33 });
     }
@@ -690,11 +869,11 @@ mod tests {
     #[test]
     fn dragging_an_edge_changes_the_width_only() {
         let start = Rect { x: 1000, y: 500, w: 328, h: 33 };
-        let right = Drag { grab: Grab::Right, cursor: (1328.0, 510.0), rect: start };
+        let right = Drag { grab: Grab::Right, cursor: (1328.0, 510.0), rect: start, window_h: 33 };
         assert_eq!(dragged(&right, (1400.0, 900.0), 130), Rect { x: 1000, y: 500, w: 400, h: 33 });
         assert_eq!(dragged(&right, (900.0, 510.0), 130), Rect { x: 1000, y: 500, w: 130, h: 33 }, "not under the least width");
 
-        let left = Drag { grab: Grab::Left, cursor: (1000.0, 510.0), rect: start };
+        let left = Drag { grab: Grab::Left, cursor: (1000.0, 510.0), rect: start, window_h: 33 };
         let wider = dragged(&left, (900.0, 510.0), 130);
         assert_eq!(wider, Rect { x: 900, y: 500, w: 428, h: 33 });
         assert_eq!(wider.x + wider.w, start.x + start.w, "the right edge stays");
