@@ -12,11 +12,12 @@
   font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
 }
 
-// At rest the plate is 65 % and the contents are full strength; under the
+// At rest the plate is 75 % and the contents are full strength; under the
 // cursor, and while a description is typed, it is an opaque card of the
-// island's material.
+// island's material. Over a light desktop the plate turns grey, so the inks
+// of a row at rest are kept bright: a dim one is the first to sink there.
 .w {
-  --plate: 0.65;
+  --plate: 0.75;
   position: absolute;
   top: 0;
   left: 0;
@@ -109,7 +110,7 @@
 
 .w-row.run .at-rest { color: ink.$run; }
 .w-row.wait .at-rest { color: ink.$wait; }
-.w-row.pause .at-rest { color: #7f849c; }
+.w-row.pause .at-rest { color: #a6adc8; }
 .w-row.run .at-hov { color: ink.$run; box-shadow: inset 0 0 0 0.14em ink.$run; }
 .w-row.wait .at-hov { color: ink.$wait; box-shadow: inset 0 0 0 0.14em ink.$wait; }
 .w-row.pause .at-hov { color: ink.$go; background: ink.$go-wash; }
@@ -134,9 +135,9 @@
 
 .w-row.run .w-t { color: ink.$run; }
 .w-row.wait .w-t { color: ink.$wait; }
-.w-row.pause .w-t { color: #9399b2; }
-// A zero that does not tick.
-.w-row.sg .w-t { color: #585b70; }
+.w-row.pause .w-t { color: #bac2de; }
+// A zero that does not tick: the dimmest ink of the plate.
+.w-row.sg .w-t { color: #9399b2; }
 
 .w-tx {
   display: flex;
@@ -146,10 +147,10 @@
   flex: 1;
 }
 
+// The key and the description are one ink: the weight tells them apart.
 .w-k { font-weight: 700; color: #cdd6f4; }
-.w-d { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #a6adc8; }
-.w-row.pause .w-k, .w-row.sg .w-k { color: #a6adc8; }
-.w-row.pause .w-d { color: #7f849c; }
+.w-d { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #cdd6f4; }
+.w-row.pause .w-d { color: #bac2de; }
 
 // The description is typed right on the plate; the button in the slot keeps it.
 .w-in {
