@@ -41,16 +41,6 @@
   background: #181825;
 }
 
-// An empty island: the word stands in the middle.
-.tnone {
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  color: #585b70;
-}
-
 // Every row is the layout of a suggestion card: the row itself, Remove below.
 .trow {
   display: grid;
