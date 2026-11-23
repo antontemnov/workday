@@ -268,11 +268,21 @@
 
 // ─── Empty day ──────────────────────────────────────────────────────────────
 // Says nothing about the daemon's state — only that the day has no records.
+// The pair sits on the window's centre, not under the header: the feed turns
+// into a column so the block can take the free height; the bottom padding
+// outweighs the top by the header's height.
+.content.empty-day {
+  display: flex;
+  flex-direction: column;
+}
+
 .day-empty {
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 44px 0 34px;
+  justify-content: center;
+  padding: 12px 0 72px;
 }
 
 .day-empty-daemon {

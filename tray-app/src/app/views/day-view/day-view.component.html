@@ -50,7 +50,9 @@
      sections. -->
 <!-- Right-click on free content space (cards stop their own) — the window's
      menu: feed sort method. -->
-<div class="content" *ngIf="data && !error" (contextmenu)="onFeedContextMenu($event)">
+<div class="content" *ngIf="data && !error"
+     [class.empty-day]="dayEmpty && !monthClosed"
+     (contextmenu)="onFeedContextMenu($event)">
   <div class="day-head" #dayHead>
     <!-- Weekday rides above the date, out of flow: the flex row keeps its
          three participants (date · ＋Log · total) and the bar its height. -->
