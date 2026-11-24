@@ -395,6 +395,14 @@ const shell = new AppComponent(
 const hidden = shell as unknown as { onWidgetAction(action: unknown): void };
 await service.start(action => hidden.onWidgetAction(action));
 
+// Every state the shell hands the widget — also one that never leaves the service.
+const handed: (WidgetPayload | null)[] = [];
+const handOver = service.sync.bind(service);
+service.sync = (timers, suggestions = []): void => {
+  handed.push(widgetPayload(timers, null, widgetSuggestions(suggestions)));
+  handOver(timers, suggestions);
+};
+
 // What the widget window was last handed; null — it was told to go.
 const lastPayload = (): WidgetPayload | null | undefined => {
   const syncs = calls.filter(c => c.cmd === 'sync_widget');
@@ -441,11 +449,16 @@ await test('a hidden row is forgotten once its suggestion offers no timer', asyn
 });
 
 await test('▶ of a star row takes the suggestion by a timer through the gate', async () => {
+  const from = handed.length;
   fire('widget-action', { kind: 'suggested-start', uid: 'ev-planning' });
   await settle();
   assert.deepEqual(takes(), [['ev-planning', DAY, false, undefined]]);
   assert.deepEqual(rows(), ['t-ev-planning']);
   assert.deepEqual(stars(), [], 'the row became the timer');
+  // Found on the real widget: told of the star row gone before the timer, it
+  // was cut to the rows that were left — here it would have been told to go.
+  assert.ok(handed.length > from);
+  assert.ok(handed.slice(from).every(p => p !== null && p.timers.some(t => t.id === 't-ev-planning')), 'no moment without the row');
   assert.deepEqual(shell.daySuggestions.map(s => s.uid), ['ev-sync', 'ev-ended'], 'the suggestion left the feed');
   assert.equal(shell.timers?.timers[0].state, TimerState.Running);
   assert.equal(shell.actionPending, false);

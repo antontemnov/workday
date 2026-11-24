@@ -194,6 +194,36 @@ export function widgetLayout(
 }
 
 /**
+ * States told to Rust one at a time, the latest one last. Every command is
+ * a request of its own, and of two sent together the older may be taken
+ * last — the window would stay with a state that is gone. While one is on
+ * its way the next waits, and only the latest waits: what came between is
+ * outdated already.
+ */
+export class LatestLast<T> {
+  private busy: boolean = false;
+  private waiting: { readonly state: T } | null = null;
+
+  /** `send` settles when Rust has taken the state; a failure is its own to handle. */
+  public constructor(private readonly send: (state: T) => Promise<unknown>) {}
+
+  public tell(state: T): void {
+    if (this.busy) {
+      this.waiting = { state };
+      return;
+    }
+    this.busy = true;
+    const next = (): void => {
+      this.busy = false;
+      const waiting = this.waiting;
+      this.waiting = null;
+      if (waiting) this.tell(waiting.state);
+    };
+    void this.send(state).then(next, next);
+  }
+}
+
+/**
  * The plate's height on the screen: whole device pixels, never fewer than
  * the rows need — the number Rust cuts the window to. The plate does not fill
  * its window: on Windows the window is taller, so that rows and the ticket

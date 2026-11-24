@@ -68,7 +68,7 @@ const settle = (): Promise<void> => new Promise(resolve => setImmediate(resolve)
 await import(new URL('../../tray-app/node_modules/@angular/compiler/fesm2022/compiler.mjs', import.meta.url).href);
 const { TimerState } = await import('../../tray-app/src/app/models/workday.models');
 const {
-  matchTickets, mergeFound, parseWidgetGeometry, pickListEm, plateHeightPx, showsHours, ticketGroups, WIDGET_GEOMETRY_PREF,
+  LatestLast, matchTickets, mergeFound, parseWidgetGeometry, pickListEm, plateHeightPx, showsHours, ticketGroups, WIDGET_GEOMETRY_PREF,
   widgetBindInput, widgetLayout, widgetPayload, widgetRows,
 } = await import('../../tray-app/src/app/timer/timer-widget.util');
 const { TimerWidgetComponent } = await import('../../tray-app/src/app/timer/timer-widget.component');
@@ -990,7 +990,8 @@ await test('service: the widget gets its rows and the stored place', () => {
   assert.deepEqual(args.geometry, STORED);
 });
 
-await test('service: nothing new — nothing sent; a fresh moment goes out', () => {
+await test('service: nothing new — nothing sent; a fresh moment goes out', async () => {
+  await settle();
   calls.length = 0;
   service.sync(response([REVIEW, CALL, DEPLOY]));
   assert.equal(syncs().length, 0, 'the same poll twice');
@@ -999,7 +1000,8 @@ await test('service: nothing new — nothing sent; a fresh moment goes out', () 
   assert.equal(syncs().length, 1, 'a running row ticks on from the new moment');
 });
 
-await test('service: switched off, or no rows — the widget goes', () => {
+await test('service: switched off, or no rows — the widget goes', async () => {
+  await settle();
   calls.length = 0;
   service.sync(response([CALL, DEPLOY], false));
   assert.equal(syncs().length, 1);
@@ -1008,6 +1010,7 @@ await test('service: switched off, or no rows — the widget goes', () => {
   service.sync(null);
   assert.equal(syncs().length, 1, 'it is gone already');
   service.sync(response([DEPLOY]));
+  await settle();
   assert.equal(syncs().length, 2, 'the next start brings it back');
 });
 
@@ -1091,32 +1094,55 @@ await test('service: the known tickets go at once, and again when Jira\'s list c
   assert.deepEqual(labels(), [['jira · in progress'], []], 'Jira is not set up — the list is empty');
 });
 
-await test('service: a birth is told until the widget takes it', () => {
+await test('service: a birth is told until the widget takes it', async () => {
   const births = (): (string | undefined)[] => syncs().map(c => (c.args as { payload: { birthId?: string } }).payload.birthId);
+  await settle();
   actions.length = 0;
   calls.length = 0;
   nowMs += SECOND;
   service.announceBirth('deploy');
   service.sync(response([DEPLOY, CALL]));
+  await settle();
   nowMs += SECOND;
   service.sync(response([DEPLOY, CALL]));
+  await settle();
   assert.deepEqual(births(), ['deploy', 'deploy'], 'the window may still be on its way');
   fire('widget-action', { kind: 'born', id: 'deploy' });
   assert.equal(actions.length, 0, 'the shell has nothing to do about it');
   nowMs += SECOND;
   service.sync(response([DEPLOY, CALL]));
+  await settle();
   assert.deepEqual(births(), ['deploy', 'deploy', undefined]);
 });
 
-await test('service: a birth nobody took is forgotten', () => {
+await test('service: a birth nobody took is forgotten', async () => {
   const births = (): (string | undefined)[] => syncs().map(c => (c.args as { payload: { birthId?: string } }).payload.birthId);
   calls.length = 0;
   nowMs += SECOND;
   service.announceBirth('call');
   service.sync(response([DEPLOY, CALL]));
+  await settle();
   nowMs += 16 * SECOND;
   service.sync(response([DEPLOY, CALL]));
+  await settle();
   assert.deepEqual(births(), ['call', undefined]);
+});
+
+// Found on the real widget: a suggestion taken by a timer sent the window two
+// states back to back — one row, then two — and the window stayed cut to one.
+await test('service: states go to the window one at a time, the latest one last', async () => {
+  await settle();
+  calls.length = 0;
+  const rowsOf = (): string[][] => syncs().map(c => (c.args as { payload: { timers: TimerView[] } }).payload.timers.map(t => t.id));
+  nowMs += SECOND;
+  service.sync(response([DEPLOY]));
+  nowMs += SECOND;
+  service.sync(response([CALL]));
+  nowMs += SECOND;
+  service.sync(response([DEPLOY, CALL]));
+  assert.deepEqual(rowsOf(), [['deploy']], 'the first is on its way — the rest wait for it');
+  await settle();
+  assert.deepEqual(rowsOf(), [['deploy'], ['deploy', 'call']], 'the state between them was outdated before it could go');
 });
 
 await test('service: rows that did not reach the window are sent again', async () => {
@@ -1128,6 +1154,43 @@ await test('service: rows that did not reach the window are sent again', async (
   await settle();
   service.sync(rows);
   assert.equal(syncs().length, 2);
+});
+
+console.log('\nOne at a time');
+
+await test('latest last: nothing on its way — the state goes at once', async () => {
+  const sent: number[] = [];
+  const line = new LatestLast<number>(async n => { sent.push(n); });
+  line.tell(1);
+  assert.deepEqual(sent, [1]);
+  await settle();
+  line.tell(2);
+  assert.deepEqual(sent, [1, 2]);
+});
+
+await test('latest last: while one is on its way only the latest waits, and goes when the first is taken', async () => {
+  const sent: number[] = [];
+  const taken: (() => void)[] = [];
+  const line = new LatestLast<number>(n => new Promise<void>(resolve => { sent.push(n); taken.push(resolve); }));
+  line.tell(1);
+  line.tell(2);
+  line.tell(3);
+  assert.deepEqual(sent, [1]);
+  taken[0]();
+  await settle();
+  assert.deepEqual(sent, [1, 3], 'the one between is never sent');
+  taken[1]();
+  await settle();
+  assert.deepEqual(sent, [1, 3], 'nothing waits — nothing goes');
+});
+
+await test('latest last: a state that was not taken does not hold the next', async () => {
+  const sent: number[] = [];
+  const line = new LatestLast<number>(n => { sent.push(n); return n === 1 ? Promise.reject(new Error('lost')) : Promise.resolve(); });
+  line.tell(1);
+  line.tell(2);
+  await settle();
+  assert.deepEqual(sent, [1, 2]);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

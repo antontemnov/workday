@@ -281,7 +281,10 @@ fn show_plate(window: &WebviewWindow, plate: Rect, from_bottom: bool, scale: f64
         apply_rect(window, rect)?;
     }
     #[cfg(windows)]
-    cut::to_plate(window, frame);
+    {
+        cut::no_caption(window);
+        cut::to_plate(window, frame);
+    }
     Ok(())
 }
 
@@ -549,16 +552,58 @@ pub fn open_main(app: AppHandle) -> Result<(), String> {
 //
 // A window region: what is outside it is neither drawn nor hit by the mouse,
 // and changing it resizes nothing.
+//
+// A window with a region is drawn its frame by the system itself, right into
+// the window: whenever it changes hands (it does while something is typed on
+// the widget, and when the app's own window comes up) a caption with its
+// title and buttons is painted, and shows through the plate. An undecorated
+// window of tao's is a captioned one whose frame is hidden — and taking the
+// caption style off does not stop the painting. So the window answers the
+// two messages that paint it by itself.
 #[cfg(windows)]
 mod cut {
     use super::Frame;
     use tauri::WebviewWindow;
-    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
+    use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_NCACTIVATE, WM_NCDESTROY};
 
     /// Wider than any screen: the window is cut across its height only, so a
     /// dragged width needs no new cut.
     const ACROSS: i32 = 32_000;
+    const NO_CAPTION_ID: usize = 1;
+    /// Not in the headers: the theme is asked to draw the caption.
+    const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
+
+    /// Keep the system from painting a caption into the window. Called on the
+    /// window's own thread; again for the same window it changes nothing.
+    pub fn no_caption(window: &WebviewWindow) {
+        let Ok(hwnd) = window.hwnd() else { return };
+        unsafe {
+            SetWindowSubclass(hwnd.0 as HWND, Some(caption_unpainted), NO_CAPTION_ID, 0);
+        }
+    }
+
+    unsafe extern "system" fn caption_unpainted(
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        _id: usize,
+        _data: usize,
+    ) -> LRESULT {
+        match message {
+            // -1: the window changes hands, and its frame is not repainted.
+            WM_NCACTIVATE => DefSubclassProc(hwnd, message, wparam, -1),
+            WM_NCUAHDRAWCAPTION => 0,
+            WM_NCDESTROY => {
+                RemoveWindowSubclass(hwnd, Some(caption_unpainted), NO_CAPTION_ID);
+                DefSubclassProc(hwnd, message, wparam, lparam)
+            }
+            _ => DefSubclassProc(hwnd, message, wparam, lparam),
+        }
+    }
 
     pub fn to_plate(window: &WebviewWindow, frame: Frame) {
         let Ok(hwnd) = window.hwnd() else { return };

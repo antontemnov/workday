@@ -6,13 +6,19 @@ import { loadStoredInProgress, sameHits, storeInProgress } from '../services/jir
 import { readPref, writePref } from '../services/tray-prefs.store';
 import { WorkdayApiService } from '../services/workday-api.service';
 import {
-  parseWidgetGeometry, ticketGroups, WIDGET_GEOMETRY_PREF, WidgetAction, WidgetGeometry, widgetPayload, widgetSuggestions,
-  WidgetTickets,
+  LatestLast, parseWidgetGeometry, ticketGroups, WIDGET_GEOMETRY_PREF, WidgetAction, WidgetGeometry, WidgetPayload,
+  widgetPayload, widgetSuggestions, WidgetTickets,
 } from './timer-widget.util';
 
 const IS_TAURI: boolean = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 // How long a birth is told to a widget that has not taken it.
 const BIRTH_TTL_MS = 15_000;
+
+/** What sync_widget takes: the rows (none — the widget goes) and the place kept for it. */
+interface WidgetSync {
+  readonly payload: WidgetPayload | null;
+  readonly geometry: WidgetGeometry | null;
+}
 
 /**
  * The main window's side of the desktop widget. The main window lives the
@@ -46,6 +52,11 @@ export class TimerWidgetService {
   // Jira in progress: the last list, kept across runs — as the Log cloud keeps it.
   private inProgress: readonly JiraSearchHit[] = loadStoredInProgress();
   private inProgressSeq: number = 0;
+  private readonly rows: LatestLast<WidgetSync> = new LatestLast<WidgetSync>(state =>
+    invoke('sync_widget', { ...state }).catch(() => {
+      // Not delivered — the next change of the timers tries again.
+      this.sent = null;
+    }));
 
   public constructor(private zone: NgZone, private api: WorkdayApiService) {}
 
@@ -140,9 +151,6 @@ export class TimerWidgetService {
     if (key === this.sent) return;
     this.sent = key;
     const geometry = payload ? parseWidgetGeometry(readPref(WIDGET_GEOMETRY_PREF)) : null;
-    void invoke('sync_widget', { payload, geometry }).catch(() => {
-      // Not delivered — the next change of the timers tries again.
-      this.sent = null;
-    });
+    this.rows.tell({ payload, geometry });
   }
 }

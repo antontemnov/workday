@@ -44,12 +44,14 @@ tiny-skia = "0.11"
 
 # GetLastInputInfo for the toast presence gate (OS input idle time);
 # the keyboard passed between the widget and the window that had it;
-# the widget's window cut down to its plate (SetWindowRgn).
+# the widget's window cut down to its plate (SetWindowRgn), with no caption
+# painted into it (a window subclass).
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_System_SystemInformation",
   "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }

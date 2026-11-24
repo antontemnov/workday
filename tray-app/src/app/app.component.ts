@@ -461,10 +461,16 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // raiseFloor: a mutation answer outdates every read sent before it.
   private applySuggestionsDay(day: SuggestionsResponse, raiseFloor: boolean = true): void {
+    this.keepSuggestionsDay(day, raiseFloor);
+    this.syncWidget();
+  }
+
+  // The day's suggestions, the widget not told: the caller tells it of them
+  // together with something else.
+  private keepSuggestionsDay(day: SuggestionsResponse, raiseFloor: boolean = true): void {
     if (raiseFloor) this.suggestionsFloor = this.suggestionsTicket;
     this.showSuggestions(day);
     if (this.allDaySuggestions) this.allDayShown = true;
-    this.syncWidget();
   }
 
   // A ticket given in the feed stays with its suggestion while it is there.
@@ -923,14 +929,15 @@ export class AppComponent implements OnInit, OnDestroy {
   // Start timer in a suggestion's menu, ▶ of its star row on the widget: the
   // suggestion is taken by a running timer and leaves the feed for good. A
   // ticket given to it in the feed goes along. The answer carries the day's
-  // suggestions and its timers — both are shown at once, so the widget never
-  // has the star row next to the new timer.
+  // suggestions and its timers, and the widget is told of both at once (the
+  // timers follow in runTimerAction): it has neither the star row next to the
+  // new timer, nor a moment without both.
   submitSuggestionTimer(e: { uid: string; date: string }): void {
     void this.runTimerAction(async (): Promise<ApiResponse<SuggestionTimerResponse>> => {
       const taken = this.daySuggestions.find(s => s.uid === e.uid && s.date === e.date);
       const ticket = taken?.resolved?.level === 'picked' ? this.suggestionTickets.get(suggestionKey(e)) : undefined;
       const res = await this.api.startSuggestionTimer(e.uid, e.date, this.allDaySuggestions, ticket);
-      if (res.ok && res.data) this.applySuggestionsDay(res.data.day);
+      if (res.ok && res.data) this.keepSuggestionsDay(res.data.day);
       return res;
     });
   }

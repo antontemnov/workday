@@ -6,14 +6,20 @@ import { Favorite, Suggestion, TimerState } from '../models/workday.models';
 import { WorkdayApiService } from '../services/workday-api.service';
 import { TimerWidgetComponent } from '../timer/timer-widget.component';
 import {
-  ticketGroups, widgetBindInput, WidgetBound, WidgetGrab, WidgetLayout, WidgetPayload, widgetPayload, widgetSuggestions,
-  WidgetTickets,
+  LatestLast, ticketGroups, widgetBindInput, WidgetBound, WidgetGrab, WidgetLayout, WidgetPayload, widgetPayload,
+  widgetSuggestions, WidgetTickets,
 } from '../timer/timer-widget.util';
 
 const IS_TAURI: boolean = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 // Let the rows paint before the hidden window is sized and shown.
 const FIRST_FIT_DELAY_MS = 50;
 const PREVIEW_POLL_MS = 1000;
+
+/** A layout for Rust to fit the window to; first — the one that shows the window. */
+interface WidgetFit {
+  readonly layout: WidgetLayout;
+  readonly first: boolean;
+}
 
 /**
  * Root of the desktop widget's window. It owns nothing: the main window
@@ -74,6 +80,11 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
   private previewFavorites: readonly Favorite[] = [];
   private readonly previewHidden: Set<string> = new Set<string>();
   private shown: boolean = false;
+  private readonly fits: LatestLast<WidgetFit> = new LatestLast<WidgetFit>(fit =>
+    invoke('fit_widget', { minWidth: fit.layout.minWidth, height: fit.layout.height })
+      // A row born in the edit asked for the keyboard while the window was still hidden.
+      .then(() => { if (fit.first && this.plate?.wantsKeyboard) this.onTyping(true); })
+      .catch(() => { /* window closed */ }));
 
   public constructor(private api: WorkdayApiService, private cdr: ChangeDetectorRef) {}
 
@@ -140,10 +151,7 @@ export class WidgetHostComponent implements OnInit, OnDestroy {
     const first = !this.shown;
     const fit = (): void => {
       this.shown = true;
-      void invoke('fit_widget', { minWidth: layout.minWidth, height: layout.height })
-        // A row born in the edit asked for the keyboard while the window was still hidden.
-        .then(() => { if (first && this.plate?.wantsKeyboard) this.onTyping(true); })
-        .catch(() => { /* window closed */ });
+      this.fits.tell({ layout, first });
     };
     if (this.shown) fit();
     else setTimeout(fit, FIRST_FIT_DELAY_MS);
