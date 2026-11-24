@@ -386,8 +386,8 @@ export class Daemon {
       const evaluatorResult = this.activityEvaluator.processAllTicks(tickInputs, this.timerTracker.evaluatorOptions());
 
       // 4. Apply evaluator decisions (auto-pause/resume, candidate
-      //    promotion / drained-candidate evaporation; the timer yields the
-      //    count to a session or takes it back)
+      //    promotion / drained-candidate evaporation; a session on other
+      //    work pauses the running timer)
       this.sessionTracker.applyEvaluatorResult(evaluatorResult);
       this.timerTracker.applyEvaluatorResult(evaluatorResult);
 

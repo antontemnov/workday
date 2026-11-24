@@ -3,7 +3,7 @@
 // A timer is a source of time for the entry it feeds: creditTimers moves
 // whole minutes of its share into entry.minutes, so everything downstream
 // (report, push, Tempo mirror, day total) keeps reading the entry alone.
-// At most one timer is live (running or waiting) at a time.
+// At most one timer runs at a time.
 
 import { randomBytes } from 'node:crypto';
 import { MS_PER_MINUTE } from './constants.js';
@@ -197,25 +197,16 @@ export function startEntryTimer(log: DailyLog, entryId: string, nowIso: string):
   return { timer, displaced: startTimer(log, timer, nowIso) };
 }
 
-/** Pause by hand, from running or waiting. */
+/** Pause by hand. */
 export function pauseTimer(log: DailyLog, timer: Timer, nowIso: string): void {
   haltTimer(log, timer, nowIso);
   timer.touchedAt = nowIso;
 }
 
-/** A session took the count: running → waiting. */
+/** A session on other work took the count: the timer is paused and stays so. */
 export function yieldTimer(log: DailyLog, timer: Timer, nowIso: string): void {
   if (timer.state !== TimerState.Running) return;
-  closeSpan(timer, nowIso);
-  timer.state = TimerState.Waiting;
-  creditTimer(log, timer, Date.parse(nowIso));
-}
-
-/** No session counts any more: waiting → running. */
-export function reclaimTimer(timer: Timer, nowIso: string): void {
-  if (timer.state !== TimerState.Waiting) return;
-  timer.state = TimerState.Running;
-  openSpan(timer, nowIso);
+  haltTimer(log, timer, nowIso);
 }
 
 /** Every live timer goes on pause — the daemon stopped by hand, a closed month, stop tracking. */
@@ -386,8 +377,13 @@ export function skipDowntime(log: DailyLog, nowIso: string): number {
   for (const timer of getTimers(log)) {
     if (!isLiveTimer(timer)) continue;
     const counting = timer.spans.some(span => span.to === null);
+    if (!counting) {
+      // Left "waiting" by a build that had that state: it is a pause now.
+      timer.state = TimerState.Paused;
+      continue;
+    }
     closeSpan(timer, timer.lastSeenAt);
-    if (counting) openSpan(timer, nowIso);
+    openSpan(timer, nowIso);
     timer.lastSeenAt = nowIso;
     cut++;
   }

@@ -34,7 +34,6 @@ import {
   startEntryTimer,
   pauseTimer,
   yieldTimer,
-  reclaimTimer,
   pauseAllTimers,
   describeTimer,
   deleteTimer,
@@ -134,22 +133,19 @@ test('pause and start again: the pause is the gap between two stretches', () => 
   assert.equal(countedMs(timer, Date.parse(ago(0))), 15 * MINUTE);
 });
 
-test('a session takes the count and gives it back: waiting keeps the timer switched on', () => {
+test('a session takes the count: the timer is paused, the mark of the hand stays where it was', () => {
   const log = makeLog();
   const timer = newTimer(log, '', ago(30)).timer;
   yieldTimer(log, timer, ago(20));
-  assert.equal(timer.state, TimerState.Waiting);
-  assert.equal(timer.spans[0].to, ago(20));
-  reclaimTimer(timer, ago(5));
-  assert.equal(timer.state, TimerState.Running);
-  assert.equal(countedMs(timer, Date.parse(ago(0))), 15 * MINUTE);
-  yieldTimer(log, timer, ago(2));
-  pauseTimer(log, timer, ago(1));
   assert.equal(timer.state, TimerState.Paused);
-  assert.equal(timer.spans.length, 2, 'a pause from waiting opens nothing');
+  assert.equal(timer.spans[0].to, ago(20));
+  assert.equal(timer.touchedAt, ago(30), 'not a pause by hand');
+  yieldTimer(log, timer, ago(10));
+  assert.equal(timer.spans.length, 1, 'a paused timer has nothing to give');
+  assert.equal(countedMs(timer, Date.parse(ago(0))), 10 * MINUTE);
 });
 
-test('a start by hand takes a waiting timer straight to running', () => {
+test('a start by hand brings a timer paused by a session back to running', () => {
   const log = makeLog();
   const timer = newTimer(log, '', ago(30)).timer;
   yieldTimer(log, timer, ago(20));
@@ -559,14 +555,14 @@ test('Esc right after New timer: the timer goes, the one it paused runs again', 
   assert.equal(countedMs(first, Date.parse(ago(0))), 29 * MINUTE, 'the minute under the cancelled timer is nobody\'s');
 });
 
-test('a cancelled timer gives a waiting one its waiting back', () => {
+test('a cancelled timer leaves one that a session paused on pause', () => {
   const log = makeLog();
   const first = newTimer(log, 'deploy', ago(30)).timer;
   yieldTimer(log, first, ago(10));
   const fresh = newTimer(log, '', ago(1));
-  assert.deepEqual(fresh.displaced, { id: first.id, state: TimerState.Waiting });
+  assert.equal(fresh.displaced, null);
   cancelNewTimer(log, fresh.timer.id, fresh.displaced, ago(0));
-  assert.equal(first.state, TimerState.Waiting);
+  assert.equal(first.state, TimerState.Paused);
   assert.equal(first.spans.length, 1);
 });
 
@@ -617,16 +613,16 @@ test('downtime is nobody\'s: the running timer is cut where it was last seen and
   assert.equal(entry.minutes, 30 + 30 + 10, '80 minutes of sleep are not counted');
 });
 
-test('a waiting timer stays waiting over downtime; a paused one is not touched', () => {
+test('a timer an older build left waiting comes back paused; a paused one is not touched', () => {
   const log = makeLog();
   const paused = newTimer(log, 'old', ago(200)).timer;
   const waiting = newTimer(log, 'deploy', ago(120)).timer;
   yieldTimer(log, waiting, ago(100));
+  waiting.state = 'waiting' as TimerState;
   const seen = paused.lastSeenAt;
-  assert.equal(skipDowntime(log, ago(10)), 1);
-  assert.equal(waiting.state, TimerState.Waiting);
+  assert.equal(skipDowntime(log, ago(10)), 0);
+  assert.equal(waiting.state, TimerState.Paused);
   assert.equal(waiting.spans.length, 1);
-  assert.equal(waiting.lastSeenAt, ago(10));
   assert.equal(paused.lastSeenAt, seen);
 });
 

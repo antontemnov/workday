@@ -237,8 +237,7 @@ export interface Favorite {
 
 export enum TimerState {
   Running = 'running',   // counts now
-  Waiting = 'waiting',   // switched on, a session holds the count
-  Paused = 'paused',     // stopped by hand
+  Paused = 'paused',     // stopped by hand, or by a session on other work
 }
 
 // One stretch of counting; an open one is counting now.
@@ -1654,6 +1653,9 @@ export interface TickInput {
 export interface EvaluatorOptions {
   // A manual timer is running: it sits in the leader's seat.
   readonly timerRunning?: boolean;
+  // Sessions on other work than the running timer's — only they can take
+  // the count from it. Absent: the timer gives it to nobody.
+  readonly timerRivals?: ReadonlySet<string>;
 }
 
 export interface EvaluatorResult {
@@ -1661,6 +1663,9 @@ export interface EvaluatorResult {
   readonly leaderId: string | null;
   // The running timer kept the lead (leaderId is then null).
   readonly timerLeads?: boolean;
+  // Sessions that cleared the timer's bar on this tick without taking the
+  // count: a candidate among them becomes a session of the day, waiting.
+  readonly confirmedIds?: readonly string[];
 }
 
 export interface SessionScore {

@@ -179,9 +179,14 @@ own — its description is the entry's. A timer started without a ticket
 added record, as any bare add does.
 
 One counts at a time — a session or a timer. Starting a timer supersedes the
-session that was counting; a single stray edit does not take the count back,
-edits tick after tick (about a minute) do, and then the timer waits and
-counts again once every session has faded. Sleep, a crash, a reboot or a
+session that was counting. A timer counts through work on its own ticket — a
+Development record of the session's ticket: the session waits, keeps its
+commits and lines, and takes the count when the timer is paused by hand. A
+session on other work (another ticket, another activity on the same one, a
+timer without a ticket) pauses the timer with an edit that lifts its stamina
+above the touch floor: a commit, a save of a few lines, or any edit while the
+work is still warm. A stray touch does not. A paused timer stays paused —
+nothing but a hand starts it again. Sleep, a crash, a reboot or a
 self-update are simply time nobody tracked: a live timer is cut where it was
 last seen and goes on by itself. `workday stop` pauses timers. At the day
 boundary every timer stops; a timer still without a ticket stays in its day's

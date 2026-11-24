@@ -598,18 +598,22 @@ export class SessionTracker {
     // Candidate lifecycle by evaluator score. Promotion: leadership (implies
     // score > 0) — the first active tick when the repo leads; the session
     // becomes a confirmed fact, pushed into the log and flushed immediately
-    // (the moment the day materializes). Fade-out: score drained to zero —
-    // the same decay that idle-pauses a session, but an unconfirmed fact has
-    // nothing to pause, so it evaporates.
+    // (the moment the day materializes). Under a running timer a candidate
+    // that cleared its bar without taking the count is a fact too: it enters
+    // the day superseded. Fade-out: score drained to zero — the same decay
+    // that idle-pauses a session, but an unconfirmed fact has nothing to
+    // pause, so it evaporates.
     let promoted = false;
     for (const [repoName, session] of [...this.candidates]) {
       const sessionScore = result.scores.get(session.id);
       if (!sessionScore) continue;
+      const leads = result.leaderId === session.id;
       if (sessionScore.score === 0) {
         this.dropCandidate(repoName);
-      } else if (result.leaderId === session.id) {
+      } else if (leads || result.confirmedIds?.includes(session.id)) {
         session.state = SessionState.Active;
         session.activatedAt = now;
+        if (!leads) session.pauses.push({ from: now, to: null, source: PauseSource.Superseded });
         this.dailyLog.sessions.push(session);
         this.candidates.delete(repoName);
         promoted = true;

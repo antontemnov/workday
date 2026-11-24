@@ -2,7 +2,8 @@
  * Unit tests for the live side of manual timers: TimerTracker on top of a
  * SessionTracker and the real ActivityEvaluator. One counts at a time — a
  * session or a timer; a start or a pause by hand settles the lead at once,
- * without a tick; the tick moves the timer between running and waiting.
+ * without a tick; on a tick a session on other work pauses the timer, and
+ * work on the timer's own ticket goes on under it.
  * A suggestion taken by a timer: a record with no minutes and a running
  * timer on it, or a timer without a ticket. Plus the daemon's life:
  * downtime, day boundary, closed month, the janitor.
@@ -20,7 +21,7 @@ import { runStartupJanitor } from '../../src/core/janitor.js';
 import { addManualEntry, createEmptyEvidence, createEmptyLog, getDailyLogPath, getOpenPause, readDailyLog, writeDailyLog } from '../../src/core/daily-log.js';
 import { getTimers, newTimer, startEntryTimer } from '../../src/core/timers.js';
 import { buildPatchedConfig } from '../../src/core/config.js';
-import { PauseSource, SensitivityLevel, SessionState, TimerState, type AppConfig, type DailyLog, type EvaluatorResult, type Session } from '../../src/core/types.js';
+import { PauseSource, SensitivityLevel, SessionState, TimerState, type AppConfig, type DailyLog, type EvaluatorResult, type PollResult, type Session } from '../../src/core/types.js';
 
 let passed = 0;
 let failed = 0;
@@ -76,7 +77,8 @@ interface Rig {
   readonly sessions: SessionTracker;
   readonly evaluator: ActivityEvaluator;
   readonly timers: TimerTracker;
-  tick(edits?: readonly string[]): EvaluatorResult;
+  tick(edits?: readonly string[], lines?: number): EvaluatorResult;
+  pollTick(polls: readonly PollResult[]): EvaluatorResult;
 }
 
 // The daemon's tick without git: scores from edits, then both trackers apply.
@@ -87,19 +89,50 @@ function rig(sessionIds: readonly string[] = [], date = TODAY): Rig {
   const evaluator = new ActivityEvaluator(30);
   sessions.onSessionClosed = (id): void => evaluator.removeSession(id);
   const timers = new TimerTracker(sessions, evaluator, config);
+  const apply = (result: EvaluatorResult): EvaluatorResult => {
+    sessions.applyEvaluatorResult(result);
+    timers.applyEvaluatorResult(result);
+    return result;
+  };
   return {
     log, sessions, evaluator, timers,
-    tick: (edits = []) => {
+    tick: (edits = [], lines = 4) => {
       const inputs = sessions.getDailyLog().sessions.filter(s => !s.closedBy).map(s => ({
         sessionId: s.id,
-        signals: { hasDynamics: edits.includes(s.id), hasCommit: false, deltaMagnitude: edits.includes(s.id) ? 4 : 0 },
+        signals: { hasDynamics: edits.includes(s.id), hasCommit: false, deltaMagnitude: edits.includes(s.id) ? lines : 0 },
         maxTicks: 90,
       }));
-      const result = evaluator.processAllTicks(inputs, timers.evaluatorOptions());
-      sessions.applyEvaluatorResult(result);
-      timers.applyEvaluatorResult(result);
-      return result;
+      return apply(evaluator.processAllTicks(inputs, timers.evaluatorOptions()));
     },
+    // The same with sessions born from polls, candidates included.
+    pollTick: (polls) => {
+      for (const poll of polls) sessions.processPollResult(poll);
+      return apply(evaluator.processAllTicks(sessions.buildTickInputs(polls), timers.evaluatorOptions()));
+    },
+  };
+}
+
+function pollOf(repoPath: string, task: string, lines: number): PollResult {
+  const branch = `${task}-fix`;
+  return {
+    repoPath, branch, task,
+    snapshot: {
+      branch, trackedLines: { added: 0, removed: 0 }, trackedFileCount: 0, untrackedCount: 0,
+      timestamp: Date.now(), evidenceBase: null, churnFiles: new Map(),
+    },
+    delta: { addedDelta: lines, removedDelta: 0, untrackedDelta: 0, hasDynamics: lines > 0, magnitude: lines },
+    newReflogEntries: [],
+    currentHead: 'head1',
+    evidenceSnapshot: null,
+    evidenceBasis: null,
+    mergeBaseSha: 'mb1',
+    prevEvidenceSnapshot: null,
+    ledgerUpdate: null,
+    farewellLedgerUpdate: null,
+    reanchored: false,
+    uncommitted: { linesAdded: 0, linesRemoved: 0, filesChanged: 0 },
+    prevUncommitted: null,
+    foreignCheckouts: [],
   };
 }
 
@@ -146,56 +179,132 @@ test('pausing after the stamina ran out leaves nobody counting', () => {
   assert.equal(r.timers.getTimers().counting, 'none');
 });
 
-test('one stray edit leaves the count with the timer', () => {
+test('a stray touch leaves the count with the timer', () => {
   const r = codingRig();
   const timer = r.timers.create('deploy');
   for (let i = 0; i < 8; i++) r.tick();
-  r.tick(['a']);
+  r.tick(['a'], 1);
   assert.equal(timer.state, TimerState.Running);
   assert.equal(pauseOf(r), PauseSource.Superseded);
 });
 
-test('dense edits take the count — the timer waits; the session fades — the timer counts again', () => {
+test('an edit that lifts the stamina over the floor pauses a timer on other work — for good', () => {
   const r = codingRig();
   const timer = r.timers.create('deploy');
-  r.tick(['a']);
-  r.tick(['a']);
-  assert.equal(timer.state, TimerState.Running);
-  r.tick(['a']);
-  assert.equal(timer.state, TimerState.Waiting);
+  for (let i = 0; i < 8; i++) r.tick();
+  r.tick(['a'], 12);
+  assert.equal(timer.state, TimerState.Paused);
   assert.equal(pauseOf(r), null);
   assert.equal(r.timers.getTimers().counting, 'session');
   assert.equal(timer.spans.length, 1);
   assert.notEqual(timer.spans[0].to, null);
 
   let quiet = 0;
-  while (timer.state === TimerState.Waiting && quiet < 200) { r.tick(); quiet++; }
-  assert.equal(timer.state, TimerState.Running, `after ${quiet} quiet ticks`);
+  while (pauseOf(r) !== PauseSource.IdleTimeout && quiet < 200) { r.tick(); quiet++; }
+  assert.equal(pauseOf(r), PauseSource.IdleTimeout, `after ${quiet} quiet ticks`);
+  assert.equal(timer.state, TimerState.Paused, 'nothing but a hand starts it again');
+  assert.equal(r.timers.getTimers().counting, 'none');
+});
+
+test('a timer paused by a session is started again by hand, and the session waits', () => {
+  const r = codingRig();
+  const timer = r.timers.create('deploy');
+  r.tick(['a'], 12);
+  assert.equal(timer.state, TimerState.Paused);
+  r.timers.start(timer.id);
+  assert.equal(timer.state, TimerState.Running);
   assert.equal(timer.spans.length, 2);
-  assert.equal(pauseOf(r), PauseSource.IdleTimeout);
+  assert.equal(pauseOf(r), PauseSource.Superseded);
+});
+
+test('the session that paused the timer is closed: the timer stays paused', () => {
+  const r = codingRig();
+  const timer = r.timers.create('deploy');
+  r.tick(['a'], 12);
+  assert.equal(r.sessions.stopSession('a').ok, true);
+  r.tick();
+  assert.equal(timer.state, TimerState.Paused);
+  assert.equal(r.timers.getTimers().counting, 'none');
+});
+
+console.log('The timer\'s own work and other work');
+
+// A timer on a record of the given ticket and activity; the rig's sessions are on ATL-1.
+function timerOn(r: Rig, task: string, activity: string): ReturnType<TimerTracker['startOnEntry']> {
+  const description = activity === 'Development' ? '' : 'call';
+  return r.timers.startOnEntry(addManualEntry(r.log, { task, minutes: 10, description, activity }, config).id);
+}
+
+test('Development on the session\'s ticket: the timer counts through dense work, the session waits', () => {
+  const r = codingRig();
+  const timer = timerOn(r, 'ATL-1', 'Development');
+  for (let i = 0; i < 12; i++) r.tick(['a'], 12);
+  assert.equal(timer.state, TimerState.Running);
+  assert.equal(pauseOf(r), PauseSource.Superseded);
   assert.equal(r.timers.getTimers().counting, 'timer');
 });
 
-test('pausing a waiting timer changes nothing for the session', () => {
+test('another activity on the same ticket is other work: code pauses the timer', () => {
   const r = codingRig();
-  const timer = r.timers.create('deploy');
-  for (let i = 0; i < 3; i++) r.tick(['a']);
-  assert.equal(timer.state, TimerState.Waiting);
-  r.timers.pause();
+  const timer = timerOn(r, 'ATL-1', 'Meeting');
+  r.tick(['a'], 12);
   assert.equal(timer.state, TimerState.Paused);
   assert.equal(pauseOf(r), null);
-  r.tick();
-  assert.equal(timer.state, TimerState.Paused, 'a paused timer never comes back by itself');
 });
 
-test('a waiting timer gets the count when the leading session is closed', () => {
+test('Development on another ticket is other work too', () => {
   const r = codingRig();
-  const timer = r.timers.create('deploy');
-  for (let i = 0; i < 3; i++) r.tick(['a']);
-  assert.equal(timer.state, TimerState.Waiting);
-  assert.equal(r.sessions.stopSession('a').ok, true);
-  r.tick();
+  const timer = timerOn(r, 'ATL-2', 'Development');
+  r.tick(['a'], 12);
+  assert.equal(timer.state, TimerState.Paused);
+  assert.equal(pauseOf(r), null);
+});
+
+test('work on the timer\'s own ticket enters the day as a waiting session', () => {
+  const r = rig();
+  const timer = timerOn(r, 'ATL-1', 'Development');
+  r.pollTick([pollOf('/tmp/repo-a', 'ATL-1', 12)]);
+  assert.equal(r.sessions.getCandidates().length, 0);
+  assert.equal(r.log.sessions.length, 1);
+  assert.equal(pauseOf(r), PauseSource.Superseded);
   assert.equal(timer.state, TimerState.Running);
+
+  r.timers.pause();
+  assert.equal(pauseOf(r), null, 'the pause by hand gives it the count');
+  assert.equal(r.timers.getTimers().counting, 'session');
+});
+
+test('a touch on the timer\'s own ticket stays a candidate and fades', () => {
+  const r = rig();
+  const timer = timerOn(r, 'ATL-1', 'Development');
+  r.pollTick([pollOf('/tmp/repo-a', 'ATL-1', 1)]);
+  assert.equal(r.sessions.getCandidates().length, 1);
+  assert.equal(r.log.sessions.length, 0);
+  for (let i = 0; i < 30; i++) r.pollTick([pollOf('/tmp/repo-a', 'ATL-1', 0)]);
+  assert.equal(r.sessions.getCandidates().length, 0);
+  assert.equal(r.log.sessions.length, 0);
+  assert.equal(timer.state, TimerState.Running);
+});
+
+test('work on another ticket is born straight into the count; the timer is paused', () => {
+  const r = rig();
+  const timer = r.timers.create('deploy');
+  r.pollTick([pollOf('/tmp/repo-a', 'ATL-1', 12)]);
+  assert.equal(r.log.sessions.length, 1);
+  assert.equal(pauseOf(r), null);
+  assert.equal(timer.state, TimerState.Paused);
+  assert.equal(r.timers.getTimers().counting, 'session');
+});
+
+test('of two repos under the timer, its own ticket waits and the other one takes the count', () => {
+  const r = rig();
+  const timer = timerOn(r, 'ATL-1', 'Development');
+  r.pollTick([pollOf('/tmp/repo-a', 'ATL-1', 12), pollOf('/tmp/repo-b', 'ATL-2', 12)]);
+  const byRepo = (repo: string): Session => r.log.sessions.find(s => s.repo === repo)!;
+  assert.equal(r.log.sessions.length, 2);
+  assert.equal(getOpenPause(byRepo('repo-a'))?.source, PauseSource.Superseded);
+  assert.equal(getOpenPause(byRepo('repo-b'))?.source ?? null, null);
+  assert.equal(timer.state, TimerState.Paused);
 });
 
 test('Esc on a fresh timer gives the count back to whoever had it', () => {

@@ -1647,9 +1647,7 @@ function formatTimerTime(ms: number, withSeconds: boolean): string {
 }
 
 function formatTimerRow(timer: TimerView, index: number): string {
-  const state = timer.state === TimerState.Running ? '▶ running'
-    : timer.state === TimerState.Waiting ? '◌ waiting'
-    : '⏸ paused ';
+  const state = timer.state === TimerState.Running ? '▶ running' : '⏸ paused ';
   // The timer's own time. On an entry at rest it reads in whole minutes, like
   // the entry; whatever ticks, and a timer without a ticket, keeps its seconds.
   const withSeconds = timer.state !== TimerState.Paused || timer.entryId === null;

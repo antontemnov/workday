@@ -421,46 +421,64 @@ enum PauseSource {
 ### A manual timer in the leader's seat
 
 One counts at a time: a session or a manual timer. A **running** timer sits
-in the leader's seat (`processAllTicks(ticks, { timerRunning: true })`):
+in the leader's seat
+(`processAllTicks(ticks, { timerRunning: true, timerRivals })`). A timer has
+two states, running and paused, and nothing but a hand starts it.
+
+**Own work and other work.** A session is on the timer's *own work* when the
+timer feeds a Development record of the session's ticket. Everything else is
+*other work*: another ticket, another activity on the same ticket (a call, a
+review), a timer without a ticket. The sessions and candidates on other work
+are the timer's **rivals** — `timerRivals`, built by
+`TimerTracker.evaluatorOptions()` before each tick.
+
+**The bar** has no number of its own: it is the touch floor of the session's
+mode (§4).
 
 ```
 Each tick while the timer runs:
   1. Scores and both EMAs update for every session as usual
-  2. A session (or a candidate) takes the count only if
+  2. A session (or a candidate) clears the bar if
        - it was edited on this very tick, AND
-       - its attention > TIMER_DEFENSE_ATTENTION (0.5)
-     The most attended such session wins → leaderId = that session
-  3. Otherwise leaderId = null, timerLeads = true:
+       - its stamina after the tick is above its touch floor
+  3. The most attended rival that cleared the bar takes the count:
+       leaderId = that session, the timer goes on pause
+  4. Everyone else who cleared it → confirmedIds. A candidate among them
+     enters the day superseded: a waiting session with its evidence
+  5. No rival cleared it → leaderId = null, timerLeads = true:
        sessions with score > 0 → paused (PauseSource.Superseded),
        sessions with score == 0 → paused (PauseSource.IdleTimeout),
-       candidates are not promoted (a drained one evaporates as usual)
+       a candidate that cleared nothing stays a candidate
+       (a drained one evaporates as usual)
 ```
 
-A session under a timer is therefore the ordinary superseded session: its
-stamina keeps fading by the clock, it idles out at zero and closes after
-`idleCloseHours` — nothing new in its lifecycle.
+A touch lifts a cold session exactly to the floor and the tick's decay takes
+it 1 below, so the edit has to bring more than one tick of decay:
 
-| Poll | One edit after silence | Edits tick after tick | Takeover |
-|------|------------------------|-----------------------|----------|
-| 15s  | 0.125                  | 0.49 on the 5th, 0.55 on the 6th | 6th tick, 75s after the first edit |
-| 30s  | 0.25                   | 0.44 → 0.58           | 3rd tick, 60s |
-| 45s  | 0.375                  | 0.61                  | 2nd tick, 45s |
-| 60s  | 0.50 (not above)       | 0.75                  | 2nd tick, 60s |
+| Session | Edit on the tick | Clears the bar |
+|---------|------------------|----------------|
+| cold | 1–3 lines at a 30s poll | no — however often, if rarer than every tick |
+| cold | 8 lines/min at any poll (4 lines at 30s), or a commit | yes, on the spot |
+| cold | 2 lines tick after tick (30s poll) | on the 6th tick — the frequency gain alone outweighs the decay |
+| warm — stamina still above the floor | any edit | yes |
 
-At 30s polls edits rarer than once in a minute and a half never take the
-count (attention peaks at 0.43); edits once a minute do, on the fourth one.
-The threshold is a constant, not a multiple of `ATTENTION_ALPHA`: the rule
-keeps its meaning at any poll interval up to 60s.
+A warm session takes the count with any edit on purpose: work that was going
+on minutes ago and is touched again is the developer coming back to it. After
+dense work the stamina cools to the floor in up to ~30 minutes; from there
+the cold rows apply.
+
+A session under a timer is the ordinary superseded session: its stamina is
+charged by edits and fades by the clock, it idles out at zero and closes
+after `idleCloseHours` — nothing new in its lifecycle.
 
 Three more rules make it hold:
 
-- **A start by hand resets attention** (`resetAttention()`): without it a
-  session that was coding a moment ago would take the count straight back on
-  its next edit.
-- **The timer gets the count back only when no session leads** — every
-  stamina has run out, or the leading session was closed or paused by hand.
-  A timer in that state is *waiting*; while it waits the evaluator runs
-  without `timerRunning` and the sessions settle the lead as usual.
+- **Work on the timer's own ticket never stops it.** The session waits,
+  collecting evidence and stamina; a pause of the timer by hand gives it the
+  count while stamina is left.
+- **A timer paused by a session stays paused** — the same state as a pause by
+  hand (`touchedAt` is not moved). There is no waiting state and no way back
+  by itself: a forgotten timer does not come alive when the coding stops.
 - **Starting or pausing a timer is not a tick.** `reselect()` picks the
   leader again from the last tick's scores: no poll, no decay step, no EMA
   move. A started timer simply holds the lead (a takeover needs an edit, and
@@ -1006,6 +1024,7 @@ interface TickInput {
 
 interface EvaluatorOptions {
   readonly timerRunning?: boolean;   // a manual timer sits in the leader's seat (§6)
+  readonly timerRivals?: ReadonlySet<string>;  // sessions on other work than the timer's
 }
 
 interface EvaluatorResult {
@@ -1013,6 +1032,7 @@ interface EvaluatorResult {
   readonly leaderId: string | null;  // attention leader (see §6), null if all scores=0
                                      // or while a running timer keeps the lead
   readonly timerLeads?: boolean;     // the running timer kept the lead
+  readonly confirmedIds?: readonly string[];  // cleared the timer's bar without taking the count
 }
 
 interface SessionScore {
@@ -1028,7 +1048,6 @@ class ActivityEvaluator {
   constructor(diffPollSeconds: number);
   processAllTicks(ticks: readonly TickInput[], options?: EvaluatorOptions): EvaluatorResult;
   reselect(options?: EvaluatorOptions): EvaluatorResult;  // leader from the last tick's scores, no time passes
-  resetAttention(): void;                                 // a timer was started by hand
   removeSession(sessionId: string): void;
 }
 ```

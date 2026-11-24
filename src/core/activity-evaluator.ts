@@ -2,7 +2,6 @@ import type { TickInput, EvaluatorOptions, EvaluatorResult, SessionScore } from 
 import {
   EMA_WINDOW_MINUTES,
   ATTENTION_WINDOW_MINUTES,
-  TIMER_DEFENSE_ATTENTION,
   STAMINA_FLOOR_RATIO,
   FREQUENCY_GAIN_MAX,
   STAMINA_LINES_PER_MINUTE,
@@ -79,8 +78,8 @@ export class ActivityEvaluator {
    * intentionally hard.
    *
    * options.timerRunning: a manual timer holds the lead and gives it away
-   * only to a session edited on this very tick whose attention is above
-   * TIMER_DEFENSE_ATTENTION — see pickTimerChallenger.
+   * only to a session on other work (options.timerRivals) whose edit on this
+   * very tick left its stamina above the touch floor — see pickTimerChallenger.
    */
   public processAllTicks(ticks: readonly TickInput[], options?: EvaluatorOptions): EvaluatorResult {
     const scores = new Map<string, SessionScore>();
@@ -140,7 +139,7 @@ export class ActivityEvaluator {
     }
 
     this.lastScores = scores;
-    return this.decide(scores, options?.timerRunning === true, activeIds);
+    return this.decide(scores, options, activeIds);
   }
 
   /**
@@ -151,49 +150,51 @@ export class ActivityEvaluator {
    * lead among themselves.
    */
   public reselect(options?: EvaluatorOptions): EvaluatorResult {
-    return this.decide(this.lastScores, options?.timerRunning === true, new Set<string>());
+    return this.decide(this.lastScores, options, new Set<string>());
   }
 
-  /**
-   * Start of a timer by hand: the attention moves to the timer. Without it
-   * a session that was coding a moment ago would take the count straight
-   * back on its next edit.
-   */
-  public resetAttention(): void {
-    for (const st of this.state.values()) st.attention = 0;
-    this.lastLeaderId = null;
-  }
-
-  private decide(scores: Map<string, SessionScore>, timerRunning: boolean, activeIds: ReadonlySet<string>): EvaluatorResult {
-    if (!timerRunning) {
+  private decide(scores: Map<string, SessionScore>, options: EvaluatorOptions | undefined, activeIds: ReadonlySet<string>): EvaluatorResult {
+    if (options?.timerRunning !== true) {
       const leaderId = this.pickLeader(scores);
       this.lastLeaderId = leaderId;
       return { scores, leaderId };
     }
-    const challengerId = this.pickTimerChallenger(scores, activeIds);
+    const { challengerId, confirmedIds } = this.pickTimerChallenger(scores, activeIds, options.timerRivals);
     this.lastLeaderId = challengerId;
-    return { scores, leaderId: challengerId, timerLeads: challengerId === null };
+    return { scores, leaderId: challengerId, timerLeads: challengerId === null, confirmedIds };
   }
 
   /**
-   * A running manual timer sits in the leader's seat. A session (or a
-   * candidate) takes the count from it only on a tick it was edited on and
-   * only with attention above TIMER_DEFENSE_ATTENTION: a single touch after
-   * silence stays below it by construction, edits tick after tick cross it
-   * in about a minute. The most attended challenger wins.
+   * A running manual timer sits in the leader's seat. The bar a session (or
+   * a candidate) has to clear is the touch floor of its own mode: an edit on
+   * this very tick that leaves its stamina above the floor. A stray touch
+   * of a cold session lands at the floor and the tick's decay takes it below,
+   * so only volume, a commit or work already in progress clears it.
+   *
+   * Clearing the bar takes the count only for a rival — a session on other
+   * work than the timer's; the most attended rival wins. Everyone else who
+   * cleared it is confirmed: real work that goes on under the timer.
    */
-  private pickTimerChallenger(scores: ReadonlyMap<string, SessionScore>, activeIds: ReadonlySet<string>): string | null {
+  private pickTimerChallenger(
+    scores: ReadonlyMap<string, SessionScore>,
+    activeIds: ReadonlySet<string>,
+    rivals: ReadonlySet<string> | undefined,
+  ): { challengerId: string | null; confirmedIds: readonly string[] } {
     let challengerId: string | null = null;
-    let challengerAttention = TIMER_DEFENSE_ATTENTION;
+    let challengerAttention = -1;
+    const cleared: string[] = [];
     for (const [sessionId, sessionScore] of scores) {
-      if (sessionScore.score <= 0 || !activeIds.has(sessionId)) continue;
+      if (!activeIds.has(sessionId)) continue;
+      if (sessionScore.score <= sessionScore.maxScore * STAMINA_FLOOR_RATIO) continue;
+      cleared.push(sessionId);
+      if (rivals?.has(sessionId) !== true) continue;
       const attention = this.state.get(sessionId)?.attention ?? 0;
       if (attention > challengerAttention) {
         challengerId = sessionId;
         challengerAttention = attention;
       }
     }
-    return challengerId;
+    return { challengerId, confirmedIds: cleared.filter(sessionId => sessionId !== challengerId) };
   }
 
   /**

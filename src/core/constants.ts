@@ -245,12 +245,6 @@ export const EMA_WINDOW_MINUTES = 10;
  */
 export const ATTENTION_WINDOW_MINUTES = 2;
 /**
- * Attention a session needs, on a tick with an edit, to take the lead from a
- * running manual timer. One touch after silence never reaches it at polls up
- * to 60s; edits tick after tick cross it in about a minute.
- */
-export const TIMER_DEFENSE_ATTENTION = 0.5;
-/**
  * Touch floor: any active tick lifts score to at least this fraction of the
  * sensitivity max timeout (Low: 3.75 min, Normal: 11.25 min, Patient: 22.5 min).
  * Guards against pause noise from single keystrokes without jumping the bar.

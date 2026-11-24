@@ -1,5 +1,6 @@
 import type { ActivityEvaluator } from './activity-evaluator.js';
 import type { SessionTracker } from './session-tracker.js';
+import { DEFAULT_ACTIVITY } from './constants.js';
 import { addTimerEntry, bindTimer, computeDayEnd, resolveManualEntryTarget, type TimerBinding } from './daily-log.js';
 import {
   cancelNewTimer,
@@ -16,7 +17,6 @@ import {
   newTimer,
   pauseAllTimers,
   pauseTimer,
-  reclaimTimer,
   removeEntryTimer,
   resolveTimerTarget,
   skipDowntime,
@@ -63,8 +63,9 @@ export interface SuggestedTimerInput {
  *
  * A timer started or paused by hand settles the lead at once through
  * evaluator.reselect(): no git poll, no extra tick. On a regular tick the
- * running timer is the evaluator's defending leader (evaluatorOptions) and
- * applyEvaluatorResult moves it between running and waiting.
+ * running timer is the evaluator's defending leader (evaluatorOptions): it
+ * counts through work on its own ticket and is paused by a session on
+ * other work (applyEvaluatorResult). Nothing starts it again but a hand.
  *
  * Usage:
  *   const result = evaluator.processAllTicks(ticks, timerTracker.evaluatorOptions());
@@ -283,21 +284,16 @@ export class TimerTracker {
   // ─── Evaluator glue ───────────────────────────────────────────────────
 
   public evaluatorOptions(): EvaluatorOptions {
-    return { timerRunning: this.isRunning() };
+    const running = findLiveTimer(this.log);
+    if (!running) return { timerRunning: false };
+    return { timerRunning: true, timerRivals: this.rivalsOf(running) };
   }
 
-  /**
-   * After a tick: a session took the count — the running timer waits; no
-   * session leads any more — the waiting timer counts again.
-   */
+  /** After a tick: a session on other work took the count — the running timer is paused. */
   public applyEvaluatorResult(result: EvaluatorResult): void {
     const now = nowIso();
-    const live = findLiveTimer(this.log);
-    if (live?.state === TimerState.Running && result.leaderId !== null) {
-      yieldTimer(this.log, live, now);
-    } else if (live?.state === TimerState.Waiting && result.leaderId === null) {
-      reclaimTimer(live, now);
-    }
+    const running = findLiveTimer(this.log);
+    if (running && result.leaderId !== null) yieldTimer(this.log, running, now);
     markTimersAlive(this.log, now);
     creditTimers(this.log, Date.parse(now));
   }
@@ -322,11 +318,25 @@ export class TimerTracker {
 
   // ─── Private ──────────────────────────────────────────────────────────
 
-  // A start by hand: attention moves to the timer, sessions are superseded now.
+  // A start by hand: sessions are superseded now.
   private takeLead(): void {
-    this.evaluator.resetAttention();
     this.sessionTracker.applyEvaluatorResult(this.evaluator.reselect({ timerRunning: true }));
     this.sessionTracker.flush();
+  }
+
+  /**
+   * Sessions on other work than the timer's. Development on the timer's own
+   * ticket is the timer's work; another ticket, another activity on the same
+   * one, or a timer without a ticket make every session a rival.
+   */
+  private rivalsOf(timer: Timer): ReadonlySet<string> {
+    const entry = timer.entryId === null ? null : resolveManualEntryTarget(this.log, timer.entryId);
+    const ownTask = entry && entry.activity === DEFAULT_ACTIVITY ? entry.task : null;
+    const rivals = new Set<string>();
+    for (const session of [...this.sessionTracker.getOpenSessions(), ...this.sessionTracker.getCandidates()]) {
+      if (ownTask === null || session.task !== ownTask) rivals.add(session.id);
+    }
+    return rivals;
   }
 
   // A timer left the lead (or never had it): the sessions settle it among themselves.

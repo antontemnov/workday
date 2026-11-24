@@ -1,0 +1,1330 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Таймер и сессия: кто считает — игровой стенд</title>
+<style>
+:root { --tm: 252 146 48; --go: 48 209 88; --ice: 137 180 250; }
+html, body { margin: 0; background: #0f0f17; }
+body.lab { color: #cdd6f4; font: 12px/1.45 'Cascadia Code', Consolas, monospace; padding: 20px 24px 60px; max-width: 1280px; box-sizing: border-box; }
+h1 { font-size: 14px; margin: 0 0 4px; }
+h2 { font-size: 11px; font-weight: 400; color: #7f849c; margin: 0 0 10px; letter-spacing: .04em; text-transform: uppercase; }
+h2 i { font-style: normal; color: #cdd6f4; text-transform: none; letter-spacing: 0; }
+.sub { color: #7f849c; font-size: 11px; max-width: 1000px; margin: 0 0 16px; }
+.sub b { color: #a6adc8; font-weight: 400; }
+button, select { font: inherit; }
+select { color: #cdd6f4; background: #11111b; border: 1px solid #313244; border-radius: 6px; padding: 3px 6px; font-size: 11px; }
+
+.strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 6px; }
+.lbl { color: #6c7086; font-size: 11px; width: 74px; flex-shrink: 0; }
+.lbl.free { width: auto; margin-left: 10px; }
+.tbb { font-size: 11px; color: #bac2de; background: #1e1e2e; border: 1px solid #313244; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.tbb:hover { border-color: #45475a; color: #e6ebfa; }
+.tbb.on { border-color: rgb(var(--tm) / .55); color: rgb(var(--tm)); background: rgb(var(--tm) / .07); }
+.tbb:disabled { opacity: .35; cursor: default; }
+.chk { display: flex; align-items: center; gap: 6px; color: #a6adc8; font-size: 11px; margin-left: 10px; cursor: pointer; }
+.chk input { accent-color: rgb(var(--tm)); margin: 0; }
+.chk i { font-style: normal; color: #6c7086; }
+.note { margin: 2px 0 14px 82px; color: #a6adc8; font-size: 11.5px; max-width: 940px; }
+.note b { color: #cdd6f4; font-weight: 400; }
+.note span { color: #7f849c; }
+
+.transport { margin: 4px 0 14px; padding: 8px 12px; background: #181825; border: 1px solid #2a2a3c; border-radius: 10px; }
+.clock { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; width: 100px; }
+.status { color: #7f849c; font-size: 11px; margin-left: auto; }
+
+.stage { display: grid; grid-template-columns: minmax(300px, 390px) 1fr; gap: 14px; align-items: start; }
+@media (max-width: 900px) { .stage { grid-template-columns: 1fr; } .note { margin-left: 0; } }
+.pane { background: #181825; border: 1px solid #2a2a3c; border-radius: 10px; padding: 14px; min-width: 0; }
+.pane.wide { margin-bottom: 14px; }
+.pane.wide .legend { margin-bottom: 14px; }
+.pane.wide #totals { min-height: 84px; }
+
+/* ── what I do ── */
+.repo { border: 1px solid #2a2a3c; border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #1e1e2e; }
+.repo-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.repo-h b { width: 70px; flex-shrink: 0; }
+.repo-h select { flex: 1; min-width: 0; }
+.acts { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.acts.second { margin-top: 6px; }
+.hint { color: #6c7086; font-size: 10.5px; margin-top: 7px; min-height: 1.45em; }
+.hint b { color: #a6adc8; font-weight: 400; }
+.newt { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* ── the day ── */
+.now { display: flex; align-items: baseline; gap: 10px; padding: 10px 12px; border-radius: 8px; background: #11111b; margin-bottom: 12px; }
+.now span { color: #7f849c; font-size: 11px; }
+.now b { font-size: 15px; }
+.now.timer b { color: rgb(var(--tm)); }
+.now.session b { color: rgb(var(--go)); }
+.now.none b { color: #585b70; }
+.empty { color: #585b70; font-size: 11px; padding: 6px 2px; }
+.grp { border: 1px solid #2a2a3c; border-radius: 8px; margin-bottom: 8px; background: #1e1e2e; overflow: hidden; }
+.grp-h { display: flex; justify-content: space-between; padding: 6px 10px; color: #a6adc8; border-bottom: 1px solid #2a2a3c; font-variant-numeric: tabular-nums; }
+.grp-h b { color: #cdd6f4; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; padding: 7px 10px; }
+.row + .row { border-top: 1px solid #262637; }
+.c1 { width: 92px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+.dur { width: 58px; flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.what { flex: 1; min-width: 0; }
+.what i, .state i { font-style: normal; color: #7f849c; }
+.state { color: #a6adc8; font-size: 11px; }
+.tgl { width: 22px; height: 22px; border-radius: 50%; border: 0; background: transparent; color: inherit; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.tgl:hover { background: rgb(205 214 244 / .1); }
+.tgl .hov { display: none; }
+.tgl:hover .rest { display: none; }
+.tgl:hover .hov { display: block; }
+svg.g-ic { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; display: block; }
+svg.g-s { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; display: block; }
+svg.g-f { width: 11px; height: 11px; fill: currentColor; display: block; }
+.tm.run .c1, .tm.run .dur { color: rgb(var(--tm)); }
+.tm.wait .c1, .tm.wait .dur { color: rgb(var(--tm) / .62); }
+.tm.pause .c1 { color: #7f849c; }
+.tm.pause .dur { color: #9399b2; }
+.rm { border: 0; background: transparent; color: #585b70; cursor: pointer; padding: 2px 4px; }
+.rm:hover { color: #cdd6f4; }
+.pill { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid transparent; }
+.ss.tracking .pill { color: #0f0f17; background: rgb(var(--go)); font-weight: 700; }
+.ss.tracking .dur { color: rgb(var(--go)); }
+.ss.waiting .pill { color: rgb(var(--ice)); background: rgb(var(--ice) / .12); border-color: rgb(var(--ice) / .3); }
+.ss.paused .pill { color: #7f849c; border-color: #45475a; }
+.ss.cand .pill { color: #a6adc8; border: 1px dashed #585b70; }
+.ss.cand .dur, .ss.cand .what { color: #7f849c; }
+.ss.closed { opacity: .55; }
+.ss.closed .pill { color: #7f849c; border-color: #313244; }
+.stam { flex-basis: 100%; display: flex; align-items: center; gap: 8px; margin-top: 5px; padding-left: 102px; font-size: 10.5px; color: #7f849c; }
+.bar { position: relative; width: 150px; height: 5px; border-radius: 3px; background: #11111b; flex-shrink: 0; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: #e6dccb; }
+.bar .fill.low { background: #8fa9d6; }
+.bar .floor { position: absolute; top: -3px; bottom: -3px; left: 25%; width: 1px; background: #a6adc8; }
+.pct { width: 36px; color: #a6adc8; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.words { color: #6c7086; font-size: 10.5px; margin: 10px 2px 0; }
+.words b { color: #a6adc8; font-weight: 400; }
+.jr { margin-top: 12px; border-top: 1px solid #2a2a3c; padding-top: 10px; max-height: 176px; overflow-y: auto; font-size: 11px; }
+.jr div { display: flex; gap: 10px; padding: 1.5px 0; color: #a6adc8; }
+.jr time { color: #585b70; flex-shrink: 0; }
+.jr .session { color: rgb(var(--go)); }
+.jr .timer { color: rgb(var(--tm)); }
+.jr .hand { color: #cdd6f4; }
+.jr .dim { color: #7f849c; }
+
+/* ── the timeline ── */
+#tl { width: 100%; height: 190px; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 18px; color: #7f849c; font-size: 10.5px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+.legend .t { background: rgb(var(--tm)); }
+.legend .s { background: rgb(var(--go)); }
+.legend .n { background: #151520; box-shadow: inset 0 0 0 1px #313244; }
+.legend .w { height: 0; border-top: 2px dashed rgb(var(--tm)); vertical-align: 3px; border-radius: 0; }
+.legend .e { width: 3px; background: #cdd6f4; }
+.legend .c { background: #94e2d5; border-radius: 50%; width: 7px; height: 7px; vertical-align: 0; }
+table.tot { border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+table.tot th, table.tot td { text-align: right; padding: 4px 14px 4px 0; font-weight: 400; white-space: nowrap; }
+table.tot th { color: #7f849c; font-size: 10.5px; }
+table.tot th.timer { color: rgb(var(--tm) / .85); }
+table.tot th.session { color: rgb(var(--go) / .85); }
+table.tot td:first-child, table.tot th:first-child { text-align: left; color: #7f849c; padding-right: 22px; }
+table.tot tr.sel td:first-child { color: #cdd6f4; }
+table.tot td.timer { color: rgb(var(--tm)); }
+table.tot td.session { color: rgb(var(--go)); }
+table.tot td.none { color: #a6adc8; }
+table.tot td.zero { color: #45475a; }
+</style>
+</head>
+<body class="lab">
+
+<h1>Таймер и сессия: кто считает</h1>
+<p class="sub">Игровой стенд. Время ускорено, стамина и лидерство считаются формулами <b>activity-evaluator.ts</b> один в один, опрос раз в 30 секунд. Ты действуешь: правки, коммиты, ветки, таймеры. Одни и те же действия идут сразу в три варианта правил — на ленте видно, где они расходятся. Под лентой подробно показан выбранный вариант.</p>
+
+<div class="strip">
+  <span class="lbl">Правило</span>
+  <span id="rule-seg" class="strip" style="margin:0"></span>
+  <label class="chk"><input type="checkbox" id="type-matters"> тип важен <i>— в новых правилах таймер не-Development уступает коду и на своём тикете</i></label>
+</div>
+<p class="note" id="rule-text"></p>
+
+<div class="strip">
+  <span class="lbl">Сценарий</span>
+  <span id="scn-seg" class="strip" style="margin:0"></span>
+</div>
+<p class="note" id="scn-text"></p>
+
+<div class="strip transport">
+  <span class="clock" id="clock"></span>
+  <button type="button" class="tbb" id="play"></button>
+  <button type="button" class="tbb" id="step">Шаг · 30 с</button>
+  <button type="button" class="tbb" id="skip">+10 минут</button>
+  <button type="button" class="tbb" id="to-end">До конца сценария</button>
+  <button type="button" class="tbb" id="again">Заново</button>
+  <span class="lbl free">скорость</span>
+  <span id="speed-seg" class="strip" style="margin:0"></span>
+  <span class="lbl free">режим сессий</span>
+  <select id="mode" aria-label="Session mode"></select>
+  <span class="status" id="status"></span>
+</div>
+
+<section class="pane wide">
+  <h2>Лента: кто считал</h2>
+  <canvas id="tl"></canvas>
+  <div class="legend">
+    <span><i class="t"></i>считает таймер</span>
+    <span><i class="s"></i>считает сессия</span>
+    <span><i class="n"></i>никто</span>
+    <span><i class="w"></i>таймер ждёт (только «как сейчас»)</span>
+    <span><i class="e"></i>правка, высота — объём</span>
+    <span><i class="c"></i>коммит</span>
+    <span>клик по ленте варианта — открыть его ниже</span>
+  </div>
+  <h2>Куда легло время</h2>
+  <div id="totals"></div>
+</section>
+
+<div class="stage">
+  <section class="pane">
+    <h2>Что делаю я</h2>
+    <div id="repos"></div>
+    <div class="repo">
+      <div class="repo-h"><b>таймер</b></div>
+      <div class="newt">
+        <select id="nt-task" aria-label="Ticket"></select>
+        <select id="nt-activity" aria-label="Activity"></select>
+        <button type="button" class="tbb" id="nt-go">Запустить</button>
+      </div>
+      <div class="hint">Пауза, пуск и удаление — на строке таймера справа.</div>
+    </div>
+  </section>
+
+  <section class="pane">
+    <h2>Что видит день · <i id="day-rule"></i></h2>
+    <div id="day-feed"></div>
+    <p class="words"><b>Tracking</b> — считает · <b>Waiting</b> — жива, счёт не у неё · <b>Paused</b> — стамина кончилась · <b>кандидат</b> — в день ещё не записан. Риска на полоске — пол режима.</p>
+    <div class="jr" id="journal"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ── the numbers of src/core/constants.ts at a 30 s poll ───────────────
+const TICK_SEC = 30;
+const EMA_ALPHA = 1 / (10 * 60 / TICK_SEC);
+const ATTENTION_ALPHA = 1 / (2 * 60 / TICK_SEC);
+const TIMER_DEFENSE_ATTENTION = 0.5;
+const STAMINA_FLOOR_RATIO = 1 / 4;
+const FREQUENCY_GAIN_MAX = 2;
+const LINES_PER_GAIN_TICK = 8 * TICK_SEC / 60;
+const VOLUME_GAIN_MAX = 8;
+const COMMIT_BONUS = 240 / TICK_SEC;
+const BASE_DECAY = 1;
+const DECAY_BOOST = 2;
+
+const DAY_START = 10 * 3600;
+const REPOS = ['backend', 'frontend'];
+const QUIET = { lines: 0, commit: false };
+const MODES = {
+  low: { label: 'Sharp · 15 мин', minutes: 15 },
+  normal: { label: 'Normal · 45 мин', minutes: 45 },
+  patient: { label: 'Relaxed · 90 мин', minutes: 90 },
+};
+const BRANCHES = {
+  a: { name: 'feature/ATL-101', task: 'ATL-101', mine: true, label: 'feature/ATL-101 · моя' },
+  b: { name: 'feature/ATL-202', task: 'ATL-202', mine: true, label: 'feature/ATL-202 · моя' },
+  c: { name: 'feature/ATL-303', task: 'ATL-303', mine: false, label: 'feature/ATL-303 · коллеги' },
+  d: { name: 'develop', task: null, mine: false, label: 'develop' },
+};
+const ACTIVITY = { Development: 'Development', Other: 'Other', CodeReview: 'Code review' };
+const TICKETS = ['ATL-101', 'ATL-202', 'ATL-303', 'ATL-900', null];
+const RULES = [
+  { key: 'now', name: 'Как сейчас', lane: 'как сейчас',
+    text: 'Сессия забирает счёт у таймера, когда правки идут несколько опросов подряд и её внимание выше 0.50 — на любом тикете, своём тоже. Таймер «ждёт» и снова считает сам, как только сессии затихли.' },
+  { key: 'level', name: 'Новое · уровень стамины', lane: 'новое · уровень',
+    text: 'Тот же тикет — считает таймер, сессия живёт в Waiting. Другой тикет — правка, после которой стамина сессии выше пола режима, ставит таймер на паузу. Состояния «ждёт» нет: сам таймер не возвращается.' },
+  { key: 'tick', name: 'Новое · вклад тика', lane: 'новое · вклад тика',
+    text: 'То же, но планка — сама правка: коммит или от 4 строк за один опрос. Сколько стамины накоплено раньше, не важно.' },
+];
+const WHY = { level: 'стамина выше пола', commit: 'коммит', lines: 'правка от 4 строк' };
+
+const pad = (n) => String(n).padStart(2, '0');
+const fmt = (ticks) => { const s = ticks * TICK_SEC; return `${Math.floor(s / 3600)}:${pad(Math.floor(s % 3600 / 60))}:${pad(s % 60)}`; };
+const clock = (seconds) => { const t = DAY_START + seconds; return `${pad(Math.floor(t / 3600) % 24)}:${pad(Math.floor(t % 3600 / 60))}:${pad(t % 60)}`; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const plural = (n, one, few, many) => {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+};
+const linesText = (n) => `${n} ${plural(n, 'строка', 'строки', 'строк')}`;
+const timerName = (t) => (t.task ?? 'без тикета') + (t.text ? ` «${t.text}»` : ` · ${ACTIVITY[t.activity]}`);
+const sessionName = (s) => `${s.repo} · ${s.task}`;
+
+// ── one variant of the rules: sessions, candidates, timers, the evaluator ──
+class World {
+  constructor(rule, config) {
+    this.rule = rule;
+    this.maxTicks = config.maxTicks;
+    this.typeMatters = config.typeMatters;
+    this.branches = { ...config.branches };
+    this.scoreState = new Map();
+    this.lastScores = new Map();
+    this.lastLeaderId = null;
+    this.sessions = [];
+    this.candidates = new Map();
+    this.timers = [];
+    this.journal = [];
+    this.owners = [];
+    this.tick = 0;
+    this.seq = 0;
+    this.atPoll = false;
+  }
+
+  get floorTicks() { return this.maxTicks * STAMINA_FLOOR_RATIO; }
+  isRunning() { return this.timers.some((t) => t.state === 'running'); }
+  liveTimer() { return this.timers.find((t) => t.state !== 'paused'); }
+  openSessions() { return this.sessions.filter((s) => !s.closed); }
+  tracked() { return [...this.openSessions(), ...this.candidates.values()]; }
+  byId(id) { return this.tracked().find((s) => s.id === id) ?? null; }
+  note(text, tone) { this.journal.push({ at: (this.tick + (this.atPoll ? 1 : 0)) * TICK_SEC, text, tone }); }
+
+  statusOf(session) {
+    if (session.closed) return 'closed';
+    if (!session.inDay) return 'cand';
+    if (session.pause === null) return 'tracking';
+    return session.pause === 'superseded' ? 'waiting' : 'paused';
+  }
+
+  owner() {
+    const timer = this.timers.find((t) => t.state === 'running');
+    if (timer) return { kind: 'timer', timer };
+    const session = this.sessions.find((s) => !s.closed && s.pause === null && s.id === this.lastLeaderId);
+    return session ? { kind: 'session', session } : null;
+  }
+
+  // ── commands by hand ──
+  apply(cmd) {
+    if (cmd.type === 'checkout') {
+      this.branches[cmd.repo] = cmd.branch;
+      this.note(`Руками: ${cmd.repo} → ${BRANCHES[cmd.branch].name}`, 'hand');
+    } else if (cmd.type === 'timerNew') {
+      this.haltLive(null);
+      const timer = { id: cmd.id, task: cmd.task, activity: cmd.activity, text: cmd.text, state: 'running', stoppedBy: null, ticks: 0, born: this.seq++ };
+      this.timers.push(timer);
+      this.note(`Руками: таймер ${timerName(timer)} запущен`, 'hand');
+      this.takeLead();
+    } else if (cmd.type === 'timerStart') {
+      const timer = this.timers.find((t) => t.id === cmd.id);
+      if (!timer || timer.state === 'running') return;
+      this.haltLive(timer.id);
+      timer.state = 'running';
+      timer.stoppedBy = null;
+      this.note(`Руками: таймер ${timerName(timer)} запущен`, 'hand');
+      this.takeLead();
+    } else if (cmd.type === 'timerPause') {
+      const timer = this.timers.find((t) => t.id === cmd.id);
+      if (!timer || timer.state === 'paused') return;
+      timer.state = 'paused';
+      timer.stoppedBy = 'hand';
+      this.note(`Руками: таймер ${timerName(timer)} на паузе`, 'hand');
+      this.settleLead();
+    } else if (cmd.type === 'timerRemove') {
+      const timer = this.timers.find((t) => t.id === cmd.id);
+      if (!timer) return;
+      this.timers = this.timers.filter((t) => t !== timer);
+      this.note(`Руками: таймер ${timerName(timer)} удалён вместе со временем`, 'hand');
+      this.settleLead();
+    }
+  }
+
+  haltLive(exceptId) {
+    for (const timer of this.timers) {
+      if (timer.id === exceptId || timer.state === 'paused') continue;
+      timer.state = 'paused';
+      timer.stoppedBy = 'timer';
+    }
+  }
+
+  // A start by hand: sessions are superseded at once. Today it also wipes the attention.
+  takeLead() {
+    if (this.rule === 'now') {
+      for (const st of this.scoreState.values()) st.attention = 0;
+      this.lastLeaderId = null;
+    }
+    this.applySessions(this.reselect(true));
+  }
+
+  settleLead() {
+    const leader = this.applySessions(this.reselect(this.isRunning()));
+    if (leader) this.note(`Считает сессия ${sessionName(leader)}`, 'session');
+  }
+
+  reselect(timerRunning) { return this.decide(this.lastScores, timerRunning, new Set(), new Map()); }
+
+  // ── one poll ──
+  step(signals) {
+    this.credit();
+    this.atPoll = true;
+    for (const repo of REPOS) this.poll(repo, signals[repo] ?? QUIET);
+    const result = this.evaluate(signals);
+    const leader = this.applySessions(result);
+    this.applyTimers(result, leader);
+    this.atPoll = false;
+    this.tick++;
+  }
+
+  // The interval that just ended belongs to whoever counted through it.
+  credit() {
+    const owner = this.owner();
+    const waiting = this.timers.some((t) => t.state === 'waiting');
+    if (owner?.kind === 'timer') {
+      owner.timer.ticks++;
+      this.owners.push({ kind: 'timer', id: owner.timer.id, label: owner.timer.task ?? 'без тикета', waiting: false });
+    } else if (owner?.kind === 'session') {
+      owner.session.ticks++;
+      this.owners.push({ kind: 'session', id: owner.session.id, label: `${owner.session.repo}·${owner.session.task}`, short: owner.session.task, waiting });
+    } else {
+      this.owners.push(waiting ? { kind: 'none', id: '', label: '', waiting: true } : null);
+    }
+  }
+
+  // session-tracker.processPollResult
+  poll(repo, sig) {
+    const branch = BRANCHES[this.branches[repo]];
+    const task = branch.mine ? branch.task : null;
+    const hasActivity = sig.lines > 0 || sig.commit;
+    let open = this.sessions.find((s) => s.repo === repo && !s.closed) ?? null;
+
+    if (task === null) {
+      if (open) this.close(open);
+      this.dropCandidate(repo, 'ветка не моя');
+      return;
+    }
+    if (open && open.task !== task) {
+      this.close(open);
+      open = null;
+    }
+    if (open) {
+      this.evidence(open, sig);
+      return;
+    }
+    let candidate = this.candidates.get(repo);
+    if (candidate && candidate.task !== task) {
+      this.dropCandidate(repo, 'ветка сменилась');
+      candidate = undefined;
+    }
+    if (!candidate) {
+      if (!hasActivity) return;
+      candidate = { id: `s${this.seq}`, repo, task, inDay: false, closed: false, pause: null, ticks: 0, commits: 0, lines: 0, lastEdit: null, born: this.seq++ };
+      this.candidates.set(repo, candidate);
+      this.note(`${sessionName(candidate)}: первая правка — кандидат`, 'dim');
+    }
+    this.evidence(candidate, sig);
+  }
+
+  evidence(session, sig) {
+    if (sig.lines === 0 && !sig.commit) return;
+    session.lines += sig.lines;
+    if (sig.commit) session.commits++;
+    session.lastEdit = sig;
+  }
+
+  close(session) {
+    session.closed = true;
+    this.forget(session.id);
+    this.note(`${sessionName(session)}: ушёл с ветки — сессия закрыта`, 'dim');
+  }
+
+  dropCandidate(repo, why) {
+    const candidate = this.candidates.get(repo);
+    if (!candidate) return;
+    this.candidates.delete(repo);
+    this.forget(candidate.id);
+    this.note(`${sessionName(candidate)}: кандидат испарился — ${why}`, 'dim');
+  }
+
+  forget(id) {
+    this.scoreState.delete(id);
+    this.lastScores.delete(id);
+    if (this.lastLeaderId === id) this.lastLeaderId = null;
+  }
+
+  // activity-evaluator.processAllTicks
+  evaluate(signals) {
+    const scores = new Map();
+    const activeIds = new Set();
+    const facts = new Map();
+    const floorTicks = this.floorTicks;
+    for (const session of this.tracked()) {
+      const sig = signals[session.repo] ?? QUIET;
+      let st = this.scoreState.get(session.id);
+      if (!st) { st = { score: 0, ema: 0, attention: 0 }; this.scoreState.set(session.id, st); }
+      const hasActivity = sig.lines > 0 || sig.commit;
+      if (hasActivity) activeIds.add(session.id);
+      facts.set(session.id, sig);
+
+      st.ema = EMA_ALPHA * (hasActivity ? 1 : 0) + (1 - EMA_ALPHA) * st.ema;
+      st.attention = ATTENTION_ALPHA * (hasActivity ? 1 : 0) + (1 - ATTENTION_ALPHA) * st.attention;
+
+      if (hasActivity) {
+        st.score = Math.max(st.score, floorTicks);
+        st.score += Math.min(1, st.ema) * FREQUENCY_GAIN_MAX;
+        st.score += Math.min(VOLUME_GAIN_MAX, sig.lines / LINES_PER_GAIN_TICK);
+        if (sig.commit) st.score += COMMIT_BONUS;
+        st.score = Math.min(st.score, this.maxTicks);
+      }
+      if (!hasActivity && st.score > floorTicks) {
+        st.score = Math.max(floorTicks, st.score - (BASE_DECAY + DECAY_BOOST * Math.min(1, st.ema)));
+      } else {
+        st.score = Math.max(0, st.score - BASE_DECAY);
+      }
+      scores.set(session.id, { score: st.score, normalizedScore: st.score / this.maxTicks });
+    }
+    this.lastScores = scores;
+    return this.decide(scores, this.isRunning(), activeIds, facts);
+  }
+
+  decide(scores, timerRunning, activeIds, facts) {
+    if (!timerRunning) {
+      const leaderId = this.pickLeader(scores);
+      this.lastLeaderId = leaderId;
+      return { scores, leaderId, recorded: [], via: null };
+    }
+    let leaderId = null;
+    let via = null;
+    const recorded = [];
+    if (this.rule === 'now') {
+      leaderId = this.pickTimerChallenger(scores, activeIds);
+      if (leaderId !== null) via = 'attention';
+    } else {
+      // The new rules: an edit that clears the bar. On another ticket it takes
+      // the count; on the timer's own ticket it only puts the session into the day.
+      const timer = this.timers.find((t) => t.state === 'running');
+      let bestAttention = -1;
+      const passed = [];
+      for (const [id, sessionScore] of scores) {
+        if (sessionScore.score <= 0 || !activeIds.has(id)) continue;
+        const why = this.clearsBar(sessionScore, facts.get(id));
+        if (why === null) continue;
+        passed.push(id);
+        if (!this.isOtherWork(timer, this.byId(id))) continue;
+        const attention = this.scoreState.get(id)?.attention ?? 0;
+        if (attention > bestAttention) { leaderId = id; bestAttention = attention; via = why; }
+      }
+      for (const id of passed) if (id !== leaderId) recorded.push(id);
+    }
+    this.lastLeaderId = leaderId;
+    return { scores, leaderId, recorded, via };
+  }
+
+  clearsBar(sessionScore, sig) {
+    if (this.rule === 'level') return sessionScore.score > this.floorTicks ? 'level' : null;
+    if (sig.commit) return 'commit';
+    return sig.lines >= LINES_PER_GAIN_TICK ? 'lines' : null;
+  }
+
+  isOtherWork(timer, session) {
+    if (timer.task === null || timer.task !== session.task) return true;
+    return this.typeMatters && timer.activity !== 'Development';
+  }
+
+  pickTimerChallenger(scores, activeIds) {
+    let challengerId = null;
+    let challengerAttention = TIMER_DEFENSE_ATTENTION;
+    for (const [id, sessionScore] of scores) {
+      if (sessionScore.score <= 0 || !activeIds.has(id)) continue;
+      const attention = this.scoreState.get(id)?.attention ?? 0;
+      if (attention > challengerAttention) { challengerId = id; challengerAttention = attention; }
+    }
+    return challengerId;
+  }
+
+  pickLeader(scores) {
+    let best = null;
+    let bestAttention = -1;
+    let bestNorm = -1;
+    for (const [id, sessionScore] of scores) {
+      if (sessionScore.score <= 0) continue;
+      const attention = this.scoreState.get(id)?.attention ?? 0;
+      if (attention > bestAttention || (attention === bestAttention && sessionScore.normalizedScore > bestNorm)) {
+        best = id;
+        bestAttention = attention;
+        bestNorm = sessionScore.normalizedScore;
+      }
+    }
+    const prev = this.lastLeaderId;
+    if (prev !== null && prev !== best && (scores.get(prev)?.score ?? 0) > 0) {
+      const prevAttention = this.scoreState.get(prev)?.attention ?? 0;
+      if (bestAttention <= prevAttention + ATTENTION_ALPHA) return prev;
+    }
+    return best;
+  }
+
+  // session-tracker.applyEvaluatorResult; returns the session that has just taken the count
+  applySessions(result) {
+    const before = new Map(this.openSessions().map((s) => [s.id, this.statusOf(s)]));
+    for (const session of this.openSessions()) {
+      const sessionScore = result.scores.get(session.id);
+      if (!sessionScore) continue;
+      if (result.leaderId === session.id) session.pause = null;
+      else session.pause = sessionScore.score === 0 ? 'idle' : 'superseded';
+    }
+    for (const [repo, session] of [...this.candidates]) {
+      const sessionScore = result.scores.get(session.id);
+      if (!sessionScore) continue;
+      if (sessionScore.score === 0) {
+        this.dropCandidate(repo, 'стамина кончилась');
+      } else if (result.leaderId === session.id) {
+        this.promote(session, null);
+      } else if (result.recorded.includes(session.id)) {
+        this.promote(session, 'superseded');
+        this.note(`${sessionName(session)}: записана в день как Waiting`, 'dim');
+      }
+    }
+    let leader = null;
+    for (const session of this.openSessions()) {
+      const was = before.get(session.id) ?? 'cand';
+      const now = this.statusOf(session);
+      if (now === was) continue;
+      if (now === 'tracking') leader = session;
+      else if (now === 'paused') this.note(`${sessionName(session)}: стамина кончилась — Paused`, 'dim');
+      else if (was === 'tracking') this.note(`${sessionName(session)}: счёт ушёл — Waiting`, 'dim');
+    }
+    return leader;
+  }
+
+  promote(session, pause) {
+    this.candidates.delete(session.repo);
+    session.inDay = true;
+    session.pause = pause;
+    this.sessions.push(session);
+  }
+
+  // timer-tracker.applyEvaluatorResult
+  applyTimers(result, leader) {
+    const live = this.liveTimer();
+    if (live?.state === 'running' && result.leaderId !== null) {
+      const session = this.byId(result.leaderId);
+      if (this.rule === 'now') {
+        live.state = 'waiting';
+        const attention = this.scoreState.get(session.id).attention.toFixed(2);
+        this.note(`${sessionName(session)}: внимание ${attention} выше 0.50 — счёт у сессии, таймер ${timerName(live)} ждёт`, 'session');
+      } else {
+        live.state = 'paused';
+        live.stoppedBy = 'session';
+        this.note(`${sessionName(session)}: ${WHY[result.via]} — таймер ${timerName(live)} на паузу, считает сессия`, 'session');
+      }
+    } else if (live?.state === 'waiting' && result.leaderId === null) {
+      live.state = 'running';
+      this.note(`Сессии затихли — таймер ${timerName(live)} снова считает сам`, 'timer');
+    } else if (leader) {
+      this.note(`Считает сессия ${sessionName(leader)}`, 'session');
+    }
+  }
+}
+
+// ── scenarios: a starting point and a script of my actions ────────────
+const newTimer = (id, task, activity, text) => ({ type: 'timerNew', id, task, activity, text });
+
+function script(init, end, write) {
+  const commands = new Map();
+  const signals = new Map();
+  const cmd = (at, command) => { if (!commands.has(at)) commands.set(at, []); commands.get(at).push(command); };
+  const sig = (at, repo, lines, commit = false) => {
+    if (!signals.has(at)) signals.set(at, {});
+    const slot = signals.get(at);
+    const prev = slot[repo] ?? QUIET;
+    slot[repo] = { lines: prev.lines + lines, commit: prev.commit || commit };
+  };
+  const code = (repo, from, to, lines) => { for (let k = from; k <= to; k++) sig(k, repo, lines); };
+  write({ cmd, sig, code });
+  return { init, end, commands, signals, done: false };
+}
+
+const SCENARIOS = [
+  { title: '1 · тот же тикет',
+    what: 'Таймер на ATL-101, правки и два коммита в backend на ATL-101 — как сегодня. На 23-й минуте таймер ставят на паузу руками.',
+    watch: 'Как сейчас: сессия отбирает счёт на третьем опросе с правками. Новое: считает таймер, сессия в Waiting копит коммиты и берёт счёт после паузы — пока хватает стамины.',
+    build: () => script({ backend: 'a', frontend: 'd' }, 116, ({ cmd, sig, code }) => {
+      cmd(0, newTimer('t1', 'ATL-101', 'Development', ''));
+      code('backend', 4, 40, 12);
+      sig(14, 'backend', 0, true);
+      sig(26, 'backend', 0, true);
+      cmd(46, { type: 'timerPause', id: 't1' });
+    }) },
+  { title: '2 · два репо, один тикет',
+    what: 'backend и frontend на ветках ATL-101, таймер на ATL-101. Сначала правки в backend, потом во frontend. На 22-й минуте пауза руками, дальше снова правки во frontend.',
+    watch: 'Новое: обе сессии в Waiting, считает таймер. После паузы счёт берёт та, где шли последние правки.',
+    build: () => script({ backend: 'a', frontend: 'a' }, 70, ({ cmd, sig, code }) => {
+      cmd(0, newTimer('t1', 'ATL-101', 'Development', ''));
+      code('backend', 3, 20, 10);
+      sig(20, 'backend', 0, true);
+      code('frontend', 22, 40, 10);
+      sig(40, 'frontend', 0, true);
+      cmd(44, { type: 'timerPause', id: 't1' });
+      code('frontend', 46, 54, 10);
+    }) },
+  { title: '3 · забытый таймер',
+    what: 'Таймер на дейли ATL-900 забыт. Одна правка в 2 строки, потом 18 минут кода на ATL-101 и тишина до конца.',
+    watch: 'Новое: первое сохранение от 4 строк ставит таймер на паузу, и он больше не оживает. Как сейчас: таймер ждёт, а после кода снова считает сам — в дейли ложится лишнее.',
+    build: () => script({ backend: 'a', frontend: 'd' }, 170, ({ cmd, sig, code }) => {
+      cmd(0, newTimer('t1', 'ATL-900', 'Other', 'дейли'));
+      sig(20, 'backend', 2);
+      code('backend', 24, 60, 10);
+      sig(40, 'backend', 0, true);
+      sig(58, 'backend', 0, true);
+    }) },
+  { title: '4 · таймер без тикета',
+    what: 'Таймер «созвон» без тикета. Через 5 минут начинаются правки на ATL-101.',
+    watch: 'Для таймера без тикета любой тикет — другой: первая же заметная правка ставит его на паузу.',
+    build: () => script({ backend: 'a', frontend: 'd' }, 60, ({ cmd, sig, code }) => {
+      cmd(0, newTimer('t1', null, 'Other', 'созвон'));
+      code('backend', 10, 40, 8);
+      sig(30, 'backend', 0, true);
+    }) },
+  { title: '5 · ревью',
+    what: 'Таймер Code review на ATL-303, в backend ветка коллеги и пробные правки. На 15-й минуте — возврат на свою ветку ATL-101 и код, таймер забыт.',
+    watch: 'На чужой ветке сессии не бывает — таймер никто не трогает. После возврата на свою ветку всё идёт как в сценарии 3.',
+    build: () => script({ backend: 'c', frontend: 'd' }, 80, ({ cmd, code }) => {
+      cmd(0, newTimer('t1', 'ATL-303', 'CodeReview', ''));
+      code('backend', 4, 14, 6);
+      cmd(30, { type: 'checkout', repo: 'backend', branch: 'a' });
+      code('backend', 34, 60, 10);
+    }) },
+  { title: '6 · мелкое касание',
+    what: 'Таймер «анализ» на ATL-101, кода нет. Во frontend на ATL-202: правка в 1 строку, позже автоформат на 20 строк.',
+    watch: 'Новое: одна строка ничего не меняет, 20 строк ставят таймер на паузу — остаток анализа не посчитан никем. Как сейчас: таймер считает всё.',
+    build: () => script({ backend: 'd', frontend: 'b' }, 70, ({ cmd, sig }) => {
+      cmd(0, newTimer('t1', 'ATL-101', 'Other', 'анализ'));
+      sig(10, 'frontend', 1);
+      sig(25, 'frontend', 20);
+    }) },
+  { title: '7 · тёплая сессия',
+    what: 'Полчаса кода на ATL-202 без таймера. Потом созвон: таймер на ATL-101 руками. Во время созвона две мелкие правки в backend, после него — возврат к коду, таймер забыт.',
+    watch: 'Сравни две нижние ленты. По уровню стамины таймер падает от правки в одну строку — сессия ещё тёплая. По вкладу тика — только когда код вернулся всерьёз.',
+    build: () => script({ backend: 'b', frontend: 'd' }, 140, ({ cmd, sig, code }) => {
+      code('backend', 0, 60, 10);
+      sig(30, 'backend', 0, true);
+      sig(60, 'backend', 0, true);
+      cmd(62, newTimer('t1', 'ATL-101', 'Other', 'созвон'));
+      sig(70, 'backend', 1);
+      sig(84, 'backend', 2);
+      code('backend', 110, 130, 10);
+    }) },
+  { title: '8 · тот же тикет, тип Other',
+    what: 'Таймер «обсуждение» (Other) на ATL-101 забыт. Дальше 25 минут кода на том же ATL-101.',
+    watch: 'Новое: код ложится в запись «обсуждение», сессия в Waiting. Включи «тип важен» — таймер встанет на паузу на первой правке.',
+    build: () => script({ backend: 'a', frontend: 'd' }, 140, ({ cmd, sig, code }) => {
+      cmd(0, newTimer('t1', 'ATL-101', 'Other', 'обсуждение'));
+      code('backend', 20, 70, 10);
+      sig(45, 'backend', 0, true);
+      sig(70, 'backend', 0, true);
+    }) },
+];
+const FREE = { title: 'свободная игра', what: 'Пустой день: backend на ATL-101, frontend на ATL-202. Действуй сам — время пойдёт с первым действием.', watch: 'Попробуй запустить таймер и покодить на том же тикете, потом на другом.' };
+
+// ── the game: one stream of my actions, three worlds ──────────────────
+const game = {
+  mode: 'normal', typeMatters: false, selected: 'level',
+  init: { backend: 'a', frontend: 'b' },
+  worlds: null, history: [], cur: null, script: null, scenario: 0,
+  playing: false, speed: 4, timerSeq: 0,
+  auto: { backend: { on: false, lines: 10 }, frontend: { on: false, lines: 10 } },
+};
+const world = () => game.worlds[game.selected];
+const eachWorld = (fn) => { for (const rule of RULES) fn(game.worlds[rule.key]); };
+
+function buildWorlds() {
+  const config = { maxTicks: MODES[game.mode].minutes * 60 / TICK_SEC, typeMatters: game.typeMatters, branches: game.init };
+  game.worlds = Object.fromEntries(RULES.map((rule) => [rule.key, new World(rule.key, config)]));
+}
+
+// A change of the rules replays the same actions from the start.
+function replay() {
+  buildWorlds();
+  for (const past of game.history) {
+    eachWorld((w) => { for (const cmd of past.commands) w.apply(cmd); w.step(past.signals); });
+  }
+  eachWorld((w) => { for (const cmd of game.cur.commands) w.apply(cmd); });
+}
+
+function command(cmd) {
+  game.cur.commands.push(cmd);
+  eachWorld((w) => w.apply(cmd));
+}
+
+function beginInterval() {
+  game.cur = { commands: [], pending: {} };
+  const s = game.script;
+  if (!s) return;
+  const k = game.history.length;
+  for (const cmd of s.commands.get(k) ?? []) command(cmd);
+  if (k >= s.end && !s.done) { s.done = true; game.playing = false; }
+}
+
+function tick() {
+  const k = game.history.length;
+  const signals = {};
+  for (const repo of REPOS) {
+    let lines = 0;
+    let commit = false;
+    const add = (part) => { if (part) { lines += part.lines; commit = commit || part.commit; } };
+    add(game.cur.pending[repo]);
+    if (game.auto[repo].on) add({ lines: game.auto[repo].lines, commit: false });
+    if (game.script && !game.script.done) add(game.script.signals.get(k)?.[repo]);
+    if (lines > 0 || commit) signals[repo] = { lines, commit };
+  }
+  eachWorld((w) => w.step(signals));
+  game.history.push({ commands: game.cur.commands, signals });
+  beginInterval();
+}
+
+function load(index) {
+  game.scenario = index;
+  game.script = index === null ? null : SCENARIOS[index].build();
+  game.init = game.script ? game.script.init : { backend: 'a', frontend: 'b' };
+  game.history = [];
+  game.timerSeq = 0;
+  for (const repo of REPOS) game.auto[repo].on = false;
+  buildWorlds();
+  beginInterval();
+}
+
+// The first action of mine starts the clock.
+function acted() {
+  if (!game.playing && game.history.length === 0) game.playing = true;
+}
+
+// ── drawing ───────────────────────────────────────────────────────────
+const el = (id) => document.getElementById(id);
+const ICON_RUN = '<svg class="g-ic" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.4"/><path d="M7 7V3.8"/></svg>';
+const ICON_PAUSED = '<svg class="g-ic" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.4"/><path d="M5.7 5.1v3.8M8.3 5.1v3.8"/></svg>';
+const ICON_PZ = '<svg class="g-s" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>';
+const ICON_GO = '<svg class="g-f" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>';
+
+function buildStatic() {
+  el('rule-seg').innerHTML = RULES.map((rule) => `<button type="button" class="tbb" data-rule="${rule.key}">${rule.name}</button>`).join('');
+  el('scn-seg').innerHTML = SCENARIOS.map((s, i) => `<button type="button" class="tbb" data-scn="${i}">${s.title}</button>`).join('')
+    + `<button type="button" class="tbb" data-scn="free">${FREE.title}</button>`;
+  el('speed-seg').innerHTML = [[1, '×30'], [4, '×120'], [16, '×480']].map(([v, text]) => `<button type="button" class="tbb" data-speed="${v}">${text}</button>`).join('');
+  el('mode').innerHTML = Object.entries(MODES).map(([key, mode]) => `<option value="${key}">${mode.label}</option>`).join('');
+  el('mode').value = game.mode;
+  el('nt-task').innerHTML = TICKETS.map((task) => `<option value="${task ?? ''}">${task ?? 'без тикета'}</option>`).join('');
+  el('nt-activity').innerHTML = Object.entries(ACTIVITY).map(([key, text]) => `<option value="${key}">${text}</option>`).join('');
+  el('nt-activity').value = 'Other';
+  el('repos').innerHTML = REPOS.map((repo) => `
+    <div class="repo" data-repo="${repo}">
+      <div class="repo-h"><b>${repo}</b>
+        <select data-branch aria-label="Branch">${Object.entries(BRANCHES).map(([key, branch]) => `<option value="${key}">${branch.label}</option>`).join('')}</select>
+      </div>
+      <div class="acts">
+        <button type="button" class="tbb" data-lines="1">1 строка</button>
+        <button type="button" class="tbb" data-lines="4">4 строки</button>
+        <button type="button" class="tbb" data-lines="20">20 строк</button>
+        <button type="button" class="tbb" data-lines="150">150 строк</button>
+        <button type="button" class="tbb" data-commit>коммит</button>
+      </div>
+      <div class="acts second">
+        <button type="button" class="tbb" data-auto>кодить без остановки</button>
+        <select data-auto-lines aria-label="Lines per poll">
+          <option value="2">по 2 строки за опрос</option>
+          <option value="10" selected>по 10 строк за опрос</option>
+          <option value="40">по 40 строк за опрос</option>
+        </select>
+      </div>
+      <div class="hint" data-hint></div>
+    </div>`).join('');
+}
+
+function renderChrome() {
+  for (const button of el('rule-seg').children) button.classList.toggle('on', button.dataset.rule === game.selected);
+  el('rule-text').innerHTML = esc(RULES.find((rule) => rule.key === game.selected).text);
+  el('day-rule').textContent = RULES.find((rule) => rule.key === game.selected).name;
+  for (const button of el('scn-seg').children) {
+    button.classList.toggle('on', button.dataset.scn === (game.scenario === null ? 'free' : String(game.scenario)));
+  }
+  const scn = game.scenario === null ? FREE : SCENARIOS[game.scenario];
+  el('scn-text').innerHTML = `<b>${esc(scn.what)}</b><br><span>На что смотреть.</span> ${esc(scn.watch)}`;
+  for (const button of el('speed-seg').children) button.classList.toggle('on', Number(button.dataset.speed) === game.speed);
+}
+
+function renderTransport() {
+  el('clock').textContent = clock(game.history.length * TICK_SEC);
+  el('play').textContent = game.playing ? 'Стоп' : 'Пуск';
+  el('play').classList.toggle('on', !game.playing);
+  const s = game.script;
+  el('to-end').disabled = !s || s.done;
+  el('status').textContent = !s ? 'свободная игра'
+    : s.done ? 'сценарий доигран — дальше можно руками'
+    : game.history.length === 0 && !game.playing ? 'сценарий готов — жми «Пуск»'
+    : 'сценарий идёт';
+}
+
+function renderMe() {
+  const w = world();
+  for (const card of el('repos').children) {
+    const repo = card.dataset.repo;
+    const select = card.querySelector('[data-branch]');
+    if (select.value !== w.branches[repo] && document.activeElement !== select) select.value = w.branches[repo];
+    const branch = BRANCHES[w.branches[repo]];
+    card.querySelector('[data-auto]').classList.toggle('on', game.auto[repo].on);
+    const pending = game.cur.pending[repo];
+    const parts = [];
+    if (!branch.mine) parts.push(branch.task ? 'ветка коллеги — сессии здесь не будет' : 'ветка без тикета — сессии здесь не будет');
+    if (pending) {
+      const bits = [];
+      if (pending.lines) bits.push(linesText(pending.lines));
+      if (pending.commit) bits.push('коммит');
+      parts.push(`<b>в следующий опрос: ${bits.join(' и ')}</b>`);
+    }
+    card.querySelector('[data-hint]').innerHTML = parts.join(' · ');
+  }
+}
+
+function plank(w, session) {
+  const timer = w.timers.find((t) => t.state === 'running');
+  if (!timer) return '';
+  const st = w.scoreState.get(session.id);
+  if (!st) return '';
+  if (w.rule === 'now') return `планка — внимание выше 0.50 · сейчас ${st.attention.toFixed(2)}`;
+  if (!w.isOtherWork(timer, session)) return 'тот же тикет — счёт остаётся у таймера';
+  if (w.rule === 'level') return 'планка — правка, после которой стамина выше пола';
+  const last = session.lastEdit;
+  const lastText = !last ? 'правок ещё не было' : last.commit ? 'последняя правка: коммит' : `последняя правка: ${linesText(last.lines)}`;
+  return `планка — коммит или от 4 строк за опрос · ${lastText}`;
+}
+
+function timerRow(t) {
+  const cls = t.state === 'running' ? 'run' : t.state === 'waiting' ? 'wait' : 'pause';
+  const word = t.state === 'running' ? 'идёт' : t.state === 'waiting' ? 'ждёт' : 'пауза';
+  const cause = t.state === 'waiting' ? 'вернётся сам'
+    : t.state === 'paused' ? ({ hand: 'руками', session: 'поставила сессия', timer: 'запущен другой таймер' }[t.stoppedBy] ?? '')
+    : '';
+  const paused = t.state === 'paused';
+  return `<div class="row tm ${cls}">
+    <span class="c1"><button type="button" class="tgl" data-act="toggle" data-id="${t.id}" aria-label="${paused ? 'Start timer' : 'Pause timer'}"><span class="rest">${paused ? ICON_PAUSED : ICON_RUN}</span><span class="hov">${paused ? ICON_GO : ICON_PZ}</span></button>${word}</span>
+    <span class="dur">${fmt(t.ticks)}</span>
+    <span class="what">таймер · ${ACTIVITY[t.activity]}${t.text ? ` <i>«${esc(t.text)}»</i>` : ''}</span>
+    <span class="state"><i>${cause}</i></span>
+    <button type="button" class="rm" data-act="remove" data-id="${t.id}" aria-label="Remove timer">✕</button>
+  </div>`;
+}
+
+function sessionRow(w, s) {
+  const status = w.statusOf(s);
+  const word = { tracking: 'Tracking', waiting: 'Waiting', paused: 'Paused', cand: 'кандидат', closed: 'закрыта' }[status];
+  let second = '';
+  if (status !== 'closed') {
+    const st = w.scoreState.get(s.id);
+    const share = st ? st.score / w.maxTicks * 100 : 0;
+    second = `<div class="stam"><span class="bar"><i class="fill${share <= 25 ? ' low' : ''}" style="width:${share.toFixed(1)}%"></i><i class="floor"></i></span><span class="pct">${Math.round(share)} %</span><span>${plank(w, s)}</span></div>`;
+  }
+  return `<div class="row ss ${status}">
+    <span class="c1"><span class="pill">${word}</span></span>
+    <span class="dur">${fmt(s.ticks)}</span>
+    <span class="what">сессия · ${s.repo} <i>· ${s.commits} ${plural(s.commits, 'коммит', 'коммита', 'коммитов')} · +${s.lines}</i></span>
+    ${second}
+  </div>`;
+}
+
+let journalSeen = null;
+function renderDay() {
+  const w = world();
+  const owner = w.owner();
+  const who = !owner ? 'никто' : owner.kind === 'timer' ? `таймер ${timerName(owner.timer)}` : `сессия ${sessionName(owner.session)}`;
+  let html = `<div class="now ${owner ? owner.kind : 'none'}"><span>сейчас считает</span><b>${esc(who)}</b></div>`;
+
+  const items = [
+    ...w.timers.map((ref) => ({ kind: 'timer', ref })),
+    ...w.sessions.map((ref) => ({ kind: 'session', ref })),
+    ...[...w.candidates.values()].map((ref) => ({ kind: 'session', ref })),
+  ].sort((a, b) => a.ref.born - b.ref.born);
+  const groups = new Map();
+  for (const item of items) {
+    const key = item.ref.task ?? '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  if (items.length === 0) html += '<div class="empty">День пуст: ни таймеров, ни сессий.</div>';
+  for (const [key, list] of groups) {
+    const total = list.reduce((sum, item) => sum + item.ref.ticks, 0);
+    html += `<div class="grp"><div class="grp-h"><b>${key || 'без тикета'}</b><span>${fmt(total)}</span></div>`;
+    for (const item of list) html += item.kind === 'timer' ? timerRow(item.ref) : sessionRow(w, item.ref);
+    html += '</div>';
+  }
+  el('day-feed').innerHTML = html;
+
+  const stamp = `${game.selected}:${w.journal.length}:${game.history.length === 0}`;
+  if (stamp !== journalSeen) {
+    journalSeen = stamp;
+    el('journal').innerHTML = w.journal.length === 0 ? '<div class="dim">Журнал пуст.</div>'
+      : w.journal.slice().reverse().map((line) => `<div class="${line.tone}"><time>${clock(line.at)}</time><span>${esc(line.text)}</span></div>`).join('');
+  }
+}
+
+// ── the timeline ──
+const GUT = 138;
+const TL_H = 190;
+const LANES = [];
+(() => {
+  let y = 20;
+  for (const repo of REPOS) { LANES.push({ kind: 'repo', repo, y, h: 24 }); y += 28; }
+  LANES.push({ kind: 'hand', y, h: 16 }); y += 26;
+  for (const rule of RULES) { LANES.push({ kind: 'world', rule, y, h: 22 }); y += 28; }
+})();
+
+function commandsAt(k) {
+  const done = game.history.length;
+  if (k < done) return game.history[k].commands;
+  if (k === done) return game.cur.commands;
+  return game.script && !game.script.done ? game.script.commands.get(k) ?? [] : [];
+}
+function signalsAt(k) {
+  if (k < game.history.length) return game.history[k].signals;
+  return game.script && !game.script.done ? game.script.signals.get(k) ?? {} : {};
+}
+
+function drawTimeline() {
+  const canvas = el('tl');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth;
+  if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(TL_H * dpr)) {
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(TL_H * dpr);
+  }
+  const c = canvas.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, W, TL_H);
+  c.textBaseline = 'middle';
+
+  const done = game.history.length;
+  const span = Math.max(120, (game.script?.end ?? 0) + 4, done + 8);
+  const shown = Math.min(span, 720);
+  const first = span - shown;
+  const ppt = (W - GUT - 6) / shown;
+  const x = (k) => GUT + (k - first) * ppt;
+  const font = (size, bold) => { c.font = `${bold ? '700 ' : ''}${size}px 'Cascadia Code', Consolas, monospace`; };
+
+  // every ten minutes
+  font(10);
+  for (let k = Math.ceil(first / 20) * 20; k <= first + shown; k += 20) {
+    c.fillStyle = '#232334';
+    c.fillRect(Math.round(x(k)), 14, 1, TL_H - 18);
+    c.fillStyle = '#585b70';
+    c.textAlign = 'left';
+    c.fillText(clock(k * TICK_SEC).slice(0, 5), x(k) + 3, 8);
+  }
+
+  for (const lane of LANES) {
+    c.fillStyle = '#131320';
+    c.fillRect(GUT, lane.y, W - GUT - 6, lane.h);
+    c.textAlign = 'left';
+
+    if (lane.kind === 'repo') {
+      font(11);
+      c.fillStyle = '#a6adc8';
+      c.fillText(lane.repo, 0, lane.y + lane.h / 2);
+      let branch = game.init[lane.repo];
+      let labelled = null;
+      for (let k = 0; k < first + shown; k++) {
+        for (const cmd of commandsAt(k)) if (cmd.type === 'checkout' && cmd.repo === lane.repo) branch = cmd.branch;
+        if (k < first) continue;
+        const future = k >= done;
+        if (branch !== labelled) {
+          labelled = branch;
+          const info = BRANCHES[branch];
+          font(9);
+          c.fillStyle = future ? '#45475a' : '#6c7086';
+          c.fillText(info.mine ? info.task : info.task ? `${info.task} коллеги` : 'develop', x(k) + 3, lane.y + 6);
+          if (k > first) { c.fillStyle = '#45475a'; c.fillRect(Math.round(x(k)), lane.y, 1, lane.h); }
+        }
+        const sig = signalsAt(k)[lane.repo];
+        if (!sig) continue;
+        c.globalAlpha = future ? 0.28 : 1;
+        if (sig.lines > 0) {
+          const h = Math.min(lane.h - 10, 2 + Math.log2(sig.lines + 1) * 1.7);
+          c.fillStyle = '#cdd6f4';
+          c.fillRect(x(k) + 0.5, lane.y + lane.h - h, Math.max(1, ppt - 1), h);
+        }
+        if (sig.commit) {
+          c.fillStyle = '#94e2d5';
+          c.beginPath();
+          c.arc(x(k) + ppt / 2, lane.y + lane.h - 16, 3, 0, Math.PI * 2);
+          c.fill();
+        }
+        c.globalAlpha = 1;
+      }
+    } else if (lane.kind === 'hand') {
+      font(11);
+      c.fillStyle = '#a6adc8';
+      c.fillText('таймер руками', 0, lane.y + lane.h / 2);
+      for (let k = first; k < first + shown; k++) {
+        for (const cmd of commandsAt(k)) {
+          if (cmd.type === 'checkout') continue;
+          const cx = x(k) + 1;
+          const cy = lane.y + lane.h / 2;
+          c.globalAlpha = k > done ? 0.3 : 1;
+          c.fillStyle = `rgb(252 146 48)`;
+          if (cmd.type === 'timerPause') {
+            c.fillRect(cx, cy - 5, 3, 10);
+            c.fillRect(cx + 5, cy - 5, 3, 10);
+          } else if (cmd.type === 'timerRemove') {
+            font(11, true);
+            c.fillText('✕', cx, cy);
+          } else {
+            c.beginPath();
+            c.moveTo(cx, cy - 5.5);
+            c.lineTo(cx + 9, cy);
+            c.lineTo(cx, cy + 5.5);
+            c.closePath();
+            c.fill();
+          }
+          c.globalAlpha = 1;
+        }
+      }
+    } else {
+      const selected = lane.rule.key === game.selected;
+      font(11, selected);
+      c.fillStyle = selected ? '#cdd6f4' : '#7f849c';
+      c.fillText(lane.rule.lane, 0, lane.y + lane.h / 2);
+      const owners = game.worlds[lane.rule.key].owners;
+      let k = first;
+      while (k < done) {
+        const owner = owners[k];
+        let end = k + 1;
+        while (end < done && sameOwner(owners[end], owner)) end++;
+        if (owner && owner.kind !== 'none') {
+          const left = x(k);
+          const width = x(end) - left;
+          c.fillStyle = owner.kind === 'timer' ? 'rgb(252 146 48)' : 'rgb(48 209 88)';
+          c.fillRect(left, lane.y + 2, Math.max(1, width - 1), lane.h - 4);
+          font(10, true);
+          c.fillStyle = '#11111b';
+          const text = c.measureText(owner.label).width + 10 <= width ? owner.label
+            : owner.short && c.measureText(owner.short).width + 10 <= width ? owner.short : '';
+          if (text) c.fillText(text, left + 5, lane.y + lane.h / 2 + 0.5);
+        }
+        if (owner?.waiting) {
+          c.strokeStyle = 'rgb(252 146 48)';
+          c.lineWidth = 2;
+          c.setLineDash([4, 3]);
+          c.beginPath();
+          c.moveTo(x(k), lane.y + lane.h + 2);
+          c.lineTo(x(end), lane.y + lane.h + 2);
+          c.stroke();
+          c.setLineDash([]);
+        }
+        k = end;
+      }
+      if (selected) {
+        c.strokeStyle = '#585b70';
+        c.lineWidth = 1;
+        c.strokeRect(GUT - 0.5, lane.y - 0.5, W - GUT - 5, lane.h + 1);
+      }
+    }
+  }
+
+  // now
+  c.fillStyle = 'rgb(205 214 244 / .55)';
+  c.fillRect(Math.round(x(done)), 14, 1, TL_H - 18);
+}
+
+function sameOwner(a, b) {
+  if (a === null || b === null) return a === b;
+  return a.kind === b.kind && a.id === b.id && a.waiting === b.waiting;
+}
+
+function totalsOf(w) {
+  const buckets = new Map();
+  for (const t of w.timers) {
+    if (t.ticks > 0) buckets.set(`t:${t.id}`, { kind: 'timer', label: `таймер ${timerName(t)}`, ticks: t.ticks });
+  }
+  for (const s of w.sessions) {
+    if (s.ticks === 0) continue;
+    const key = `s:${s.repo}:${s.task}`;
+    const bucket = buckets.get(key) ?? { kind: 'session', label: `сессия ${sessionName(s)}`, ticks: 0 };
+    bucket.ticks += s.ticks;
+    buckets.set(key, bucket);
+  }
+  const nobody = w.owners.filter((owner) => owner === null || owner.kind === 'none').length;
+  if (nobody > 0) buckets.set('none', { kind: 'none', label: 'ничьё', ticks: nobody });
+  return buckets;
+}
+
+function renderTotals() {
+  const perWorld = RULES.map((rule) => ({ rule, buckets: totalsOf(game.worlds[rule.key]) }));
+  const columns = new Map();
+  for (const kind of ['timer', 'session', 'none']) {
+    for (const { buckets } of perWorld) {
+      for (const [key, bucket] of buckets) if (bucket.kind === kind && !columns.has(key)) columns.set(key, bucket);
+    }
+  }
+  if (columns.size === 0) {
+    el('totals').innerHTML = '<div class="empty">Пока никто ничего не насчитал.</div>';
+    return;
+  }
+  let html = '<table class="tot"><thead><tr><th></th>';
+  for (const bucket of columns.values()) html += `<th class="${bucket.kind}">${esc(bucket.label)}</th>`;
+  html += '</tr></thead><tbody>';
+  for (const { rule, buckets } of perWorld) {
+    html += `<tr class="${rule.key === game.selected ? 'sel' : ''}"><td>${rule.lane}</td>`;
+    for (const key of columns.keys()) {
+      const bucket = buckets.get(key);
+      html += bucket ? `<td class="${bucket.kind}">${fmt(bucket.ticks)}</td>` : '<td class="zero">·</td>';
+    }
+    html += '</tr>';
+  }
+  el('totals').innerHTML = `${html}</tbody></table>`;
+}
+
+function render() {
+  renderChrome();
+  renderTransport();
+  renderMe();
+  renderDay();
+  drawTimeline();
+  renderTotals();
+}
+
+// ── wiring ────────────────────────────────────────────────────────────
+function wire() {
+  el('rule-seg').addEventListener('click', (e) => {
+    const key = e.target.closest('[data-rule]')?.dataset.rule;
+    if (key) { game.selected = key; render(); }
+  });
+  el('type-matters').addEventListener('change', (e) => { game.typeMatters = e.target.checked; replay(); render(); });
+  el('mode').addEventListener('change', (e) => { game.mode = e.target.value; replay(); render(); });
+  el('scn-seg').addEventListener('click', (e) => {
+    const value = e.target.closest('[data-scn]')?.dataset.scn;
+    if (value === undefined) return;
+    load(value === 'free' ? null : Number(value));
+    game.playing = value !== 'free';
+    render();
+  });
+  el('speed-seg').addEventListener('click', (e) => {
+    const value = e.target.closest('[data-speed]')?.dataset.speed;
+    if (value) { game.speed = Number(value); render(); }
+  });
+  el('play').addEventListener('click', () => { game.playing = !game.playing; render(); });
+  el('step').addEventListener('click', () => { game.playing = false; tick(); render(); });
+  el('skip').addEventListener('click', () => { for (let i = 0; i < 20; i++) tick(); render(); });
+  el('to-end').addEventListener('click', () => {
+    let guard = 0;
+    while (game.script && !game.script.done && guard++ < 5000) tick();
+    render();
+  });
+  el('again').addEventListener('click', () => { load(game.scenario); game.playing = game.scenario !== null; render(); });
+
+  el('repos').addEventListener('click', (e) => {
+    const card = e.target.closest('[data-repo]');
+    const button = e.target.closest('button');
+    if (!card || !button) return;
+    const repo = card.dataset.repo;
+    if (button.dataset.auto !== undefined) {
+      game.auto[repo].on = !game.auto[repo].on;
+    } else {
+      const prev = game.cur.pending[repo] ?? QUIET;
+      game.cur.pending[repo] = button.dataset.commit !== undefined
+        ? { lines: prev.lines, commit: true }
+        : { lines: prev.lines + Number(button.dataset.lines), commit: prev.commit };
+    }
+    acted();
+    render();
+  });
+  el('repos').addEventListener('change', (e) => {
+    const repo = e.target.closest('[data-repo]')?.dataset.repo;
+    if (!repo) return;
+    if (e.target.dataset.branch !== undefined) { command({ type: 'checkout', repo, branch: e.target.value }); acted(); }
+    if (e.target.dataset.autoLines !== undefined) game.auto[repo].lines = Number(e.target.value);
+    render();
+  });
+  el('nt-go').addEventListener('click', () => {
+    const task = el('nt-task').value || null;
+    const activity = el('nt-activity').value;
+    const same = world().timers.find((t) => t.task === task && t.activity === activity);
+    command(same ? { type: 'timerStart', id: same.id } : { type: 'timerNew', id: `u${++game.timerSeq}`, task, activity, text: '' });
+    acted();
+    render();
+  });
+
+  // The feed is redrawn on every poll: the press is caught before the node is replaced.
+  const onFeed = (e) => {
+    const button = e.target.closest('[data-act]');
+    if (!button) return;
+    const timer = world().timers.find((t) => t.id === button.dataset.id);
+    if (!timer) return;
+    if (button.dataset.act === 'remove') command({ type: 'timerRemove', id: timer.id });
+    else command({ type: timer.state === 'paused' ? 'timerStart' : 'timerPause', id: timer.id });
+    acted();
+    render();
+  };
+  el('day-feed').addEventListener('pointerdown', (e) => { if (e.button === 0) onFeed(e); });
+  el('day-feed').addEventListener('click', (e) => { if (e.detail === 0) onFeed(e); });
+
+  const laneAt = (e) => {
+    const y = e.clientY - el('tl').getBoundingClientRect().top;
+    return LANES.find((lane) => lane.kind === 'world' && y >= lane.y - 3 && y <= lane.y + lane.h + 3) ?? null;
+  };
+  el('tl').addEventListener('click', (e) => {
+    const lane = laneAt(e);
+    if (lane) { game.selected = lane.rule.key; render(); }
+  });
+  el('tl').addEventListener('mousemove', (e) => { el('tl').style.cursor = laneAt(e) ? 'pointer' : 'default'; });
+  window.addEventListener('resize', drawTimeline);
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || /^(SELECT|INPUT|BUTTON)$/.test(e.target.tagName)) return;
+    e.preventDefault();
+    game.playing = !game.playing;
+    render();
+  });
+}
+
+let last = performance.now();
+let debt = 0;
+function frame(now) {
+  const elapsed = Math.min(1, (now - last) / 1000);
+  last = now;
+  if (game.playing) {
+    debt += elapsed * game.speed;
+    let ran = 0;
+    while (debt >= 1 && ran < 40 && game.playing) { debt -= 1; ran++; tick(); }
+    if (ran > 0) render();
+  } else {
+    debt = 0;
+  }
+  requestAnimationFrame(frame);
+}
+
+// A whole scenario at once, for a check from the console.
+window.lab = {
+  game,
+  run(index, options = {}) {
+    game.typeMatters = options.typeMatters === true;
+    game.mode = options.mode ?? 'normal';
+    el('type-matters').checked = game.typeMatters;
+    el('mode').value = game.mode;
+    load(index);
+    let guard = 0;
+    while (!game.script.done && guard++ < 5000) tick();
+    render();
+    return Object.fromEntries(RULES.map((rule) => {
+      const w = game.worlds[rule.key];
+      return [rule.key, {
+        totals: [...totalsOf(w).values()].map((bucket) => `${bucket.label} ${fmt(bucket.ticks)}`),
+        timers: w.timers.map((t) => `${timerName(t)}: ${t.state}${t.stoppedBy ? ` (${t.stoppedBy})` : ''}`),
+        sessions: w.sessions.map((s) => `${sessionName(s)}: ${w.statusOf(s)}, ${s.commits}c +${s.lines}`),
+        journal: w.journal.map((line) => `${clock(line.at)} ${line.text}`),
+      }];
+    }));
+  },
+};
+
+buildStatic();
+wire();
+load(0);
+render();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
