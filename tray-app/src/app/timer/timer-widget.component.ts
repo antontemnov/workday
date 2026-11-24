@@ -210,10 +210,9 @@ export class TimerWidgetComponent implements OnChanges, AfterViewChecked, OnDest
   }
 
   isRunning(timer: TimerView): boolean { return timer.state === TimerState.Running; }
-  isWaiting(timer: TimerView): boolean { return timer.state === TimerState.Waiting; }
   isPaused(timer: TimerView): boolean { return timer.state === TimerState.Paused; }
 
-  // The pencil: any timer that is switched on.
+  // The pencil: a timer that runs.
   isDescribable(timer: TimerView): boolean { return !this.isPaused(timer); }
 
   // The ticket glyph: a timer that has no ticket yet.

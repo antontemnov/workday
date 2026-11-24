@@ -94,13 +94,11 @@ test('a running timer counts on from the daemon\'s moment', () => {
   assert.equal(liveMinutes(t, asOf, asOf + 90 * SECOND), 48, 'whole minutes of the record');
 });
 
-test('a waiting or a paused timer stands still', () => {
+test('a paused timer stands still', () => {
   const asOf = nowMs;
-  for (const state of [TimerState.Waiting, TimerState.Paused]) {
-    const t = timer('t1', state, { totalMs: 47 * MINUTE, shareMs: 12 * MINUTE });
-    assert.equal(liveTotalMs(t, asOf, asOf + 90 * SECOND), 47 * MINUTE, state);
-    assert.equal(liveShareMs(t, asOf, asOf + 90 * SECOND), 12 * MINUTE, state);
-  }
+  const t = timer('t1', TimerState.Paused, { totalMs: 47 * MINUTE, shareMs: 12 * MINUTE });
+  assert.equal(liveTotalMs(t, asOf, asOf + 90 * SECOND), 47 * MINUTE);
+  assert.equal(liveShareMs(t, asOf, asOf + 90 * SECOND), 12 * MINUTE);
 });
 
 test('a clock behind the daemon\'s moment never takes time back', () => {
@@ -133,8 +131,8 @@ test('a card prints the record\'s whole time while its timer is on', () => {
   assert.equal(formatRecordTime(t, at, at), '1h 17m 36s');
   assert.equal(formatRecordTime(t, at, at + 24 * SECOND), '1h 18m 00s');
   assert.equal(formatTimerTime(t, at, at), '3m 36s', 'the island, the chip and the widget keep the timer\'s own');
-  const waiting = { ...t, state: TimerState.Waiting };
-  assert.equal(formatRecordTime(waiting, at, at + MINUTE), '1h 17m 36s', 'a timer that waits does not count');
+  const paused = { ...t, state: TimerState.Paused };
+  assert.equal(formatRecordTime(paused, at, at + MINUTE), '1h 17m 36s', 'a paused timer does not count');
 });
 
 test('a record at rest reads in minutes; whatever is on, and a loose timer, keeps seconds', () => {
@@ -142,19 +140,16 @@ test('a record at rest reads in minutes; whatever is on, and a loose timer, keep
   const at = nowMs;
   assert.equal(formatTimerTime(timer('a', TimerState.Paused, { entryId: 'e1', shareMs: ms }), at, at), '47m');
   assert.equal(formatTimerTime(timer('b', TimerState.Running, { entryId: 'e1', shareMs: ms }), at, at), '47m 15s');
-  assert.equal(formatTimerTime(timer('c', TimerState.Waiting, { entryId: 'e1', shareMs: ms }), at, at), '47m 15s');
   assert.equal(formatTimerTime(timer('d', TimerState.Paused, { shareMs: ms }), at, at), '47m 15s');
 });
 
-test('the chip shows the running timer, else the waiting one, else the last touched', () => {
+test('the chip shows the running timer, else the last touched', () => {
   const old = timer('old', TimerState.Paused, { touchedAt: iso(-30 * MINUTE) });
   const recent = timer('recent', TimerState.Paused, { touchedAt: iso(-2 * MINUTE) });
-  const waiting = timer('waiting', TimerState.Waiting, { touchedAt: iso(-50 * MINUTE) });
   const running = timer('running', TimerState.Running, { touchedAt: iso(-60 * MINUTE) });
   assert.equal(currentTimer([]), null);
   assert.equal(currentTimer([recent, old])?.id, 'recent');
-  assert.equal(currentTimer([old, recent, waiting])?.id, 'waiting');
-  assert.equal(currentTimer([old, waiting, recent, running])?.id, 'running');
+  assert.equal(currentTimer([old, recent, running])?.id, 'running');
 });
 
 // ─── The ticking time node ────────────────────────────────────────────────
@@ -223,8 +218,8 @@ test('time node: nothing ticks at rest, a pause stops the clock', () => {
   assert.equal(timerQueue.length, 1, 'a poll does not start a second clock');
   advance(3 * SECOND);
   assert.equal(h.comp.text, '5m 03s');
-  h.set(timer('t1', TimerState.Waiting, { shareMs: 5 * MINUTE + 3 * SECOND }));
-  assert.equal(timerQueue.length, 0, 'a session took the count — the clock stops');
+  h.set(timer('t1', TimerState.Paused, { shareMs: 5 * MINUTE + 3 * SECOND }));
+  assert.equal(timerQueue.length, 0, 'the timer is paused — the clock stops');
   advance(10 * SECOND);
   assert.equal(h.comp.text, '5m 03s');
 });
@@ -306,7 +301,6 @@ test('island: every timer of the day; task? leaves only its own row', () => {
   assert.deepEqual(h.comp.rows.map(t => t.id), ['b'], 'the cloud hangs under one row');
   assert.equal(h.comp.isLive(h.comp.rows[0]), true);
   assert.equal(h.comp.isLive(loose('a', '')), false);
-  assert.equal(h.comp.isLive(loose('c', '', TimerState.Waiting)), true, 'waiting is switched on too');
 });
 
 test('island description: Enter keeps what was typed and leaves the field', () => {

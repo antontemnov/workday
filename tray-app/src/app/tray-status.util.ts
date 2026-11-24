@@ -15,20 +15,14 @@ const TIMER_NAME_MAX = 24;
 /**
  * What the tray icon says. The eyes burn with the colour of whoever counts:
  * green — a session, orange — a manual timer, empty sockets — nobody. A
- * timer that waits or stands does not change the icon; a waiting one adds
- * its own line under the session's. Times read to the minute.
+ * paused timer does not change the icon. Times read to the minute.
  */
 export function trayStatus(openSessions: readonly SessionDetail[], timers: TimersResponse | null, nowMs: number): TrayStatus {
   const running = timers?.timers.find(t => t.state === TimerState.Running);
   if (timers && running) {
     return { kind: 'timer', tooltip: `${APP_NAME} — timer ${timerLabel(running, timers, nowMs)}` };
   }
-  const session = sessionStatus(openSessions);
-  const waiting = timers?.timers.find(t => t.state === TimerState.Waiting);
-  if (timers && waiting && session.kind === 'live') {
-    return { kind: 'live', tooltip: `${session.tooltip}\ntimer waiting ${timerLabel(waiting, timers, nowMs)}` };
-  }
-  return session;
+  return sessionStatus(openSessions);
 }
 
 function sessionStatus(open: readonly SessionDetail[]): TrayStatus {

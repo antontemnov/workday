@@ -54,10 +54,10 @@ export function formatRecordTime(timer: TimerView, asOfMs: number, nowMs: number
   return formatTicking(liveTotalMs(timer, asOfMs, nowMs));
 }
 
-/** The timer the header chip shows: the running one, else the waiting one, else the last touched by hand. */
+/** The timer the header chip shows: the running one, else the last touched by hand. */
 export function currentTimer(timers: readonly TimerView[]): TimerView | null {
-  const live = timers.find(t => t.state === TimerState.Running) ?? timers.find(t => t.state === TimerState.Waiting);
-  if (live) return live;
+  const running = timers.find(t => t.state === TimerState.Running);
+  if (running) return running;
   let last: TimerView | null = null;
   for (const timer of timers) {
     if (last === null || timer.touchedAt >= last.touchedAt) last = timer;

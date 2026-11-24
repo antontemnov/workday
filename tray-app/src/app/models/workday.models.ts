@@ -114,8 +114,7 @@ export interface TodayResponse {
 
 export enum TimerState {
   Running = 'running',   // counts now
-  Waiting = 'waiting',   // switched on, a session holds the count
-  Paused = 'paused',     // stopped by hand
+  Paused = 'paused',     // stopped by hand, or by a session on other work
 }
 
 // One row of the island / the widget.

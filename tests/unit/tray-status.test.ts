@@ -1,9 +1,8 @@
 /**
  * Unit tests for what the tray icon says. The eyes burn with the colour of
  * whoever counts: green — a session, orange — a manual timer, empty sockets
- * — nobody. A timer that waits or stands does not change the icon; a waiting
- * one adds its line under the session's. The session states read exactly as
- * they did before timers existed.
+ * — nobody. A paused timer does not change the icon. The session states read
+ * exactly as they did before timers existed.
  *
  * Run: npx tsx --tsconfig tray-app/tsconfig.json tests/unit/tray-status.test.ts
  */
@@ -100,29 +99,13 @@ test('a timer without a ticket is named by the start of its description', () => 
   assert.equal(trayStatus([], loose(''), NOW).tooltip, 'Workday — timer 3m', 'no description — the time alone');
 });
 
-// ─── A timer waits or stands ──────────────────────────────────────────────
-
-test('a session counts, a timer waits: the session\'s line and the timer\'s under it', () => {
-  assert.deepEqual(trayStatus([LIVE], timers(timer(TimerState.Waiting)), NOW),
-    { kind: 'live', tooltip: 'Workday — web-app · ATL-8110\ntimer waiting 47m · ATL-6712' });
-});
-
-test('a waiting timer does not count on in the tooltip', () => {
-  const status = trayStatus([LIVE], timers(timer(TimerState.Waiting)), NOW + 10 * MINUTE);
-  assert.equal(status.tooltip, 'Workday — web-app · ATL-8110\ntimer waiting 47m · ATL-6712');
-});
+// ─── A timer at rest ──────────────────────────────────────────────────────
 
 test('a timer at rest changes nothing', () => {
   const resting = timers(timer(TimerState.Paused));
   assert.deepEqual(trayStatus([LIVE], resting, NOW), trayStatus([LIVE], null, NOW));
   assert.deepEqual(trayStatus([], resting, NOW), { kind: 'none', tooltip: 'Workday' });
   assert.deepEqual(trayStatus([SUPERSEDED], resting, NOW), { kind: 'paused', tooltip: 'Workday — paused (web-app)' });
-});
-
-test('a waiting timer adds its line only to a session that counts', () => {
-  // The timers were polled ahead of the day: the session is not live in this data yet.
-  assert.deepEqual(trayStatus([SUPERSEDED], timers(timer(TimerState.Waiting)), NOW),
-    { kind: 'paused', tooltip: 'Workday — paused (web-app)' });
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

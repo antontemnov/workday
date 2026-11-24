@@ -75,10 +75,9 @@ export class TimerIslandComponent implements OnChanges {
   }
 
   isRunning(timer: TimerView): boolean { return timer.state === TimerState.Running; }
-  isWaiting(timer: TimerView): boolean { return timer.state === TimerState.Waiting; }
   isPaused(timer: TimerView): boolean { return timer.state === TimerState.Paused; }
 
-  // A timer that is switched on (running or waiting) offers ⏸; a paused one ▶.
+  // A running timer offers ⏸; a paused one ▶.
   isLive(timer: TimerView): boolean { return timer.state !== TimerState.Paused; }
 
   // A timer with a ticket acts on its record — a closed month lets nothing through.

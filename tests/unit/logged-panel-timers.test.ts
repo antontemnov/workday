@@ -172,18 +172,14 @@ test('the manual added record keeps its slot under a timer too', () => {
   assert.equal(h.comp.showFoldedDur(blockOf(h, 'ATL-10')), true);
 });
 
-test('row state: running, waiting (a session counts), at rest', () => {
+test('row state: running, at rest', () => {
   const e = entry('e1', 'ATL-10', 47);
   const state = (s: TimerView['state']): Harness => makePanel([e], [timerOn('t1', e, s, 47 * MINUTE, 12 * MINUTE)]);
   const running = state(TimerState.Running);
   assert.equal(running.comp.timerRunning(e), true);
   assert.equal(running.comp.timerLive(running.comp.timers[0]), true);
-  assert.equal(running.comp.timerDim(running.comp.timers[0]), false);
-  const waiting = state(TimerState.Waiting);
-  assert.equal(waiting.comp.timerWaiting(e), true);
-  assert.equal(waiting.comp.timerLive(waiting.comp.timers[0]), true, '⏸ stays — the timer is switched on');
-  assert.equal(waiting.comp.timerDim(waiting.comp.timers[0]), true);
   const rest = state(TimerState.Paused);
+  assert.equal(rest.comp.timerRunning(e), false);
   assert.equal(rest.comp.timerLive(rest.comp.timers[0]), false);
 });
 
@@ -207,9 +203,9 @@ test('a running timer moves the record and the Day total at the crossed minute',
   assert.equal(h.lastDiff(), 0, 'counted once');
 });
 
-test('a waiting timer does not count', () => {
+test('a paused timer does not count', () => {
   const e = entry('e1', 'ATL-10', 47);
-  const h = makePanel([e], [timerOn('t1', e, TimerState.Waiting, 47 * MINUTE + 30 * SECOND, 12 * MINUTE + 30 * SECOND)]);
+  const h = makePanel([e], [timerOn('t1', e, TimerState.Paused, 47 * MINUTE + 30 * SECOND, 12 * MINUTE + 30 * SECOND)]);
   tick(5 * MINUTE);
   assert.equal(h.comp.displayMinutes(e), 47);
   assert.equal(h.lastDiff(), 0);
@@ -336,7 +332,7 @@ test('deleting a record with a timer at rest asks for nothing', () => {
 
 test('the card\'s last record: its delete is the card\'s — the timer stops once', () => {
   const fed = entry('e1', 'ATL-10', 47);
-  const h = makePanel([fed], [timerOn('t1', fed, TimerState.Waiting, 47 * MINUTE, 12 * MINUTE)]);
+  const h = makePanel([fed], [timerOn('t1', fed, TimerState.Running, 47 * MINUTE, 12 * MINUTE)]);
   h.inner.deleteEntry(fed);
   assert.deepEqual(h.paused, ['t1']);
   assert.equal(h.comp.taskDeleted('ATL-10'), true);

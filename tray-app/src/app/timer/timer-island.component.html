@@ -4,14 +4,12 @@
      [class.tk]="t.entryId !== null"
      [class.an]="t.entryId === null"
      [class.run]="isRunning(t)"
-     [class.wait]="isWaiting(t)"
      [class.pause]="isPaused(t)">
 
-  <!-- ⏸ while the timer is switched on (dimmed when a session counts), ▶ at rest. -->
+  <!-- ⏸ while the timer runs, ▶ at rest. -->
   <button *ngIf="isLive(t); else goBtn"
           type="button"
           class="tbtn pz"
-          [class.dim]="isWaiting(t)"
           aria-label="Pause timer"
           (click)="toggled.emit(t)">
     <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg>

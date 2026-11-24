@@ -72,7 +72,6 @@
            *ngIf="b.folded[0] as m"
            [class.editing]="editingId === m.id"
            [class.tm-live]="timerRunning(m)"
-           [class.tm-wait]="timerWaiting(m)"
            [class.deleted]="foldedDeleted(b)"
            [class.removing]="foldedRemoving(b)"
            (dblclick)="onRowDblClick(m)">
@@ -148,7 +147,6 @@
                [style.animation-delay.ms]="popDelayMs.get(e.id)"
                [class.editing]="editingId === e.id"
                [class.tm-live]="timerRunning(e)"
-               [class.tm-wait]="timerWaiting(e)"
                [class.deleted]="isDeleted(e)"
                [class.removing]="removingIds.has(e.id)"
                [class.fav-done]="favDoneId === e.id"
@@ -235,7 +233,6 @@
   <button type="button"
           class="rt-b"
           [class.run]="timerLive(t)"
-          [class.dim]="timerDim(t)"
           [class.rest]="!timerLive(t)"
           [disabled]="actionPending || readOnly"
           [attr.aria-label]="timerLive(t) ? 'Pause timer' : 'Start timer'"

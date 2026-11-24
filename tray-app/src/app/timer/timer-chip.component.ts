@@ -23,6 +23,5 @@ export class TimerChipComponent {
   @Output() toggled: EventEmitter<void> = new EventEmitter<void>();
 
   get running(): boolean { return this.timer?.state === TimerState.Running; }
-  get waiting(): boolean { return this.timer?.state === TimerState.Waiting; }
   get paused(): boolean { return this.timer?.state === TimerState.Paused; }
 }

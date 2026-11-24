@@ -788,10 +788,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   timerRunning(e: ManualEntry): boolean { return this.timerOf(e)?.state === TimerState.Running; }
-  timerWaiting(e: ManualEntry): boolean { return this.timerOf(e)?.state === TimerState.Waiting; }
-  // Switched on — running, or waiting while a session counts.
   timerLive(t: TimerView): boolean { return t.state !== TimerState.Paused; }
-  timerDim(t: TimerView): boolean { return t.state === TimerState.Waiting; }
 
   onTimerToggle(t: TimerView, ev: MouseEvent): void {
     ev.stopPropagation();

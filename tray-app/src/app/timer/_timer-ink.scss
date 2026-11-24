@@ -1,8 +1,6 @@
-// The timer's colours — a role, not decoration: orange is a timer that is
-// switched on (full when it counts, half when a session counts instead),
-// green is the start button. Grey = stopped by hand.
+// The timer's colours — a role, not decoration: orange is a timer that
+// counts, green is the start button. Grey = paused.
 $run: rgb(252 146 48);
-$wait: rgb(252 146 48 / 0.5);
 $go: rgb(48 209 88);
 $go-wash: rgb(48 209 88 / 0.2);
 $chip: #11111b;

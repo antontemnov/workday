@@ -295,11 +295,6 @@
     box-shadow: inset 0 0 0 1px rgb(252 146 48 / 0.85);
 
     svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
-
-    &.dim {
-      color: timer.$wait;
-      box-shadow: inset 0 0 0 1px rgb(252 146 48 / 0.45);
-    }
   }
 
   &.rest {
@@ -313,7 +308,6 @@
 }
 
 .wl.tm-live .c-dur { color: timer.$run; }
-.wl.tm-wait .c-dur { color: timer.$wait; }
 
 // Edit: the row is marked by the form morph alone (no washes inside a block);
 // band 1 of the old card is now the lid and stays untouched.

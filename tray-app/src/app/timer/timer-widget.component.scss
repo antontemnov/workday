@@ -109,10 +109,8 @@
 .g-go { width: 0.76em; height: 0.76em; display: block; fill: currentColor; transform: translateX(0.06em); }
 
 .w-row.run .at-rest { color: ink.$run; }
-.w-row.wait .at-rest { color: ink.$wait; }
 .w-row.pause .at-rest { color: #a6adc8; }
 .w-row.run .at-hov { color: ink.$run; box-shadow: inset 0 0 0 0.14em ink.$run; }
-.w-row.wait .at-hov { color: ink.$wait; box-shadow: inset 0 0 0 0.14em ink.$wait; }
 .w-row.pause .at-hov { color: ink.$go; background: ink.$go-wash; }
 
 // A live suggestion is not a timer yet: the feed's amber star, and under
@@ -134,7 +132,6 @@
 }
 
 .w-row.run .w-t { color: ink.$run; }
-.w-row.wait .w-t { color: ink.$wait; }
 .w-row.pause .w-t { color: #bac2de; }
 // A zero that does not tick: the dimmest ink of the plate.
 .w-row.sg .w-t { color: #9399b2; }

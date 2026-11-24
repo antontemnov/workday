@@ -169,7 +169,7 @@ await test('past the hour: only a time that prints seconds grows', () => {
   assert.equal(showsHours([loose], at, at + SECOND), true, '1h 00m 00s');
   const record = timer('b', TimerState.Paused, { entryId: 'e1', task: 'ATL-1', shareMs: 62 * MINUTE });
   assert.equal(showsHours([record], at, at), false, 'a record at rest reads 1h 02m — it fits');
-  assert.equal(showsHours([{ ...record, state: TimerState.Waiting }], at, at), true);
+  assert.equal(showsHours([{ ...record, state: TimerState.Running }], at, at), true);
 });
 
 await test('stored place: read back only when it is whole', () => {
@@ -366,10 +366,9 @@ const LOOSE = timer('loose', TimerState.Running, { description: 'standup notes' 
 const keyOf = (name: string): { key: string; prevented: boolean; preventDefault(): void } =>
   ({ key: name, prevented: false, preventDefault(): void { this.prevented = true; } });
 
-await test('edit: the pencil is on a timer that is switched on, not on one at rest', () => {
+await test('edit: the pencil is on a timer that runs, not on one at rest', () => {
   const h = makePlate([DEPLOY, CALL, ADDED]);
   assert.equal(h.comp.isDescribable(DEPLOY), true);
-  assert.equal(h.comp.isDescribable(timer('w', TimerState.Waiting)), true, 'waiting is switched on too');
   assert.equal(h.comp.isDescribable(CALL), false, 'a timer at rest has the eye in the slot');
   assert.equal(h.comp.isDescribable(ADDED), true, 'a record without a description gets one here');
 });

@@ -79,11 +79,6 @@
     box-shadow: inset 0 0 0 1.5px ink.$run;
 
     svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
-
-    &.dim {
-      color: ink.$wait;
-      box-shadow: inset 0 0 0 1.5px ink.$wait;
-    }
   }
 
   &.go {
@@ -106,7 +101,6 @@
 }
 
 .trow.run .ttime { color: ink.$run; }
-.trow.wait .ttime { color: ink.$wait; }
 
 .tfield {
   min-width: 0;
