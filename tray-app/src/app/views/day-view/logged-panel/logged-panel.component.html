@@ -197,14 +197,27 @@
 
       <!-- Add time — a new row born as its own form. Saved bare (Development,
            no description) it lands on the ticket's record without one;
-           described, it becomes an entry. -->
+           described, it becomes an entry. New timer's draft has ▶ where the
+           time will run instead of minutes. -->
       <div class="wl ent editing draft" *ngIf="draftTask === b.task">
-        <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: null }" />
-        <input class="c-dur edit"
+        <ng-container *ngTemplateOutlet="rowForm; context: { $implicit: null, timer: draftTimer }" />
+        <input *ngIf="!draftTimer; else timerGo"
+               class="c-dur edit"
                [(wdDuration)]="editMinutes"
                (durEnter)="saveForm(null)"
                (keydown.escape)="cancelForm(); $event.stopPropagation()"
                title="1h 15m · 90 · 45m — wheel: ±15m" />
+        <ng-template #timerGo>
+          <span class="c-dur rt idle">
+            <button type="button"
+                    class="rt-b go"
+                    aria-label="Start timer"
+                    [disabled]="actionPending"
+                    (click)="saveForm(null)">
+              <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.8 1.5l5.6 3.5-5.6 3.5z"/></svg>
+            </button>0m 00s
+          </span>
+        </ng-template>
       </div>
 
       <!-- A saved row on its way: the Add time draft holds its place, a Log
@@ -215,11 +228,15 @@
       <div class="wl ent pending"
            *ngIf="draftPending && draftPending.task === b.task"
            [class.pop]="pendingEnters"
-           [class.removing]="draftMerging">
+           [class.removing]="draftMerging"
+           [class.tm-live]="pendingTimer">
         <span class="c-type">{{ activityLabel(draftPending.activity) }}</span>
         <span class="c-ds none" *ngIf="pendingBare; else pendingDesc">no description</span>
         <ng-template #pendingDesc><span class="c-ds">{{ draftPending.description }}</span></ng-template>
-        <span class="c-dur">{{ formatDurationHm(draftPending.minutes * 60000) }}</span>
+        <span class="c-dur rt" *ngIf="pendingTimer; else pendingDur">
+          <span class="rt-b run"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2.2v5.6M6.7 2.2v5.6"/></svg></span>0m 00s
+        </span>
+        <ng-template #pendingDur><span class="c-dur">{{ formatDurationHm(draftPending.minutes * 60000) }}</span></ng-template>
       </div>
 
     </div>
@@ -262,7 +279,7 @@
 
 <!-- The row form — one at a time: an entry's edit (the record without a
      description included) or the Add time draft (no entry yet). -->
-<ng-template #rowForm let-e>
+<ng-template #rowForm let-e let-timer="timer">
   <div class="rf" (keydown.escape)="cancelForm(); $event.stopPropagation()">
     <button type="button" class="le-back" title="cancel (Esc)" (click)="cancelForm()">←</button>
     <select class="le-act" [(ngModel)]="editActivity" (keydown.enter)="saveForm(e)">
@@ -273,6 +290,6 @@
            [(ngModel)]="editDescription"
            (keydown.enter)="saveForm(e)"
            placeholder="description" />
-    <button type="button" class="le-save" [disabled]="actionPending" (click)="saveForm(e)">Save</button>
+    <button *ngIf="!timer" type="button" class="le-save" [disabled]="actionPending" (click)="saveForm(e)">Save</button>
   </div>
 </ng-template>

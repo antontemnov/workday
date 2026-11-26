@@ -5,7 +5,7 @@ import { JiraLinkService, canBrowseTicket } from '../jira-link.util';
 import {
   ActivityType, ConflictField, ConflictKind, DEVELOPMENT_ACTIVITY, EntryConflict, Favorite, FavoriteInput,
   ManualEntry, ManualEntryInput, ManualEntryPatch, MonthDayTask, PushFailure, ResolveSide,
-  SensitivityLevel, SensitivityPill, SessionDetail, TimerState, TimerView, normalizeFavName,
+  SensitivityLevel, SensitivityPill, SessionDetail, TimerBindInput, TimerState, TimerView, normalizeFavName,
 } from '../../../models/workday.models';
 import { TimerTimeComponent } from '../../../timer/timer-time.component';
 import { formatMinutes, liveMinutes, liveShareMs } from '../../../timer/timer-clock.util';
@@ -189,6 +189,8 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // Start timer / Remove timer in a record's menu (entry id).
   @Output() timerStartRequested = new EventEmitter<string>();
   @Output() timerRemoveRequested = new EventEmitter<string>();
+  // New timer in a ticket's menu: a running timer on a new record of the ticket.
+  @Output() timerNewRequested = new EventEmitter<TimerBindInput>();
 
   // ─── Sheet — the Timesheets card of one day ────────────────────────────
   // Tickets are lines of the day's glass: the lid opens the body, Σ is what
@@ -264,12 +266,16 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // time draft on a card (draftTask); both share the edit* fields.
   editingId: string | null = null;
   draftTask: string | null = null;
+  // The draft is New timer's: ▶ in the time slot instead of minutes.
+  draftTimer = false;
   // A saved row between its POST and the entry's landing: the Add time draft
   // held as a plain row (the card never collapses and regrows), or a Log
   // cloud entry born in the feed at once. It counts in every total; the
   // refresh that carries the entry takes its place, the action's end without
   // it lets it go.
   draftPending: ManualEntryInput | null = null;
+  // The pending row is a timer's record: it reads as one already running.
+  pendingTimer = false;
   // Log cloud rows enter with the row-in a landed entry would play; an entry
   // landing mid-entrance finishes it instead of snapping in.
   pendingEnters = false;
@@ -1117,9 +1123,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   // The ticket key — the card's handle. Delete takes the whole card.
   onTicketMenu(b: TicketBlock, ev: MouseEvent): void {
     if (this.actionPending || this.readOnly || this.taskDeleted(b.task) || this.foldingTasks.has(b.task)) return;
-    toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => [
+    toggleAnchoredMenu(ev.currentTarget as HTMLElement, () => this.ticketMenuItems(b));
+  }
+
+  private ticketMenuItems(b: TicketBlock): readonly CtxMenuEntry[] {
+    return [
       ...(b.task !== '—'
         ? [{ icon: CTX_ICON.add, label: 'Add time', action: (): void => this.openDraft(b.task) }] : []),
+      ...(b.task !== '—' && !this.sheet
+        ? [{ icon: CTX_ICON.play, label: 'New timer', action: (): void => this.openDraft(b.task, true) }] : []),
       ...(canBrowseTicket(this.jiraBaseUrl, b.task)
         ? [{ icon: CTX_ICON.globe, label: 'Open in browser', action: (): void => this.jiraLink.openTicket(this.jiraBaseUrl, b.task) },
            { separator: true as const }]
@@ -1128,7 +1140,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       b.hot
         ? { icon: CTX_ICON.x, label: 'Stop and Delete', danger: true, action: () => this.deleteTaskCard(b.task, true) }
         : { icon: CTX_ICON.x, label: 'Delete', danger: true, action: () => this.deleteTaskCard(b.task) },
-    ]);
+    ];
   }
 
   // A handle lights up only while its menu can open: not during the fresh
@@ -1487,11 +1499,12 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     this.focusForm('.le-desc');
   }
 
-  // Add time: a new row born as its own form at the foot of the card.
-  private openDraft(task: string): void {
+  // Add time / New timer: a new row born as its own form at the foot of the card.
+  private openDraft(task: string, timer: boolean = false): void {
     if (this.actionPending || this.taskDeleted(task)) return;
     if (this.sheet) this.openTasks.add(task); // the saved row lands in sight
     this.editingId = null;
+    this.draftTimer = timer;
     this.editPinnedActivity = '';
     const options = this.activityOptions;
     this.editActivity = (options.find(a => a.value === DEVELOPMENT_ACTIVITY) ?? options[0])?.value ?? DEVELOPMENT_ACTIVITY;
@@ -1510,6 +1523,7 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   cancelForm(): void {
     this.editingId = null;
     this.draftTask = null;
+    this.draftTimer = false;
   }
 
   private addedRecordOf(task: string): ManualEntry | undefined {
@@ -1540,9 +1554,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
     return this.draftPending !== null && isBareDevelopment(this.draftPending) && !this.draftMerges;
   }
 
-  private showPending(entry: ManualEntryInput, enters: boolean): void {
+  private showPending(entry: ManualEntryInput, enters: boolean, timer: boolean = false): void {
     const added = this.addedRecordOf(entry.task);
     this.draftPending = entry;
+    this.pendingTimer = timer;
     this.draftMerges = isBareDevelopment(entry) && added !== undefined;
     this.mergeBase = added?.minutes ?? 0;
     this.pendingEnters = enters;
@@ -1571,7 +1586,10 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
   }
 
   private dropUnlanded(): void {
-    if (this.draftPending !== null && !this.draftMerging) this.draftPending = null;
+    // A timer's bare row lands on the record without a description: no
+    // minutes grow there, so the action's end folds it away.
+    if (this.draftPending !== null && !this.draftMerging && this.pendingTimer && this.draftMerges) this.foldPendingRow();
+    else if (this.draftPending !== null && !this.draftMerging) this.draftPending = null;
     if (this.heldMergeId !== null) {
       this.dropOverride(this.heldMergeId);
       this.heldMergeId = null;
@@ -1608,6 +1626,15 @@ export class LoggedPanelComponent implements OnChanges, OnDestroy {
       return;
     }
     const description = this.editDescription.trim();
+    if (!e && this.draftTimer) {
+      const task = this.draftTask as string;
+      this.draftTask = null;
+      this.draftTimer = false;
+      if (this.draftMerging) this.endPendingFold();
+      this.showPending({ task, minutes: 0, description, activity: this.editActivity }, false, true);
+      this.timerNewRequested.emit({ task, activity: this.editActivity, description });
+      return;
+    }
     if (!e) {
       const task = this.draftTask as string;
       this.draftTask = null;

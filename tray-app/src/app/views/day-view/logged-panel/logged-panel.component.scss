@@ -304,10 +304,23 @@
     svg { fill: currentColor; transform: translateX(0.5px); }
   }
 
+  // New timer's draft: the start button stands where ⏸ will.
+  &.go {
+    width: 15px;
+    height: 15px;
+    color: timer.$go;
+    background: timer.$go-wash;
+
+    svg { width: 7.5px; height: 7.5px; fill: currentColor; transform: translateX(0.5px); }
+
+    &:disabled { opacity: 0.35; }
+  }
+
   &:disabled { cursor: default; }
 }
 
 .wl.tm-live .c-dur { color: timer.$run; }
+.wl .c-dur.rt.idle { color: #585b70; }
 
 // Edit: the row is marked by the form morph alone (no washes inside a block);
 // band 1 of the old card is now the lid and stays untouched.

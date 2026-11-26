@@ -831,6 +831,20 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.runTimerAction(() => this.api.removeEntryTimer(entryId));
   }
 
+  // New timer in a ticket's menu. The daemon makes it in two steps — a timer
+  // without a ticket, then its ticket; a refused ticket undoes the birth, and
+  // the timer it put on pause runs again.
+  onTicketTimerNew(input: TimerBindInput): void {
+    void this.runTimerAction(async (): Promise<ApiResponse<TimerActionResponse>> => {
+      const born = await this.api.newTimer();
+      const timerId = born.ok ? born.data?.timerId ?? null : null;
+      if (timerId === null) return born;
+      const bound = await this.api.bindTimer(timerId, input);
+      if (!bound.ok) await this.api.cancelTimer(timerId);
+      return bound;
+    });
+  }
+
   private closeTimerPick(): void {
     if (this.timerPick === null) return;
     this.timerPick = null;

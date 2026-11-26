@@ -93,6 +93,8 @@ export class DayViewComponent implements OnChanges, OnDestroy {
   // Start timer / Remove timer in a record's menu (entry id).
   @Output() entryTimerStartSubmitted = new EventEmitter<string>();
   @Output() entryTimerRemoveSubmitted = new EventEmitter<string>();
+  // New timer in a ticket's menu.
+  @Output() ticketTimerSubmitted = new EventEmitter<TimerBindInput>();
   // Start timer «text» in the Log cloud.
   @Output() timerStartTextSubmitted = new EventEmitter<string>();
   // task? → Log: the timer gets its ticket.

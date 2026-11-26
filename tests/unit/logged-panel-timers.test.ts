@@ -87,6 +87,13 @@ interface Internals {
   editingId: string | null;
   editMinutes: number;
   editDescription: string;
+  editActivity: string;
+  draftTask: string | null;
+  draftTimer: boolean;
+  draftPending: { task: string; minutes: number; description: string; activity: string } | null;
+  pendingTimer: boolean;
+  draftMerging: boolean;
+  ticketMenuItems(b: { task: string; hot: boolean }): readonly (MenuItem | { separator: true })[];
   saveForm(e: ManualEntry | null): void;
   startTimerItems(e: ManualEntry): readonly MenuItem[];
   removeTimerItems(e: ManualEntry): readonly MenuItem[];
@@ -397,6 +404,88 @@ test('a record without a timer edits as before', () => {
   h.inner.editMinutes = 30;
   h.inner.saveForm(e);
   assert.deepEqual(h.patches, [{ id: 'e1', patch: { minutes: 30 } }]);
+});
+
+// ─── New timer in a ticket's menu ─────────────────────────────────────────
+
+const labels = (items: readonly (MenuItem | { separator: true })[]): string[] =>
+  items.filter((i): i is MenuItem => 'label' in i).map(i => i.label);
+
+function newTimerDraft(h: Harness, task: string): void {
+  const item = (h.inner.ticketMenuItems({ task, hot: false }) as MenuItem[]).find(i => i.label === 'New timer');
+  assert.ok(item, 'New timer is in the ticket menu');
+  item.action();
+}
+
+test('ticket menu: New timer right under Add time, none on the Timesheets card', () => {
+  const h = makePanel([entry('e1', 'ATL-10', 30)]);
+  assert.deepEqual(labels(h.inner.ticketMenuItems({ task: 'ATL-10', hot: false })), ['Add time', 'New timer', 'Delete']);
+  assert.deepEqual(labels(h.inner.ticketMenuItems({ task: '—', hot: false })), ['Delete'], 'no ticket — no timer');
+  h.comp.sheet = true;
+  assert.deepEqual(labels(h.inner.ticketMenuItems({ task: 'ATL-10', hot: false })), ['Add time', 'Delete']);
+});
+
+test('New timer: the draft starts a timer with the type and text typed in it', () => {
+  const h = makePanel([entry('e1', 'ATL-10', 30)]);
+  const asked: { task: string; activity: string; description: string }[] = [];
+  h.comp.timerNewRequested.subscribe((input: { task: string; activity: string; description: string }) => asked.push(input));
+  newTimerDraft(h, 'ATL-10');
+  assert.equal(h.inner.draftTask, 'ATL-10');
+  assert.equal(h.inner.draftTimer, true);
+  h.inner.editActivity = 'Other';
+  h.inner.saveForm(null);
+  assert.deepEqual(asked, [], 'a type other than Development needs a description');
+  h.inner.editDescription = '  API contract review ';
+  h.inner.saveForm(null);
+  assert.deepEqual(asked, [{ task: 'ATL-10', activity: 'Other', description: 'API contract review' }]);
+  assert.equal(h.inner.draftTask, null);
+  assert.equal(h.inner.draftTimer, false);
+  assert.equal(h.inner.pendingTimer, true, 'the row holds its place as a running record');
+  assert.equal(h.inner.draftPending?.minutes, 0, 'nothing to add to the totals');
+  assert.equal(h.lastDiff(), 0);
+});
+
+test('New timer: Add time after it is a plain Add time again', () => {
+  const h = makePanel([entry('e1', 'ATL-10', 30)]);
+  newTimerDraft(h, 'ATL-10');
+  h.comp.cancelForm();
+  assert.equal(h.inner.draftTimer, false);
+  (h.inner.ticketMenuItems({ task: 'ATL-10', hot: false }) as MenuItem[])[0].action();
+  assert.equal(h.inner.draftTask, 'ATL-10');
+  assert.equal(h.inner.draftTimer, false);
+});
+
+test('New timer: the row stands until the day brings the record, then goes', () => {
+  const e = entry('e1', 'ATL-10', 30);
+  const h = makePanel([e]);
+  newTimerDraft(h, 'ATL-10');
+  h.inner.editActivity = 'Other';
+  h.inner.editDescription = 'API contract review';
+  h.inner.saveForm(null);
+  h.comp.actionPending = true;
+  h.comp.ngOnChanges({ actionPending: change(true) } as never);
+  assert.notEqual(h.inner.draftPending, null);
+  const born = entry('e2', 'ATL-10', 0, 'API contract review');
+  h.comp.entries = [e, born];
+  h.comp.actionPending = false;
+  h.comp.ngOnChanges({ entries: change([e, born]), actionPending: change(false) } as never);
+  assert.equal(h.inner.draftPending, null);
+  assert.equal(h.inner.draftMerging, false);
+});
+
+test('New timer: a bare Development row folds into the record without a description', () => {
+  const rec = added('a1', 'ATL-10', 85);
+  const h = makePanel([rec]);
+  newTimerDraft(h, 'ATL-10');
+  h.inner.editActivity = DEVELOPMENT_ACTIVITY;
+  h.inner.editDescription = '';
+  h.inner.saveForm(null);
+  assert.notEqual(h.inner.draftPending, null);
+  h.comp.actionPending = true;
+  h.comp.ngOnChanges({ actionPending: change(true) } as never);
+  h.comp.actionPending = false;
+  h.comp.ngOnChanges({ actionPending: change(false) } as never);
+  assert.equal(h.inner.draftMerging, true, 'no minutes grow there — the end of the action folds the row');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
