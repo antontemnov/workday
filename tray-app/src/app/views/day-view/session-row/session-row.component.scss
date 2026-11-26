@@ -40,9 +40,27 @@
 :host(.closed) .repo { color: #8b90ab; font-weight: 400; }
 :host(.frost) .repo { color: #8aa4d0; }
 
+// The values — range, commits, diff — one strip over the three middle
+// columns: fixed floors keep the columns lined up row to row. A narrow card
+// cuts the strip from the right under the time, the diff first; the cut
+// fades over the gap, which stays empty while everything fits.
+.sts {
+  grid-column: 3 / 6;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: clip;
+  padding: 0 8px 0 2px;
+  margin: 0 -8px 0 -2px;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent);
+}
+
 // A value cell: the separator dot leads its value and stands on the column
 // boundary — every dot of a column lines up.
 .sc {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;

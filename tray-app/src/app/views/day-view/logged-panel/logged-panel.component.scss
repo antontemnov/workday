@@ -118,10 +118,11 @@
 // The body grid: type | repo | · range | · ⊸ N | · diff | time. Only repo
 // stretches; the rest is max-content with a floor on the cell, so range
 // sits under range, ⊸ under ⊸, diff under diff, and the whole tail hugs the
-// time column.
+// time column. A narrow card gives up repo first, then the values go under
+// the time, like the lid's name under the Σ.
 .blk-body {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) max-content max-content max-content minmax(48px, max-content);
+  grid-template-columns: 74px minmax(0, 1fr) minmax(0, max-content) minmax(0, max-content) minmax(0, max-content) minmax(48px, max-content);
   gap: 0 8px;
   padding-top: 2px;
 }
@@ -268,18 +269,24 @@
 
 // A record a timer feeds: ⏸ / ▶ rides next to the time, the time itself
 // ticks in the timer's orange — half strength while a session counts.
-// The slot is wider than the shared time column: it also takes the diff
-// column, empty in a record's row, so the column never widens under it.
+// The slot is wider than the shared time column, so its row leaves the
+// grid for a line of its own: the text gives way to the slot, and the
+// columns never widen under it.
 .wl .c-dur.rt {
-  grid-column: 5 / 7;
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex: none;
   font-variant-numeric: tabular-nums;
 }
 
-.wl:has(> .c-dur.rt) > .c-ds { grid-column: 2 / 5; }
-.wl:has(> .c-dur.rt) > .rf { grid-column: 1 / 5; }
+.wl:has(> .c-dur.rt) {
+  display: flex;
+  gap: 8px;
+
+  > .c-type { flex: none; width: 74px; }
+  > .c-ds, > .rf { flex: 1; }
+}
 
 .rt-b {
   width: 13px;

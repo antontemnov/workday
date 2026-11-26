@@ -31,9 +31,11 @@
 </ng-template>
 
 <span class="repo">{{ repoName }}</span>
-<span class="sc rng"><i class="csep">·</i><span class="rv">{{ range }}</span></span>
-<span class="sc com"><i class="csep">·</i><svg class="g" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="s-com">{{ session.evidence.commits }}</span></span>
-<span class="sc diff"><i class="csep">·</i><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b></span>
+<span class="sts">
+  <span class="sc rng"><i class="csep">·</i><span class="rv">{{ range }}</span></span>
+  <span class="sc com"><i class="csep">·</i><svg class="g" width="13" height="8" viewBox="0 0 13 8" aria-hidden="true"><line x1="0" y1="4" x2="3.4" y2="4" stroke="currentColor" stroke-width="1.2"/><circle cx="6.5" cy="4" r="2.3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.6" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.2"/></svg><span class="s-com">{{ session.evidence.commits }}</span></span>
+  <span class="sc diff"><i class="csep">·</i><b class="plus">+{{ session.evidence.linesAdded }}</b><b class="minus">−{{ session.evidence.linesRemoved }}</b></span>
+</span>
 
 <ng-container *ngIf="deleted; else durTpl">
   <button type="button" class="l-undo" (click)="onUndoClick($event)">↩ undo</button>
