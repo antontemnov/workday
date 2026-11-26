@@ -268,12 +268,18 @@
 
 // A record a timer feeds: ⏸ / ▶ rides next to the time, the time itself
 // ticks in the timer's orange — half strength while a session counts.
+// The slot is wider than the shared time column: it also takes the diff
+// column, empty in a record's row, so the column never widens under it.
 .wl .c-dur.rt {
+  grid-column: 5 / 7;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-variant-numeric: tabular-nums;
 }
+
+.wl:has(> .c-dur.rt) > .c-ds { grid-column: 2 / 5; }
+.wl:has(> .c-dur.rt) > .rf { grid-column: 1 / 5; }
 
 .rt-b {
   width: 13px;
