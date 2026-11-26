@@ -72,7 +72,7 @@
 }
 
 .cloud-body {
-  max-height: 212px;
+  max-height: 214px;
   overflow: hidden;
   transition: max-height 0.13s ease;
 }
@@ -82,15 +82,15 @@
   flex-wrap: wrap;
   gap: 6px;
   align-content: flex-start;
-  max-height: 212px;
+  max-height: 214px;
   // The chip pop overshoots past 1: a full-width chip pokes out sideways and
-  // the bottom row a hair down. No horizontal scrollbar, and the bottom
-  // padding takes the rest, so no bar flashes while the cloud opens.
+  // the rows a hair up and down. No horizontal scrollbar, and the paddings
+  // take the rest, so no bar flashes while the cloud opens.
   overflow-x: hidden;
   overflow-y: auto;
   transition: opacity 0.1s ease;
-  padding-top: 3px;
-  padding-bottom: 2px;
+  padding-top: 2px;
+  padding-bottom: 1px;
 
   &::-webkit-scrollbar { width: 4px; }
   &::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
