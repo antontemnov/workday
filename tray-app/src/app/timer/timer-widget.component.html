@@ -39,7 +39,7 @@
         </span>
       </button>
 
-      <app-timer-time class="w-t" [timer]="t" [asOf]="asOf" (minuteChanged)="onMinute()" />
+      <app-timer-time class="w-t" [timer]="t" [asOf]="asOf" [hourFlash]="true" (minuteChanged)="onMinute()" />
 
       <!-- Under the edit the key stays and the description is a field. -->
       <ng-container *ngIf="editingId === t.id; else shownText">

@@ -136,6 +136,30 @@
 // A zero that does not tick: the dimmest ink of the plate.
 .w-row.sg .w-t { color: #9399b2; }
 
+// A whole hour of the timer: the time flares a light heat and cools back to
+// the timer's orange. oklch keyframes cool it through Oklab, not sRGB.
+.w-t.hour-flash { animation: hour-flash 2.56s linear 1; }
+
+@keyframes hour-flash {
+  0% {
+    color: oklch(75.8% 0.1644 57.9);
+    text-shadow: 0 0 3px oklch(89.9% 0.0831 74.1 / 0), 0 0 8px oklch(89.9% 0.0831 74.1 / 0), 0 0 15px oklch(89.9% 0.0831 74.1 / 0);
+  }
+  2.34% {
+    color: oklch(89.9% 0.0831 74.1);
+    text-shadow: 0 0 3px oklch(89.9% 0.0831 74.1 / 0.63), 0 0 8px oklch(89.9% 0.0831 74.1 / 0.385), 0 0 15px oklch(89.9% 0.0831 74.1 / 0.196);
+  }
+  14.06% {
+    color: oklch(89.9% 0.0831 74.1);
+    text-shadow: 0 0 3px oklch(89.9% 0.0831 74.1 / 0.63), 0 0 8px oklch(89.9% 0.0831 74.1 / 0.385), 0 0 15px oklch(89.9% 0.0831 74.1 / 0.196);
+    animation-timing-function: cubic-bezier(0.5, 1, 0.89, 1);
+  }
+  100% {
+    color: oklch(75.8% 0.1644 57.9);
+    text-shadow: 0 0 3px oklch(89.9% 0.0831 74.1 / 0), 0 0 8px oklch(89.9% 0.0831 74.1 / 0), 0 0 15px oklch(89.9% 0.0831 74.1 / 0);
+  }
+}
+
 .w-tx {
   display: flex;
   align-items: baseline;

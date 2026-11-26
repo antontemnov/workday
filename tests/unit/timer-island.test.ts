@@ -154,20 +154,48 @@ test('the chip shows the running timer, else the last touched', () => {
 
 // ─── The ticking time node ────────────────────────────────────────────────
 
+// The host node: its classes, and the end of its animation on demand.
+interface FakeHost {
+  classList: Set<string> & { remove: (c: string) => void };
+  offsetWidth: number;
+  flashes: number;
+  addEventListener: (type: string, fn: () => void) => void;
+  end: () => void;
+}
+
+function fakeHost(): FakeHost {
+  const classes = new Set<string>();
+  let ended: (() => void) | null = null;
+  const host: FakeHost = {
+    classList: Object.assign(classes, {
+      add: (c: string) => { if (c === 'hour-flash') host.flashes++; return Set.prototype.add.call(classes, c); },
+      remove: (c: string) => { classes.delete(c); },
+    }) as FakeHost['classList'],
+    offsetWidth: 0,
+    flashes: 0,
+    addEventListener: (type: string, fn: () => void) => { if (type === 'animationend') ended = fn; },
+    end: () => { ended?.(); ended = null; },
+  };
+  return host;
+}
+
 interface TimeHarness {
   comp: InstanceType<typeof TimerTimeComponent>;
+  host: FakeHost;
   minutes: () => number;
   repaints: () => number;
   set: (t: TimerView) => void;
 }
 
-function makeTime(t: TimerView, whole = false): TimeHarness {
+function makeTime(t: TimerView, whole = false, hourFlash = false): TimeHarness {
   let repaints = 0;
   let minutes = 0;
   const zone = { runOutsideAngular: (fn: () => void): void => fn(), run: (fn: () => void): void => fn() };
   const cdr = { detectChanges: (): void => { repaints++; }, markForCheck(): void {} };
-  const comp = new TimerTimeComponent(zone as never, cdr as never);
+  const host = fakeHost();
+  const comp = new TimerTimeComponent(zone as never, cdr as never, { nativeElement: host } as never);
   comp.whole = whole;
+  comp.hourFlash = hourFlash;
   comp.minuteChanged.subscribe(() => { minutes++; });
   const set = (next: TimerView): void => {
     comp.timer = next;
@@ -175,7 +203,7 @@ function makeTime(t: TimerView, whole = false): TimeHarness {
     comp.ngOnChanges();
   };
   set(t);
-  return { comp, minutes: () => minutes, repaints: () => repaints, set };
+  return { comp, host, minutes: () => minutes, repaints: () => repaints, set };
 }
 
 test('time node: a running timer ticks by itself and tells of every crossed minute', () => {
@@ -523,6 +551,68 @@ test('island: a description sent for a timer that is gone is forgotten', () => {
   const reborn = loose('a', 'ops help');
   h.refresh([reborn]);
   assert.equal(h.comp.descriptionOf(reborn), 'ops help');
+});
+
+// ─── The widget's hour flash ──────────────────────────────────────────────
+
+const HOUR = 60 * MINUTE;
+
+function makeFlashTime(t: TimerView, hourFlash: boolean): TimeHarness & { lit: () => boolean; flashes: () => number } {
+  const h = makeTime(t, false, hourFlash);
+  return { ...h, lit: () => h.host.classList.has('hour-flash'), flashes: () => h.host.flashes };
+}
+
+test('hour flash: the widget\'s time lights once at every whole hour of the timer', () => {
+  const h = makeFlashTime(timer('t1', TimerState.Running, { shareMs: HOUR - 2 * SECOND }), true);
+  advance(SECOND);
+  assert.equal(h.lit(), false);
+  advance(SECOND);
+  assert.equal(h.lit(), true, '1h 00m 00s');
+  assert.equal(h.flashes(), 1);
+  h.host.end();
+  assert.equal(h.lit(), false, 'the animation over, the class goes');
+  advance(30 * MINUTE);
+  assert.equal(h.flashes(), 1, 'once an hour, not once a tick');
+  advance(30 * MINUTE);
+  assert.equal(h.flashes(), 2, '2h 00m 00s');
+  h.comp.ngOnDestroy();
+});
+
+test('hour flash: the island, the chip and the card never light', () => {
+  const h = makeFlashTime(timer('t1', TimerState.Running, { shareMs: HOUR - SECOND }), false);
+  advance(2 * SECOND);
+  assert.equal(h.flashes(), 0);
+  h.comp.ngOnDestroy();
+});
+
+test('hour flash: the first hour of the record is not the timer\'s', () => {
+  const fed = timer('t1', TimerState.Running, { entryId: 'e1', totalMs: HOUR - SECOND, shareMs: 20 * MINUTE, handMinutes: 40 });
+  const h = makeFlashTime(fed, true);
+  advance(2 * SECOND);
+  assert.equal(h.flashes(), 0, 'typed minutes do not count');
+  h.comp.ngOnDestroy();
+});
+
+test('hour flash: a fresh answer past the hour does not light, a pause puts the light out', () => {
+  const h = makeFlashTime(timer('t1', TimerState.Running, { shareMs: HOUR + 5 * SECOND }), true);
+  advance(SECOND);
+  assert.equal(h.flashes(), 0, 'the widget opened at 1h 00m 05s');
+  h.set(timer('t1', TimerState.Running, { shareMs: 2 * HOUR - SECOND }));
+  advance(2 * SECOND);
+  assert.equal(h.flashes(), 1);
+  h.set(timer('t1', TimerState.Paused, { shareMs: 2 * HOUR + SECOND }));
+  assert.equal(h.lit(), false);
+  h.comp.ngOnDestroy();
+});
+
+test('hour flash: a timer cut below the hour lights again when it gets there', () => {
+  const h = makeFlashTime(timer('t1', TimerState.Running, { shareMs: HOUR - SECOND }), true);
+  advance(2 * SECOND);
+  assert.equal(h.flashes(), 1);
+  h.set(timer('t1', TimerState.Running, { shareMs: HOUR - SECOND }));
+  advance(2 * SECOND);
+  assert.equal(h.flashes(), 2);
+  h.comp.ngOnDestroy();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
